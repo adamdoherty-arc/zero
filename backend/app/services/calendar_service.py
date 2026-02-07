@@ -442,6 +442,131 @@ class CalendarService:
             })
         return slots
 
+    async def suggest_meeting_time(
+        self,
+        duration_minutes: int = 30,
+        preferences: Optional[Dict[str, Any]] = None,
+        work_start: int = 9,
+        work_end: int = 17,
+    ) -> List[Dict[str, Any]]:
+        """Suggest optimal meeting times using free slot analysis and AI ranking.
+
+        Args:
+            duration_minutes: Required meeting duration
+            preferences: Optional dict with keys like 'prefer_morning', 'avoid_after_lunch'
+            work_start: Work day start hour
+            work_end: Work day end hour
+
+        Returns:
+            List of suggested time slots with reasoning
+        """
+        cache = self._load_cache()
+        events = cache.get("events", [])
+        today = datetime.utcnow().date()
+        today_events = [e for e in events if self._event_start_datetime(e).date() == today]
+
+        free_slots = self._calculate_free_slots(today_events, work_start, work_end)
+
+        # Filter slots that are long enough
+        valid_slots = [
+            s for s in free_slots
+            if int(s.get("duration_minutes", 0)) >= duration_minutes
+        ]
+
+        if not valid_slots:
+            return [{"slot": None, "reason": "No free slots available for the requested duration"}]
+
+        # Use AI to rank slots based on preferences
+        try:
+            ranked = await self._ai_rank_slots(valid_slots, duration_minutes, preferences or {})
+            return ranked
+        except Exception as e:
+            logger.warning("ai_slot_ranking_failed", error=str(e))
+            # Fallback: return slots sorted by start time
+            return [
+                {"slot": s, "reason": "Available slot", "score": 1.0 - i * 0.1}
+                for i, s in enumerate(valid_slots[:3])
+            ]
+
+    async def _ai_rank_slots(
+        self,
+        slots: List[Dict[str, str]],
+        duration_minutes: int,
+        preferences: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Use Ollama to rank time slots by preference."""
+        from app.infrastructure.config import get_settings
+        import httpx
+
+        settings = get_settings()
+
+        slot_descriptions = "\n".join(
+            f"- {s['start']} to {s['end']} ({s.get('duration_minutes', '?')} min available)"
+            for s in slots
+        )
+        pref_text = ", ".join(f"{k}: {v}" for k, v in preferences.items()) if preferences else "none specified"
+
+        prompt = (
+            f"I need to schedule a {duration_minutes}-minute meeting today.\n"
+            f"Available slots:\n{slot_descriptions}\n"
+            f"Preferences: {pref_text}\n\n"
+            f"Rank the top 3 best slots. For each, give: slot start time, end time, and a brief reason.\n"
+            f"Respond as JSON array: [{{'start': 'HH:MM', 'end': 'HH:MM', 'reason': '...', 'score': 0.0-1.0}}]"
+        )
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                f"{settings.ollama_base_url}/chat/completions",
+                json={
+                    "model": settings.ollama_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                },
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
+
+            # Try to parse JSON from response
+            import json as _json
+            # Find JSON array in response
+            start_idx = content.find("[")
+            end_idx = content.rfind("]") + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                ranked = _json.loads(content[start_idx:end_idx])
+                return ranked[:3]
+
+        # Fallback
+        return [{"slot": s, "reason": "Available", "score": 0.5} for s in slots[:3]]
+
+    async def smart_reschedule(
+        self, event_id: str, reason: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Find alternative time slots when an event needs rescheduling.
+
+        Args:
+            event_id: ID of the event to reschedule
+            reason: Why it needs rescheduling
+
+        Returns:
+            List of alternative time slot suggestions
+        """
+        event = await self.get_event(event_id)
+        if not event:
+            return [{"error": f"Event {event_id} not found"}]
+
+        # Calculate event duration
+        start = self._event_start_datetime({"start": {"date_time": event.start.date_time.isoformat() if event.start.date_time else None}})
+        end = self._event_end_datetime({"end": {"date_time": event.end.date_time.isoformat() if event.end.date_time else None}})
+        duration_minutes = int((end - start).total_seconds() / 60)
+
+        # Find alternative slots
+        suggestions = await self.suggest_meeting_time(
+            duration_minutes=duration_minutes,
+            preferences={"reason_for_reschedule": reason},
+        )
+
+        return suggestions
+
     async def get_event(self, event_id: str) -> Optional[CalendarEvent]:
         """Get event by ID."""
         cache = self._load_cache()
@@ -564,6 +689,54 @@ class CalendarService:
             for cal in results.get("items", [])
         ]
 
+    async def get_events_multi(
+        self,
+        calendar_ids: List[str],
+        time_min: Optional[datetime] = None,
+        time_max: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """Aggregate events from multiple calendars.
+
+        Args:
+            calendar_ids: List of calendar IDs to query
+            time_min: Start of time range (default: now)
+            time_max: End of time range (default: 7 days from now)
+
+        Returns:
+            List of events from all specified calendars, sorted by start time
+        """
+        service = self._get_service()
+
+        if time_min is None:
+            time_min = datetime.utcnow()
+        if time_max is None:
+            time_max = time_min + timedelta(days=7)
+
+        all_events = []
+        for cal_id in calendar_ids:
+            try:
+                results = service.events().list(
+                    calendarId=cal_id,
+                    timeMin=time_min.isoformat() + "Z",
+                    timeMax=time_max.isoformat() + "Z",
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=100,
+                ).execute()
+
+                for event in results.get("items", []):
+                    event["_calendar_id"] = cal_id
+                    all_events.append(event)
+
+            except Exception as e:
+                logger.warning("multi_calendar_fetch_failed", calendar_id=cal_id, error=str(e))
+
+        # Sort by start time
+        all_events.sort(key=lambda e: e.get("start", {}).get("dateTime", e.get("start", {}).get("date", "")))
+
+        logger.info("multi_calendar_events_fetched", calendars=len(calendar_ids), events=len(all_events))
+        return all_events
+
     async def get_today_schedule(self) -> TodaySchedule:
         """Get today's schedule."""
         cache = self._load_cache()
@@ -598,6 +771,57 @@ class CalendarService:
             has_conflicts=len(conflicts) > 0,
             free_slots=free_slots
         )
+
+    async def sync_events_to_notion(
+        self,
+        days_ahead: int = 7,
+        notion_database_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Sync upcoming calendar events to a Notion database.
+
+        Args:
+            days_ahead: Number of days to sync
+            notion_database_id: Target Notion database ID
+
+        Returns:
+            Dict with sync results
+        """
+        try:
+            from app.services.notion_service import get_notion_service
+        except ImportError:
+            return {"synced": 0, "error": "Notion service not available"}
+
+        notion = get_notion_service()
+        if notion is None:
+            return {"synced": 0, "error": "Notion not configured"}
+
+        cache = self._load_cache()
+        events = cache.get("events", [])
+
+        now = datetime.utcnow()
+        cutoff = now + timedelta(days=days_ahead)
+
+        upcoming = []
+        for e in events:
+            try:
+                start = self._event_start_datetime(e)
+                if now <= start <= cutoff:
+                    upcoming.append(e)
+            except Exception:
+                continue
+
+        if not upcoming:
+            return {"synced": 0, "message": "No upcoming events to sync"}
+
+        try:
+            results = await notion.sync_calendar_events_to_notion(
+                events=upcoming,
+                database_id=notion_database_id,
+            )
+            return {"synced": len(results), "events": [e.get("summary", "?") for e in upcoming]}
+        except Exception as e:
+            logger.error("calendar_notion_sync_failed", error=str(e))
+            return {"synced": 0, "error": str(e)}
 
 
 @lru_cache()
