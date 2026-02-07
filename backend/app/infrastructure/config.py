@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     email_automation_confidence_threshold: float = 0.85
     email_question_timeout_hours: int = 24
 
+    # Notion Integration
+    notion_api_key: Optional[str] = None
+    notion_database_id: Optional[str] = None
+    notion_workspace_page_id: Optional[str] = None
+
     class Config:
         env_file = ".env"
         env_prefix = "ZERO_"

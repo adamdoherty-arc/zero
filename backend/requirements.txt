@@ -54,3 +54,6 @@ langchain-google-community>=0.1.0
 transformers>=4.36.0
 torch>=2.1.0
 sentence-transformers>=2.2.0
+
+# Notion Integration
+notion-client>=2.2.0
