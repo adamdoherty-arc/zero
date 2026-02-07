@@ -1,6 +1,6 @@
 """
 JSON file storage utilities for sprint data.
-Follows moltbot's existing pattern of JSON-based persistence.
+Follows Zero's existing pattern of JSON-based persistence.
 """
 
 import json

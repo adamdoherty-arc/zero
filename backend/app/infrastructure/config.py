@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     legion_api_url: str = "http://host.docker.internal:8005"
     legion_api_prefix: str = "/api"
     legion_timeout: int = 30
+    zero_legion_project_id: int = 8  # Zero's project ID in Legion
+
+    # Cross-project codebase access
+    projects_root: str = "/projects"  # Root dir for mounted project codebases
 
     # SearXNG (Web Search)
     # Use container name for Docker, localhost:8888 for local development
@@ -41,6 +45,19 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    # Google OAuth
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: str = "http://localhost:18792/api/google/auth/callback"
+    frontend_url: str = "http://localhost:5173"
+
+    # Email Automation
+    email_automation_enabled: bool = True
+    email_automation_check_interval: int = 300  # 5 minutes
+    email_classifier_model: str = "distilbert-base-uncased-finetuned-sst-2-english"
+    email_automation_confidence_threshold: float = 0.85
+    email_question_timeout_hours: int = 24
 
     class Config:
         env_file = ".env"
@@ -75,3 +92,8 @@ def get_enhancement_path() -> Path:
 def get_money_maker_path() -> Path:
     """Get path to money-maker data directory."""
     return get_workspace_path("money-maker")
+
+
+def get_ecosystem_path() -> Path:
+    """Get path to ecosystem data directory."""
+    return get_workspace_path("ecosystem")

@@ -18,10 +18,12 @@ from functools import lru_cache
 import httpx
 import structlog
 
+from app.infrastructure.config import get_settings
+
 logger = structlog.get_logger(__name__)
 
-# Zero project ID in Legion
-ZERO_PROJECT_ID = 8
+# Zero project ID in Legion (from config)
+ZERO_PROJECT_ID = get_settings().zero_legion_project_id
 
 
 class LegionIntegrationService:
@@ -42,13 +44,15 @@ class LegionIntegrationService:
     async def auto_create_enhancement_tasks(
         self,
         confidence_threshold: float = 0.75,
-        project_mapping: Optional[Dict[str, int]] = None,
+        multi_project: bool = True,
     ) -> Dict[str, Any]:
         """
         Scan all projects for TODO/FIXME signals and auto-create
         high-confidence signals as Legion tasks.
+
+        When multi_project=True, scans all mounted codebases via scan_all_projects().
         """
-        from app.services.enhancement_service import get_enhancement_service
+        from app.services.enhancement_service import get_enhancement_service, SCAN_PROJECTS
         from app.services.legion_client import get_legion_client
 
         enhancement_svc = get_enhancement_service()
@@ -57,47 +61,59 @@ class LegionIntegrationService:
         if not await legion.health_check():
             return {"status": "legion_unavailable", "tasks_created": 0}
 
-        # Default project mapping: directory name → Legion project ID
-        if not project_mapping:
-            project_mapping = {
-                "zero": ZERO_PROJECT_ID,
-            }
+        # Scan — either multi-project or Zero-only
+        if multi_project:
+            scan_result = await enhancement_svc.scan_all_projects()
+        else:
+            scan_result = await enhancement_svc.scan_for_signals()
 
-        # Scan for signals
-        scan_result = await enhancement_svc.scan_for_signals()
-        signals = enhancement_svc.get_signals(status="pending")
+        # Read persisted signals
+        data = await enhancement_svc.storage.read(enhancement_svc._signals_file)
+        signals = [s for s in data.get("signals", []) if s.get("status") == "pending"]
+
+        # Build project name → Legion ID mapping
+        project_id_map = {name: cfg["legion_id"] for name, cfg in SCAN_PROJECTS.items()}
 
         tasks_created = 0
         skipped = 0
+        per_project_created: Dict[str, int] = {}
 
         for signal in signals:
-            if signal.confidence < confidence_threshold:
+            if signal.get("confidence", 0) < (confidence_threshold * 100):
                 skipped += 1
                 continue
 
-            # Determine project ID
-            project_id = ZERO_PROJECT_ID
-            for proj_name, pid in project_mapping.items():
-                if proj_name.lower() in (signal.source_file or "").lower():
-                    project_id = pid
-                    break
+            # Determine project ID from signal's project_name
+            proj_name = signal.get("project_name", "zero")
+            project_id = project_id_map.get(proj_name, ZERO_PROJECT_ID)
 
             # Get or create an active sprint for this project
             sprint = await self._get_or_create_sprint(
-                legion, project_id, f"Auto: Enhancement Tasks"
+                legion, project_id, "Auto: Enhancement Tasks"
             )
             if not sprint:
                 continue
 
-            # Create the Legion task
+            # Build prompt for agent execution
+            source_file = signal.get("source_file", "unknown")
+            line_number = signal.get("line_number", "?")
+
             task_data = {
-                "title": f"[{signal.type.upper()}] {signal.message[:100]}",
+                "title": f"[{signal.get('type', 'TODO').upper()}] {signal.get('message', '')[:100]}",
                 "description": (
-                    f"Source: {signal.source_file}:{signal.line_number}\n"
-                    f"Confidence: {signal.confidence:.0%}\n"
-                    f"Context: {signal.context[:200] if signal.context else 'N/A'}"
+                    f"Source: {source_file}:{line_number}\n"
+                    f"Project: {proj_name}\n"
+                    f"Confidence: {signal.get('confidence', 0)}%\n"
+                    f"Context: {(signal.get('context') or 'N/A')[:200]}"
                 ),
-                "priority": self._severity_to_priority(signal.severity),
+                "prompt": (
+                    f"Fix the following {signal.get('type', 'TODO').upper()} issue:\n"
+                    f"File: {source_file}\nLine: {line_number}\n"
+                    f"Issue: {signal.get('message', '')}\n\n"
+                    f"Context:\n{signal.get('context', '')}\n\n"
+                    f"Please analyze and fix this issue, then run any relevant tests."
+                ),
+                "priority": self._severity_to_priority(signal.get("severity", "medium")),
                 "order": tasks_created + 1,
                 "source": "enhancement_engine",
             }
@@ -105,15 +121,27 @@ class LegionIntegrationService:
             try:
                 await legion.create_task(sprint["id"], task_data)
                 tasks_created += 1
-                enhancement_svc.mark_signal_converted(signal.id)
+                per_project_created[proj_name] = per_project_created.get(proj_name, 0) + 1
+                signal["status"] = "converted"
+                signal["converted_at"] = datetime.utcnow().isoformat()
             except Exception as e:
-                logger.warning("enhancement_task_create_failed", error=str(e))
+                logger.warning("enhancement_task_create_failed", error=str(e), project=proj_name)
+
+        # Persist updated signal statuses
+        data["signals"] = [s for s in data.get("signals", [])]  # keep all
+        for s in data["signals"]:
+            matching = [sig for sig in signals if sig.get("id") == s.get("id") and sig.get("status") == "converted"]
+            if matching:
+                s["status"] = "converted"
+                s["converted_at"] = matching[0].get("converted_at")
+        await enhancement_svc.storage.write(enhancement_svc._signals_file, data)
 
         logger.info(
             "enhancement_auto_tasks",
-            scanned=scan_result.get("total_signals", 0),
+            scanned=scan_result.get("signals_found", 0),
             created=tasks_created,
             skipped=skipped,
+            per_project=per_project_created,
         )
 
         return {
@@ -121,6 +149,7 @@ class LegionIntegrationService:
             "signals_scanned": len(signals),
             "tasks_created": tasks_created,
             "skipped_low_confidence": skipped,
+            "per_project": per_project_created,
         }
 
     # =========================================================================

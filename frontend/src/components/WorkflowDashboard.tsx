@@ -10,7 +10,7 @@ import {
 } from '../hooks/useWorkflowApi'
 import { Play, Square, Clock, CheckCircle, XCircle, AlertCircle, Workflow } from 'lucide-react'
 
-const STATUS_ICONS: Record<string, JSX.Element> = {
+const STATUS_ICONS: Record<string, React.ReactNode> = {
   completed: <CheckCircle className="w-4 h-4 text-green-400" />,
   running: <Clock className="w-4 h-4 text-blue-400 animate-spin" />,
   failed: <XCircle className="w-4 h-4 text-red-400" />,

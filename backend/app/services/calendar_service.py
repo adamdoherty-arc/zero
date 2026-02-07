@@ -74,24 +74,11 @@ class CalendarService:
         logger.info("calendar_client_config_saved")
 
     def has_valid_tokens(self) -> bool:
-        """Check if valid tokens exist."""
-        if not self.tokens_file.exists():
-            return False
-
-        try:
-            _, Credentials = self._load_google_modules()
-            creds = Credentials.from_authorized_user_file(str(self.tokens_file), CALENDAR_SCOPES)
-            if creds and creds.valid:
-                return True
-            if creds and creds.expired and creds.refresh_token:
-                from google.auth.transport.requests import Request
-                creds.refresh(Request())
-                self.tokens_file.write_text(creds.to_json())
-                return True
-            return False
-        except Exception as e:
-            logger.warning("calendar_token_check_failed", error=str(e))
-            return False
+        """Check if valid tokens exist (from Gmail OAuth service)."""
+        from app.services.gmail_oauth_service import get_gmail_oauth_service
+        
+        gmail_oauth = get_gmail_oauth_service()
+        return gmail_oauth.has_valid_tokens()
 
     def get_auth_url(self, redirect_uri: str = "http://localhost:18792/api/calendar/auth/callback") -> Dict[str, str]:
         """Get OAuth authorization URL."""
@@ -157,19 +144,31 @@ class CalendarService:
         }
 
     def _get_credentials(self):
-        """Get valid OAuth credentials."""
-        _, Credentials = self._load_google_modules()
-
-        if not self.tokens_file.exists():
+        """Get valid OAuth credentials from Gmail OAuth service."""
+        from app.services.gmail_oauth_service import get_gmail_oauth_service, GOOGLE_SCOPES
+        
+        gmail_oauth = get_gmail_oauth_service()
+        
+        # Check if Gmail OAuth has valid tokens
+        if not gmail_oauth.has_valid_tokens():
             return None
-
-        creds = Credentials.from_authorized_user_file(str(self.tokens_file), CALENDAR_SCOPES)
-
+        
+        # Get credentials from Gmail OAuth service
+        _, Credentials = self._load_google_modules()
+        tokens_file = gmail_oauth.tokens_file
+        
+        if not tokens_file.exists():
+            return None
+        
+        # IMPORTANT: Use GOOGLE_SCOPES (not CALENDAR_SCOPES) because tokens were issued with unified scopes
+        creds = Credentials.from_authorized_user_file(str(tokens_file), GOOGLE_SCOPES)
+        
         if creds.expired and creds.refresh_token:
             from google.auth.transport.requests import Request
             creds.refresh(Request())
-            self.tokens_file.write_text(creds.to_json())
-
+            # Save refreshed tokens back to Gmail OAuth service
+            tokens_file.write_text(creds.to_json())
+        
         return creds if creds.valid else None
 
     def _get_service(self):

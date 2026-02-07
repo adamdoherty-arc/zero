@@ -268,3 +268,252 @@ async def get_digest():
     """Get email digest summary."""
     service = get_gmail_service()
     return await service.generate_digest()
+
+
+# ============================================================================
+# Email Automation Endpoints
+# ============================================================================
+
+@router.get("/automation/status")
+async def get_automation_status():
+    """Get email automation status and statistics."""
+    from app.infrastructure.config import get_settings
+    from app.services.email_qa_service import get_email_qa_service
+    
+    settings = get_settings()
+    qa_service = get_email_qa_service()
+    
+    pending_questions = qa_service.get_pending_questions()
+    
+    return {
+        "enabled": settings.email_automation_enabled,
+        "check_interval": settings.email_automation_check_interval,
+        "confidence_threshold": settings.email_automation_confidence_threshold,
+        "pending_questions": len(pending_questions),
+        "model": settings.email_classifier_model
+    }
+
+
+@router.get("/questions/pending")
+async def get_pending_questions():
+    """Get all pending email automation questions."""
+    from app.services.email_qa_service import get_email_qa_service
+    
+    qa_service = get_email_qa_service()
+    questions = qa_service.get_pending_questions()
+    
+    return {
+        "questions": [
+            {
+                "id": q.id,
+                "email_id": q.email_id,
+                "email_subject": q.email_subject,
+                "email_from": q.email_from,
+                "question": q.question,
+                "options": q.options,
+                "context": q.context,
+                "created_at": q.created_at.isoformat(),
+                "expires_at": q.expires_at.isoformat()
+            }
+            for q in questions
+        ]
+    }
+
+
+@router.get("/questions/{question_id}")
+async def get_question(question_id: str):
+    """Get specific question details."""
+    from app.services.email_qa_service import get_email_qa_service
+    
+    qa_service = get_email_qa_service()
+    question = qa_service.get_question(question_id)
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    return {
+        "id": question.id,
+        "email_id": question.email_id,
+        "email_subject": question.email_subject,
+        "email_from": question.email_from,
+        "question": question.question,
+        "options": question.options,
+        "context": question.context,
+        "created_at": question.created_at.isoformat(),
+        "expires_at": question.expires_at.isoformat(),
+        "answered": question.answered,
+        "answer": question.answer
+    }
+
+
+from pydantic import BaseModel
+
+class QuestionAnswer(BaseModel):
+    answer: str
+    create_rule: bool = False
+
+
+@router.post("/questions/{question_id}/answer")
+async def answer_question(question_id: str, answer: QuestionAnswer):
+    """Answer a pending question."""
+    from app.services.email_qa_service import get_email_qa_service
+    
+    qa_service = get_email_qa_service()
+    question = qa_service.answer_question(
+        question_id=question_id,
+        answer=answer.answer,
+        create_rule=answer.create_rule
+    )
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    logger.info(
+        "email_question_answered_via_api",
+        question_id=question_id,
+        answer=answer.answer,
+        create_rule=answer.create_rule
+    )
+    
+    return {
+        "status": "answered",
+        "question_id": question.id,
+        "answer": answer.answer,
+        "rule_created": answer.create_rule
+    }
+
+
+@router.post("/automation/process")
+async def process_new_emails():
+    """Manually trigger email automation for new emails."""
+    from app.infrastructure.config import get_settings
+    from app.services.email_automation_service import get_email_automation_service
+    
+    settings = get_settings()
+    
+    if not settings.email_automation_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Email automation is disabled in configuration"
+        )
+    
+    oauth_service = get_gmail_oauth_service()
+    if not oauth_service.has_valid_tokens():
+        raise HTTPException(
+            status_code=401,
+            detail="Gmail not connected. Complete OAuth flow first."
+        )
+    
+    automation_service = get_email_automation_service()
+    
+    try:
+        result = await automation_service.process_new_emails()
+        return result
+    except Exception as e:
+        logger.error("email_automation_processing_failed", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Automation processing failed: {str(e)}"
+        )
+
+
+@router.post("/automation/process/{email_id}")
+async def process_single_email(email_id: str):
+    """Manually trigger automation for a specific email."""
+    from app.infrastructure.config import get_settings
+    from app.services.email_automation_service import get_email_automation_service
+    
+    settings = get_settings()
+    
+    if not settings.email_automation_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Email automation is disabled in configuration"
+        )
+    
+    automation_service = get_email_automation_service()
+    
+    try:
+        result = await automation_service.process_email(email_id)
+        return result
+    except Exception as e:
+        logger.error("email_automation_processing_failed", email_id=email_id, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Automation processing failed: {str(e)}"
+        )
+
+
+@router.get("/automation/history")
+async def get_automation_history(limit: int = Query(default=50, ge=1, le=500)):
+    """Get automation action history."""
+    from app.services.email_automation_service import get_email_automation_service
+    
+    automation_service = get_email_automation_service()
+    history = automation_service.get_history(limit=limit)
+    
+    return {"history": history, "count": len(history)}
+
+
+@router.post("/automation/undo/{email_id}")
+async def undo_automation_action(email_id: str):
+    """Undo the most recent automation action on an email."""
+    from app.services.email_automation_service import get_email_automation_service
+    
+    oauth_service = get_gmail_oauth_service()
+    if not oauth_service.has_valid_tokens():
+        raise HTTPException(status_code=401, detail="Gmail not connected")
+    
+    automation_service = get_email_automation_service()
+    
+    try:
+        result = await automation_service.undo_action(email_id)
+        
+        if result["status"] ==  "error":
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("undo_action_failed", email_id=email_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class JunkSenderRequest(BaseModel):
+    sender_email: str
+
+
+@router.post("/automation/junk/add")
+async def add_junk_sender(request: JunkSenderRequest):
+    """Mark a sender as junk."""
+    from app.services.email_automation_service import get_email_automation_service
+    
+    automation_service = get_email_automation_service()
+    result = automation_service.mark_as_junk(request.sender_email)
+    
+    return result
+
+
+@router.post("/automation/junk/remove")
+async def remove_junk_sender(request: JunkSenderRequest):
+    """Remove a sender from junk list."""
+    from app.services.email_automation_service import get_email_automation_service
+    
+    automation_service = get_email_automation_service()
+    result = automation_service.remove_from_junk(request.sender_email)
+    
+    return result
+
+
+@router.get("/automation/junk/list")
+async def list_junk_senders():
+    """Get list of junk senders."""
+    from app.services.email_automation_service import get_email_automation_service
+    
+    automation_service = get_email_automation_service()
+    rules = automation_service._load_automation_rules()
+    
+    return {"junk_senders": rules.get("junk_senders", [])}
+
+

@@ -65,7 +65,7 @@ export function OrchestratorPanel() {
             <div className="stat-card">
               <div className="text-sm text-gray-400 mb-1">Status</div>
               <div className={`font-semibold ${isRunning ? 'text-accent' : 'text-gray-400'}`}>
-                {status.status.charAt(0).toUpperCase() + status.status.slice(1)}
+                {(status.status ?? 'unknown').charAt(0).toUpperCase() + (status.status ?? 'unknown').slice(1)}
               </div>
             </div>
 

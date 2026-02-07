@@ -13,11 +13,24 @@ services:
       - ./workspace:/app/workspace
       - ./config:/app/config
       - ./backups:/app/backups
+      # Cross-project codebase access (read-only)
+      - C:/code/ADA:/projects/ada:ro
+      - C:/code/fortressOS:/projects/fortressos:ro
+      - C:/code/Legion:/projects/legion:ro
+      - C:/code/moltbot:/projects/zero:ro
     environment:
       - ZERO_WORKSPACE_DIR=/app/workspace
       - ZERO_CONFIG_DIR=/app/config
+      - ZERO_PROJECTS_ROOT=/projects
       - ZERO_OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
       - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      # Google OAuth Configuration
+      - ZERO_GOOGLE_CLIENT_ID=${ZERO_GOOGLE_CLIENT_ID}
+      - ZERO_GOOGLE_CLIENT_SECRET=${ZERO_GOOGLE_CLIENT_SECRET}
+      - ZERO_GOOGLE_REDIRECT_URI=${ZERO_GOOGLE_REDIRECT_URI}
+      - ZERO_FRONTEND_URL=${ZERO_FRONTEND_URL}
+      # Hugging Face
+      - HF_TOKEN=${HF_TOKEN:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18792/health/ready')"]
@@ -45,8 +58,14 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/postcss.config.js:/app/postcss.config.js
+      - ./frontend/components.json:/app/components.json
     environment:
-      - VITE_API_URL=http://localhost:18792
+      - VITE_API_URL=http://zero-api:18792
     depends_on:
       - zero-api
     restart: unless-stopped

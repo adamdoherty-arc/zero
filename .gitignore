@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+google-oauth-credentials.json
+**/google-oauth-credentials.json
 
 # Runtime data & workspace
 workspace/
@@ -27,7 +29,7 @@ venv/
 *.bak
 nul
 c:*
-codemoltbot*
+codezero*
 tmp_*.json
 tmp_*.py
 s3[0-9].json

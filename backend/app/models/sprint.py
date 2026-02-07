@@ -4,7 +4,7 @@ Sprint data models.
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -17,12 +17,24 @@ class SprintStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+# Legion uses different status names
+LEGION_TO_ZERO_STATUS: Dict[str, str] = {
+    "planned": "planning",
+    "active": "active",
+    "completed": "completed",
+    "blocked": "paused",
+}
+
+ZERO_TO_LEGION_STATUS: Dict[str, str] = {v: k for k, v in LEGION_TO_ZERO_STATUS.items()}
+
+
 class SprintCreate(BaseModel):
     """Schema for creating a new sprint."""
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     duration_days: int = Field(default=14, ge=1, le=90)
     goals: List[str] = Field(default_factory=list)
+    project_id: Optional[int] = None
 
 
 class SprintUpdate(BaseModel):
@@ -49,6 +61,8 @@ class Sprint(BaseModel):
     goals: List[str] = Field(default_factory=list)
     total_points: int = Field(0, alias="totalPoints")
     completed_points: int = Field(0, alias="completedPoints")
+    project_id: Optional[int] = None
+    project_name: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
     updated_at: Optional[datetime] = Field(None, alias="updatedAt")
 
@@ -66,4 +80,3 @@ class Sprint(BaseModel):
             return None
         delta = self.end_date - datetime.utcnow()
         return max(0, delta.days)
-

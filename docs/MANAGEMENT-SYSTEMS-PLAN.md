@@ -1,14 +1,14 @@
-# Moltbot Management Systems Implementation Plan
+# Zero Management Systems Implementation Plan
 
 ## Overview
 
-Bring three integrated management systems from ADA into moltbot as fresh Node.js/TypeScript implementations:
+Bring three integrated management systems from ADA into Zero as fresh Node.js/TypeScript implementations:
 
 1. **Orchestration System** - YAML-based workflow engine with DAG execution
 2. **Enhancement System** - Self-improvement with AI-powered analysis and auto-fixes
 3. **Sprint Management** - Project/task management via chat commands
 
-All systems use moltbot's existing architecture: JSON file persistence, Ollama LLMs, and chat channel integration (WhatsApp/Slack/Discord).
+All systems use Zero's existing architecture: JSON file persistence, Ollama LLMs, and chat channel integration (WhatsApp/Slack/Discord).
 
 ---
 
@@ -16,7 +16,7 @@ All systems use moltbot's existing architecture: JSON file persistence, Ollama L
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Moltbot Gateway (existing)                        │
+│                    Zero Gateway (OpenClaw.ai)                        │
 │                     Port 18789 WebSocket                             │
 └─────────────────────────────┬───────────────────────────────────────┘
                               │
@@ -41,7 +41,7 @@ All systems use moltbot's existing architecture: JSON file persistence, Ollama L
 ## File Structure
 
 ```
-moltbot/
+zero/
 ├── workspace/
 │   ├── orchestration/              # Orchestration state
 │   │   ├── workflows/              # YAML workflow definitions
@@ -72,7 +72,7 @@ moltbot/
 │   └── orchestration/SKILL.md
 │
 └── config/
-    └── moltbot.json                # Management system configs added
+    └── zero.json                   # Management system configs added
 ```
 
 ---
@@ -85,7 +85,7 @@ Execute complex multi-step workflows with parallel processing, LLM decision-maki
 ### Key Features
 - **YAML workflow definitions** with DAG-based step execution
 - **Chat triggers** - Start workflows via `/workflow run <name>`
-- **Skill integration** - Execute existing moltbot skills as steps
+- **Skill integration** - Execute existing Zero skills as steps
 - **LLM steps** - Use Ollama for AI-powered decisions
 - **Parallel execution** - Independent steps run concurrently
 - **State persistence** - Resume interrupted workflows
@@ -131,7 +131,7 @@ steps:
 ## System 2: Enhancement/Self-Improvement
 
 ### Purpose
-Automatically analyze moltbot's health, detect issues, and apply fixes with human-in-the-loop approval.
+Automatically analyze Zero's health, detect issues, and apply fixes with human-in-the-loop approval.
 
 ### Key Features
 - **Signal collection** - Docker logs, errors, performance metrics
@@ -207,10 +207,10 @@ Personal project management via natural language chat commands.
 
 ### Decision: Custom vs Framework
 
-**For moltbot, we chose CUSTOM implementation** because:
+**For Zero, we chose CUSTOM implementation** because:
 
 1. **Simpler use case** - Personal assistant vs trading platform
-2. **No Python dependency** - Moltbot is Node.js/Docker-based
+2. **No Python dependency** - Zero is Node.js/Docker-based
 3. **Sufficient patterns** - YAML workflows + skills cover our needs
 4. **Lower complexity** - JSON persistence vs PostgreSQL
 
@@ -246,11 +246,11 @@ Personal project management via natural language chat commands.
 - [x] Skill definitions (SKILL.md)
 - [x] Example workflows (daily-briefing, research-task)
 - [x] docker-compose.yml updated with skills mount
-- [x] moltbot.json updated with management config
+- [x] zero.json updated with management config
 
 ### Pending
 
-- [ ] Test skill loading in moltbot
+- [ ] Test skill loading in Zero
 - [ ] Create additional example workflows
 - [ ] Add Redis event bus (optional)
 - [ ] Implement checkpoint persistence for long workflows
@@ -259,7 +259,7 @@ Personal project management via natural language chat commands.
 
 ## Quick Start
 
-1. **Restart moltbot** to load new configuration:
+1. **Restart Zero** to load new configuration:
    ```bash
    docker-compose down && docker-compose up -d
    ```

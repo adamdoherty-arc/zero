@@ -1,5 +1,5 @@
 @echo off
-REM Moltbot Startup Script
+REM Zero Startup Script (OpenClaw.ai)
 REM Add this to Windows Task Scheduler for auto-start on boot
 
 cd /d c:\code\moltbot

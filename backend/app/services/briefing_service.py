@@ -227,6 +227,12 @@ class BriefingService:
         except Exception as e:
             logger.warning("briefing_reminders_failed", error=str(e))
 
+        # Overnight Activity section (from autonomous orchestration)
+        try:
+            await self._add_overnight_activity(sections)
+        except Exception as e:
+            logger.warning("briefing_overnight_activity_failed", error=str(e))
+
         # Generate suggestions
         suggestions = []
         if task_summary and "0 in progress" in task_summary:
@@ -259,6 +265,65 @@ class BriefingService:
 
         logger.info("briefing_generated", sections=len(sections))
         return briefing
+
+    async def _add_overnight_activity(self, sections: list):
+        """Add overnight autonomous orchestration activity to the briefing."""
+        from app.services.autonomous_orchestration_service import get_orchestration_service
+        from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+
+        orch = get_orchestration_service()
+        eco = get_ecosystem_sync_service()
+
+        items = []
+
+        # Orchestration log: what ran overnight
+        log_entries = await orch.get_orchestration_log(limit=20)
+        overnight_cutoff = datetime.utcnow() - timedelta(hours=12)
+        overnight_entries = [
+            e for e in log_entries
+            if e.get("timestamp") and datetime.fromisoformat(e["timestamp"]) > overnight_cutoff
+        ]
+
+        if overnight_entries:
+            actions_count = len(overnight_entries)
+            errors_count = sum(1 for e in overnight_entries if e.get("result") == "failed")
+            items.append(f"{actions_count} orchestration action(s) overnight")
+            if errors_count:
+                items.append(f"{errors_count} action(s) had errors")
+
+        # Execution summary from ecosystem data
+        try:
+            exec_data = await eco._storage.read("executions.json")
+            executions = exec_data.get("executions", [])
+            recent = [
+                e for e in executions
+                if e.get("completed_at") and datetime.fromisoformat(
+                    str(e["completed_at"]).replace("Z", "+00:00")
+                ).replace(tzinfo=None) > overnight_cutoff
+            ]
+            if recent:
+                completed = sum(1 for e in recent if e.get("status") == "completed")
+                failed = sum(1 for e in recent if e.get("status") == "failed")
+                items.append(f"{completed} task(s) executed, {failed} failure(s)")
+        except Exception:
+            pass
+
+        # Lifecycle suggestions
+        try:
+            suggestions = await eco.generate_lifecycle_suggestions()
+            if suggestions:
+                items.append(f"{len(suggestions)} lifecycle suggestion(s)")
+                items.extend([f"  - {s}" for s in suggestions[:2]])
+        except Exception:
+            pass
+
+        if items:
+            sections.append(BriefingSection(
+                title="Overnight Activity",
+                icon="🤖",
+                items=items,
+                priority=2  # Same priority as sprint section
+            ))
 
     def _save_briefing(self, briefing: DailyBriefing):
         """Save briefing to file."""

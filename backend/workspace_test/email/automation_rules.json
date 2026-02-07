@@ -1,0 +1,12 @@
+{
+  "sender_rules": {
+    "test@example.com": {
+      "action": "flag",
+      "created_from_question": "q_e9f84232248b",
+      "created_at": "2026-02-07T14:04:41.116018"
+    }
+  },
+  "subject_rules": {},
+  "auto_actions": {},
+  "junk_senders": []
+}

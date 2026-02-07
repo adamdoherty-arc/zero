@@ -1,0 +1,25 @@
+{
+  "questions": [
+    {
+      "id": "q_e9f84232248b",
+      "email_id": "test_123",
+      "email_subject": "Test Email",
+      "email_from": "test@example.com",
+      "question": "What should I do with this email?",
+      "options": [
+        "archive",
+        "flag",
+        "ignore"
+      ],
+      "context": {
+        "confidence": 0.65
+      },
+      "created_at": "2026-02-07 14:04:41.105018",
+      "expires_at": "2026-02-08 14:04:41.105020",
+      "answered": true,
+      "answer": "flag",
+      "answered_at": "2026-02-07T14:04:41.115196",
+      "create_rule": true
+    }
+  ]
+}

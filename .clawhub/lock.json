@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "skills": {
+    "docker-diag": {
+      "version": "1.0.0",
+      "installedAt": 1770437718339
+    },
+    "docker-essentials": {
+      "version": "1.0.0",
+      "installedAt": 1770437720303
+    },
+    "technews": {
+      "version": "1.0.0",
+      "installedAt": 1770437729690
+    },
+    "browse": {
+      "version": "1.0.1",
+      "installedAt": 1770437732193
+    },
+    "webapp-testing": {
+      "version": "0.1.0",
+      "installedAt": 1770437734690
+    },
+    "conventional-commits": {
+      "version": "1.0.1",
+      "installedAt": 1770437739825
+    },
+    "github-pr": {
+      "version": "1.0.0",
+      "installedAt": 1770437741936
+    },
+    "hn": {
+      "version": "1.0.0",
+      "installedAt": 1770437750194
+    },
+    "intelligence-suite": {
+      "version": "1.0.1",
+      "installedAt": 1770437752529
+    },
+    "debug-pro": {
+      "version": "1.0.0",
+      "installedAt": 1770437761933
+    },
+    "tdd-guide": {
+      "version": "1.0.0",
+      "installedAt": 1770437765702
+    },
+    "git-essentials": {
+      "version": "1.0.0",
+      "installedAt": 1770437767757
+    },
+    "miniflux-news": {
+      "version": "0.1.0",
+      "installedAt": 1770437770144
+    },
+    "discord": {
+      "version": "1.0.1",
+      "installedAt": 1770437772326
+    },
+    "whatsapp-styling-guide": {
+      "version": "1.0.0",
+      "installedAt": 1770437778576
+    },
+    "commit-analyzer": {
+      "version": "0.1.0",
+      "installedAt": 1770437785566
+    },
+    "mcp-builder": {
+      "version": "0.1.0",
+      "installedAt": 1770437788315
+    },
+    "task-status": {
+      "version": "1.0.0",
+      "installedAt": 1770437790836
+    },
+    "clawdbot-backup": {
+      "version": "1.0.0",
+      "installedAt": 1770437797875
+    },
+    "shadcn-ui": {
+      "version": "1.0.0",
+      "installedAt": 1770438093391
+    },
+    "frontend-design": {
+      "version": "1.0.0",
+      "installedAt": 1770438095523
+    },
+    "react-expert": {
+      "version": "0.1.0",
+      "installedAt": 1770438098007
+    },
+    "ui-ux-design": {
+      "version": "1.0.0",
+      "installedAt": 1770438100408
+    },
+    "theme-gen": {
+      "version": "1.0.1",
+      "installedAt": 1770438102898
+    },
+    "deepresearchwork": {
+      "version": "1.0.0",
+      "installedAt": 1770438112497
+    },
+    "reddit-insights": {
+      "version": "1.2.0",
+      "installedAt": 1770438114875
+    },
+    "reddapi": {
+      "version": "2.0.0",
+      "installedAt": 1770438116961
+    },
+    "notion-api-skill": {
+      "version": "1.0.3",
+      "installedAt": 1770438119036
+    },
+    "container-debug": {
+      "version": "1.0.0",
+      "installedAt": 1770438129012
+    },
+    "cicd-pipeline": {
+      "version": "1.0.0",
+      "installedAt": 1770438131265
+    },
+    "ai-component": {
+      "version": "1.0.1",
+      "installedAt": 1770438141598
+    },
+    "ai-responsive": {
+      "version": "1.0.1",
+      "installedAt": 1770438143687
+    }
+  }
+}

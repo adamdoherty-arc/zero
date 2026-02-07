@@ -527,6 +527,41 @@ class LegionClient:
         return result if isinstance(result, list) else result.get("executions", [])
 
     # ============================================
+    # SWARM OPERATIONS
+    # ============================================
+
+    async def trigger_swarm_lifecycle(self, project_id: int, force_plan_next: bool = False) -> Dict:
+        """Trigger full sprint lifecycle: audit -> execute -> plan next."""
+        return await self._post("/swarm/lifecycle", {
+            "project_id": project_id,
+            "force_plan_next": force_plan_next,
+        })
+
+    async def trigger_swarm_execute(self, sprint_id: int, max_attempts: int = 6) -> Dict:
+        """Execute sprint tasks via agent swarm."""
+        return await self._post(f"/swarm/execute/{sprint_id}", {
+            "max_attempts": max_attempts,
+        })
+
+    async def plan_next_sprint(self, project_id: int) -> Dict:
+        """Plan next sprint for a project from backlog/ideas."""
+        return await self._post(f"/swarm/plan-next/{project_id}", {})
+
+    async def enable_project_autonomy(self, project_id: int, enabled: bool = True) -> Dict:
+        """Enable/disable autonomous mode for a project."""
+        return await self._patch(f"/projects/{project_id}", {
+            "autonomous_mode_enabled": enabled,
+            "auto_sprint_enabled": enabled,
+        })
+
+    async def get_active_executions(self) -> List[Dict]:
+        """Get currently running executions."""
+        result = await self._get("/monitoring/executions/active")
+        if result is None:
+            return []
+        return result if isinstance(result, list) else result.get("executions", [])
+
+    # ============================================
     # AGGREGATION FOR ZERO BRIEFINGS
     # ============================================
 

@@ -16,11 +16,15 @@ google_credentials = None
 
 logger = structlog.get_logger()
 
-# OAuth scopes for Gmail
-GMAIL_SCOPES = [
+# OAuth scopes for Gmail and Calendar
+GOOGLE_SCOPES = [
+    # Gmail scopes
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.labels",
     "https://www.googleapis.com/auth/gmail.modify",
+    # Calendar scopes
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 
@@ -34,6 +38,30 @@ class GmailOAuthService:
         self.credentials_file = self.email_path / "gmail_credentials.json"
         self.tokens_file = self.email_path / "gmail_tokens.json"
         self._credentials = None
+        
+        # Auto-create credentials from environment if not exists
+        self._ensure_client_config()
+
+    def _ensure_client_config(self):
+        """Create OAuth client config from environment variables if not exists."""
+        if not self.credentials_file.exists():
+            from app.infrastructure.config import get_settings
+            settings = get_settings()
+            
+            if settings.google_client_id and settings.google_client_secret:
+                # Create credentials JSON from env vars
+                config = {
+                    "web": {
+                        "client_id": settings.google_client_id,
+                        "client_secret": settings.google_client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                        "redirect_uris": [settings.google_redirect_uri]
+                    }
+                }
+                self.set_client_config(config)
+                logger.info("gmail_client_config_created_from_env")
 
     def _load_google_modules(self):
         """Lazy load Google OAuth modules."""
@@ -94,7 +122,7 @@ class GmailOAuthService:
         try:
             return google_credentials.from_authorized_user_file(
                 str(self.tokens_file),
-                GMAIL_SCOPES
+                GOOGLE_SCOPES
             )
         except Exception as e:
             logger.error("gmail_credentials_load_failed", error=str(e))
@@ -104,7 +132,7 @@ class GmailOAuthService:
         """Save credentials to token file."""
         self.tokens_file.write_text(creds.to_json())
 
-    def get_auth_url(self, redirect_uri: str = "http://localhost:18792/api/email/auth/callback") -> Dict[str, str]:
+    def get_auth_url(self, redirect_uri: str = None) -> Dict[str, str]:
         """
         Get OAuth authorization URL for user to visit.
 
@@ -117,11 +145,17 @@ class GmailOAuthService:
                 "call set_client_config() first."
             )
 
+        # Use provided redirect_uri or get from config
+        if not redirect_uri:
+            from app.infrastructure.config import get_settings
+            settings = get_settings()
+            redirect_uri = settings.google_redirect_uri
+
         self._load_google_modules()
 
         flow = google_flow.from_client_secrets_file(
             str(self.credentials_file),
-            scopes=GMAIL_SCOPES,
+            scopes=GOOGLE_SCOPES,
             redirect_uri=redirect_uri
         )
 
@@ -169,7 +203,7 @@ class GmailOAuthService:
 
         flow = google_flow.from_client_secrets_file(
             str(self.credentials_file),
-            scopes=GMAIL_SCOPES,
+            scopes=GOOGLE_SCOPES,
             redirect_uri=redirect_uri
         )
 

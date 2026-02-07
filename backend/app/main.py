@@ -10,7 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import structlog
 
-from app.routers import sprints, tasks, orchestrator, enhancements, projects, knowledge, audio, email, calendar, assistant, money_maker, workflows, system, research
+
+from app.routers import (
+    sprints, tasks, orchestrator, enhancements, projects, knowledge, 
+    audio, email, calendar, assistant, money_maker, workflows, 
+    system, research, ecosystem, google_oauth
+)
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
 
@@ -99,11 +104,13 @@ app.include_router(knowledge.router, prefix="/api/knowledge", tags=["Knowledge"]
 app.include_router(audio.router, prefix="/api/audio", tags=["Audio"])
 app.include_router(email.router, prefix="/api/email", tags=["Email"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
+app.include_router(google_oauth.router, prefix="/api/google", tags=["Google OAuth"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["Assistant"])
 app.include_router(money_maker.router, prefix="/api/money-maker", tags=["Money Maker"])
 app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(research.router, prefix="/api/research", tags=["Research"])
+app.include_router(ecosystem.router, prefix="/api/ecosystem", tags=["Ecosystem"])
 
 
 @app.get("/")

@@ -20,8 +20,8 @@ from app.services.searxng_service import get_searxng_service
 
 logger = structlog.get_logger()
 
-# Zero project ID in Legion
-ZERO_PROJECT_ID = 7
+# Zero project ID in Legion (from config)
+ZERO_PROJECT_ID = get_settings().zero_legion_project_id
 
 DEFAULT_TOPICS = [
     {

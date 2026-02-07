@@ -1,6 +1,6 @@
 """
 Enhancement system API endpoints.
-Integrates with moltbot's enhancement system to track and create sprint tasks.
+Integrates with Zero's enhancement system to track and create sprint tasks.
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -214,7 +214,7 @@ async def dismiss_signal(signal_id: str, reason: Optional[str] = None):
 @router.post("/scan")
 async def trigger_scan():
     """Trigger a scan for new enhancement signals."""
-    # This would integrate with moltbot's enhancement system to:
+    # This would integrate with Zero's enhancement system to:
     # 1. Scan codebase for TODO/FIXME comments
     # 2. Parse error logs for patterns
     # 3. Check for performance issues

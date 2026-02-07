@@ -1,10 +1,10 @@
 # Enhancement Skill
 
-Self-improvement system for moltbot with AI-powered analysis and auto-fixes.
+Self-improvement system for Zero with AI-powered analysis and auto-fixes.
 
 ## Description
 
-Monitor moltbot's health, detect issues, prioritize improvements, and apply fixes with human-in-the-loop approval.
+Monitor Zero's health, detect issues, prioritize improvements, and apply fixes with human-in-the-loop approval.
 
 ## Data Location
 

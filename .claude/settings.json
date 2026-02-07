@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "zero",
+    "type": "python-typescript-monorepo",
+    "description": "Multi-channel bot gateway with sprint management UI"
+  },
+  "permissions": {
+    "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+    "allowedCommands": ["git", "docker", "npm", "pip", "pytest", "node"]
+  },
+  "integrations": {
+    "sprintApi": {
+      "baseUrl": "http://localhost:18792/api",
+      "enabled": true
+    }
+  },
+  "codebase": {
+    "backend": {
+      "path": "backend/",
+      "language": "python",
+      "framework": "fastapi"
+    },
+    "frontend": {
+      "path": "frontend/",
+      "language": "typescript",
+      "framework": "react"
+    },
+    "gateway": {
+      "path": "src/",
+      "language": "typescript",
+      "framework": "node"
+    }
+  }
+}

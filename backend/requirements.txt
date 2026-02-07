@@ -11,6 +11,9 @@ aiofiles>=23.2.0
 # CORS support
 python-multipart>=0.0.6
 
+# HTTP Client (Synchronous) for scripts
+requests>=2.31.0
+
 # Date/time handling
 python-dateutil>=2.8.2
 
@@ -45,3 +48,9 @@ apscheduler>=3.10.0
 
 # Fuzzy string matching (research dedup)
 thefuzz>=0.22.1
+
+# Email Automation with LangChain
+langchain-google-community>=0.1.0
+transformers>=4.36.0
+torch>=2.1.0
+sentence-transformers>=2.2.0

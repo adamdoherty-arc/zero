@@ -13,6 +13,8 @@ export interface Sprint {
   goals: string[]
   total_points: number
   completed_points: number
+  project_id?: number
+  project_name?: string
   created_at: string
   updated_at?: string
 }
@@ -22,6 +24,7 @@ export interface SprintCreate {
   description?: string
   duration_days?: number
   goals?: string[]
+  project_id?: number
 }
 
 export interface SprintUpdate {

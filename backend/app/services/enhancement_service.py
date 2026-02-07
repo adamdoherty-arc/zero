@@ -17,10 +17,18 @@ from pathlib import Path
 import structlog
 
 from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_workspace_path, get_enhancement_path
+from app.infrastructure.config import get_workspace_path, get_enhancement_path, get_settings
 from app.models.task import TaskCreate, TaskCategory, TaskPriority, TaskSource
 
 logger = structlog.get_logger()
+
+# Multi-project scan configuration: project name -> scan dirs + Legion project ID
+SCAN_PROJECTS = {
+    "zero": {"dirs": ["backend", "frontend", "skills"], "legion_id": 8},
+    "ada": {"dirs": ["src", "backend", "frontend"], "legion_id": 6},
+    "fortressos": {"dirs": ["src", "backend", "frontend"], "legion_id": 7},
+    "legion": {"dirs": ["backend", "src"], "legion_id": 3},
+}
 
 
 class SignalType(str, Enum):
@@ -57,6 +65,7 @@ class EnhancementSignal:
     confidence: float = 80.0
     impact_score: float = 50.0
     risk_score: float = 30.0
+    project_name: str = ""  # Which project this signal belongs to
 
     @property
     def priority_score(self) -> float:
@@ -124,20 +133,66 @@ class EnhancementService:
             "by_severity": {s.value: len([sig for sig in prioritized if sig.severity == s]) for s in SignalSeverity}
         }
 
-    async def _scan_code_comments(self) -> List[EnhancementSignal]:
-        """Scan code files for TODO/FIXME/HACK comments."""
+    async def scan_all_projects(self) -> Dict[str, Any]:
+        """
+        Scan all mounted project codebases for enhancement signals.
+        Returns per-project signal counts for orchestration.
+        """
+        settings = get_settings()
+        projects_root = Path(settings.projects_root)
+
+        all_signals: List[EnhancementSignal] = []
+        per_project: Dict[str, Dict[str, Any]] = {}
+
+        for project_name, config in SCAN_PROJECTS.items():
+            project_dir = projects_root / project_name
+            if not project_dir.exists():
+                logger.warning("project_dir_not_found", project=project_name, path=str(project_dir))
+                per_project[project_name] = {"signals": 0, "skipped": True}
+                continue
+
+            scan_dirs = [project_dir / d for d in config["dirs"]]
+            project_signals = await self._scan_directories(scan_dirs, project_name)
+            all_signals.extend(project_signals)
+            per_project[project_name] = {
+                "signals": len(project_signals),
+                "legion_id": config["legion_id"],
+                "skipped": False,
+            }
+            logger.info("project_scan_complete", project=project_name, signals=len(project_signals))
+
+        # Deduplicate and prioritize
+        unique_signals = self._deduplicate_signals(all_signals)
+        prioritized = sorted(unique_signals, key=lambda s: s.priority_score, reverse=True)
+
+        # Persist
+        await self._persist_signals(prioritized)
+
+        logger.info("multi_project_scan_complete",
+                     total_signals=len(prioritized),
+                     projects_scanned=len([p for p in per_project.values() if not p.get("skipped")]))
+
+        return {
+            "status": "completed",
+            "signals_found": len(prioritized),
+            "per_project": per_project,
+            "by_type": {t.value: len([s for s in prioritized if s.type == t]) for t in SignalType},
+            "by_severity": {s.value: len([sig for sig in prioritized if sig.severity == s]) for s in SignalSeverity},
+        }
+
+    async def _scan_directories(
+        self, scan_dirs: List[Path], project_name: str = ""
+    ) -> List[EnhancementSignal]:
+        """Scan directories for enhancement signals (runs in thread to avoid blocking event loop)."""
+        return await asyncio.to_thread(self._scan_directories_sync, scan_dirs, project_name)
+
+    def _scan_directories_sync(
+        self, scan_dirs: List[Path], project_name: str = ""
+    ) -> List[EnhancementSignal]:
+        """Synchronous directory scan (runs in a thread pool)."""
         signals = []
-
-        # Get workspace root (parent of workspace dir)
-        workspace = get_workspace_path()
-        project_root = workspace.parent
-
-        # Directories to scan
-        scan_dirs = [
-            project_root / "backend",
-            project_root / "frontend",
-            project_root / "skills",
-        ]
+        skip_dirs = {"node_modules", "__pycache__", ".git", "dist", "build", ".venv", "venv", ".tox"}
+        max_file_size = 512 * 1024  # Skip files > 512KB
 
         for scan_dir in scan_dirs:
             if not scan_dir.exists():
@@ -148,19 +203,39 @@ class EnhancementService:
                     continue
                 if file_path.suffix not in self.scan_extensions:
                     continue
-                if "node_modules" in str(file_path) or "__pycache__" in str(file_path):
+                if any(part in skip_dirs for part in file_path.parts):
                     continue
 
                 try:
+                    if file_path.stat().st_size > max_file_size:
+                        continue
                     content = file_path.read_text(encoding='utf-8', errors='ignore')
-                    file_signals = self._extract_signals_from_file(str(file_path), content)
+                    file_signals = self._extract_signals_from_file(
+                        str(file_path), content, project_name=project_name
+                    )
                     signals.extend(file_signals)
                 except Exception as e:
                     logger.warning("Error scanning file", file=str(file_path), error=str(e))
 
         return signals
 
-    def _extract_signals_from_file(self, file_path: str, content: str) -> List[EnhancementSignal]:
+    async def _scan_code_comments(self) -> List[EnhancementSignal]:
+        """Scan Zero's code files for TODO/FIXME/HACK comments."""
+        # Get workspace root (parent of workspace dir)
+        workspace = get_workspace_path()
+        project_root = workspace.parent
+
+        scan_dirs = [
+            project_root / "backend",
+            project_root / "frontend",
+            project_root / "skills",
+        ]
+
+        return await self._scan_directories(scan_dirs, project_name="zero")
+
+    def _extract_signals_from_file(
+        self, file_path: str, content: str, project_name: str = ""
+    ) -> List[EnhancementSignal]:
         """Extract signals from a single file."""
         signals = []
         lines = content.split('\n')
@@ -187,7 +262,8 @@ class EnhancementService:
                         context=self._get_context(lines, line_num),
                         confidence=confidence,
                         impact_score=impact,
-                        risk_score=self._calculate_risk(signal_type)
+                        risk_score=self._calculate_risk(signal_type),
+                        project_name=project_name,
                     )
                     signals.append(signal)
 
@@ -278,7 +354,8 @@ class EnhancementService:
                 "confidence": s.confidence,
                 "impact_score": s.impact_score,
                 "risk_score": s.risk_score,
-                "priority_score": s.priority_score
+                "priority_score": s.priority_score,
+                "project_name": s.project_name,
             })
 
         data["signals"] = signal_dicts

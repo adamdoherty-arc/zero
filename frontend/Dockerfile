@@ -2,9 +2,9 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY package.json .
-RUN npm install
+# Install dependencies (copy lock file for deterministic installs)
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Copy source
 COPY . .

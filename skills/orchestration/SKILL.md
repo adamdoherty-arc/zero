@@ -95,8 +95,8 @@ config:
   jsonMode: false  # Set true for JSON output
 ```
 
-### `skill` - Execute Moltbot Skill
-Run another moltbot skill.
+### `skill` - Execute Zero Skill
+Run another Zero skill.
 
 ```yaml
 type: skill

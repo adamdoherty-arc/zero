@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "lastUpdated": null,
+  "patterns": {
+    "backend": [
+      "FastAPI router pattern with dependency injection",
+      "Pydantic models for request/response validation",
+      "JsonStorage class for file-based persistence",
+      "structlog for structured logging"
+    ],
+    "frontend": [
+      "React Query hooks for data fetching",
+      "Zustand stores for global state",
+      "Tailwind CSS utility classes",
+      "Lucide React icons"
+    ],
+    "gateway": [
+      "TypeScript Node.js service",
+      "Multi-channel message routing",
+      "Docker container deployment"
+    ]
+  },
+  "preferences": {
+    "codeStyle": "PEP8 for Python, ESLint for TypeScript",
+    "testing": "pytest for backend, vitest for frontend",
+    "commits": "conventional commits format"
+  },
+  "context": {
+    "recentFiles": [],
+    "activeFeature": null,
+    "currentSprint": null
+  }
+}

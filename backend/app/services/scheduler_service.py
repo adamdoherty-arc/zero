@@ -49,9 +49,9 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "enhancement_scan": {
-        "cron": "0 9 * * *",  # 9:00 AM daily
+        "cron": "0 9 * * *",  # 9:00 AM daily (superseded by autonomous_enhancement_cycle)
         "description": "Scan projects for enhancement signals",
-        "enabled": True
+        "enabled": False
     },
     "health_aggregation": {
         "cron": "0 */4 * * *",  # Every 4 hours
@@ -78,10 +78,15 @@ DAILY_SCHEDULE = {
         "description": "Generate and send daily email digest",
         "enabled": True
     },
-    "legion_enhancement_sync": {
-        "cron": "30 9 * * *",  # 9:30 AM daily (after enhancement scan)
-        "description": "Auto-create Legion tasks from enhancement signals",
+    "email_automation_check": {
+        "cron": "*/5 * * * *",  # Every 5 minutes
+        "description": "Process new emails through automation workflow",
         "enabled": True
+    },
+    "legion_enhancement_sync": {
+        "cron": "30 9 * * *",  # 9:30 AM daily (superseded by autonomous_enhancement_cycle)
+        "description": "Auto-create Legion tasks from enhancement signals",
+        "enabled": False
     },
     "email_to_tasks": {
         "cron": "0 10 * * *",  # 10:00 AM daily
@@ -126,6 +131,43 @@ DAILY_SCHEDULE = {
     "research_weekly_deep_dive": {
         "cron": "0 10 * * 6",  # Saturday 10:00 AM
         "description": "Weekly deep dive research with expanded search and trend report",
+        "enabled": True
+    },
+    # Ecosystem sync (S70)
+    "ecosystem_quick_sync": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Quick ecosystem sync from Legion (lightweight)",
+        "enabled": True
+    },
+    "ecosystem_full_sync": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Full ecosystem sync with all project data",
+        "enabled": True
+    },
+    "ecosystem_execution_monitor": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Monitor Legion autonomous execution status",
+        "enabled": True
+    },
+    "ecosystem_lifecycle_check": {
+        "cron": "55 6 * * *",  # 6:55 AM daily (before briefing)
+        "description": "Detect sprint lifecycle events across all projects",
+        "enabled": True
+    },
+    # Autonomous orchestration (S70 Phase 2)
+    "autonomous_daily_orchestration": {
+        "cron": "0 8 * * *",  # 8:00 AM daily
+        "description": "Full autopilot: sync ecosystem, trigger swarm execution, plan sprints",
+        "enabled": True
+    },
+    "autonomous_continuous_monitor": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Monitor for failed/stuck executions across all projects",
+        "enabled": True
+    },
+    "autonomous_enhancement_cycle": {
+        "cron": "0 9 * * *",  # 9:00 AM daily
+        "description": "Multi-project enhancement scan + auto-create Legion tasks",
         "enabled": True
     },
 }
@@ -271,6 +313,7 @@ class SchedulerService:
             "money_maker_weekly_report": self._run_money_maker_weekly_report,
             "gmail_check": self._run_gmail_check,
             "gmail_digest": self._run_gmail_digest,
+            "email_automation_check": self._run_email_automation_check,
             "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
             "meeting_prep": self._run_meeting_prep,
@@ -281,6 +324,15 @@ class SchedulerService:
             "backup_weekly": self._run_backup_weekly,
             "research_daily": self._run_research_daily,
             "research_weekly_deep_dive": self._run_research_weekly_deep_dive,
+            # Ecosystem (S70)
+            "ecosystem_quick_sync": self._run_ecosystem_quick_sync,
+            "ecosystem_full_sync": self._run_ecosystem_full_sync,
+            "ecosystem_execution_monitor": self._run_ecosystem_execution_monitor,
+            "ecosystem_lifecycle_check": self._run_ecosystem_lifecycle_check,
+            # Autonomous orchestration (S70 Phase 2)
+            "autonomous_daily_orchestration": self._run_autonomous_daily_orchestration,
+            "autonomous_continuous_monitor": self._run_autonomous_continuous_monitor,
+            "autonomous_enhancement_cycle": self._run_autonomous_enhancement_cycle,
         }
         return handlers.get(job_name)
 
@@ -614,6 +666,45 @@ Have a great evening!"""
         except Exception as e:
             logger.error("gmail_digest_failed", error=str(e))
 
+    async def _run_email_automation_check(self):
+        """
+        Email automation check every 5 minutes.
+        Processes new unread emails through the automation workflow.
+        """
+        logger.info("running_email_automation_check")
+        try:
+            from app.infrastructure.config import get_settings
+            from app.services.email_automation_service import get_email_automation_service
+            from app.services.gmail_service import get_gmail_service
+
+            settings = get_settings()
+
+            if not settings.email_automation_enabled:
+                logger.debug("email_automation_disabled")
+                return
+
+            gmail = get_gmail_service()
+            if not gmail.is_connected():
+                return  # Gmail not configured, skip silently
+
+            # First, sync new emails
+            await gmail.sync_incremental()
+
+            # Then process them through automation
+            automation = get_email_automation_service()
+            result = await automation.process_new_emails()
+
+            if result.get("processed", 0) > 0:
+                logger.info(
+                    "email_automation_check_complete",
+                    processed=result.get("processed"),
+                    succeeded=result.get("succeeded"),
+                    questions=result.get("questions_created")
+                )
+
+        except Exception as e:
+            logger.debug("email_automation_check_skipped", error=str(e))
+
     # ============================================
     # LEGION INTEGRATION HANDLERS (Sprint 43)
     # ============================================
@@ -721,6 +812,102 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.error("research_weekly_failed", error=str(e))
+
+    # ============================================
+    # ECOSYSTEM HANDLERS (S70)
+    # ============================================
+
+    async def _run_ecosystem_quick_sync(self):
+        """Quick ecosystem sync — lightweight poll of Legion."""
+        logger.info("running_ecosystem_quick_sync")
+        try:
+            from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+            svc = get_ecosystem_sync_service()
+            result = await svc.quick_sync()
+            logger.info("ecosystem_quick_sync_done", **{k: v for k, v in result.items() if k != "status"})
+        except Exception as e:
+            logger.error("ecosystem_quick_sync_failed", error=str(e))
+
+    async def _run_ecosystem_full_sync(self):
+        """Full ecosystem sync — deep fetch of all project data."""
+        logger.info("running_ecosystem_full_sync")
+        try:
+            from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+            svc = get_ecosystem_sync_service()
+            result = await svc.full_sync()
+            logger.info("ecosystem_full_sync_done", **{k: v for k, v in result.items() if k != "status"})
+        except Exception as e:
+            logger.error("ecosystem_full_sync_failed", error=str(e))
+
+    async def _run_ecosystem_execution_monitor(self):
+        """Monitor Legion autonomous execution status."""
+        logger.info("running_ecosystem_execution_monitor")
+        try:
+            from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+            svc = get_ecosystem_sync_service()
+            result = await svc.sync_executions()
+            if result.get("new_failures", 0) > 0:
+                logger.warning("ecosystem_execution_failures_detected", failures=result["new_failures"])
+        except Exception as e:
+            logger.error("ecosystem_execution_monitor_failed", error=str(e))
+
+    async def _run_ecosystem_lifecycle_check(self):
+        """Detect sprint lifecycle events across all projects."""
+        logger.info("running_ecosystem_lifecycle_check")
+        try:
+            from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+            svc = get_ecosystem_sync_service()
+            events = await svc.detect_lifecycle_events()
+            if events:
+                logger.info("ecosystem_lifecycle_events", count=len(events))
+        except Exception as e:
+            logger.error("ecosystem_lifecycle_check_failed", error=str(e))
+
+    # ============================================
+    # AUTONOMOUS ORCHESTRATION HANDLERS (S70 Phase 2)
+    # ============================================
+
+    async def _run_autonomous_daily_orchestration(self):
+        """Full autopilot: sync, trigger swarm, plan sprints across all projects."""
+        logger.info("running_autonomous_daily_orchestration")
+        try:
+            from app.services.autonomous_orchestration_service import get_orchestration_service
+            svc = get_orchestration_service()
+            result = await svc.run_daily_orchestration()
+            logger.info(
+                "autonomous_daily_orchestration_complete",
+                actions=result.get("actions_taken", 0),
+                errors=result.get("errors", 0),
+            )
+        except Exception as e:
+            logger.error("autonomous_daily_orchestration_failed", error=str(e))
+
+    async def _run_autonomous_continuous_monitor(self):
+        """Monitor for failed/stuck executions across all projects."""
+        logger.info("running_autonomous_continuous_monitor")
+        try:
+            from app.services.autonomous_orchestration_service import get_orchestration_service
+            svc = get_orchestration_service()
+            result = await svc.run_continuous_monitor()
+            if result.get("issue_count", 0) > 0:
+                logger.warning("autonomous_monitor_issues", count=result["issue_count"])
+        except Exception as e:
+            logger.error("autonomous_continuous_monitor_failed", error=str(e))
+
+    async def _run_autonomous_enhancement_cycle(self):
+        """Multi-project enhancement scan + auto-create Legion tasks."""
+        logger.info("running_autonomous_enhancement_cycle")
+        try:
+            from app.services.autonomous_orchestration_service import get_orchestration_service
+            svc = get_orchestration_service()
+            result = await svc.run_enhancement_cycle()
+            logger.info(
+                "autonomous_enhancement_cycle_complete",
+                signals=result.get("signals_found", 0),
+                tasks=result.get("tasks_created", 0),
+            )
+        except Exception as e:
+            logger.error("autonomous_enhancement_cycle_failed", error=str(e))
 
     # ============================================
     # UTILITIES

@@ -1,0 +1,14 @@
+{
+  "actions": [
+    {
+      "timestamp": "2026-02-07T14:15:26.102666",
+      "email_id": "test_msg_1770473726",
+      "subject": "Test Newsletter",
+      "from": "news@example.com",
+      "classification": "newsletter",
+      "confidence": 0.95,
+      "action": "archive",
+      "reversible": true
+    }
+  ]
+}

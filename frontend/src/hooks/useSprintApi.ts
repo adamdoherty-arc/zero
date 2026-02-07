@@ -7,7 +7,7 @@ import type {
   GitHubConnectRequest, GitHubStatus, GitHubSyncResult,
   Note, NoteCreate, NoteUpdate, NoteType,
   UserProfile, UserProfileUpdate, UserFact, UserContact,
-  RecallRequest, RecallResult, KnowledgeStats,
+  RecallResult, KnowledgeStats,
   TranscriptionResult, TranscriptionJob, TranscriptionStatus,
   WhisperModel, WhisperModelInfo, TranscribeToNoteResult,
   Email, EmailSummary, EmailLabel, EmailDigest, EmailSyncStatus,
@@ -24,7 +24,7 @@ const API_BASE = '/api'
 export const sprintKeys = {
   all: ['sprints'] as const,
   lists: () => [...sprintKeys.all, 'list'] as const,
-  list: () => [...sprintKeys.lists()] as const,
+  list: (filters?: { project_id?: number; status?: string }) => [...sprintKeys.lists(), filters] as const,
   current: () => [...sprintKeys.all, 'current'] as const,
   detail: (id: string) => [...sprintKeys.all, 'detail', id] as const,
   board: (id: string) => [...sprintKeys.all, 'board', id] as const,
@@ -76,10 +76,16 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Sprint hooks
-export function useSprints() {
+export function useSprints(filters?: { project_id?: number; status?: string }) {
   return useQuery({
-    queryKey: sprintKeys.list(),
-    queryFn: () => fetchApi<Sprint[]>('/sprints'),
+    queryKey: sprintKeys.list(filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (filters?.project_id) params.set('project_id', String(filters.project_id))
+      if (filters?.status) params.set('status', filters.status)
+      const queryStr = params.toString()
+      return fetchApi<Sprint[]>(`/sprints${queryStr ? `?${queryStr}` : ''}`)
+    },
   })
 }
 
@@ -1287,6 +1293,201 @@ export function useClearNotifications() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: assistantKeys.notifications() })
+    },
+  })
+}
+
+// ============================================
+// Ecosystem (S70)
+// ============================================
+
+export interface EcosystemProject {
+  id: number
+  name: string
+  status: string
+  tech_stack: Record<string, unknown>
+  current_sprint: {
+    id: number
+    name: string
+    status: string
+    total_tasks: number
+    completed_tasks: number
+  } | null
+  task_summary: {
+    total: number
+    completed: number
+    in_progress: number
+    blocked: number
+  }
+  health_score: number
+  completion_rate: number
+  blocked_ratio: number
+}
+
+export interface EcosystemStatus {
+  projects: EcosystemProject[]
+  total_projects: number
+  total_active_sprints: number
+  total_blocked_tasks: number
+  overall_health: number
+  alert_count: number
+  last_quick_sync: string | null
+  last_full_sync: string | null
+  hint?: string
+}
+
+export interface EcosystemAlert {
+  id: string
+  type: string
+  severity: 'critical' | 'warning' | 'info'
+  project: string
+  sprint_id?: number
+  sprint_name?: string
+  message: string
+  error?: string
+  generated_at?: string
+}
+
+export interface EcosystemTimeline {
+  id: number
+  project_id: number
+  project_name: string
+  name: string
+  status: string
+  total_tasks: number
+  completed_tasks: number
+  failed_tasks: number
+  planned_start?: string
+  planned_end?: string
+  progress: number
+}
+
+export const ecosystemKeys = {
+  all: ['ecosystem'] as const,
+  status: () => [...ecosystemKeys.all, 'status'] as const,
+  alerts: () => [...ecosystemKeys.all, 'alerts'] as const,
+  timeline: () => [...ecosystemKeys.all, 'timeline'] as const,
+  suggestions: () => [...ecosystemKeys.all, 'suggestions'] as const,
+  syncStatus: () => [...ecosystemKeys.all, 'sync-status'] as const,
+}
+
+export function useEcosystemStatus() {
+  return useQuery({
+    queryKey: ecosystemKeys.status(),
+    queryFn: () => fetchApi<EcosystemStatus>('/ecosystem/status'),
+    refetchInterval: 30000,
+  })
+}
+
+export function useEcosystemAlerts() {
+  return useQuery({
+    queryKey: ecosystemKeys.alerts(),
+    queryFn: () => fetchApi<{ alerts: EcosystemAlert[]; count: number; critical: number; warning: number }>('/ecosystem/alerts'),
+    refetchInterval: 30000,
+  })
+}
+
+export function useEcosystemTimeline() {
+  return useQuery({
+    queryKey: ecosystemKeys.timeline(),
+    queryFn: () => fetchApi<{ sprints: EcosystemTimeline[]; count: number }>('/ecosystem/timeline'),
+    refetchInterval: 60000,
+  })
+}
+
+export function useEcosystemSuggestions() {
+  return useQuery({
+    queryKey: ecosystemKeys.suggestions(),
+    queryFn: () => fetchApi<{ suggestions: string[]; count: number }>('/ecosystem/suggestions'),
+    refetchInterval: 60000,
+  })
+}
+
+export function useTriggerEcosystemSync() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (full: boolean = false) =>
+      fetchApi<Record<string, unknown>>(`/ecosystem/sync/trigger?full=${full}`, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ecosystemKeys.all })
+    },
+  })
+}
+
+// ============================================
+// Orchestration / Autopilot (S70 Phase 2)
+// ============================================
+
+export interface OrchestrationLogEntry {
+  action: string
+  result: string
+  details: Record<string, unknown>
+  timestamp: string
+}
+
+export interface OrchestrationAction {
+  action: string
+  project?: string
+  project_id?: number
+  sprint_id?: number
+  pending_tasks?: number
+  error?: string
+  [key: string]: unknown
+}
+
+export interface OrchestrationStatusResponse {
+  last_daily_orchestration: OrchestrationLogEntry | null
+  last_continuous_monitor: OrchestrationLogEntry | null
+  last_enhancement_cycle: OrchestrationLogEntry | null
+  total_actions: number
+  recent_actions: OrchestrationLogEntry[]
+}
+
+export interface OrchestrationTriggerResult {
+  status: string
+  actions: OrchestrationAction[]
+  errors: { step: string; error: string }[]
+  actions_taken: number
+  errors_count?: number
+  projects_processed: number
+}
+
+export const orchestrationKeys = {
+  all: ['orchestration'] as const,
+  status: () => [...orchestrationKeys.all, 'status'] as const,
+  log: (limit?: number) => [...orchestrationKeys.all, 'log', limit] as const,
+}
+
+export function useOrchestrationStatus() {
+  return useQuery({
+    queryKey: orchestrationKeys.status(),
+    queryFn: () => fetchApi<OrchestrationStatusResponse>('/ecosystem/orchestration/status'),
+    refetchInterval: 30000,
+  })
+}
+
+export function useOrchestrationLog(limit: number = 50) {
+  return useQuery({
+    queryKey: orchestrationKeys.log(limit),
+    queryFn: () => fetchApi<{ entries: OrchestrationLogEntry[]; count: number }>(
+      `/ecosystem/orchestration/log?limit=${limit}`
+    ),
+    refetchInterval: 30000,
+  })
+}
+
+export function useTriggerOrchestration() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchApi<OrchestrationTriggerResult>('/ecosystem/orchestration/trigger', {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orchestrationKeys.all })
+      queryClient.invalidateQueries({ queryKey: ecosystemKeys.all })
     },
   })
 }

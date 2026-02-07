@@ -1,6 +1,6 @@
-# Moltbot - Personal AI Assistant
+# Zero - Personal AI Assistant (OpenClaw.ai)
 
-WhatsApp-integrated AI assistant powered by Claude.
+Multi-channel AI assistant powered by Claude, built on [OpenClaw.ai](https://openclaw.ai).
 
 ## Quick Start
 
@@ -17,7 +17,7 @@ WhatsApp-integrated AI assistant powered by Claude.
 
 3. **Pair WhatsApp** (requires interactive terminal):
    ```bash
-   docker exec -it moltbot-gateway node dist/index.js configure --section channels
+   docker exec -it zero-gateway node dist/index.js configure --section channels
    ```
    - Select "WhatsApp" when prompted
    - Scan the QR code with WhatsApp (Settings > Linked Devices > Link a Device)
@@ -40,29 +40,29 @@ docker-compose down
 docker-compose logs -f
 
 # Gateway only
-docker logs -f moltbot-gateway
+docker logs -f zero-gateway
 ```
 
 ### Run CLI Commands
 ```bash
 # Run doctor health check
-docker exec moltbot-gateway node dist/index.js doctor
+docker exec zero-gateway node dist/index.js doctor
 
 # Configure channels (WhatsApp)
-docker exec -it moltbot-gateway node dist/index.js configure --section channels
+docker exec -it zero-gateway node dist/index.js configure --section channels
 
 # Check gateway status
-docker exec moltbot-gateway node dist/index.js doctor
+docker exec zero-gateway node dist/index.js doctor
 ```
 
 ### Restart Services
 ```bash
-docker-compose restart moltbot-gateway
+docker-compose restart zero-gateway
 ```
 
 ## Configuration
 
-- **Config file**: `./config/moltbot.json`
+- **Config file**: `./config/zero.json`
 - **Workspace**: `./workspace/`
 - **Environment**: `.env`
 
@@ -80,14 +80,14 @@ docker-compose restart moltbot-gateway
 ### WhatsApp disconnected
 Re-run channel configuration:
 ```bash
-docker exec -it moltbot-gateway node dist/index.js configure --section channels
+docker exec -it zero-gateway node dist/index.js configure --section channels
 ```
 
 ### Gateway not responding
 Check logs and restart:
 ```bash
-docker logs moltbot-gateway
-docker-compose restart moltbot-gateway
+docker logs zero-gateway
+docker-compose restart zero-gateway
 ```
 
 ### API key issues
@@ -108,15 +108,15 @@ docker-compose up -d
 
 ### Run doctor to diagnose
 ```bash
-docker exec moltbot-gateway node dist/index.js doctor
+docker exec zero-gateway node dist/index.js doctor
 ```
 
 ## File Structure
 
 ```
-moltbot/
+zero/
 ├── config/
-│   └── moltbot.json     # Bot configuration
+│   └── zero.json        # Bot configuration
 ├── workspace/           # Bot workspace/sessions
 ├── docker-compose.yml   # Docker services
 ├── .env                 # Environment variables (API keys, tokens)
@@ -125,7 +125,7 @@ moltbot/
 
 ## Security Notes
 
-- The gateway token is stored in `.env` and `config/moltbot.json`
+- The gateway token is stored in `.env` and `config/zero.json`
 - Keep your Anthropic API key secure
 - The gateway is bound to LAN - ensure your network is trusted
-- Run `docker exec moltbot-gateway node dist/index.js security audit --deep` for security checks
+- Run `docker exec zero-gateway node dist/index.js security audit --deep` for security checks

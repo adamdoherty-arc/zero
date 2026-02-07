@@ -128,7 +128,7 @@ async function setupChannels() {
   console.log('='.repeat(50));
   console.log(JSON.stringify(channelIds, null, 2));
   console.log('');
-  console.log('Add these to your moltbot.json allowChannels:');
+  console.log('Add these to your zero.json allowChannels:');
   console.log(JSON.stringify(Object.values(channelIds), null, 2));
 
   return channelIds;

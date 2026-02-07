@@ -109,7 +109,14 @@ export function SprintList({ sprints }: SprintListProps) {
                       </span>
                       <span className="text-gray-500 text-sm">Sprint {sprint.number}</span>
                     </div>
-                    <h3 className="font-semibold text-lg">{sprint.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-lg">{sprint.name}</h3>
+                      {sprint.project_name && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">
+                          {sprint.project_name}
+                        </span>
+                      )}
+                    </div>
                     {sprint.description && (
                       <p className="text-gray-400 text-sm mt-1">{sprint.description}</p>
                     )}
@@ -123,7 +130,7 @@ export function SprintList({ sprints }: SprintListProps) {
                         />
                       </div>
                       <span className="text-sm text-gray-400">
-                        {sprint.completed_points}/{sprint.total_points} pts ({progress}%)
+                        {sprint.completed_points}/{sprint.total_points} tasks ({progress}%)
                       </span>
                     </div>
                   </div>
