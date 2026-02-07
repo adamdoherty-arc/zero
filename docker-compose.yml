@@ -1,0 +1,57 @@
+services:
+  zero-gateway:
+    image: moltbot/moltbot:latest
+    container_name: zero-gateway
+    restart: always
+    ports:
+      - "${CLAWDBOT_GATEWAY_PORT:-18789}:18789"
+      - "${CLAWDBOT_BRIDGE_PORT:-18790}:18790"
+    environment:
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - GH_TOKEN=${GH_TOKEN}
+      - CLAWDBOT_CONFIG_PATH=/config/zero.json
+      - CLAWDBOT_STATE_DIR=/workspace
+    volumes:
+      - ${CLAWDBOT_CONFIG_DIR:-./config}:/config
+      - ${CLAWDBOT_WORKSPACE_DIR:-./workspace}:/workspace
+      - ${CLAWDBOT_SKILLS_DIR:-./skills}:/app/skills-custom
+    entrypoint: ""
+    command: ["node", "dist/index.js", "gateway"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18789/',res=>{process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  zero-cli:
+    image: moltbot/moltbot:latest
+    container_name: zero-cli
+    environment:
+      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - CLAWDBOT_GATEWAY_URL=ws://zero-gateway:18789
+      - CLAWDBOT_CONFIG_PATH=/config/zero.json
+      - CLAWDBOT_STATE_DIR=/workspace
+    volumes:
+      - ${CLAWDBOT_CONFIG_DIR:-./config}:/config
+      - ${CLAWDBOT_WORKSPACE_DIR:-./workspace}:/workspace
+    depends_on:
+      - zero-gateway
+    profiles:
+      - cli
+    entrypoint: ""
+    stdin_open: true
+    tty: true

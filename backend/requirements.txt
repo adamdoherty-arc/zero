@@ -1,0 +1,47 @@
+# FastAPI Backend Requirements
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Async file operations
+aiofiles>=23.2.0
+
+# CORS support
+python-multipart>=0.0.6
+
+# Date/time handling
+python-dateutil>=2.8.2
+
+# LLM Integration (Ollama via OpenAI-compatible API)
+openai>=1.10.0
+httpx>=0.26.0
+
+# Logging
+structlog>=24.1.0
+
+# Audio Transcription (Local Whisper)
+faster-whisper>=1.0.0
+
+# Google APIs (Gmail, Calendar)
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-api-python-client>=2.108.0
+
+# Legion Integration (HTTP client)
+aiohttp>=3.9.0
+
+# LangGraph Orchestration
+langgraph>=1.0.8
+langchain-core>=1.2.0
+
+# PostgreSQL checkpointing for LangGraph (optional, for crash recovery)
+langgraph-checkpoint-postgres>=1.0.0
+psycopg[binary]>=3.1.0
+
+# Task Scheduling
+apscheduler>=3.10.0
+
+# Fuzzy string matching (research dedup)
+thefuzz>=0.22.1

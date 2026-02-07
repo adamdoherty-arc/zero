@@ -1,0 +1,33 @@
+# SearXNG - Self-hosted meta search engine for Money Maker
+# Provides free unlimited web searches across Google, Bing, DuckDuckGo, etc.
+#
+# Usage:
+#   docker compose -f docker-compose.searxng.yml up -d
+#
+# Test:
+#   curl "http://localhost:8888/search?q=test&format=json"
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: zero-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./config/searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+      - SEARXNG_SECRET=zero-money-maker-secret-key
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    restart: unless-stopped
+    networks:
+      - zero-network
+
+networks:
+  zero-network:
+    external: true

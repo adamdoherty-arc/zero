@@ -1,0 +1,63 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data & workspace
+workspace/
+backups/
+
+# Node.js
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+
+# Temp/scratch files from dev sessions
+*.tmp
+*.bak
+nul
+c:*
+codemoltbot*
+tmp_*.json
+tmp_*.py
+s3[0-9].json
+s4[0-9].json
+s5[0-9].json
+s6[0-9].json
+sp.json
+sp_now.json
+all_sp.json
+all_sprints.json
+sprints_tmp.json
+tmpsprints.json
+tmps*.json
+tasks_*.json
+zero_health.json
+parse_sp.py
+update_s*.py
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# SearXNG runtime data (config is tracked)
+config/searxng/uwsgi.ini
