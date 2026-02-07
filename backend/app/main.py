@@ -12,9 +12,9 @@ import structlog
 
 
 from app.routers import (
-    sprints, tasks, orchestrator, enhancements, projects, knowledge, 
-    audio, email, calendar, assistant, money_maker, workflows, 
-    system, research, ecosystem, google_oauth
+    sprints, tasks, orchestrator, enhancements, projects, knowledge,
+    audio, email, calendar, assistant, money_maker, workflows,
+    system, research, ecosystem, google_oauth, qa, notion
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -111,6 +111,8 @@ app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"]
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(research.router, prefix="/api/research", tags=["Research"])
 app.include_router(ecosystem.router, prefix="/api/ecosystem", tags=["Ecosystem"])
+app.include_router(qa.router, prefix="/api/qa", tags=["QA Verification"])
+app.include_router(notion.router, prefix="/api/notion", tags=["Notion"])
 
 
 @app.get("/")
