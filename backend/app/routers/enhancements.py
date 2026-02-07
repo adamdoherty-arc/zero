@@ -214,16 +214,69 @@ async def dismiss_signal(signal_id: str, reason: Optional[str] = None):
 @router.post("/scan")
 async def trigger_scan():
     """Trigger a scan for new enhancement signals."""
-    # This would integrate with Zero's enhancement system to:
-    # 1. Scan codebase for TODO/FIXME comments
-    # 2. Parse error logs for patterns
-    # 3. Check for performance issues
-    # 4. Run static analysis
+    from app.services.enhancement_service import get_enhancement_service
 
     logger.info("Enhancement scan triggered")
+    svc = get_enhancement_service()
+    result = await svc.scan_all_projects()
 
     return {
-        "status": "scanning",
-        "message": "Enhancement scan initiated",
-        "scan_types": ["todo_comments", "error_logs", "performance_metrics"]
+        "status": "completed",
+        "message": "Enhancement scan complete",
+        **result,
+    }
+
+
+# ============================================
+# DAILY IMPROVEMENT ENDPOINTS
+# ============================================
+
+@router.get("/improvement/metrics")
+async def get_improvement_metrics():
+    """Get daily improvement metrics and trends."""
+    from app.services.daily_improvement_service import get_daily_improvement_service
+
+    svc = get_daily_improvement_service()
+    return await svc.get_metrics()
+
+
+@router.get("/improvement/plan")
+async def get_improvement_plan():
+    """Get today's daily improvement plan."""
+    from app.services.daily_improvement_service import get_daily_improvement_service
+
+    svc = get_daily_improvement_service()
+    return await svc.get_todays_plan()
+
+
+@router.post("/improvement/run-cycle")
+async def trigger_improvement_cycle():
+    """
+    Manually trigger the full daily improvement cycle:
+    plan -> execute -> verify.
+    """
+    from app.services.daily_improvement_service import get_daily_improvement_service
+
+    logger.info("Manual improvement cycle triggered")
+    svc = get_daily_improvement_service()
+
+    # Phase 1: Plan
+    plan_result = await svc.create_daily_plan()
+    if plan_result.get("status") == "empty":
+        return {"status": "empty", "reason": plan_result.get("summary")}
+
+    # Phase 2: Execute
+    exec_result = await svc.execute_daily_plan()
+
+    # Phase 3: Verify
+    verify_result = await svc.verify_daily_plan()
+
+    return {
+        "status": "completed",
+        "plan": plan_result.get("summary"),
+        "execution": {
+            "auto_fixes": exec_result.get("auto_fixes_applied", 0),
+            "total": exec_result.get("total_improvements", 0),
+        },
+        "verification": verify_result,
     }

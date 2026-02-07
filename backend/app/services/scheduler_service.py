@@ -170,6 +170,28 @@ DAILY_SCHEDULE = {
         "description": "Multi-project enhancement scan + auto-create Legion tasks",
         "enabled": True
     },
+    # QA Verification
+    "qa_verification": {
+        "cron": "0 6 * * *",  # 6:00 AM daily
+        "description": "Full QA verification of all systems (Docker, build, types, API, logs)",
+        "enabled": True
+    },
+    # Daily Self-Improvement Cycle
+    "daily_improvement_plan": {
+        "cron": "15 9 * * *",  # 9:15 AM daily (after enhancement scan)
+        "description": "Select top 5 improvements for today's cycle",
+        "enabled": True
+    },
+    "daily_improvement_execute": {
+        "cron": "30 9 * * *",  # 9:30 AM daily (after planning)
+        "description": "Execute today's improvement plan (auto-fix + task creation)",
+        "enabled": True
+    },
+    "daily_improvement_verify": {
+        "cron": "0 10 * * *",  # 10:00 AM daily (after execution)
+        "description": "Verify improvements were successful, update metrics",
+        "enabled": True
+    },
 }
 
 
@@ -333,6 +355,12 @@ class SchedulerService:
             "autonomous_daily_orchestration": self._run_autonomous_daily_orchestration,
             "autonomous_continuous_monitor": self._run_autonomous_continuous_monitor,
             "autonomous_enhancement_cycle": self._run_autonomous_enhancement_cycle,
+            # QA Verification
+            "qa_verification": self._run_qa_verification,
+            # Daily Self-Improvement
+            "daily_improvement_plan": self._run_daily_improvement_plan,
+            "daily_improvement_execute": self._run_daily_improvement_execute,
+            "daily_improvement_verify": self._run_daily_improvement_verify,
         }
         return handlers.get(job_name)
 
@@ -908,6 +936,74 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.error("autonomous_enhancement_cycle_failed", error=str(e))
+
+    async def _run_qa_verification(self):
+        """Daily QA verification of all systems."""
+        logger.info("running_qa_verification")
+        try:
+            from app.services.qa_verification_service import get_qa_verification_service
+            svc = get_qa_verification_service()
+            report = await svc.run_full_verification(
+                trigger="scheduled",
+                auto_create_tasks=False,  # Don't auto-create tasks on scheduled runs
+            )
+            logger.info(
+                "qa_verification_complete",
+                report_id=report.report_id,
+                status=report.overall_status.value,
+                passed=report.passed_count,
+                failed=report.failed_count,
+            )
+        except Exception as e:
+            logger.error("qa_verification_failed", error=str(e))
+
+    # ============================================
+    # DAILY SELF-IMPROVEMENT HANDLERS
+    # ============================================
+
+    async def _run_daily_improvement_plan(self):
+        """Select top 5 improvements for today."""
+        logger.info("running_daily_improvement_plan")
+        try:
+            from app.services.daily_improvement_service import get_daily_improvement_service
+            svc = get_daily_improvement_service()
+            result = await svc.create_daily_plan()
+            logger.info(
+                "daily_improvement_plan_complete",
+                improvements=len(result.get("selected_improvements", [])),
+            )
+        except Exception as e:
+            logger.error("daily_improvement_plan_failed", error=str(e))
+
+    async def _run_daily_improvement_execute(self):
+        """Execute today's improvement plan."""
+        logger.info("running_daily_improvement_execute")
+        try:
+            from app.services.daily_improvement_service import get_daily_improvement_service
+            svc = get_daily_improvement_service()
+            result = await svc.execute_daily_plan()
+            logger.info(
+                "daily_improvement_execute_complete",
+                auto_fixes=result.get("auto_fixes_applied", 0),
+                total=result.get("total_improvements", 0),
+            )
+        except Exception as e:
+            logger.error("daily_improvement_execute_failed", error=str(e))
+
+    async def _run_daily_improvement_verify(self):
+        """Verify today's improvements and update metrics."""
+        logger.info("running_daily_improvement_verify")
+        try:
+            from app.services.daily_improvement_service import get_daily_improvement_service
+            svc = get_daily_improvement_service()
+            result = await svc.verify_daily_plan()
+            logger.info(
+                "daily_improvement_verify_complete",
+                verified=result.get("verified", 0),
+                failed=result.get("failed", 0),
+            )
+        except Exception as e:
+            logger.error("daily_improvement_verify_failed", error=str(e))
 
     # ============================================
     # UTILITIES

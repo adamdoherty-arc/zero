@@ -272,7 +272,7 @@ class AutonomousOrchestrationService:
 
     async def run_enhancement_cycle(self) -> Dict[str, Any]:
         """
-        Multi-project enhancement scan + auto-create Legion tasks.
+        Multi-project enhancement scan + auto-create Legion tasks + daily improvement plan.
         Replaces the old separate enhancement_scan + legion_enhancement_sync jobs.
         """
         logger.info("autonomous_enhancement_cycle_start")
@@ -300,11 +300,25 @@ class AutonomousOrchestrationService:
             logger.error("enhancement_task_creation_failed", error=str(e))
             task_result = {"status": "error", "error": str(e), "tasks_created": 0}
 
+        # Step 3: Create daily improvement plan (new — select top 5 for auto-improvement)
+        daily_plan_result = {}
+        try:
+            from app.services.daily_improvement_service import get_daily_improvement_service
+            daily_svc = get_daily_improvement_service()
+            daily_plan_result = await daily_svc.create_daily_plan()
+            logger.info("daily_improvement_plan_created",
+                        improvements=len(daily_plan_result.get("selected_improvements", [])))
+        except Exception as e:
+            logger.error("daily_improvement_plan_failed", error=str(e))
+            daily_plan_result = {"status": "error", "error": str(e)}
+
         summary = {
             "signals_found": scan_result.get("signals_found", 0),
+            "new_signals": scan_result.get("new_signals", 0),
             "per_project": scan_result.get("per_project", {}),
             "tasks_created": task_result.get("tasks_created", 0),
             "tasks_per_project": task_result.get("per_project", {}),
+            "daily_improvements_planned": len(daily_plan_result.get("selected_improvements", [])),
         }
 
         await self._log_action("enhancement_cycle", "completed", summary)

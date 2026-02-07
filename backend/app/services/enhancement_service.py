@@ -96,8 +96,14 @@ class EnhancementService:
             (r'#\s*DEPRECATED[:\s]*(.*)', SignalType.DEPRECATED, SignalSeverity.LOW),
         ]
 
-        # File extensions to scan
-        self.scan_extensions = {'.py', '.ts', '.tsx', '.js', '.jsx', '.md', '.yaml', '.yml'}
+        # File extensions to scan (code only — .md excluded to reduce false positives)
+        self.scan_extensions = {'.py', '.ts', '.tsx', '.js', '.jsx', '.yaml', '.yml'}
+
+        # Files/patterns to never create tasks from (infrastructure, config, generated)
+        self.protected_paths = {'infrastructure/', 'config.py', 'docker-compose', 'Dockerfile', '.lock'}
+
+        # Track previously seen signals to only surface NEW ones
+        self._previous_signal_ids: set = set()
 
     async def scan_for_signals(self) -> Dict[str, Any]:
         """
@@ -137,9 +143,14 @@ class EnhancementService:
         """
         Scan all mounted project codebases for enhancement signals.
         Returns per-project signal counts for orchestration.
+        Tracks new vs. previously-seen signals for deduplication across runs.
         """
         settings = get_settings()
         projects_root = Path(settings.projects_root)
+
+        # Load previously seen signal IDs to detect NEW signals
+        existing_data = await self.storage.read(self._signals_file)
+        previously_seen = {s.get("id") for s in existing_data.get("signals", [])}
 
         all_signals: List[EnhancementSignal] = []
         per_project: Dict[str, Dict[str, Any]] = {}
@@ -165,16 +176,22 @@ class EnhancementService:
         unique_signals = self._deduplicate_signals(all_signals)
         prioritized = sorted(unique_signals, key=lambda s: s.priority_score, reverse=True)
 
+        # Count new signals (not seen in previous scans)
+        new_signal_ids = {s.id for s in prioritized} - previously_seen
+        new_count = len(new_signal_ids)
+
         # Persist
         await self._persist_signals(prioritized)
 
         logger.info("multi_project_scan_complete",
                      total_signals=len(prioritized),
+                     new_signals=new_count,
                      projects_scanned=len([p for p in per_project.values() if not p.get("skipped")]))
 
         return {
             "status": "completed",
             "signals_found": len(prioritized),
+            "new_signals": new_count,
             "per_project": per_project,
             "by_type": {t.value: len([s for s in prioritized if s.type == t]) for t in SignalType},
             "by_severity": {s.value: len([sig for sig in prioritized if sig.severity == s]) for s in SignalSeverity},
@@ -236,7 +253,7 @@ class EnhancementService:
     def _extract_signals_from_file(
         self, file_path: str, content: str, project_name: str = ""
     ) -> List[EnhancementSignal]:
-        """Extract signals from a single file."""
+        """Extract signals from a single file with context-aware filtering."""
         signals = []
         lines = content.split('\n')
 
@@ -246,11 +263,19 @@ class EnhancementService:
                 if match:
                     message = match.group(1).strip() if match.groups() else line.strip()
 
+                    # Context-aware filtering: skip non-actionable signals
+                    if self._is_false_positive(file_path, line, message, signal_type):
+                        continue
+
                     # Generate unique ID based on file + line + message
                     signal_hash = hashlib.md5(f"{file_path}:{line_num}:{message[:50]}".encode()).hexdigest()[:12]
 
                     # Calculate scores based on signal type
                     impact, confidence = self._calculate_signal_scores(signal_type, severity, message)
+
+                    # Apply minimum threshold: skip low-value signals
+                    if severity == SignalSeverity.LOW and confidence < 75:
+                        continue
 
                     signal = EnhancementSignal(
                         id=f"SIG_{signal_hash}",
@@ -268,6 +293,44 @@ class EnhancementService:
                     signals.append(signal)
 
         return signals
+
+    def _is_false_positive(self, file_path: str, line: str, message: str, signal_type: SignalType) -> bool:
+        """Filter out non-actionable signals that are documentation or comments about concepts."""
+        # Skip signals in protected infrastructure paths
+        for protected in self.protected_paths:
+            if protected in file_path:
+                return True
+
+        # Skip markdown documentation headers that match patterns
+        # e.g., "## Security Considerations", "### TODO List Template"
+        if file_path.endswith('.md'):
+            return True
+
+        # Skip signals inside docstrings/comments that describe concepts rather than actionable items
+        stripped = line.strip()
+
+        # Skip if the "TODO" etc. is inside a string literal (common in templates/examples)
+        if signal_type == SignalType.TODO:
+            # "TODO" in example code or documentation strings
+            if '"""' in line or "'''" in line or 'example' in line.lower():
+                return True
+
+        # Skip signals with empty or trivially short messages (likely false positives)
+        if len(message) < 5:
+            return True
+
+        # Skip test files that contain pattern comments for testing purposes
+        if '/tests/' in file_path or '\\tests\\' in file_path or '_test.' in file_path:
+            if signal_type in (SignalType.TODO, SignalType.DEPRECATED):
+                return True
+
+        # Skip SECURITY signals that are just section headers (e.g., "# SECURITY: Notes on...")
+        if signal_type == SignalType.SECURITY:
+            non_actionable = ['considerations', 'notes', 'overview', 'guide', 'policy', 'requirements']
+            if any(word in message.lower() for word in non_actionable):
+                return True
+
+        return False
 
     def _calculate_signal_scores(self, signal_type: SignalType, severity: SignalSeverity, message: str) -> tuple:
         """Calculate impact and confidence scores."""
