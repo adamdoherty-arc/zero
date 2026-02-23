@@ -91,19 +91,19 @@ All required packages installed successfully:
 ## Test Files Created
 
 ### Test Suite
-[tests/test_email_automation.py](file:///c:/code/moltbot/backend/tests/test_email_automation.py)
+[tests/test_email_automation.py](file:///c:/code/zero/backend/tests/test_email_automation.py)
 - Comprehensive unit tests for all components
 - Mock data and fixtures
 - Async test support
 
 ### Integration Test
-[test_integration.py](file:///c:/code/moltbot/backend/test_integration.py)
+[test_integration.py](file:///c:/code/zero/backend/test_integration.py)
 - End-to-end workflow verification
 - Component integration checks
 - Configuration validation
 
 ### Configuration
-[pytest.ini](file:///c:/code/moltbot/backend/pytest.ini)
+[pytest.ini](file:///c:/code/zero/backend/pytest.ini)
 - Test discovery settings
 - Async mode enabled
 
@@ -126,7 +126,7 @@ All required packages installed successfully:
 
 1. **Start Backend**
    ```bash
-   cd c:\code\moltbot\backend
+   cd c:\code\zero\backend
    python run.py
    ```
 

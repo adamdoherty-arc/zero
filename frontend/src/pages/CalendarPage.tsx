@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Calendar as CalendarIcon, RefreshCw, Clock, Plus } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/auth'
+import { Calendar as CalendarIcon, RefreshCw, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { GoogleOAuthButton } from '@/components/GoogleOAuthButton'
@@ -34,7 +35,7 @@ export function CalendarPage() {
 
   const checkConnection = async () => {
     try {
-      const response = await fetch('http://localhost:18792/api/google/auth/status')
+      const response = await fetch('/api/google/auth/status', { headers: getAuthHeaders() })
       const data = await response.json()
       setConnected(data.connected)
 
@@ -49,7 +50,7 @@ export function CalendarPage() {
   const loadEvents = async () => {
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:18792/api/calendar/events?limit=50')
+      const response = await fetch('/api/calendar/events?limit=50', { headers: getAuthHeaders() })
       const data = await response.json()
       setEvents(data)
     } catch (error) {
@@ -62,8 +63,9 @@ export function CalendarPage() {
   const syncCalendar = async () => {
     try {
       setSyncing(true)
-      await fetch('http://localhost:18792/api/calendar/sync?days_ahead=30', {
-        method: 'POST'
+      await fetch('/api/calendar/sync?days_ahead=30', {
+        method: 'POST',
+        headers: getAuthHeaders(),
       })
       await loadEvents()
     } catch (error) {

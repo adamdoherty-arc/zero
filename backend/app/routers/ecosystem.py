@@ -39,6 +39,26 @@ async def project_current_sprint(project_id: int) -> Dict[str, Any]:
     return result
 
 
+@router.get("/projects/{project_id}/sprints")
+async def project_sprints(project_id: int) -> Dict[str, Any]:
+    """Get all cached sprints for a specific project."""
+    from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+    svc = get_ecosystem_sync_service()
+    sprints = await svc.get_cached_project_sprints(project_id)
+    return {"sprints": sprints, "count": len(sprints)}
+
+
+@router.get("/projects/{project_id}/detail")
+async def project_detail(project_id: int) -> Dict[str, Any]:
+    """Get enriched project detail: project + all sprints + tasks from cache."""
+    from app.services.ecosystem_sync_service import get_ecosystem_sync_service
+    svc = get_ecosystem_sync_service()
+    result = await svc.get_cached_project_detail(project_id)
+    if not result:
+        raise HTTPException(404, f"Project {project_id} not found in cache")
+    return result
+
+
 @router.get("/timeline")
 async def sprint_timeline() -> Dict[str, Any]:
     """All active sprints across projects for timeline visualization."""

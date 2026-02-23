@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse
 from typing import List, Optional, Dict, Any
 import structlog
 
+from pydantic import BaseModel, Field
 from app.models.email import (
     Email, EmailSummary, EmailLabel, EmailDigest,
     EmailCategory, EmailStatus, EmailSyncStatus, EmailToTaskRequest
@@ -112,7 +113,7 @@ async def disconnect_gmail():
 async def get_status():
     """Get email sync status."""
     service = get_gmail_service()
-    return service.get_sync_status()
+    return await service.get_sync_status()
 
 
 @router.post("/sync")
@@ -510,10 +511,112 @@ async def remove_junk_sender(request: JunkSenderRequest):
 async def list_junk_senders():
     """Get list of junk senders."""
     from app.services.email_automation_service import get_email_automation_service
-    
+
     automation_service = get_email_automation_service()
     rules = automation_service._load_automation_rules()
-    
+
     return {"junk_senders": rules.get("junk_senders", [])}
+
+
+# ============================================================================
+# Email Rules Endpoints
+# ============================================================================
+
+from app.models.email_rule import (
+    EmailRule as EmailRuleModel_,
+    EmailRuleCreate,
+    EmailRuleUpdate,
+    RuleTestRequest,
+    RuleTestResult,
+)
+
+
+@router.get("/rules", response_model=List[EmailRuleModel_])
+async def list_rules(enabled_only: bool = Query(default=False)):
+    """List all email rules ordered by priority."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    return await service.list_rules(enabled_only=enabled_only)
+
+
+@router.post("/rules", response_model=EmailRuleModel_)
+async def create_rule(data: EmailRuleCreate):
+    """Create a new email rule."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    return await service.create_rule(data)
+
+
+class RuleGenerateRequest(BaseModel):
+    prompt: str = Field(..., min_length=5, max_length=500)
+
+
+@router.post("/rules/generate", response_model=EmailRuleCreate)
+async def generate_rule(request: RuleGenerateRequest):
+    """Generate an email rule from a natural language description using LLM."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    try:
+        return await service.generate_rule_from_prompt(request.prompt)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.error("rule_generation_failed", prompt=request.prompt[:100], error=str(e))
+        raise HTTPException(status_code=500, detail=f"Rule generation failed: {str(e)}")
+
+
+@router.get("/rules/{rule_id}", response_model=EmailRuleModel_)
+async def get_rule(rule_id: str):
+    """Get a single email rule."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    rule = await service.get_rule(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return rule
+
+
+@router.patch("/rules/{rule_id}", response_model=EmailRuleModel_)
+async def update_rule(rule_id: str, data: EmailRuleUpdate):
+    """Update an existing email rule."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    rule = await service.update_rule(rule_id, data)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return rule
+
+
+@router.delete("/rules/{rule_id}")
+async def delete_rule(rule_id: str):
+    """Delete an email rule."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    deleted = await service.delete_rule(rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"status": "deleted", "rule_id": rule_id}
+
+
+@router.post("/rules/{rule_id}/toggle")
+async def toggle_rule(rule_id: str, enabled: bool = Query(...)):
+    """Enable or disable a rule."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    rule = await service.toggle_rule(rule_id, enabled)
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"status": "toggled", "rule_id": rule_id, "enabled": enabled}
+
+
+@router.post("/rules/test", response_model=RuleTestResult)
+async def test_rule(request: RuleTestRequest):
+    """Test a rule against an email without executing actions."""
+    from app.services.email_rule_service import get_email_rule_service
+    service = get_email_rule_service()
+    try:
+        return await service.test_rule(request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 

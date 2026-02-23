@@ -44,6 +44,7 @@ class ResearchTopicCreate(BaseModel):
     aspects: List[str] = Field(default_factory=list)
     category_tags: List[str] = Field(default_factory=list)
     frequency: str = Field("daily", pattern="^(daily|weekly)$")
+    category_id: Optional[str] = None
 
 
 class ResearchTopicUpdate(BaseModel):
@@ -59,89 +60,82 @@ class ResearchTopicUpdate(BaseModel):
 
 class ResearchTopic(BaseModel):
     """Full research topic model."""
-    model_config = ConfigDict(populate_by_name=True)
-
     id: str
     name: str
     description: Optional[str] = None
-    search_queries: List[str] = Field(default_factory=list, alias="searchQueries")
+    search_queries: List[str] = Field(default_factory=list)
     aspects: List[str] = Field(default_factory=list)
-    category_tags: List[str] = Field(default_factory=list, alias="categoryTags")
+    category_tags: List[str] = Field(default_factory=list)
     status: ResearchTopicStatus = ResearchTopicStatus.ACTIVE
     frequency: str = "daily"
-    last_researched_at: Optional[datetime] = Field(None, alias="lastResearchedAt")
-    findings_count: int = Field(0, alias="findingsCount")
-    relevance_score: float = Field(50.0, ge=0, le=100, alias="relevanceScore")
+    last_researched_at: Optional[datetime] = None
+    findings_count: int = 0
+    relevance_score: float = Field(50.0, ge=0, le=100)
+    category_id: Optional[str] = None
 
 
 class ResearchFinding(BaseModel):
     """A single research discovery."""
-    model_config = ConfigDict(populate_by_name=True)
-
     id: str
-    topic_id: str = Field(alias="topicId")
+    topic_id: str = ""
     title: str
     url: str
     snippet: str = ""
-    source_engine: Optional[str] = Field(None, alias="sourceEngine")
+    source_engine: Optional[str] = None
     category: FindingCategory = FindingCategory.OTHER
     status: FindingStatus = FindingStatus.NEW
 
     # Scoring
-    relevance_score: float = Field(50.0, ge=0, le=100, alias="relevanceScore")
-    novelty_score: float = Field(50.0, ge=0, le=100, alias="noveltyScore")
-    actionability_score: float = Field(50.0, ge=0, le=100, alias="actionabilityScore")
-    composite_score: float = Field(50.0, ge=0, le=100, alias="compositeScore")
+    relevance_score: float = Field(50.0, ge=0, le=100)
+    novelty_score: float = Field(50.0, ge=0, le=100)
+    actionability_score: float = Field(50.0, ge=0, le=100)
+    composite_score: float = Field(50.0, ge=0, le=100)
 
     # LLM analysis
-    llm_summary: Optional[str] = Field(None, alias="llmSummary")
+    llm_summary: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
-    suggested_task: Optional[str] = Field(None, alias="suggestedTask")
+    suggested_task: Optional[str] = None
 
     # Linking
-    linked_task_id: Optional[str] = Field(None, alias="linkedTaskId")
+    linked_task_id: Optional[str] = None
+    category_id: Optional[str] = None
+    fired_rule_ids: List[str] = Field(default_factory=list)
 
     # Timestamps
-    discovered_at: datetime = Field(default_factory=datetime.utcnow, alias="discoveredAt")
-    reviewed_at: Optional[datetime] = Field(None, alias="reviewedAt")
+    discovered_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = None
 
 
 class ResearchCycleResult(BaseModel):
     """Result of a single research cycle."""
-    model_config = ConfigDict(populate_by_name=True)
-
-    cycle_id: str = Field(alias="cycleId")
-    started_at: datetime = Field(alias="startedAt")
-    completed_at: Optional[datetime] = Field(None, alias="completedAt")
-    topics_researched: int = Field(0, alias="topicsResearched")
-    total_results: int = Field(0, alias="totalResults")
-    new_findings: int = Field(0, alias="newFindings")
-    duplicate_filtered: int = Field(0, alias="duplicateFiltered")
-    high_value_findings: int = Field(0, alias="highValueFindings")
-    tasks_created: int = Field(0, alias="tasksCreated")
+    cycle_id: str
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    topics_researched: int = 0
+    total_results: int = 0
+    new_findings: int = 0
+    duplicate_filtered: int = 0
+    high_value_findings: int = 0
+    tasks_created: int = 0
     errors: List[str] = Field(default_factory=list)
 
 
 class ResearchStats(BaseModel):
     """Statistics about the research pipeline."""
-    model_config = ConfigDict(populate_by_name=True)
-
-    total_topics: int = Field(alias="totalTopics")
-    active_topics: int = Field(alias="activeTopics")
-    total_findings: int = Field(alias="totalFindings")
-    findings_this_week: int = Field(alias="findingsThisWeek")
-    tasks_created_total: int = Field(alias="tasksCreatedTotal")
-    tasks_created_this_week: int = Field(alias="tasksCreatedThisWeek")
-    avg_relevance_score: float = Field(alias="avgRelevanceScore")
-    top_finding: Optional[str] = Field(None, alias="topFinding")
-    last_cycle_at: Optional[datetime] = Field(None, alias="lastCycleAt")
+    total_topics: int
+    active_topics: int
+    total_findings: int
+    findings_this_week: int
+    tasks_created_total: int
+    tasks_created_this_week: int
+    avg_relevance_score: float
+    top_finding: Optional[str] = None
+    last_cycle_at: Optional[datetime] = None
 
 
 class FeedbackEntry(BaseModel):
     """Tracks user feedback for self-improvement."""
-    model_config = ConfigDict(populate_by_name=True)
-
-    finding_id: str = Field(alias="findingId")
+    finding_id: str
     action: str  # useful, not_useful, created_task, dismissed
     timestamp: datetime
-    topic_id: Optional[str] = Field(None, alias="topicId")
+    topic_id: Optional[str] = None

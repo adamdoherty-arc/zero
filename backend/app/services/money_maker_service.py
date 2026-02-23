@@ -1,19 +1,23 @@
 """
 Money Maker Service.
 Generates, researches, ranks, and tracks money-making ideas using LLM + web research.
+
+Persists data to PostgreSQL via SQLAlchemy async ORM.
 """
 
 import asyncio
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from functools import lru_cache
 import structlog
-import httpx
 
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_settings, get_workspace_path
+from sqlalchemy import select, func
+
+from app.infrastructure.database import get_session
+from app.infrastructure.config import get_settings
+from app.db.models import MoneyIdeaModel, ServiceConfigModel
 from app.models.money_maker import (
     MoneyIdea, MoneyIdeaCreate, MoneyIdeaUpdate, MoneyIdeaAction,
     IdeaStatus, IdeaCategory, TimeToROI, MoneyMakerStats
@@ -22,10 +26,57 @@ from app.services.searxng_service import get_searxng_service
 
 logger = structlog.get_logger()
 
+# Default configuration for money maker service
+_DEFAULT_CONFIG: Dict[str, Any] = {
+    "user_profile": {
+        "skills": ["python", "fastapi", "react", "llm", "automation"],
+        "available_hours_per_week": 10,
+        "capital_available": "low",
+        "risk_tolerance": "medium"
+    },
+    "generation": {
+        "ideas_per_cycle": 5,
+        "categories": ["saas", "content", "freelance", "consulting", "affiliate", "product", "automation"]
+    },
+    "research": {
+        "ideas_per_cycle": 3
+    },
+    "notifications": {
+        "high_potential_threshold": 70,
+        "discord_channel": "money-maker",
+        "weekly_report_enabled": True
+    }
+}
 
-def get_money_maker_path():
-    """Get path to money-maker data directory."""
-    return get_workspace_path("money-maker")
+
+def _orm_to_pydantic(row: MoneyIdeaModel) -> MoneyIdea:
+    """Convert a MoneyIdeaModel ORM row to a MoneyIdea Pydantic model."""
+    return MoneyIdea(
+        id=row.id,
+        title=row.title,
+        description=row.description,
+        category=row.category,
+        status=row.status,
+        revenue_potential=row.revenue_potential,
+        effort_score=row.effort_score,
+        time_to_roi=row.time_to_roi,
+        market_validation=row.market_validation,
+        competition_score=row.competition_score,
+        skill_match=row.skill_match,
+        viability_score=row.viability_score,
+        research_notes=row.research_notes,
+        market_size=row.market_size,
+        competitors=row.competitors or [],
+        resources_needed=row.resources_needed or [],
+        first_steps=row.first_steps or [],
+        source=row.source,
+        rejection_reason=row.rejection_reason,
+        park_reason=row.park_reason,
+        linked_task_ids=row.linked_task_ids or [],
+        generated_at=row.generated_at or datetime.now(timezone.utc),
+        last_researched_at=row.last_researched_at,
+        status_changed_at=row.status_changed_at,
+    )
 
 
 class MoneyMakerService:
@@ -33,14 +84,11 @@ class MoneyMakerService:
     Service for generating and managing money-making ideas.
 
     Uses LLM for idea generation and analysis, SearXNG for market research,
-    and maintains an isolated task list for tracking opportunities.
+    and PostgreSQL for persistent storage.
     """
 
     def __init__(self):
-        self.storage = JsonStorage(get_money_maker_path())
         self.settings = get_settings()
-        self._ideas_file = "ideas.json"
-        self._config_file = "config.json"
 
     # ============================================
     # IDEA CRUD OPERATIONS
@@ -54,25 +102,21 @@ class MoneyMakerService:
         limit: int = 50
     ) -> List[MoneyIdea]:
         """List ideas with optional filters, sorted by viability score."""
-        data = await self.storage.read(self._ideas_file)
-        ideas = data.get("ideas", [])
+        async with get_session() as session:
+            query = select(MoneyIdeaModel)
 
-        # Apply filters
-        filtered = []
-        for idea_data in ideas:
-            if status and idea_data.get("status") != status.value:
-                continue
-            if category and idea_data.get("category") != category.value:
-                continue
-            if min_score and idea_data.get("viabilityScore", 0) < min_score:
-                continue
-            filtered.append(self._normalize_idea_data(idea_data))
+            if status:
+                query = query.where(MoneyIdeaModel.status == status.value)
+            if category:
+                query = query.where(MoneyIdeaModel.category == category.value)
+            if min_score is not None:
+                query = query.where(MoneyIdeaModel.viability_score >= min_score)
 
-        # Sort by viability score descending
-        filtered.sort(key=lambda x: x.get("viability_score", 0), reverse=True)
+            query = query.order_by(MoneyIdeaModel.viability_score.desc()).limit(limit)
 
-        # Convert to models
-        return [MoneyIdea(**idea) for idea in filtered[:limit]]
+            result = await session.execute(query)
+            rows = result.scalars().all()
+            return [_orm_to_pydantic(row) for row in rows]
 
     async def get_top_ideas(self, limit: int = 10) -> List[MoneyIdea]:
         """Get top ideas by viability score."""
@@ -80,59 +124,55 @@ class MoneyMakerService:
 
     async def get_idea(self, idea_id: str) -> Optional[MoneyIdea]:
         """Get a specific idea by ID."""
-        data = await self.storage.read(self._ideas_file)
-        for idea_data in data.get("ideas", []):
-            if idea_data.get("id") == idea_id:
-                return MoneyIdea(**self._normalize_idea_data(idea_data))
-        return None
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row is None:
+                return None
+            return _orm_to_pydantic(row)
 
     async def create_idea(self, idea_data: MoneyIdeaCreate) -> MoneyIdea:
         """Create a new idea manually."""
-        data = await self.storage.read(self._ideas_file)
-
-        if "ideas" not in data:
-            data["ideas"] = []
-            data["nextIdeaId"] = 1
-
-        # Generate ID
-        idea_id = f"idea-{data.get('nextIdeaId', 1)}"
-        data["nextIdeaId"] = data.get("nextIdeaId", 1) + 1
-
-        # Calculate viability score
         viability_score = self._calculate_viability_score(
             revenue_potential=idea_data.revenue_potential,
             effort_score=idea_data.effort_score,
-            market_validation=50,  # Default
-            competition_score=50,  # Default
-            skill_match=50  # Default
+            market_validation=50,
+            competition_score=50,
+            skill_match=50,
         )
 
-        # Create idea dict
-        idea = {
-            "id": idea_id,
-            "title": idea_data.title,
-            "description": idea_data.description,
-            "category": idea_data.category.value,
-            "status": IdeaStatus.NEW.value,
-            "revenuePotential": idea_data.revenue_potential,
-            "effortScore": idea_data.effort_score,
-            "timeToRoi": idea_data.time_to_roi.value,
-            "marketValidation": 50,
-            "competitionScore": 50,
-            "skillMatch": 50,
-            "viabilityScore": viability_score,
-            "firstSteps": idea_data.first_steps,
-            "resourcesNeeded": idea_data.resources_needed,
-            "competitors": [],
-            "source": "manual",
-            "generatedAt": datetime.utcnow().isoformat(),
-        }
+        async with get_session() as session:
+            # Generate next ID from current count
+            result = await session.execute(
+                select(func.count()).select_from(MoneyIdeaModel)
+            )
+            count = result.scalar() or 0
+            idea_id = f"idea-{count + 1}"
 
-        data["ideas"].append(idea)
-        await self.storage.write(self._ideas_file, data)
+            row = MoneyIdeaModel(
+                id=idea_id,
+                title=idea_data.title,
+                description=idea_data.description,
+                category=idea_data.category.value,
+                status=IdeaStatus.NEW.value,
+                revenue_potential=idea_data.revenue_potential,
+                effort_score=idea_data.effort_score,
+                time_to_roi=idea_data.time_to_roi.value,
+                market_validation=50,
+                competition_score=50,
+                skill_match=50,
+                viability_score=viability_score,
+                first_steps=idea_data.first_steps,
+                resources_needed=idea_data.resources_needed,
+                competitors=[],
+                source="manual",
+                generated_at=datetime.now(timezone.utc),
+            )
+            session.add(row)
+            # Flush to populate server defaults before converting
+            await session.flush()
 
-        logger.info("idea_created", idea_id=idea_id, title=idea_data.title)
-        return MoneyIdea(**self._normalize_idea_data(idea))
+            logger.info("idea_created", idea_id=idea_id, title=idea_data.title)
+            return _orm_to_pydantic(row)
 
     async def update_idea(
         self,
@@ -140,52 +180,41 @@ class MoneyMakerService:
         updates: MoneyIdeaUpdate
     ) -> Optional[MoneyIdea]:
         """Update an idea."""
-        data = await self.storage.read(self._ideas_file)
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row is None:
+                return None
 
-        for i, idea in enumerate(data.get("ideas", [])):
-            if idea.get("id") == idea_id:
-                # Apply updates
-                update_dict = updates.model_dump(exclude_unset=True)
-                for key, value in update_dict.items():
-                    if value is not None:
-                        storage_key = self._to_camel_case(key)
-                        if isinstance(value, IdeaStatus):
-                            idea[storage_key] = value.value
-                        elif isinstance(value, IdeaCategory):
-                            idea[storage_key] = value.value
-                        elif isinstance(value, TimeToROI):
-                            idea[storage_key] = value.value
-                        else:
-                            idea[storage_key] = value
+            update_dict = updates.model_dump(exclude_unset=True)
+            for key, value in update_dict.items():
+                if value is not None:
+                    # Convert enums to their string values
+                    if isinstance(value, (IdeaStatus, IdeaCategory, TimeToROI)):
+                        value = value.value
+                    setattr(row, key, value)
 
-                # Recalculate viability score
-                idea["viabilityScore"] = self._calculate_viability_score(
-                    revenue_potential=idea.get("revenuePotential", 0),
-                    effort_score=idea.get("effortScore", 50),
-                    market_validation=idea.get("marketValidation", 50),
-                    competition_score=idea.get("competitionScore", 50),
-                    skill_match=idea.get("skillMatch", 50)
-                )
+            # Recalculate viability score
+            row.viability_score = self._calculate_viability_score(
+                revenue_potential=row.revenue_potential,
+                effort_score=row.effort_score,
+                market_validation=row.market_validation,
+                competition_score=row.competition_score,
+                skill_match=row.skill_match,
+            )
 
-                data["ideas"][i] = idea
-                await self.storage.write(self._ideas_file, data)
-
-                logger.info("idea_updated", idea_id=idea_id)
-                return MoneyIdea(**self._normalize_idea_data(idea))
-
-        return None
+            await session.flush()
+            logger.info("idea_updated", idea_id=idea_id)
+            return _orm_to_pydantic(row)
 
     async def delete_idea(self, idea_id: str) -> bool:
         """Delete an idea."""
-        data = await self.storage.read(self._ideas_file)
-        original_count = len(data.get("ideas", []))
-        data["ideas"] = [i for i in data.get("ideas", []) if i.get("id") != idea_id]
-
-        if len(data["ideas"]) < original_count:
-            await self.storage.write(self._ideas_file, data)
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row is None:
+                return False
+            await session.delete(row)
             logger.info("idea_deleted", idea_id=idea_id)
             return True
-        return False
 
     # ============================================
     # IDEA GENERATION
@@ -235,45 +264,35 @@ Output as a JSON array of ideas. Be realistic and specific."""
 
         ideas = []
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(
-                    f"{self.settings.ollama_base_url}/chat/completions",
-                    json={
-                        "model": self.settings.ollama_model,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are a creative business consultant. Generate practical, actionable money-making ideas. Always respond with valid JSON array."
-                            },
-                            {"role": "user", "content": prompt}
-                        ],
-                        "temperature": 0.8,
-                        "max_tokens": 2500
-                    }
-                )
+            from app.infrastructure.ollama_client import get_ollama_client
+            content = await get_ollama_client().chat_safe(
+                prompt,
+                task_type="analysis",
+                system="You are a creative business consultant. Generate practical, actionable money-making ideas. Always respond with valid JSON array.",
+                temperature=0.8,
+                num_predict=2500,
+                timeout=300,
+            )
 
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "[]")
+            if content:
+                # Parse JSON from response
+                try:
+                    ideas_data = json.loads(content)
+                except json.JSONDecodeError:
+                    # Extract JSON array from markdown
+                    json_match = re.search(r'\[[\s\S]*\]', content)
+                    if json_match:
+                        ideas_data = json.loads(json_match.group())
+                    else:
+                        ideas_data = []
 
-                    # Parse JSON from response
-                    try:
-                        ideas_data = json.loads(content)
-                    except json.JSONDecodeError:
-                        # Extract JSON array from markdown
-                        json_match = re.search(r'\[[\s\S]*\]', content)
-                        if json_match:
-                            ideas_data = json.loads(json_match.group())
-                        else:
-                            ideas_data = []
+                # Store generated ideas
+                for idea_raw in ideas_data:
+                    idea = await self._store_generated_idea(idea_raw)
+                    if idea:
+                        ideas.append(idea)
 
-                    # Store generated ideas
-                    for idea_raw in ideas_data:
-                        idea = await self._store_generated_idea(idea_raw)
-                        if idea:
-                            ideas.append(idea)
-
-                    logger.info("ideas_generated", count=len(ideas))
+                logger.info("ideas_generated", count=len(ideas))
 
         except Exception as e:
             logger.error("idea_generation_failed", error=str(e))
@@ -282,15 +301,6 @@ Output as a JSON array of ideas. Be realistic and specific."""
 
     async def _store_generated_idea(self, idea_raw: Dict) -> Optional[MoneyIdea]:
         """Store a generated idea from LLM response."""
-        data = await self.storage.read(self._ideas_file)
-
-        if "ideas" not in data:
-            data["ideas"] = []
-            data["nextIdeaId"] = 1
-
-        idea_id = f"idea-{data.get('nextIdeaId', 1)}"
-        data["nextIdeaId"] = data.get("nextIdeaId", 1) + 1
-
         # Normalize category
         category = idea_raw.get("category", "other").lower()
         if category not in [c.value for c in IdeaCategory]:
@@ -312,30 +322,37 @@ Output as a JSON array of ideas. Be realistic and specific."""
             skill_match=50
         )
 
-        idea = {
-            "id": idea_id,
-            "title": idea_raw.get("title", "Untitled Idea")[:500],
-            "description": idea_raw.get("description", ""),
-            "category": category,
-            "status": IdeaStatus.NEW.value,
-            "revenuePotential": revenue,
-            "effortScore": effort,
-            "timeToRoi": time_to_roi,
-            "marketValidation": 50,
-            "competitionScore": 50,
-            "skillMatch": 50,
-            "viabilityScore": viability,
-            "firstSteps": idea_raw.get("first_steps", [])[:5],
-            "resourcesNeeded": idea_raw.get("resources_needed", [])[:5],
-            "competitors": [],
-            "source": "llm_generated",
-            "generatedAt": datetime.utcnow().isoformat(),
-        }
+        async with get_session() as session:
+            # Generate next ID from current count
+            result = await session.execute(
+                select(func.count()).select_from(MoneyIdeaModel)
+            )
+            count = result.scalar() or 0
+            idea_id = f"idea-{count + 1}"
 
-        data["ideas"].append(idea)
-        await self.storage.write(self._ideas_file, data)
+            row = MoneyIdeaModel(
+                id=idea_id,
+                title=idea_raw.get("title", "Untitled Idea")[:500],
+                description=idea_raw.get("description", ""),
+                category=category,
+                status=IdeaStatus.NEW.value,
+                revenue_potential=revenue,
+                effort_score=effort,
+                time_to_roi=time_to_roi,
+                market_validation=50,
+                competition_score=50,
+                skill_match=50,
+                viability_score=viability,
+                first_steps=idea_raw.get("first_steps", [])[:5],
+                resources_needed=idea_raw.get("resources_needed", [])[:5],
+                competitors=[],
+                source="llm_generated",
+                generated_at=datetime.now(timezone.utc),
+            )
+            session.add(row)
+            await session.flush()
 
-        return MoneyIdea(**self._normalize_idea_data(idea))
+            return _orm_to_pydantic(row)
 
     # ============================================
     # IDEA RESEARCH
@@ -385,16 +402,14 @@ Output as a JSON array of ideas. Be realistic and specific."""
         if analysis.get("revenue_potential"):
             updates.revenue_potential = analysis["revenue_potential"]
 
-        updated_idea = await self.update_idea(idea_id, updates)
+        await self.update_idea(idea_id, updates)
 
-        # Update last researched timestamp
-        data = await self.storage.read(self._ideas_file)
-        for i, stored_idea in enumerate(data.get("ideas", [])):
-            if stored_idea.get("id") == idea_id:
-                stored_idea["lastResearchedAt"] = datetime.utcnow().isoformat()
-                data["ideas"][i] = stored_idea
-                await self.storage.write(self._ideas_file, data)
-                break
+        # Update last_researched_at timestamp directly
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row:
+                row.last_researched_at = datetime.now(timezone.utc)
+                await session.flush()
 
         logger.info("idea_researched", idea_id=idea_id)
         return await self.get_idea(idea_id)
@@ -424,33 +439,23 @@ Based on this research, provide a JSON analysis with:
 Be realistic and data-driven in your analysis."""
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.settings.ollama_base_url}/chat/completions",
-                    json={
-                        "model": self.settings.ollama_model,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are a business analyst. Analyze market research and provide realistic assessments. Always respond with valid JSON."
-                            },
-                            {"role": "user", "content": prompt}
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 1000
-                    }
-                )
+            from app.infrastructure.ollama_client import get_ollama_client
+            content = await get_ollama_client().chat_safe(
+                prompt,
+                task_type="research",
+                system="You are a business analyst. Analyze market research and provide realistic assessments. Always respond with valid JSON.",
+                temperature=0.3,
+                num_predict=1000,
+                timeout=300,
+            )
 
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-
-                    try:
-                        return json.loads(content)
-                    except json.JSONDecodeError:
-                        json_match = re.search(r'\{[\s\S]*\}', content)
-                        if json_match:
-                            return json.loads(json_match.group())
+            if content:
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    json_match = re.search(r'\{[\s\S]*\}', content)
+                    if json_match:
+                        return json.loads(json_match.group())
 
         except Exception as e:
             logger.warning("research_analysis_failed", error=str(e))
@@ -477,17 +482,13 @@ Be realistic and data-driven in your analysis."""
         if not idea:
             return {"success": False, "error": "Idea not found"}
 
-        # Update status
-        await self.update_idea(idea_id, MoneyIdeaUpdate(status=IdeaStatus.PURSUING))
-
-        # Update status changed timestamp
-        data = await self.storage.read(self._ideas_file)
-        for i, stored_idea in enumerate(data.get("ideas", [])):
-            if stored_idea.get("id") == idea_id:
-                stored_idea["statusChangedAt"] = datetime.utcnow().isoformat()
-                data["ideas"][i] = stored_idea
-                await self.storage.write(self._ideas_file, data)
-                break
+        # Update status and timestamp
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row:
+                row.status = IdeaStatus.PURSUING.value
+                row.status_changed_at = datetime.now(timezone.utc)
+                await session.flush()
 
         result = {
             "success": True,
@@ -519,11 +520,11 @@ Be realistic and data-driven in your analysis."""
                 result["tasks_created"] = created_task_ids
 
                 # Link tasks to idea
-                for stored_idea in data.get("ideas", []):
-                    if stored_idea.get("id") == idea_id:
-                        stored_idea["linkedTaskIds"] = created_task_ids
-                        await self.storage.write(self._ideas_file, data)
-                        break
+                async with get_session() as session:
+                    row = await session.get(MoneyIdeaModel, idea_id)
+                    if row:
+                        row.linked_task_ids = created_task_ids
+                        await session.flush()
 
             except Exception as e:
                 logger.warning("task_creation_failed", error=str(e))
@@ -533,37 +534,33 @@ Be realistic and data-driven in your analysis."""
 
     async def park_idea(self, idea_id: str, action: MoneyIdeaAction) -> Optional[MoneyIdea]:
         """Park an idea for later consideration."""
-        data = await self.storage.read(self._ideas_file)
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row is None:
+                return None
 
-        for i, idea in enumerate(data.get("ideas", [])):
-            if idea.get("id") == idea_id:
-                idea["status"] = IdeaStatus.PARKED.value
-                idea["parkReason"] = action.reason
-                idea["statusChangedAt"] = datetime.utcnow().isoformat()
-                data["ideas"][i] = idea
-                await self.storage.write(self._ideas_file, data)
+            row.status = IdeaStatus.PARKED.value
+            row.park_reason = action.reason
+            row.status_changed_at = datetime.now(timezone.utc)
+            await session.flush()
 
-                logger.info("idea_parked", idea_id=idea_id)
-                return MoneyIdea(**self._normalize_idea_data(idea))
-
-        return None
+            logger.info("idea_parked", idea_id=idea_id)
+            return _orm_to_pydantic(row)
 
     async def reject_idea(self, idea_id: str, action: MoneyIdeaAction) -> Optional[MoneyIdea]:
         """Reject an idea with reason."""
-        data = await self.storage.read(self._ideas_file)
+        async with get_session() as session:
+            row = await session.get(MoneyIdeaModel, idea_id)
+            if row is None:
+                return None
 
-        for i, idea in enumerate(data.get("ideas", [])):
-            if idea.get("id") == idea_id:
-                idea["status"] = IdeaStatus.REJECTED.value
-                idea["rejectionReason"] = action.reason
-                idea["statusChangedAt"] = datetime.utcnow().isoformat()
-                data["ideas"][i] = idea
-                await self.storage.write(self._ideas_file, data)
+            row.status = IdeaStatus.REJECTED.value
+            row.rejection_reason = action.reason
+            row.status_changed_at = datetime.now(timezone.utc)
+            await session.flush()
 
-                logger.info("idea_rejected", idea_id=idea_id)
-                return MoneyIdea(**self._normalize_idea_data(idea))
-
-        return None
+            logger.info("idea_rejected", idea_id=idea_id)
+            return _orm_to_pydantic(row)
 
     # ============================================
     # AUTONOMOUS CYCLE
@@ -662,67 +659,79 @@ Be realistic and data-driven in your analysis."""
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the idea pipeline."""
-        data = await self.storage.read(self._ideas_file)
-        ideas = data.get("ideas", [])
+        async with get_session() as session:
+            # Total count
+            total_result = await session.execute(
+                select(func.count()).select_from(MoneyIdeaModel)
+            )
+            total = total_result.scalar() or 0
 
-        if not ideas:
+            if total == 0:
+                return {
+                    "total_ideas": 0,
+                    "by_status": {},
+                    "by_category": {},
+                    "top_viability_score": 0,
+                    "avg_viability_score": 0,
+                    "ideas_this_week": 0,
+                    "researched_this_week": 0
+                }
+
+            # Count by status
+            status_result = await session.execute(
+                select(
+                    MoneyIdeaModel.status,
+                    func.count()
+                ).group_by(MoneyIdeaModel.status)
+            )
+            by_status = {row[0]: row[1] for row in status_result.all()}
+
+            # Count by category
+            category_result = await session.execute(
+                select(
+                    MoneyIdeaModel.category,
+                    func.count()
+                ).group_by(MoneyIdeaModel.category)
+            )
+            by_category = {row[0]: row[1] for row in category_result.all()}
+
+            # Viability score aggregates
+            score_result = await session.execute(
+                select(
+                    func.max(MoneyIdeaModel.viability_score),
+                    func.avg(MoneyIdeaModel.viability_score),
+                )
+            )
+            score_row = score_result.one()
+            top_score = score_row[0] or 0
+            avg_score = float(score_row[1] or 0)
+
+            # Ideas generated this week
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            week_ideas_result = await session.execute(
+                select(func.count()).select_from(MoneyIdeaModel).where(
+                    MoneyIdeaModel.generated_at >= week_ago
+                )
+            )
+            ideas_this_week = week_ideas_result.scalar() or 0
+
+            # Ideas researched this week
+            week_researched_result = await session.execute(
+                select(func.count()).select_from(MoneyIdeaModel).where(
+                    MoneyIdeaModel.last_researched_at >= week_ago
+                )
+            )
+            researched_this_week = week_researched_result.scalar() or 0
+
             return {
-                "totalIdeas": 0,
-                "byStatus": {},
-                "byCategory": {},
-                "topViabilityScore": 0,
-                "avgViabilityScore": 0,
-                "ideasThisWeek": 0,
-                "researchedThisWeek": 0
+                "total_ideas": total,
+                "by_status": by_status,
+                "by_category": by_category,
+                "top_viability_score": top_score,
+                "avg_viability_score": round(avg_score, 2),
+                "ideas_this_week": ideas_this_week,
+                "researched_this_week": researched_this_week
             }
-
-        # Count by status and category
-        by_status = {}
-        by_category = {}
-        viability_scores = []
-        week_ago = datetime.utcnow() - timedelta(days=7)
-        ideas_this_week = 0
-        researched_this_week = 0
-
-        for idea in ideas:
-            status = idea.get("status", "new")
-            category = idea.get("category", "other")
-
-            by_status[status] = by_status.get(status, 0) + 1
-            by_category[category] = by_category.get(category, 0) + 1
-
-            score = idea.get("viabilityScore", 0)
-            viability_scores.append(score)
-
-            # Check if generated this week
-            generated_at = idea.get("generatedAt")
-            if generated_at:
-                try:
-                    gen_date = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-                    if gen_date.replace(tzinfo=None) > week_ago:
-                        ideas_this_week += 1
-                except (ValueError, AttributeError):
-                    pass
-
-            # Check if researched this week
-            researched_at = idea.get("lastResearchedAt")
-            if researched_at:
-                try:
-                    res_date = datetime.fromisoformat(researched_at.replace("Z", "+00:00"))
-                    if res_date.replace(tzinfo=None) > week_ago:
-                        researched_this_week += 1
-                except (ValueError, AttributeError):
-                    pass
-
-        return {
-            "totalIdeas": len(ideas),
-            "byStatus": by_status,
-            "byCategory": by_category,
-            "topViabilityScore": max(viability_scores) if viability_scores else 0,
-            "avgViabilityScore": sum(viability_scores) / len(viability_scores) if viability_scores else 0,
-            "ideasThisWeek": ideas_this_week,
-            "researchedThisWeek": researched_this_week
-        }
 
     # ============================================
     # UTILITIES
@@ -759,69 +768,22 @@ Be realistic and data-driven in your analysis."""
 
         return round(min(100, max(0, score)), 2)
 
-    def _normalize_idea_data(self, idea_data: Dict) -> Dict:
-        """Convert camelCase storage format to snake_case for Pydantic."""
-        return {
-            "id": idea_data.get("id"),
-            "title": idea_data.get("title"),
-            "description": idea_data.get("description"),
-            "category": idea_data.get("category", "other"),
-            "status": idea_data.get("status", "new"),
-            "revenue_potential": idea_data.get("revenuePotential", 0),
-            "effort_score": idea_data.get("effortScore", 50),
-            "time_to_roi": idea_data.get("timeToRoi", "medium"),
-            "market_validation": idea_data.get("marketValidation", 50),
-            "competition_score": idea_data.get("competitionScore", 50),
-            "skill_match": idea_data.get("skillMatch", 50),
-            "viability_score": idea_data.get("viabilityScore", 0),
-            "research_notes": idea_data.get("researchNotes"),
-            "market_size": idea_data.get("marketSize"),
-            "competitors": idea_data.get("competitors", []),
-            "resources_needed": idea_data.get("resourcesNeeded", []),
-            "first_steps": idea_data.get("firstSteps", []),
-            "source": idea_data.get("source", "manual"),
-            "rejection_reason": idea_data.get("rejectionReason"),
-            "park_reason": idea_data.get("parkReason"),
-            "linked_task_ids": idea_data.get("linkedTaskIds", []),
-            "generated_at": idea_data.get("generatedAt", datetime.utcnow().isoformat()),
-            "last_researched_at": idea_data.get("lastResearchedAt"),
-            "status_changed_at": idea_data.get("statusChangedAt"),
-        }
-
-    def _to_camel_case(self, snake_str: str) -> str:
-        """Convert snake_case to camelCase."""
-        components = snake_str.split('_')
-        return components[0] + ''.join(x.title() for x in components[1:])
-
     async def _get_config(self) -> Dict[str, Any]:
-        """Get money maker configuration."""
-        config = await self.storage.read(self._config_file)
+        """Get money maker configuration from service_configs table."""
+        async with get_session() as session:
+            row = await session.get(ServiceConfigModel, "money_maker")
 
-        # Return defaults if config doesn't exist
-        if not config:
-            config = {
-                "user_profile": {
-                    "skills": ["python", "fastapi", "react", "llm", "automation"],
-                    "available_hours_per_week": 10,
-                    "capital_available": "low",
-                    "risk_tolerance": "medium"
-                },
-                "generation": {
-                    "ideas_per_cycle": 5,
-                    "categories": ["saas", "content", "freelance", "consulting", "affiliate", "product", "automation"]
-                },
-                "research": {
-                    "ideas_per_cycle": 3
-                },
-                "notifications": {
-                    "high_potential_threshold": 70,
-                    "discord_channel": "money-maker",
-                    "weekly_report_enabled": True
-                }
-            }
-            await self.storage.write(self._config_file, config)
+            if row is None:
+                # Insert default config
+                row = ServiceConfigModel(
+                    service_name="money_maker",
+                    config=_DEFAULT_CONFIG,
+                )
+                session.add(row)
+                await session.flush()
+                return _DEFAULT_CONFIG
 
-        return config
+            return row.config
 
 
 @lru_cache()

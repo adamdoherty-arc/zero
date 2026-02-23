@@ -28,7 +28,7 @@ class JsonStorage:
                 content = await f.read()
                 return json.loads(content)
         except FileNotFoundError:
-            logger.warning("File not found", filepath=str(filepath))
+            logger.debug("File not found", filepath=str(filepath))
             return {}
         except json.JSONDecodeError as e:
             logger.error("JSON decode error", filepath=str(filepath), error=str(e))

@@ -1,25 +1,28 @@
 services:
   zero-gateway:
-    image: moltbot/moltbot:latest
+    image: zero:latest
     container_name: zero-gateway
     restart: always
     ports:
-      - "${CLAWDBOT_GATEWAY_PORT:-18789}:18789"
-      - "${CLAWDBOT_BRIDGE_PORT:-18790}:18790"
+      - "${ZERO_GATEWAY_PORT:-18789}:18789"
+      - "${ZERO_BRIDGE_PORT:-18790}:18790"
     environment:
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - OPENCLAW_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
       - GH_TOKEN=${GH_TOKEN}
-      - CLAWDBOT_CONFIG_PATH=/config/zero.json
-      - CLAWDBOT_STATE_DIR=/workspace
+      - OLLAMA_API_KEY=sk-litellm-master-key
+      - OPENCLAW_CONFIG_PATH=/config/zero.json
+      - OPENCLAW_STATE_DIR=/tmp/oc-state
     volumes:
-      - ${CLAWDBOT_CONFIG_DIR:-./config}:/config
-      - ${CLAWDBOT_WORKSPACE_DIR:-./workspace}:/workspace
-      - ${CLAWDBOT_SKILLS_DIR:-./skills}:/app/skills-custom
-    entrypoint: ""
-    command: ["node", "dist/index.js", "gateway"]
+      - ${ZERO_CONFIG_DIR:-./config}:/config
+      - ${ZERO_WORKSPACE_DIR:-./workspace}:/workspace
+      - ${ZERO_SKILLS_DIR:-./skills}:/app/skills-custom
+    networks:
+      - default
+      - zero-network
+    entrypoint: ["/bin/sh", "-c", "ln -sf /usr/bin/python3 /usr/bin/python 2>/dev/null; mkdir -p /tmp/oc-state/agents/main/agent; cp /workspace/agents/main/agent/auth-profiles.json /tmp/oc-state/agents/main/agent/ 2>/dev/null; for b in AGENTS.md SOUL.md IDENTITY.md USER.md TOOLS.md; do [ -f /workspace/$$b ] && cp /workspace/$$b /tmp/oc-state/; done; ln -sf /workspace/skills /tmp/oc-state/skills 2>/dev/null; ln -sf /workspace/canvas /tmp/oc-state/canvas 2>/dev/null; exec node /app/dist/index.js gateway"]
     healthcheck:
       test: ["CMD", "node", "-e", "const http=require('http');const r=http.get('http://localhost:18789/',res=>{process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>process.exit(1))"]
       interval: 30s
@@ -38,20 +41,25 @@ services:
         max-file: "5"
 
   zero-cli:
-    image: moltbot/moltbot:latest
+    image: zero:latest
     container_name: zero-cli
     environment:
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
-      - CLAWDBOT_GATEWAY_URL=ws://zero-gateway:18789
-      - CLAWDBOT_CONFIG_PATH=/config/zero.json
-      - CLAWDBOT_STATE_DIR=/workspace
+      - OPENCLAW_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
+      - OPENCLAW_GATEWAY_URL=ws://zero-gateway:18789
+      - OPENCLAW_CONFIG_PATH=/config/zero.json
+      - OPENCLAW_STATE_DIR=/workspace
     volumes:
-      - ${CLAWDBOT_CONFIG_DIR:-./config}:/config
-      - ${CLAWDBOT_WORKSPACE_DIR:-./workspace}:/workspace
+      - ${ZERO_CONFIG_DIR:-./config}:/config
+      - ${ZERO_WORKSPACE_DIR:-./workspace}:/workspace
     depends_on:
       - zero-gateway
     profiles:
       - cli
-    entrypoint: ""
     stdin_open: true
     tty: true
+
+networks:
+  default:
+    name: zero_default
+  zero-network:
+    external: true

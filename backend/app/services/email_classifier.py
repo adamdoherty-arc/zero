@@ -1,148 +1,112 @@
 """
-Email classifier using Hugging Face transformers for email categorization.
+Email classifier using Ollama for email categorization.
+
+Replaces the previous HuggingFace transformers-based classifier with Ollama,
+eliminating the need for torch/transformers dependencies (~1.5GB savings).
+Falls back to keyword heuristics when Ollama is unavailable.
 """
 
+import json
 import structlog
-from pathlib import Path
-from typing import Dict, Tuple, Optional
+from typing import Tuple
 from functools import lru_cache
 
 logger = structlog.get_logger()
 
+CLASSIFY_SYSTEM_PROMPT = """You are an email classifier. Classify the email into exactly one category:
+- urgent: Requires immediate action (emergencies, deadlines, critical issues)
+- important: High priority but not time-critical (meetings, reviews, approvals)
+- normal: Regular correspondence, replies, updates
+- low_priority: FYI, informational, can wait
+- newsletter: Marketing, digests, subscriptions, automated updates
+- spam: Unwanted, suspicious, promotional
+
+Respond with ONLY a JSON object: {"category": "...", "confidence": 0.0-1.0}
+No other text."""
+
 
 class EmailClassifier:
-    """Hugging Face-based email classifier."""
+    """Ollama-based email classifier with keyword heuristic fallback."""
 
-    def __init__(self, model_name: str = "distilbert-base-uncased", cache_dir: str = "workspace/models"):
-        self.model_name = model_name
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._pipeline = None
-        self._model_loaded = False
-
-    def _load_model(self):
-        """Lazy load the classification model."""
-        if self._model_loaded:
-            return
-
-        try:
-            from transformers import pipeline
-            
-            logger.info("email_classifier_loading_model", model=self.model_name)
-            
-            # Use text-classification pipeline
-            # For now, use sentiment analysis as a proxy for urgency/importance
-            # In production, you'd fine-tune on email categories
-            self._pipeline = pipeline(
-                "text-classification",
-                model=self.model_name,
-                device=-1,  # CPU (use 0 for GPU)
-                truncation=True,
-                max_length=512
-            )
-            
-            self._model_loaded = True
-            logger.info("email_classifier_model_loaded", model=self.model_name)
-            
-        except Exception as e:
-            logger.error("email_classifier_load_failed", error=str(e))
-            raise
-
-    def classify(self, subject: str, from_addr: str, body_preview: str) -> Tuple[str, float]:
+    async def classify(self, subject: str, from_addr: str, body_preview: str) -> Tuple[str, float]:
         """
         Classify email into category with confidence score.
-        
-        Args:
-            subject: Email subject
-            from_addr: Sender email address
-            body_preview: First ~300 chars of email body
-            
+
+        Uses Ollama for intelligent classification, falls back to keyword
+        heuristics when Ollama circuit breaker is open or unavailable.
+
         Returns:
             Tuple of (category, confidence_score)
-            Categories: urgent, important, normal, low_priority, newsletter, spam
         """
+        # Try Ollama classification first
         try:
-            self._load_model()
-            
-            # Combine text for classification
-            text = f"From: {from_addr}\nSubject: {subject}\n{body_preview[:300]}"
-            
-            # Get prediction
-            result = self._pipeline(text)[0]
-            
-            # Map sentiment to email categories
-            # This is a simple mapping - in production you'd fine-tune the model
-            label = result['label']
-            score = result['score']
-            
-            # Simple heuristic mapping (temporary until fine-tuning)
-            if score > 0.9:
-                category = self._map_to_email_category(label, subject, from_addr, body_preview)
-            else:
-                category = "normal"
-            
-            logger.debug(
-                "email_classified",
-                category=category,
-                confidence=score,
-                subject=subject[:50]
-            )
-            
-            return category, score
-            
-        except Exception as e:
-            logger.warning("email_classification_failed", error=str(e))
-            # Fallback to normal with low confidence
-            return "normal", 0.5
+            from app.infrastructure.ollama_client import get_ollama_client
+            client = get_ollama_client()
 
-    def _map_to_email_category(
-        self, 
-        sentiment: str, 
-        subject: str, 
-        from_addr: str, 
-        body: str
-    ) -> str:
-        """Map sentiment and keywords to email categories."""
+            text = f"From: {from_addr}\nSubject: {subject}\n{body_preview[:300]}"
+
+            response = await client.chat_safe(
+                f"Classify this email:\n{text}",
+                system=CLASSIFY_SYSTEM_PROMPT,
+                task_type="classification",
+                temperature=0.0,
+                num_predict=50,
+                max_retries=1,
+            )
+
+            if response:
+                response = response.strip()
+                if "{" in response:
+                    json_str = response[response.index("{"):response.rindex("}") + 1]
+                    data = json.loads(json_str)
+                    category = data.get("category", "normal").lower()
+                    confidence = float(data.get("confidence", 0.8))
+
+                    valid_categories = {"urgent", "important", "normal", "low_priority", "newsletter", "spam"}
+                    if category in valid_categories:
+                        logger.debug("email_classified_llm", category=category, confidence=confidence, subject=subject[:50])
+                        return category, confidence
+
+        except Exception as e:
+            logger.debug("email_classifier_ollama_failed", error=str(e))
+
+        # Fallback: keyword heuristics
+        return self._keyword_classify(subject, from_addr, body_preview)
+
+    def _keyword_classify(self, subject: str, from_addr: str, body_preview: str) -> Tuple[str, float]:
+        """Keyword-based fallback classification."""
         subject_lower = subject.lower()
         from_lower = from_addr.lower()
-        body_lower = body.lower()
-        
-        # Check for urgent keywords
-        urgent_keywords = ["urgent", "asap", "emergency", "critical", "immediate", "action required"]
-        if any(kw in subject_lower or kw in body_lower for kw in urgent_keywords):
-            return "urgent"
-        
-        # Check for newsletter indicators
-        newsletter_indicators = [
-            "unsubscribe", "newsletter", "noreply", "no-reply",
-            "digest", "weekly", "daily update", "marketing"
-        ]
-        if any(ind in subject_lower or ind in from_lower for ind in newsletter_indicators):
-            return "newsletter"
-        
-        # Check for spam indicators
-        spam_indicators = ["winner", "prize", "click here", "limited time", "act now"]
-        if any(ind in subject_lower or ind in body_lower for ind in spam_indicators):
-            return "spam"
-        
-        # Check for important keywords
-        important_keywords = ["important", "meeting", "deadline", "review", "approval"]
-        if any(kw in subject_lower or kw in body_lower for kw in important_keywords):
-            return "important"
-        
-        # Default based on sentiment
-        if sentiment == "POSITIVE":
-            return "normal"
-        elif sentiment == "NEGATIVE":
-            return "low_priority"
-        
-        return "normal"
+        body_lower = body_preview.lower()
+        text = f"{subject_lower} {body_lower}"
 
-    def classify_batch(self, emails: list) -> list:
-        """Classify multiple emails efficiently."""
+        # Urgent
+        urgent_kw = ["urgent", "asap", "emergency", "critical", "immediate", "action required"]
+        if any(kw in text for kw in urgent_kw):
+            return "urgent", 0.85
+
+        # Spam
+        spam_kw = ["winner", "prize", "click here", "limited time", "act now", "congratulations"]
+        if any(kw in text for kw in spam_kw):
+            return "spam", 0.80
+
+        # Newsletter
+        newsletter_kw = ["unsubscribe", "newsletter", "noreply", "no-reply", "digest", "weekly", "daily update", "marketing"]
+        if any(kw in text or kw in from_lower for kw in newsletter_kw):
+            return "newsletter", 0.80
+
+        # Important
+        important_kw = ["important", "meeting", "deadline", "review", "approval", "invoice", "contract"]
+        if any(kw in text for kw in important_kw):
+            return "important", 0.70
+
+        return "normal", 0.5
+
+    async def classify_batch(self, emails: list) -> list:
+        """Classify multiple emails."""
         results = []
         for email in emails:
-            category, confidence = self.classify(
+            category, confidence = await self.classify(
                 email.get("subject", ""),
                 email.get("from", ""),
                 email.get("body_preview", "")
@@ -154,6 +118,4 @@ class EmailClassifier:
 @lru_cache()
 def get_email_classifier() -> EmailClassifier:
     """Get singleton EmailClassifier instance."""
-    from app.infrastructure.config import get_settings
-    settings = get_settings()
-    return EmailClassifier(model_name=settings.email_classifier_model)
+    return EmailClassifier()

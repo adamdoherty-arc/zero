@@ -188,7 +188,7 @@ class BriefingService:
         email_summary = None
         try:
             gmail = get_gmail_service()
-            status = gmail.get_sync_status()
+            status = await gmail.get_sync_status()
             if status.connected:
                 digest = await gmail.generate_digest()
                 if digest.unread_emails > 0:
@@ -233,16 +233,10 @@ class BriefingService:
         except Exception as e:
             logger.warning("briefing_overnight_activity_failed", error=str(e))
 
-        # Generate suggestions
-        suggestions = []
-        if task_summary and "0 in progress" in task_summary:
-            suggestions.append("Consider starting a task from your backlog")
-        if email_summary and "unread" in email_summary:
-            num = int(email_summary.split()[0])
-            if num > 10:
-                suggestions.append("You have many unread emails - consider processing your inbox")
-        if not calendar_summary or "No events" in calendar_summary:
-            suggestions.append("Today looks free - great time for focused work!")
+        # Generate AI-powered suggestions via Ollama
+        suggestions = await self._generate_ai_suggestions(
+            sections, user_name, calendar_summary, task_summary, email_summary
+        )
 
         # Sort sections by priority
         sections.sort(key=lambda x: x.priority)
@@ -265,6 +259,83 @@ class BriefingService:
 
         logger.info("briefing_generated", sections=len(sections))
         return briefing
+
+    async def _generate_ai_suggestions(
+        self,
+        sections: list,
+        user_name: str,
+        calendar_summary: Optional[str],
+        task_summary: Optional[str],
+        email_summary: Optional[str],
+    ) -> List[str]:
+        """Use Ollama to generate prioritized, actionable suggestions for the day."""
+        try:
+            from app.infrastructure.ollama_client import get_ollama_client
+
+            # Build context from all gathered data
+            context_parts = []
+            for section in sections:
+                context_parts.append(f"**{section.title}**:")
+                for item in section.items[:5]:
+                    context_parts.append(f"  - {item}")
+
+            if calendar_summary:
+                context_parts.append(f"Calendar: {calendar_summary}")
+            if task_summary:
+                context_parts.append(f"Tasks: {task_summary}")
+            if email_summary:
+                context_parts.append(f"Email: {email_summary}")
+
+            context = "\n".join(context_parts)
+
+            prompt = (
+                f"Based on {user_name}'s current situation, suggest the top 3 most "
+                f"important actions for today. Be specific and actionable. "
+                f"Return ONLY a JSON array of 3 short strings (max 15 words each). "
+                f"No markdown, no explanation.\n\n"
+                f"Current situation:\n{context}"
+            )
+
+            client = get_ollama_client()
+            response = await client.chat_safe(
+                prompt,
+                task_type="summarization",
+                temperature=0.3,
+                num_predict=200,
+            )
+
+            if response:
+                import json as json_module
+                # Try to parse JSON array from response
+                response = response.strip()
+                if response.startswith("["):
+                    try:
+                        suggestions = json_module.loads(response)
+                        if isinstance(suggestions, list):
+                            return [str(s) for s in suggestions[:3]]
+                    except json_module.JSONDecodeError:
+                        pass
+                # Fallback: split by newlines
+                lines = [l.strip().lstrip("0123456789.-) ") for l in response.split("\n") if l.strip()]
+                return lines[:3]
+
+        except Exception as e:
+            logger.warning("ai_suggestions_failed", error=str(e))
+
+        # Static fallback if Ollama is unavailable
+        suggestions = []
+        if task_summary and "0 in progress" in task_summary:
+            suggestions.append("Consider starting a task from your backlog")
+        if email_summary and "unread" in email_summary:
+            try:
+                num = int(email_summary.split()[0])
+                if num > 10:
+                    suggestions.append("You have many unread emails - consider processing your inbox")
+            except ValueError:
+                pass
+        if not calendar_summary or "No events" in calendar_summary:
+            suggestions.append("Today looks free - great time for focused work!")
+        return suggestions
 
     async def _add_overnight_activity(self, sections: list):
         """Add overnight autonomous orchestration activity to the briefing."""
@@ -314,6 +385,40 @@ class BriefingService:
             if suggestions:
                 items.append(f"{len(suggestions)} lifecycle suggestion(s)")
                 items.extend([f"  - {s}" for s in suggestions[:2]])
+        except Exception:
+            pass
+
+        # Enhancement Engine activity (continuous improvement)
+        try:
+            from app.services.activity_log_service import get_activity_log_service
+            from app.services.continuous_enhancement_service import get_continuous_enhancement_service
+
+            activity_log = get_activity_log_service()
+            engine = get_continuous_enhancement_service()
+
+            summary = await activity_log.get_summary(hours=12)
+            engine_status = await engine.get_status()
+
+            if summary.get("total_events", 0) > 0:
+                items.append(
+                    f"Enhancement Engine: {summary['improvements_completed']} improvement(s) completed, "
+                    f"{summary['files_changed']} file(s) changed"
+                )
+                if summary.get("by_project"):
+                    project_parts = [f"{p}: {c}" for p, c in summary["by_project"].items() if p != "engine"]
+                    if project_parts:
+                        items.append(f"  Projects: {', '.join(project_parts)}")
+                errors = summary.get("by_status", {}).get("error", 0)
+                if errors:
+                    items.append(f"  {errors} error(s) encountered")
+
+            if engine_status.get("enabled"):
+                items.append(
+                    f"Engine status: active, {engine_status.get('cycle_count', 0)} cycles, "
+                    f"{engine_status.get('improvements_today', 0)} improvements today"
+                )
+            else:
+                items.append("Engine status: disabled")
         except Exception:
             pass
 

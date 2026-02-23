@@ -99,11 +99,11 @@ def send_status(message: str, status_type: str, step_name: str, details: str = N
     log_message(formatted, direction="out", task_name=step_name, status_type=status_type)
     
     # Try WebSocket first (fastest)
-    gateway_token = os.environ.get("CLAWDBOT_GATEWAY_TOKEN")
+    gateway_token = os.environ.get("ZERO_GATEWAY_TOKEN")
     
     if gateway_token:
         try:
-            gateway_port = os.environ.get("CLAWDBOT_GATEWAY_PORT", "18789")
+            gateway_port = os.environ.get("ZERO_GATEWAY_PORT", "18789")
             target = os.environ.get("TELEGRAM_TARGET", "7590912486")
             ws_url = f"ws://127.0.0.1:{gateway_port}/ws"
             
@@ -153,24 +153,24 @@ def send_status(message: str, status_type: str, step_name: str, details: str = N
     import subprocess
     import shutil
     
-    clawdbot_path = shutil.which("clawdbot")
+    zero_path = shutil.which("zero")
     
-    if not clawdbot_path:
-        clawdbot_paths = [
-            "C:\\Users\\Luffy\\AppData\\Roaming\\npm\\clawdbot.cmd",
-            "C:\\Users\\Luffy\\AppData\\Roaming\\npm\\clawdbot"
+    if not zero_path:
+        zero_paths = [
+            "C:\\Users\\Luffy\\AppData\\Roaming\\npm\\zero.cmd",
+            "C:\\Users\\Luffy\\AppData\\Roaming\\npm\\zero"
         ]
-        for path in clawdbot_paths:
+        for path in zero_paths:
             if os.path.exists(path):
-                clawdbot_path = path
+                zero_path = path
                 break
     
-    if clawdbot_path:
+    if zero_path:
         try:
             target = os.environ.get("TELEGRAM_TARGET", "7590912486")
             result = subprocess.run(
                 [
-                    clawdbot_path,
+                    zero_path,
                     "message",
                     "send",
                     "--target", target,

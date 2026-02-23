@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { TopBar } from '@/components/layout/TopBar'
 import { CommandMenu } from '@/components/layout/CommandMenu'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export function DashboardLayout() {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false)
@@ -14,7 +15,9 @@ export function DashboardLayout() {
       <SidebarInset>
         <TopBar onOpenCommandMenu={() => setCommandMenuOpen(true)} />
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </SidebarInset>
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />

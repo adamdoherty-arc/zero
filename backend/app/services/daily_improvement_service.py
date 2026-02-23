@@ -11,7 +11,6 @@ Runs on a daily schedule via the scheduler service.
 import asyncio
 import hashlib
 import json
-import subprocess
 import ast
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -360,6 +359,23 @@ class DailyImprovementService:
 
         await self._storage.write(self._plan_file, plan)
 
+        # Log to activity feed
+        try:
+            from app.services.activity_log_service import get_activity_log_service
+            activity_log = get_activity_log_service()
+            await activity_log.log_event(
+                "execute_complete", "zero",
+                f"Daily improvement: {auto_fix_count} auto-fixes, {len(improvements)} total",
+                details={
+                    "auto_fixes": auto_fix_count,
+                    "total": len(improvements),
+                },
+                source="daily_improvement",
+                status="success" if auto_fix_count > 0 else "info",
+            )
+        except Exception:
+            pass
+
         logger.info("daily_improvement_execute_complete",
                      total=len(improvements),
                      auto_fixes=auto_fix_count)
@@ -424,8 +440,7 @@ Rules:
 - Output ONLY code, no explanations"""
 
         try:
-            settings = get_settings()
-            fixed_content = await self._call_ollama(fix_prompt, settings.ollama_model)
+            fixed_content = await self._call_ollama(fix_prompt)
         except Exception as e:
             return {"applied": False, "reason": f"LLM call failed: {e}"}
 
@@ -529,25 +544,20 @@ Please:
         item["claude_prompt"] = prompt
         return {"prompt_generated": True, "prompt": prompt}
 
-    async def _call_ollama(self, prompt: str, model: str) -> str:
-        """Call Ollama for code generation."""
-        import httpx
+    async def _call_ollama(self, prompt: str, model: str = None) -> str:
+        """Call Ollama for code generation using shared client."""
+        from app.infrastructure.ollama_client import get_ollama_client
 
-        settings = get_settings()
-        base_url = settings.ollama_base_url.rstrip("/v1")  # Remove /v1 suffix for chat endpoint
-
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{base_url}/api/generate",
-                json={
-                    "model": model.split(":")[0] if ":" in model else model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.1, "num_predict": 500},
-                },
-            )
-            response.raise_for_status()
-            return response.json().get("response", "")
+        client = get_ollama_client()
+        return await client.chat(
+            prompt,
+            model=model,
+            task_type="coding",
+            temperature=0.1,
+            num_predict=500,
+            timeout=300,
+            max_retries=2,
+        )
 
     def _extract_code_from_response(self, response: str) -> Optional[List[str]]:
         """Extract code lines from LLM response, stripping markdown fences."""

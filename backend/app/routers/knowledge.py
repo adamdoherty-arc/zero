@@ -10,12 +10,71 @@ import structlog
 from app.models.knowledge import (
     Note, NoteCreate, NoteUpdate, NoteType,
     UserProfile, UserProfileUpdate, UserFact, UserContact,
-    RecallRequest, RecallResult
+    RecallRequest, RecallResult,
+    KnowledgeCategory, KnowledgeCategoryCreate, KnowledgeCategoryUpdate,
 )
 from app.services.knowledge_service import get_knowledge_service
 
 router = APIRouter()
 logger = structlog.get_logger()
+
+
+# ==========================================================================
+# Category Endpoints
+# ==========================================================================
+
+@router.get("/categories", response_model=List[KnowledgeCategory])
+async def list_categories(
+    parent_id: Optional[str] = Query(None, description="Filter by parent category"),
+    tree: bool = Query(True, description="Return as nested tree structure"),
+):
+    """List knowledge categories, optionally as a nested tree."""
+    service = get_knowledge_service()
+    return await service.list_categories(parent_id=parent_id, tree=tree)
+
+
+@router.get("/categories/stats")
+async def get_category_stats():
+    """Get note/fact counts per category."""
+    service = get_knowledge_service()
+    return await service.get_category_stats()
+
+
+@router.get("/categories/{category_id}", response_model=KnowledgeCategory)
+async def get_category(category_id: str):
+    """Get a specific knowledge category."""
+    service = get_knowledge_service()
+    cat = await service.get_category(category_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return cat
+
+
+@router.post("/categories", response_model=KnowledgeCategory)
+async def create_category(data: KnowledgeCategoryCreate):
+    """Create a new knowledge category."""
+    service = get_knowledge_service()
+    return await service.create_category(data)
+
+
+@router.patch("/categories/{category_id}", response_model=KnowledgeCategory)
+async def update_category(category_id: str, data: KnowledgeCategoryUpdate):
+    """Update a knowledge category (system categories have limited edits)."""
+    service = get_knowledge_service()
+    cat = await service.update_category(category_id, data)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return cat
+
+
+@router.delete("/categories/{category_id}")
+async def delete_category(category_id: str):
+    """Delete a non-system knowledge category."""
+    service = get_knowledge_service()
+    deleted = await service.delete_category(category_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Category not found or is a system category")
+    return {"status": "deleted", "category_id": category_id}
 
 
 # ==========================================================================
@@ -28,6 +87,7 @@ async def list_notes(
     tags: Optional[str] = Query(None, description="Comma-separated tags to filter"),
     project_id: Optional[str] = Query(None, description="Filter by project"),
     search: Optional[str] = Query(None, description="Search in title and content"),
+    category_id: Optional[str] = Query(None, description="Filter by knowledge category"),
     limit: int = Query(50, ge=1, le=200, description="Maximum notes to return")
 ):
     """Get all notes with optional filters."""
@@ -38,6 +98,7 @@ async def list_notes(
         tags=tags_list,
         project_id=project_id,
         search=search,
+        category_id=category_id,
         limit=limit
     )
 

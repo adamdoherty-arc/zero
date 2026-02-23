@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 import structlog
 
-from app.models.sprint import Sprint, SprintCreate, SprintUpdate
+from app.models.sprint import Sprint
 from app.services.sprint_service import get_sprint_service
 
 router = APIRouter()
@@ -37,43 +37,6 @@ async def get_sprint(sprint_id: str):
     """Get sprint by ID."""
     service = get_sprint_service()
     sprint = await service.get_sprint(sprint_id)
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
-    return sprint
-
-
-@router.post("")
-async def create_sprint(sprint_data: SprintCreate):
-    """Create a new sprint in Legion."""
-    service = get_sprint_service()
-    return await service.create_sprint(sprint_data)
-
-
-@router.patch("/{sprint_id}")
-async def update_sprint(sprint_id: str, updates: SprintUpdate):
-    """Update a sprint in Legion."""
-    service = get_sprint_service()
-    sprint = await service.update_sprint(sprint_id, updates)
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
-    return sprint
-
-
-@router.post("/{sprint_id}/start")
-async def start_sprint(sprint_id: str):
-    """Start a sprint in Legion."""
-    service = get_sprint_service()
-    sprint = await service.start_sprint(sprint_id)
-    if not sprint:
-        raise HTTPException(status_code=404, detail="Sprint not found")
-    return sprint
-
-
-@router.post("/{sprint_id}/complete")
-async def complete_sprint(sprint_id: str):
-    """Complete a sprint in Legion."""
-    service = get_sprint_service()
-    sprint = await service.complete_sprint(sprint_id)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
     return sprint

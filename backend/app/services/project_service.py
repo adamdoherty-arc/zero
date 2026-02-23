@@ -1,8 +1,10 @@
 """
 Project management service.
 Handles project CRUD operations, scanning, and context retrieval.
+Backed by PostgreSQL via SQLAlchemy.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -12,12 +14,14 @@ from functools import lru_cache
 from pathlib import Path
 import structlog
 
+from sqlalchemy import select
+
 from app.models.project import (
     Project, ProjectCreate, ProjectUpdate, ProjectType, ProjectStatus,
     ProjectScanConfig, ProjectScanResult
 )
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_sprints_path
+from app.infrastructure.database import get_session
+from app.db.models import ProjectModel
 
 logger = structlog.get_logger()
 
@@ -25,161 +29,116 @@ logger = structlog.get_logger()
 class ProjectService:
     """Service for project management operations."""
 
-    def __init__(self):
-        self.storage = JsonStorage(get_sprints_path())
-        self._projects_file = "projects.json"
+    # ============================================
+    # ORM <-> PYDANTIC MAPPING
+    # ============================================
 
-    async def _load_data(self) -> Dict[str, Any]:
-        """Load projects data from storage."""
-        return await self.storage.read(self._projects_file)
-
-    async def _save_data(self, data: Dict[str, Any]) -> bool:
-        """Save projects data to storage."""
-        return await self.storage.write(self._projects_file, data)
-
-    def _normalize_project_data(self, project_data: Dict) -> Dict:
-        """Normalize project data from storage format to Pydantic model format."""
-        scan_config_data = project_data.get("scanConfig", {})
+    def _model_to_project(self, row: ProjectModel) -> Project:
+        """Convert a ProjectModel ORM row to a Pydantic Project."""
+        # Reconstruct scan_config from JSONB
+        scan_cfg_raw = row.scan_config or {}
         scan_config = ProjectScanConfig(
-            enabled=scan_config_data.get("enabled", True),
-            scan_todos=scan_config_data.get("scanTodos", True),
-            scan_errors=scan_config_data.get("scanErrors", True),
-            scan_tests=scan_config_data.get("scanTests", True),
-            exclude_patterns=scan_config_data.get("excludePatterns", ProjectScanConfig().exclude_patterns),
-            include_extensions=scan_config_data.get("includeExtensions", ProjectScanConfig().include_extensions),
-            max_file_size_kb=scan_config_data.get("maxFileSizeKb", 500),
+            enabled=scan_cfg_raw.get("enabled", True),
+            scan_todos=scan_cfg_raw.get("scan_todos", scan_cfg_raw.get("scanTodos", True)),
+            scan_errors=scan_cfg_raw.get("scan_errors", scan_cfg_raw.get("scanErrors", True)),
+            scan_tests=scan_cfg_raw.get("scan_tests", scan_cfg_raw.get("scanTests", True)),
+            exclude_patterns=scan_cfg_raw.get(
+                "exclude_patterns",
+                scan_cfg_raw.get("excludePatterns", ProjectScanConfig().exclude_patterns),
+            ),
+            include_extensions=scan_cfg_raw.get(
+                "include_extensions",
+                scan_cfg_raw.get("includeExtensions", ProjectScanConfig().include_extensions),
+            ),
+            max_file_size_kb=scan_cfg_raw.get(
+                "max_file_size_kb",
+                scan_cfg_raw.get("maxFileSizeKb", 500),
+            ),
         )
 
-        last_scan_data = project_data.get("lastScan")
+        # Reconstruct last_scan from JSONB
         last_scan = None
-        if last_scan_data:
-            last_scan = ProjectScanResult(
-                scanned_at=datetime.fromisoformat(last_scan_data["scannedAt"]),
-                files_scanned=last_scan_data.get("filesScanned", 0),
-                signals_found=last_scan_data.get("signalsFound", 0),
-                errors=last_scan_data.get("errors", []),
-                summary=last_scan_data.get("summary", {}),
-            )
+        ls_raw = row.last_scan
+        if ls_raw:
+            scanned_at = ls_raw.get("scanned_at") or ls_raw.get("scannedAt")
+            if scanned_at:
+                last_scan = ProjectScanResult(
+                    scanned_at=datetime.fromisoformat(str(scanned_at)) if isinstance(scanned_at, str) else scanned_at,
+                    files_scanned=ls_raw.get("files_scanned", ls_raw.get("filesScanned", 0)),
+                    signals_found=ls_raw.get("signals_found", ls_raw.get("signalsFound", 0)),
+                    errors=ls_raw.get("errors", []),
+                    summary=ls_raw.get("summary", {}),
+                )
 
+        return Project(
+            id=row.id,
+            name=row.name,
+            description=row.description,
+            path=row.path,
+            project_type=ProjectType(row.project_type) if row.project_type else ProjectType.LOCAL,
+            status=ProjectStatus(row.status) if row.status else ProjectStatus.ACTIVE,
+            scan_config=scan_config,
+            tags=row.tags or [],
+            last_scan=last_scan,
+            task_count=row.task_count or 0,
+            open_signals=row.open_signals or 0,
+            git_remote=row.git_remote,
+            git_branch=row.git_branch,
+            last_commit_hash=row.last_commit_hash,
+            last_commit_message=row.last_commit_message,
+            github_repo_url=row.github_repo_url,
+            github_owner=row.github_owner,
+            github_repo=row.github_repo,
+            github_default_branch=row.github_default_branch,
+            github_sync_enabled=row.github_sync_enabled or False,
+            github_last_sync=row.github_last_sync,
+            github_sync_issues=row.github_sync_issues if row.github_sync_issues is not None else True,
+            github_sync_prs=row.github_sync_prs if row.github_sync_prs is not None else True,
+            github_open_issues=row.github_open_issues or 0,
+            github_open_prs=row.github_open_prs or 0,
+            github_stars=row.github_stars or 0,
+            github_forks=row.github_forks or 0,
+            created_at=row.created_at or datetime.utcnow(),
+            updated_at=row.updated_at,
+        )
+
+    def _scan_config_to_dict(self, scan_config: ProjectScanConfig) -> Dict:
+        """Serialize ProjectScanConfig to a plain dict for JSONB storage."""
         return {
-            "id": project_data.get("id"),
-            "name": project_data.get("name"),
-            "description": project_data.get("description"),
-            "path": project_data.get("path"),
-            "project_type": project_data.get("projectType", "local"),
-            "status": project_data.get("status", "active"),
-            "scan_config": scan_config,
-            "tags": project_data.get("tags", []),
-            "last_scan": last_scan,
-            "task_count": project_data.get("taskCount", 0),
-            "open_signals": project_data.get("openSignals", 0),
-            "git_remote": project_data.get("gitRemote"),
-            "git_branch": project_data.get("gitBranch"),
-            "last_commit_hash": project_data.get("lastCommitHash"),
-            "last_commit_message": project_data.get("lastCommitMessage"),
-            # GitHub Integration
-            "github_repo_url": project_data.get("githubRepoUrl"),
-            "github_owner": project_data.get("githubOwner"),
-            "github_repo": project_data.get("githubRepo"),
-            "github_default_branch": project_data.get("githubDefaultBranch"),
-            "github_sync_enabled": project_data.get("githubSyncEnabled", False),
-            "github_last_sync": project_data.get("githubLastSync"),
-            "github_sync_issues": project_data.get("githubSyncIssues", True),
-            "github_sync_prs": project_data.get("githubSyncPrs", True),
-            "github_open_issues": project_data.get("githubOpenIssues", 0),
-            "github_open_prs": project_data.get("githubOpenPrs", 0),
-            "github_stars": project_data.get("githubStars", 0),
-            "github_forks": project_data.get("githubForks", 0),
-            "created_at": project_data.get("createdAt"),
-            "updated_at": project_data.get("updatedAt"),
+            "enabled": scan_config.enabled,
+            "scan_todos": scan_config.scan_todos,
+            "scan_errors": scan_config.scan_errors,
+            "scan_tests": scan_config.scan_tests,
+            "exclude_patterns": scan_config.exclude_patterns,
+            "include_extensions": scan_config.include_extensions,
+            "max_file_size_kb": scan_config.max_file_size_kb,
         }
 
-    def _to_storage_format(self, project: Project) -> Dict:
-        """Convert project to storage format (camelCase)."""
-        scan_config = {
-            "enabled": project.scan_config.enabled,
-            "scanTodos": project.scan_config.scan_todos,
-            "scanErrors": project.scan_config.scan_errors,
-            "scanTests": project.scan_config.scan_tests,
-            "excludePatterns": project.scan_config.exclude_patterns,
-            "includeExtensions": project.scan_config.include_extensions,
-            "maxFileSizeKb": project.scan_config.max_file_size_kb,
-        }
-
-        last_scan = None
-        if project.last_scan:
-            last_scan = {
-                "scannedAt": project.last_scan.scanned_at.isoformat(),
-                "filesScanned": project.last_scan.files_scanned,
-                "signalsFound": project.last_scan.signals_found,
-                "errors": project.last_scan.errors,
-                "summary": project.last_scan.summary,
-            }
-
-        return {
-            "id": project.id,
-            "name": project.name,
-            "description": project.description,
-            "path": project.path,
-            "projectType": project.project_type.value if hasattr(project.project_type, 'value') else project.project_type,
-            "status": project.status.value if hasattr(project.status, 'value') else project.status,
-            "scanConfig": scan_config,
-            "tags": project.tags,
-            "lastScan": last_scan,
-            "taskCount": project.task_count,
-            "openSignals": project.open_signals,
-            "gitRemote": project.git_remote,
-            "gitBranch": project.git_branch,
-            "lastCommitHash": project.last_commit_hash,
-            "lastCommitMessage": project.last_commit_message,
-            # GitHub Integration
-            "githubRepoUrl": project.github_repo_url,
-            "githubOwner": project.github_owner,
-            "githubRepo": project.github_repo,
-            "githubDefaultBranch": project.github_default_branch,
-            "githubSyncEnabled": project.github_sync_enabled,
-            "githubLastSync": project.github_last_sync.isoformat() if project.github_last_sync else None,
-            "githubSyncIssues": project.github_sync_issues,
-            "githubSyncPrs": project.github_sync_prs,
-            "githubOpenIssues": project.github_open_issues,
-            "githubOpenPrs": project.github_open_prs,
-            "githubStars": project.github_stars,
-            "githubForks": project.github_forks,
-            "createdAt": project.created_at.isoformat() if project.created_at else None,
-            "updatedAt": project.updated_at.isoformat() if project.updated_at else None,
-        }
+    # ============================================
+    # CRUD
+    # ============================================
 
     async def list_projects(self, status: Optional[ProjectStatus] = None) -> List[Project]:
         """Get all projects with optional status filter."""
-        data = await self._load_data()
-        projects_data = data.get("projects", [])
-
-        projects = []
-        for p in projects_data:
-            if status and p.get("status") != status.value:
-                continue
-            normalized = self._normalize_project_data(p)
-            projects.append(Project(**normalized))
-
-        return projects
+        async with get_session() as session:
+            stmt = select(ProjectModel)
+            if status:
+                stmt = stmt.where(ProjectModel.status == status.value)
+            stmt = stmt.order_by(ProjectModel.name)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+            return [self._model_to_project(r) for r in rows]
 
     async def get_project(self, project_id: str) -> Optional[Project]:
         """Get project by ID."""
-        data = await self._load_data()
-        for p in data.get("projects", []):
-            if p["id"] == project_id:
-                normalized = self._normalize_project_data(p)
-                return Project(**normalized)
-        return None
+        async with get_session() as session:
+            row = await session.get(ProjectModel, project_id)
+            if row is None:
+                return None
+            return self._model_to_project(row)
 
     async def create_project(self, project_data: ProjectCreate) -> Project:
         """Register a new project."""
-        data = await self._load_data()
-
-        # Generate new project ID
-        next_id = data.get("nextProjectId", 1)
-        project_id = f"proj-{next_id}"
-
         now = datetime.utcnow()
 
         # Detect project type and git info
@@ -212,98 +171,95 @@ class ProjectService:
                 if project_type == ProjectType.LOCAL:
                     project_type = ProjectType.GITHUB
 
-        project = Project(
-            id=project_id,
-            name=project_data.name,
-            description=project_data.description,
-            path=path,
-            project_type=project_type,
-            status=ProjectStatus.ACTIVE,
-            scan_config=project_data.scan_config or ProjectScanConfig(),
-            tags=project_data.tags,
-            git_remote=git_remote,
-            git_branch=git_branch,
-            last_commit_hash=last_commit_hash,
-            last_commit_message=last_commit_message,
-            github_repo_url=github_repo_url,
-            github_owner=github_owner,
-            github_repo=github_repo,
-            github_sync_enabled=project_data.github_sync_enabled,
-            created_at=now
-        )
+        scan_config = project_data.scan_config or ProjectScanConfig()
 
-        # Add to projects list
-        projects = data.get("projects", [])
-        projects.append(self._to_storage_format(project))
+        async with get_session() as session:
+            # Generate next project ID via max existing
+            stmt = select(ProjectModel.id).order_by(ProjectModel.id.desc()).limit(1)
+            result = await session.execute(stmt)
+            last_id = result.scalar()
+            if last_id and last_id.startswith("proj-"):
+                try:
+                    next_num = int(last_id.split("-", 1)[1]) + 1
+                except (ValueError, IndexError):
+                    next_num = 1
+            else:
+                next_num = 1
+            project_id = f"proj-{next_num}"
 
-        # Update data
-        data["projects"] = projects
-        data["nextProjectId"] = next_id + 1
-
-        await self._save_data(data)
+            row = ProjectModel(
+                id=project_id,
+                name=project_data.name,
+                description=project_data.description,
+                path=path,
+                project_type=project_type.value,
+                status=ProjectStatus.ACTIVE.value,
+                scan_config=self._scan_config_to_dict(scan_config),
+                tags=project_data.tags or [],
+                git_remote=git_remote,
+                git_branch=git_branch,
+                last_commit_hash=last_commit_hash,
+                last_commit_message=last_commit_message,
+                github_repo_url=github_repo_url,
+                github_owner=github_owner,
+                github_repo=github_repo,
+                github_sync_enabled=project_data.github_sync_enabled,
+                created_at=now,
+            )
+            session.add(row)
+            await session.flush()
+            await session.refresh(row)
+            project = self._model_to_project(row)
 
         logger.info("Project created", project_id=project_id, name=project.name, path=path)
         return project
 
     async def update_project(self, project_id: str, updates: ProjectUpdate) -> Optional[Project]:
         """Update a project."""
-        data = await self._load_data()
-        projects = data.get("projects", [])
+        async with get_session() as session:
+            row = await session.get(ProjectModel, project_id)
+            if row is None:
+                return None
 
-        for i, p in enumerate(projects):
-            if p["id"] == project_id:
-                # Apply updates
-                update_dict = updates.model_dump(exclude_unset=True)
-                for key, value in update_dict.items():
-                    if value is not None:
-                        # Convert snake_case to camelCase for storage
-                        storage_key = self._to_camel_case(key)
+            update_dict = updates.model_dump(exclude_unset=True)
+            for key, value in update_dict.items():
+                if value is None:
+                    continue
 
-                        # Handle enums
-                        if hasattr(value, 'value'):
-                            value = value.value
+                # Handle enums
+                if hasattr(value, "value"):
+                    value = value.value
 
-                        # Handle nested scan_config
-                        if key == "scan_config" and value:
-                            value = {
-                                "enabled": value.enabled,
-                                "scanTodos": value.scan_todos,
-                                "scanErrors": value.scan_errors,
-                                "scanTests": value.scan_tests,
-                                "excludePatterns": value.exclude_patterns,
-                                "includeExtensions": value.include_extensions,
-                                "maxFileSizeKb": value.max_file_size_kb,
-                            }
-                            storage_key = "scanConfig"
+                # Handle nested scan_config
+                if key == "scan_config" and isinstance(value, ProjectScanConfig):
+                    row.scan_config = self._scan_config_to_dict(value)
+                    continue
 
-                        p[storage_key] = value
+                if hasattr(row, key):
+                    setattr(row, key, value)
 
-                p["updatedAt"] = datetime.utcnow().isoformat()
-                projects[i] = p
-                data["projects"] = projects
-                await self._save_data(data)
+            row.updated_at = datetime.utcnow()
+            await session.flush()
+            await session.refresh(row)
+            project = self._model_to_project(row)
 
-                logger.info("Project updated", project_id=project_id)
-                normalized = self._normalize_project_data(p)
-                return Project(**normalized)
-
-        return None
+        logger.info("Project updated", project_id=project_id)
+        return project
 
     async def delete_project(self, project_id: str) -> bool:
         """Delete a project."""
-        data = await self._load_data()
-        projects = data.get("projects", [])
+        async with get_session() as session:
+            row = await session.get(ProjectModel, project_id)
+            if row is None:
+                return False
+            await session.delete(row)
 
-        for i, p in enumerate(projects):
-            if p["id"] == project_id:
-                del projects[i]
-                data["projects"] = projects
-                await self._save_data(data)
+        logger.info("Project deleted", project_id=project_id)
+        return True
 
-                logger.info("Project deleted", project_id=project_id)
-                return True
-
-        return False
+    # ============================================
+    # SCANNING
+    # ============================================
 
     async def scan_project(self, project_id: str) -> ProjectScanResult:
         """Scan a project for enhancement signals."""
@@ -376,26 +332,20 @@ class ProjectService:
             summary=summary
         )
 
-        # Update project with scan result
-        data = await self._load_data()
-        projects = data.get("projects", [])
-        for i, p in enumerate(projects):
-            if p["id"] == project_id:
-                p["lastScan"] = {
-                    "scannedAt": scan_result.scanned_at.isoformat(),
-                    "filesScanned": scan_result.files_scanned,
-                    "signalsFound": scan_result.signals_found,
+        # Persist scan result into the project row
+        async with get_session() as session:
+            row = await session.get(ProjectModel, project_id)
+            if row:
+                row.last_scan = {
+                    "scanned_at": scan_result.scanned_at.isoformat(),
+                    "files_scanned": scan_result.files_scanned,
+                    "signals_found": scan_result.signals_found,
                     "errors": scan_result.errors,
                     "summary": scan_result.summary,
                 }
-                p["openSignals"] = signals_found
-                p["status"] = ProjectStatus.ACTIVE.value
-                p["updatedAt"] = now.isoformat()
-                projects[i] = p
-                break
-
-        data["projects"] = projects
-        await self._save_data(data)
+                row.open_signals = signals_found
+                row.status = ProjectStatus.ACTIVE.value
+                row.updated_at = now
 
         logger.info(
             "Project scanned",
@@ -405,6 +355,10 @@ class ProjectService:
         )
 
         return scan_result
+
+    # ============================================
+    # CONTEXT RETRIEVAL
+    # ============================================
 
     async def get_project_context(self, project_id: str) -> Dict[str, Any]:
         """Get project context for Claude (CLAUDE.md, structure, etc.)."""
@@ -467,23 +421,27 @@ class ProjectService:
     async def update_task_count(self, project_id: str) -> None:
         """Update the task count for a project."""
         tasks = await self.get_project_tasks(project_id)
-        data = await self._load_data()
-        projects = data.get("projects", [])
+        async with get_session() as session:
+            row = await session.get(ProjectModel, project_id)
+            if row:
+                row.task_count = len(tasks)
+                row.updated_at = datetime.utcnow()
 
-        for i, p in enumerate(projects):
-            if p["id"] == project_id:
-                p["taskCount"] = len(tasks)
-                projects[i] = p
-                break
-
-        data["projects"] = projects
-        await self._save_data(data)
+    # ============================================
+    # UTILITY METHODS
+    # ============================================
 
     def _get_git_info(self, path: str) -> Optional[Dict[str, str]]:
         """Get git information for a directory."""
-        git_dir = os.path.join(path, ".git")
+        # Resolve symlinks and canonicalize to prevent path traversal
+        try:
+            canonical = os.path.realpath(path)
+        except (OSError, ValueError):
+            return None
+        git_dir = os.path.join(canonical, ".git")
         if not os.path.isdir(git_dir):
             return None
+        path = canonical
 
         info = {}
         try:
@@ -554,10 +512,193 @@ class ProjectService:
         """Check if a name matches exclude patterns."""
         return name in patterns or name.startswith('.')
 
-    def _to_camel_case(self, snake_str: str) -> str:
-        """Convert snake_case to camelCase."""
-        components = snake_str.split('_')
-        return components[0] + ''.join(x.title() for x in components[1:])
+    def _resolve_path(self, path: str) -> str:
+        """Translate a host Windows path to a container path if needed.
+
+        Docker mounts host project dirs under /projects/<name>.
+        When the API runs inside a container, C:\\code\\zero won't exist
+        but /projects/zero will.
+        """
+        # Already a valid directory — no translation needed
+        if os.path.isdir(path):
+            return os.path.realpath(path)
+
+        # Try translating common Windows patterns: C:\code\<name> or C:/code/<name>
+        normalised = path.replace("\\", "/").rstrip("/")
+        # Match C:/code/<project_name> (case-insensitive drive letter)
+        import re as _re
+        m = _re.match(r"(?i)^[a-z]:/code/([^/]+)$", normalised)
+        if m:
+            candidate = f"/projects/{m.group(1).lower()}"
+            if os.path.isdir(candidate):
+                return candidate
+
+        return os.path.realpath(path)
+
+    async def analyze_path(self, path: str) -> Dict[str, Any]:
+        """Use Ollama to analyze a project directory and suggest metadata."""
+        canonical = self._resolve_path(path)
+        if not os.path.isdir(canonical):
+            return {"error": f"Directory not found: {path}"}
+
+        # Gather project signals
+        folder_name = os.path.basename(canonical)
+        structure = self._get_directory_structure(canonical, max_depth=2)
+        git_info = self._get_git_info(canonical)
+
+        # Read README
+        readme = ""
+        for name in ["README.md", "readme.md", "README.txt", "README"]:
+            rp = os.path.join(canonical, name)
+            if os.path.isfile(rp):
+                try:
+                    with open(rp, "r", encoding="utf-8") as f:
+                        readme = f.read()[:2000]
+                    break
+                except Exception:
+                    pass
+
+        # Detect tech stack from manifest files
+        manifests: Dict[str, str] = {}
+        manifest_files = {
+            "package.json": "package.json",
+            "requirements.txt": "requirements.txt",
+            "pyproject.toml": "pyproject.toml",
+            "Cargo.toml": "Cargo.toml",
+            "go.mod": "go.mod",
+            "Gemfile": "Gemfile",
+            "pom.xml": "pom.xml",
+            "build.gradle": "build.gradle",
+            "composer.json": "composer.json",
+        }
+        for fname, label in manifest_files.items():
+            fp = os.path.join(canonical, fname)
+            if os.path.isfile(fp):
+                try:
+                    with open(fp, "r", encoding="utf-8") as f:
+                        manifests[label] = f.read()[:1000]
+                except Exception:
+                    pass
+
+        # Build context for LLM
+        context_parts = [f"Folder name: {folder_name}"]
+        if git_info:
+            context_parts.append(f"Git remote: {git_info.get('remote', 'none')}")
+            context_parts.append(f"Branch: {git_info.get('branch', 'unknown')}")
+        if readme:
+            context_parts.append(f"README (first 2000 chars):\n{readme}")
+        if manifests:
+            for mname, mcontent in manifests.items():
+                context_parts.append(f"{mname}:\n{mcontent}")
+        if structure:
+            context_parts.append(f"Directory tree:\n" + "\n".join(structure[:50]))
+
+        context_str = "\n\n".join(context_parts)
+
+        # Call Ollama
+        try:
+            from app.infrastructure.ollama_client import get_ollama_client
+            client = get_ollama_client()
+
+            system_prompt = (
+                "You are a project analyzer. Given information about a software project, "
+                "return ONLY a JSON object with these fields:\n"
+                '- "name": short project name (2-4 words max)\n'
+                '- "description": one-sentence description of what the project does\n'
+                '- "project_type": one of "local", "git", "github", "gitlab"\n'
+                '- "tech_stack": array of technologies/frameworks used (e.g. ["Python", "FastAPI", "React"])\n'
+                '- "tags": array of 2-5 descriptive tags (e.g. ["web-app", "api", "fullstack"])\n'
+                "No markdown, no explanation, ONLY the JSON object."
+            )
+
+            response = await client.chat_safe(
+                f"Analyze this project:\n\n{context_str}",
+                system=system_prompt,
+                task_type="analysis",
+                temperature=0.0,
+                num_predict=500,
+                max_retries=1,
+            )
+
+            if response and "{" in response:
+                json_str = response[response.index("{"):response.rindex("}") + 1]
+                data = json.loads(json_str)
+
+                # Auto-detect project type from git info
+                if git_info:
+                    remote = git_info.get("remote", "")
+                    if "github.com" in remote:
+                        data["project_type"] = "github"
+                    elif "gitlab" in remote:
+                        data["project_type"] = "gitlab"
+                    else:
+                        data["project_type"] = "git"
+                    data["github_url"] = remote if "github.com" in remote else None
+
+                return {
+                    "name": data.get("name", folder_name),
+                    "description": data.get("description", ""),
+                    "project_type": data.get("project_type", "local"),
+                    "tech_stack": data.get("tech_stack", []),
+                    "tags": data.get("tags", []),
+                    "github_url": data.get("github_url"),
+                    "git_info": git_info,
+                    "ai_generated": True,
+                }
+
+        except Exception as e:
+            logger.warning("ai_analyze_failed", error=str(e))
+
+        # Fallback: heuristic analysis without LLM
+        tech_stack = []
+        tags = []
+        project_type = "local"
+        if "package.json" in manifests:
+            tech_stack.append("Node.js")
+            try:
+                pkg = json.loads(manifests["package.json"])
+                deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                if "react" in deps:
+                    tech_stack.append("React")
+                if "vue" in deps:
+                    tech_stack.append("Vue")
+                if "next" in deps:
+                    tech_stack.append("Next.js")
+                if "typescript" in deps:
+                    tech_stack.append("TypeScript")
+            except Exception:
+                pass
+        if "requirements.txt" in manifests:
+            tech_stack.append("Python")
+            content = manifests["requirements.txt"].lower()
+            if "fastapi" in content:
+                tech_stack.append("FastAPI")
+            if "django" in content:
+                tech_stack.append("Django")
+            if "flask" in content:
+                tech_stack.append("Flask")
+        if "Cargo.toml" in manifests:
+            tech_stack.append("Rust")
+        if "go.mod" in manifests:
+            tech_stack.append("Go")
+
+        if git_info:
+            remote = git_info.get("remote", "")
+            if "github.com" in remote:
+                project_type = "github"
+            else:
+                project_type = "git"
+
+        return {
+            "name": folder_name,
+            "description": "",
+            "project_type": project_type,
+            "tech_stack": tech_stack,
+            "tags": tags,
+            "github_url": git_info.get("remote") if git_info and "github.com" in git_info.get("remote", "") else None,
+            "git_info": git_info,
+            "ai_generated": False,
+        }
 
     def _parse_github_url(self, url: str) -> Optional[Dict[str, str]]:
         """Parse GitHub URL to extract owner and repo name."""

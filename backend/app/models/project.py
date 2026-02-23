@@ -5,7 +5,7 @@ Project data models.
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ProjectType(str, Enum):
@@ -25,30 +25,26 @@ class ProjectStatus(str, Enum):
 
 class ProjectScanConfig(BaseModel):
     """Configuration for project scanning."""
-    model_config = ConfigDict(populate_by_name=True)
 
     enabled: bool = True
-    scan_todos: bool = Field(True, alias="scanTodos")
-    scan_errors: bool = Field(True, alias="scanErrors")
-    scan_tests: bool = Field(True, alias="scanTests")
+    scan_todos: bool = True
+    scan_errors: bool = True
+    scan_tests: bool = True
     exclude_patterns: List[str] = Field(
-        default=["node_modules", "__pycache__", ".git", "dist", "build", ".venv", "venv"],
-        alias="excludePatterns"
+        default=["node_modules", "__pycache__", ".git", "dist", "build", ".venv", "venv"]
     )
     include_extensions: List[str] = Field(
-        default=[".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".json"],
-        alias="includeExtensions"
+        default=[".py", ".ts", ".tsx", ".js", ".jsx", ".md", ".json"]
     )
-    max_file_size_kb: int = Field(500, alias="maxFileSizeKb")
+    max_file_size_kb: int = 500
 
 
 class ProjectScanResult(BaseModel):
     """Results from a project scan."""
-    model_config = ConfigDict(populate_by_name=True)
 
-    scanned_at: datetime = Field(alias="scannedAt")
-    files_scanned: int = Field(alias="filesScanned")
-    signals_found: int = Field(alias="signalsFound")
+    scanned_at: datetime
+    files_scanned: int
+    signals_found: int
     errors: List[str] = Field(default_factory=list)
     summary: Dict[str, int] = Field(default_factory=dict)
 
@@ -83,41 +79,40 @@ class ProjectUpdate(BaseModel):
 
 class Project(BaseModel):
     """Full project model."""
-    model_config = ConfigDict(populate_by_name=True)
 
     id: str
     name: str
     description: Optional[str] = None
     path: str
-    project_type: ProjectType = Field(ProjectType.LOCAL, alias="projectType")
+    project_type: ProjectType = ProjectType.LOCAL
     status: ProjectStatus = ProjectStatus.ACTIVE
-    scan_config: ProjectScanConfig = Field(default_factory=ProjectScanConfig, alias="scanConfig")
+    scan_config: ProjectScanConfig = Field(default_factory=ProjectScanConfig)
     tags: List[str] = Field(default_factory=list)
 
     # Scan metadata
-    last_scan: Optional[ProjectScanResult] = Field(None, alias="lastScan")
-    task_count: int = Field(0, alias="taskCount")
-    open_signals: int = Field(0, alias="openSignals")
+    last_scan: Optional[ProjectScanResult] = None
+    task_count: int = 0
+    open_signals: int = 0
 
     # Git metadata
-    git_remote: Optional[str] = Field(None, alias="gitRemote")
-    git_branch: Optional[str] = Field(None, alias="gitBranch")
-    last_commit_hash: Optional[str] = Field(None, alias="lastCommitHash")
-    last_commit_message: Optional[str] = Field(None, alias="lastCommitMessage")
+    git_remote: Optional[str] = None
+    git_branch: Optional[str] = None
+    last_commit_hash: Optional[str] = None
+    last_commit_message: Optional[str] = None
 
     # GitHub Integration
-    github_repo_url: Optional[str] = Field(None, alias="githubRepoUrl")
-    github_owner: Optional[str] = Field(None, alias="githubOwner")
-    github_repo: Optional[str] = Field(None, alias="githubRepo")
-    github_default_branch: Optional[str] = Field(None, alias="githubDefaultBranch")
-    github_sync_enabled: bool = Field(False, alias="githubSyncEnabled")
-    github_last_sync: Optional[datetime] = Field(None, alias="githubLastSync")
-    github_sync_issues: bool = Field(True, alias="githubSyncIssues")
-    github_sync_prs: bool = Field(True, alias="githubSyncPrs")
-    github_open_issues: int = Field(0, alias="githubOpenIssues")
-    github_open_prs: int = Field(0, alias="githubOpenPrs")
-    github_stars: int = Field(0, alias="githubStars")
-    github_forks: int = Field(0, alias="githubForks")
+    github_repo_url: Optional[str] = None
+    github_owner: Optional[str] = None
+    github_repo: Optional[str] = None
+    github_default_branch: Optional[str] = None
+    github_sync_enabled: bool = False
+    github_last_sync: Optional[datetime] = None
+    github_sync_issues: bool = True
+    github_sync_prs: bool = True
+    github_open_issues: int = 0
+    github_open_prs: int = 0
+    github_stars: int = 0
+    github_forks: int = 0
 
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    updated_at: Optional[datetime] = Field(None, alias="updatedAt")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None

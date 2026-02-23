@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 18792
 
-    # LLM Settings (Ollama)
+    # LLM Settings (Ollama) — fallback only; LLM router is source of truth
     ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "qwen3:32b"
-    ollama_timeout: int = 60
+    ollama_model: str = "qwen3-coder-next:latest"
+    ollama_timeout: int = 300
 
     # Legion Sprint Manager
     # Use host.docker.internal for Docker environments, localhost for local development
@@ -39,9 +39,8 @@ class Settings(BaseSettings):
     # Use container name for Docker, localhost:8888 for local development
     searxng_url: str = "http://zero-searxng:8080"
 
-    # PostgreSQL for LangGraph checkpointing (optional)
-    # Format: postgresql://user:pass@host:5433/dbname
-    postgres_url: Optional[str] = None
+    # PostgreSQL Database
+    postgres_url: str = "postgresql://zero:zero_dev@zero-postgres:5432/zero"
 
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -59,10 +58,38 @@ class Settings(BaseSettings):
     email_automation_confidence_threshold: float = 0.85
     email_question_timeout_hours: int = 24
 
+    # Embedding Settings (for RAG / semantic search)
+    embedding_model: str = "nomic-embed-text"
+    embedding_dimension: int = 768
+
+    # AIContentTools Integration
+    ai_content_tools_url: str = "http://host.docker.internal:8085"
+
     # Notion Integration
     notion_api_key: Optional[str] = None
     notion_database_id: Optional[str] = None
     notion_workspace_page_id: Optional[str] = None
+
+    # ADA Bridge (Prediction Market data push)
+    ada_api_url: str = "http://ada-backend:8003"
+    ada_api_token: Optional[str] = None
+
+    # Kalshi API
+    kalshi_api_url: str = "https://api.elections.kalshi.com/trade-api/v2"
+    kalshi_api_key: Optional[str] = None
+    kalshi_api_secret: Optional[str] = None
+
+    # Polymarket API
+    polymarket_gamma_url: str = "https://gamma-api.polymarket.com"
+
+    # Multi-Provider LLM API Keys
+    gemini_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
+    kimi_api_key: Optional[str] = None
+
+    # LLM Cost Control
+    llm_daily_budget_usd: float = 5.0
 
     class Config:
         env_file = ".env"

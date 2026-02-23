@@ -175,8 +175,8 @@ send_status "Starting process" "progress" "main"
 send_status "Done" "success" "main"
 ```
 
-### Automation with Clawdbot Cron
-For scheduled tasks that need periodic status updates, use Clawdbot's cron feature.
+### Automation with Zero Cron
+For scheduled tasks that need periodic status updates, use Zero's cron feature.
 
 ## Monitoring Use Cases
 

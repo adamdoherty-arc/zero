@@ -16,9 +16,19 @@ import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
 import { ArchitecturePage } from '@/pages/ArchitecturePage'
+import { QAPage } from '@/pages/QAPage'
+import { AgentPage } from '@/pages/AgentPage'
+import { AskZeroPage } from '@/pages/AskZeroPage'
+import { SystemHealthPage } from '@/pages/SystemHealthPage'
+import { TikTokShopPage } from '@/pages/TikTokShopPage'
+
+import { ContentAgentPage } from '@/pages/ContentAgentPage'
+import { PredictionMarketsPage } from '@/pages/PredictionMarketsPage'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 function App() {
   return (
+    <ErrorBoundary pageName="root">
     <BrowserRouter>
       <div className="dark">
         <Routes>
@@ -39,10 +49,19 @@ function App() {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
+            <Route path="/qa" element={<QAPage />} />
+            <Route path="/agent" element={<AgentPage />} />
+            <Route path="/ask-zero" element={<AskZeroPage />} />
+            <Route path="/system-health" element={<SystemHealthPage />} />
+            <Route path="/tiktok-shop" element={<TikTokShopPage />} />
+
+            <Route path="/content-agent" element={<ContentAgentPage />} />
+            <Route path="/prediction-markets" element={<PredictionMarketsPage />} />
           </Route>
         </Routes>
       </div>
     </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 

@@ -1,30 +1,30 @@
 ---
-name: clawdbot-backup
-description: Backup and restore ClawdBot configuration, skills, commands, and settings. Sync across devices, version control with git, automate backups, and migrate to new machines.
-homepage: https://github.com/clawdbot/backup-skill
-metadata: {"clawdbot":{"emoji":"💾","requires":{"bins":["git","tar","rsync"],"env":[]}}}
+name: zero-backup
+description: Backup and restore Zero configuration, skills, commands, and settings. Sync across devices, version control with git, automate backups, and migrate to new machines.
+homepage: https://github.com/zero/backup-skill
+metadata: {"zero":{"emoji":"💾","requires":{"bins":["git","tar","rsync"],"env":[]}}}
 ---
 
-# ClawdBot Backup Skill
+# Zero Backup Skill
 
-Backup, restore, and sync your ClawdBot configuration across devices directly from Clawdbot.
+Backup, restore, and sync your Zero configuration across devices directly from Zero.
 
 ## Overview
 
 This skill helps you:
-- Backup all ClawdBot data and settings
+- Backup all Zero data and settings
 - Restore from backups
 - Sync between multiple machines
 - Version control your configuration
 - Automate backup routines
 - Migrate to new devices
 
-## ClawdBot Directory Structure
+## Zero Directory Structure
 
 ### Key Locations
 
 ```
-~/.claude/                    # Main ClawdBot directory
+~/.claude/                    # Main Zero directory
 ├── settings.json             # Global settings
 ├── settings.local.json       # Local overrides (machine-specific)
 ├── projects.json             # Project configurations
@@ -74,9 +74,9 @@ OPTIONAL (Case by case):
 
 ```bash
 # Create timestamped backup
-BACKUP_DIR="$HOME/clawdbot-backups"
+BACKUP_DIR="$HOME/zero-backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="clawdbot_backup_$TIMESTAMP"
+BACKUP_NAME="zero_backup_$TIMESTAMP"
 
 mkdir -p "$BACKUP_DIR"
 
@@ -97,7 +97,7 @@ echo "Backup created: $BACKUP_DIR/$BACKUP_NAME.tar.gz"
 
 ```bash
 # Backup just skills
-tar -czvf ~/clawdbot_skills_$(date +%Y%m%d).tar.gz \
+tar -czvf ~/zero_skills_$(date +%Y%m%d).tar.gz \
   -C "$HOME" .claude/skills .claude/commands
 ```
 
@@ -105,7 +105,7 @@ tar -czvf ~/clawdbot_skills_$(date +%Y%m%d).tar.gz \
 
 ```bash
 # Restore full backup
-BACKUP_FILE="$HOME/clawdbot-backups/clawdbot_backup_20260129.tar.gz"
+BACKUP_FILE="$HOME/zero-backups/zero_backup_20260129.tar.gz"
 
 # Preview contents first
 tar -tzvf "$BACKUP_FILE"
@@ -122,12 +122,12 @@ echo "Restore complete!"
 
 ```bash
 #!/bin/bash
-# clawdbot-backup.sh - Comprehensive ClawdBot backup tool
+# zero-backup.sh - Comprehensive Zero backup tool
 
 set -e
 
 # Configuration
-BACKUP_ROOT="${CLAWDBOT_BACKUP_DIR:-$HOME/clawdbot-backups}"
+BACKUP_ROOT="${ZERO_BACKUP_DIR:-$HOME/zero-backups}"
 CLAUDE_DIR="$HOME/.claude"
 MAX_BACKUPS=10  # Keep last N backups
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -142,10 +142,10 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Check if ClawdBot directory exists
+# Check if Zero directory exists
 check_claude_dir() {
     if [ ! -d "$CLAUDE_DIR" ]; then
-        log_error "ClawdBot directory not found: $CLAUDE_DIR"
+        log_error "Zero directory not found: $CLAUDE_DIR"
         exit 1
     fi
 }
@@ -153,7 +153,7 @@ check_claude_dir() {
 # Create backup
 create_backup() {
     local backup_type="${1:-full}"
-    local backup_name="clawdbot_${backup_type}_${TIMESTAMP}"
+    local backup_name="zero_${backup_type}_${TIMESTAMP}"
     local backup_path="$BACKUP_ROOT/$backup_name.tar.gz"
     
     mkdir -p "$BACKUP_ROOT"
@@ -270,7 +270,7 @@ cleanup_backups() {
 
 # Show backup stats
 show_stats() {
-    log_info "ClawdBot Backup Statistics"
+    log_info "Zero Backup Statistics"
     echo ""
     
     echo "=== Directory Sizes ==="
@@ -297,7 +297,7 @@ show_stats() {
 # Usage
 usage() {
     cat << EOF
-ClawdBot Backup Tool
+Zero Backup Tool
 
 Usage: $(basename $0) <command> [options]
 
@@ -317,7 +317,7 @@ Examples:
     $(basename $0) cleanup
 
 Environment:
-    CLAWDBOT_BACKUP_DIR    Backup directory (default: ~/clawdbot-backups)
+    ZERO_BACKUP_DIR    Backup directory (default: ~/zero-backups)
 
 EOF
 }
@@ -360,17 +360,17 @@ main "$@"
 
 ```bash
 # Save script
-cat > ~/.local/bin/clawdbot-backup << 'SCRIPT'
+cat > ~/.local/bin/zero-backup << 'SCRIPT'
 # Paste script content here
 SCRIPT
 
-chmod +x ~/.local/bin/clawdbot-backup
+chmod +x ~/.local/bin/zero-backup
 
 # Usage
-clawdbot-backup backup          # Full backup
-clawdbot-backup backup skills   # Skills only
-clawdbot-backup list            # List backups
-clawdbot-backup restore <file>  # Restore
+zero-backup backup          # Full backup
+zero-backup backup skills   # Skills only
+zero-backup list            # List backups
+zero-backup restore <file>  # Restore
 ```
 
 ## Git Version Control
@@ -405,14 +405,14 @@ EOF
 
 # Initial commit
 git add .
-git commit -m "Initial ClawdBot configuration backup"
+git commit -m "Initial Zero configuration backup"
 ```
 
 ### Push to Remote
 
 ```bash
 # Add remote (GitHub, GitLab, etc)
-git remote add origin git@github.com:username/clawdbot-config.git
+git remote add origin git@github.com:username/zero-config.git
 
 # Push
 git push -u origin main
@@ -456,7 +456,7 @@ git push 2>/dev/null || echo "Push failed (offline?)"
 
 ```bash
 # On new device
-git clone git@github.com:username/clawdbot-config.git ~/.claude
+git clone git@github.com:username/zero-config.git ~/.claude
 
 # Pull latest changes
 cd ~/.claude && git pull
@@ -471,11 +471,11 @@ cd ~/.claude && git add . && git commit -m "Update" && git push
 # Sync to remote server
 rsync -avz --delete \
     ~/.claude/ \
-    user@server:~/clawdbot-backup/
+    user@server:~/zero-backup/
 
 # Sync from remote server
 rsync -avz --delete \
-    user@server:~/clawdbot-backup/ \
+    user@server:~/zero-backup/ \
     ~/.claude/
 ```
 
@@ -483,7 +483,7 @@ rsync -avz --delete \
 
 ```bash
 # Backup to cloud folder (Dropbox, Google Drive, etc)
-CLOUD_DIR="$HOME/Dropbox/ClawdBot"
+CLOUD_DIR="$HOME/Dropbox/Zero"
 
 # Sync skills
 rsync -avz ~/.claude/skills/ "$CLOUD_DIR/skills/"
@@ -497,9 +497,9 @@ cp ~/.claude/settings.json "$CLOUD_DIR/"
 
 ```bash
 #!/bin/bash
-# sync-clawdbot.sh - Sync ClawdBot config between devices
+# sync-zero.sh - Sync Zero config between devices
 
-SYNC_DIR="${CLAWDBOT_SYNC_DIR:-$HOME/Dropbox/ClawdBot}"
+SYNC_DIR="${ZERO_SYNC_DIR:-$HOME/Dropbox/Zero}"
 CLAUDE_DIR="$HOME/.claude"
 
 sync_to_cloud() {
@@ -549,10 +549,10 @@ esac
 crontab -e
 
 # Add daily backup at 2 AM
-0 2 * * * /home/user/.local/bin/clawdbot-backup backup full
+0 2 * * * /home/user/.local/bin/zero-backup backup full
 
 # Add weekly cleanup on Sundays
-0 3 * * 0 /home/user/.local/bin/clawdbot-backup cleanup
+0 3 * * 0 /home/user/.local/bin/zero-backup cleanup
 
 # Add git auto-commit every 6 hours
 0 */6 * * * cd ~/.claude && git add . && git commit -m "Auto-backup $(date +\%Y-\%m-\%d)" && git push 2>/dev/null
@@ -561,20 +561,20 @@ crontab -e
 ### Systemd Timer (Linux)
 
 ```bash
-# Create service: ~/.config/systemd/user/clawdbot-backup.service
-cat > ~/.config/systemd/user/clawdbot-backup.service << 'EOF'
+# Create service: ~/.config/systemd/user/zero-backup.service
+cat > ~/.config/systemd/user/zero-backup.service << 'EOF'
 [Unit]
-Description=ClawdBot Backup
+Description=Zero Backup
 
 [Service]
 Type=oneshot
-ExecStart=/home/user/.local/bin/clawdbot-backup backup full
+ExecStart=/home/user/.local/bin/zero-backup backup full
 EOF
 
-# Create timer: ~/.config/systemd/user/clawdbot-backup.timer
-cat > ~/.config/systemd/user/clawdbot-backup.timer << 'EOF'
+# Create timer: ~/.config/systemd/user/zero-backup.timer
+cat > ~/.config/systemd/user/zero-backup.timer << 'EOF'
 [Unit]
-Description=Daily ClawdBot Backup
+Description=Daily Zero Backup
 
 [Timer]
 OnCalendar=daily
@@ -585,24 +585,24 @@ WantedBy=timers.target
 EOF
 
 # Enable
-systemctl --user enable clawdbot-backup.timer
-systemctl --user start clawdbot-backup.timer
+systemctl --user enable zero-backup.timer
+systemctl --user start zero-backup.timer
 ```
 
 ### Launchd (macOS)
 
 ```bash
-# Create plist: ~/Library/LaunchAgents/com.clawdbot.backup.plist
-cat > ~/Library/LaunchAgents/com.clawdbot.backup.plist << 'EOF'
+# Create plist: ~/Library/LaunchAgents/com.zero.backup.plist
+cat > ~/Library/LaunchAgents/com.zero.backup.plist << 'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.clawdbot.backup</string>
+    <string>com.zero.backup</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/username/.local/bin/clawdbot-backup</string>
+        <string>/Users/username/.local/bin/zero-backup</string>
         <string>backup</string>
         <string>full</string>
     </array>
@@ -618,7 +618,7 @@ cat > ~/Library/LaunchAgents/com.clawdbot.backup.plist << 'EOF'
 EOF
 
 # Load
-launchctl load ~/Library/LaunchAgents/com.clawdbot.backup.plist
+launchctl load ~/Library/LaunchAgents/com.zero.backup.plist
 ```
 
 ## Migration Guide
@@ -629,10 +629,10 @@ launchctl load ~/Library/LaunchAgents/com.clawdbot.backup.plist
 # === On OLD machine ===
 
 # 1. Create full backup
-clawdbot-backup backup full
+zero-backup backup full
 
 # 2. Copy backup file to new machine
-scp ~/clawdbot-backups/clawdbot_full_*.tar.gz newmachine:~/
+scp ~/zero-backups/zero_full_*.tar.gz newmachine:~/
 
 # Or use git
 cd ~/.claude
@@ -643,10 +643,10 @@ git push
 # === On NEW machine ===
 
 # Method A: From backup file
-tar -xzvf ~/clawdbot_full_*.tar.gz -C ~
+tar -xzvf ~/zero_full_*.tar.gz -C ~
 
 # Method B: From git
-git clone git@github.com:username/clawdbot-config.git ~/.claude
+git clone git@github.com:username/zero-config.git ~/.claude
 
 # 3. Verify
 ls -la ~/.claude/skills/
@@ -667,7 +667,7 @@ tar -xzvf "${SKILL_NAME}.tar.gz" -C ~/.claude/skills/
 
 ```bash
 # Create shareable skills bundle (no personal settings)
-tar -czvf clawdbot-skills-share.tar.gz \
+tar -czvf zero-skills-share.tar.gz \
     -C ~/.claude \
     skills \
     --exclude='*.local*' \
@@ -736,10 +736,10 @@ git stash pop
 mv ~/.claude ~/.claude.corrupted
 
 # 2. Restore from backup
-clawdbot-backup restore latest.tar.gz
+zero-backup restore latest.tar.gz
 
 # 3. Or restore from git
-git clone git@github.com:username/clawdbot-config.git ~/.claude
+git clone git@github.com:username/zero-config.git ~/.claude
 
 # 4. Compare and recover anything missing
 diff -rq ~/.claude ~/.claude.corrupted/
@@ -751,13 +751,13 @@ diff -rq ~/.claude ~/.claude.corrupted/
 
 ```bash
 # Backup
-tar -czvf ~/clawdbot-backup.tar.gz -C ~ .claude/skills .claude/commands .claude/settings.json
+tar -czvf ~/zero-backup.tar.gz -C ~ .claude/skills .claude/commands .claude/settings.json
 
 # Restore
-tar -xzvf ~/clawdbot-backup.tar.gz -C ~
+tar -xzvf ~/zero-backup.tar.gz -C ~
 
 # List backup contents
-tar -tzvf ~/clawdbot-backup.tar.gz
+tar -tzvf ~/zero-backup.tar.gz
 
 # Git backup
 cd ~/.claude && git add . && git commit -m "Backup" && git push
@@ -792,9 +792,9 @@ Regular maintenance:
 
 ### Documentation
 ```
-- ClawdBot Docs: docs.clawdbot.com
-- Skills Guide: docs.clawdbot.com/skills
-- MCP Setup: docs.clawdbot.com/mcp
+- Zero Docs: docs.zero.com
+- Skills Guide: docs.zero.com/skills
+- MCP Setup: docs.zero.com/mcp
 ```
 
 ---

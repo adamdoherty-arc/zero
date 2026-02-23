@@ -2,7 +2,7 @@
 name: git-essentials
 description: Essential Git commands and workflows for version control, branching, and collaboration.
 homepage: https://git-scm.com/
-metadata: {"clawdbot":{"emoji":"🌳","requires":{"bins":["git"]}}}
+metadata: {"zero":{"emoji":"🌳","requires":{"bins":["git"]}}}
 ---
 
 # Git Essentials

@@ -5,15 +5,16 @@ Based on ADA's sprint intelligence patterns.
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from functools import lru_cache
 import structlog
-import httpx
 
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_sprints_path, get_settings
+from sqlalchemy import select, func as sa_func
+from app.infrastructure.database import get_session
+from app.infrastructure.config import get_settings
+from app.db.models import SprintModel, TaskModel
 from app.services.enhancement_service import get_enhancement_service
 
 logger = structlog.get_logger()
@@ -52,7 +53,6 @@ class SprintIntelligenceService:
     """
 
     def __init__(self):
-        self.storage = JsonStorage(get_sprints_path())
         self.settings = get_settings()
 
     async def scan_todo_comments(self) -> Dict[str, Any]:
@@ -74,24 +74,33 @@ class SprintIntelligenceService:
         enhancement_service = get_enhancement_service()
         stats = await enhancement_service.get_stats()
 
-        # Get current sprint info
-        sprints_data = await self.storage.read("sprints.json")
-        tasks_data = await self.storage.read("tasks.json")
+        # Get current sprint info from PostgreSQL
+        async with get_session() as session:
+            current_sprint = None
+            if sprint_id:
+                row = await session.get(SprintModel, sprint_id)
+                if row:
+                    current_sprint = {"id": row.id, "name": row.name, "status": row.status,
+                                      "total_points": row.total_points, "completed_points": row.completed_points}
+            else:
+                result = await session.execute(
+                    select(SprintModel).where(SprintModel.status == "active").limit(1)
+                )
+                row = result.scalars().first()
+                if row:
+                    current_sprint = {"id": row.id, "name": row.name, "status": row.status,
+                                      "total_points": row.total_points, "completed_points": row.completed_points}
 
-        current_sprint = None
-        if sprint_id:
-            for s in sprints_data.get("sprints", []):
-                if s["id"] == sprint_id:
-                    current_sprint = s
-                    break
-        elif sprints_data.get("currentSprintId"):
-            for s in sprints_data.get("sprints", []):
-                if s["id"] == sprints_data["currentSprintId"]:
-                    current_sprint = s
-                    break
-
-        # Get pending tasks and signals
-        pending_tasks = [t for t in tasks_data.get("tasks", []) if t.get("status") in ["backlog", "todo"]]
+            # Get pending tasks
+            result = await session.execute(
+                select(TaskModel).where(TaskModel.status.in_(["backlog", "todo"]))
+            )
+            task_rows = result.scalars().all()
+            pending_tasks = [
+                {"id": t.id, "title": t.title, "priority": t.priority,
+                 "points": t.points, "status": t.status, "sprint_id": t.sprint_id}
+                for t in task_rows
+            ]
 
         # Build proposal using LLM
         proposal = await self._generate_llm_proposal(
@@ -134,44 +143,36 @@ Format as JSON with keys: goal, recommended_tasks, estimated_hours, reasoning
 """
 
         try:
-            # Call Ollama
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.settings.ollama_base_url}/chat/completions",
-                    json={
-                        "model": self.settings.ollama_model,
-                        "messages": [
-                            {"role": "system", "content": "You are a helpful sprint planning assistant. Always respond with valid JSON."},
-                            {"role": "user", "content": context}
-                        ],
-                        "temperature": 0.7,
-                        "max_tokens": 1000
-                    }
-                )
+            from app.infrastructure.ollama_client import get_ollama_client
+            content = await get_ollama_client().chat_safe(
+                context,
+                task_type="planning",
+                system="You are a helpful sprint planning assistant. Always respond with valid JSON.",
+                temperature=0.7,
+                num_predict=1000,
+                timeout=300,
+            )
 
-                if response.status_code == 200:
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            if content:
+                # Try to parse JSON from response
+                import json
+                try:
+                    proposal_data = json.loads(content)
+                except json.JSONDecodeError:
+                    # Extract JSON from response if wrapped in markdown
+                    import re
+                    json_match = re.search(r'\{[\s\S]*\}', content)
+                    if json_match:
+                        proposal_data = json.loads(json_match.group())
+                    else:
+                        proposal_data = {"goal": "Continue current work", "reasoning": content}
 
-                    # Try to parse JSON from response
-                    import json
-                    try:
-                        proposal_data = json.loads(content)
-                    except json.JSONDecodeError:
-                        # Extract JSON from response if wrapped in markdown
-                        import re
-                        json_match = re.search(r'\{[\s\S]*\}', content)
-                        if json_match:
-                            proposal_data = json.loads(json_match.group())
-                        else:
-                            proposal_data = {"goal": "Continue current work", "reasoning": content}
-
-                    return {
-                        "status": "generated",
-                        "proposal": {
-                            "goal": proposal_data.get("goal", "Focus on high-priority tasks"),
-                            "recommended_tasks": proposal_data.get("recommended_tasks", []),
-                            "estimated_hours": proposal_data.get("estimated_hours", 40),
+                return {
+                    "status": "generated",
+                    "proposal": {
+                        "goal": proposal_data.get("goal", "Focus on high-priority tasks"),
+                        "recommended_tasks": proposal_data.get("recommended_tasks", []),
+                        "estimated_hours": proposal_data.get("estimated_hours", 40),
                             "reasoning": proposal_data.get("reasoning", "Based on pending signals and tasks"),
                             "generated_at": datetime.utcnow().isoformat()
                         },
@@ -228,30 +229,28 @@ Format as JSON with keys: goal, recommended_tasks, estimated_hours, reasoning
         """
         Calculate health score for a sprint.
         """
-        sprints_data = await self.storage.read("sprints.json")
-        tasks_data = await self.storage.read("tasks.json")
+        async with get_session() as session:
+            sprint_row = await session.get(SprintModel, sprint_id)
+            if not sprint_row:
+                return {"error": "Sprint not found"}
 
-        # Find sprint
-        sprint = None
-        for s in sprints_data.get("sprints", []):
-            if s["id"] == sprint_id:
-                sprint = s
-                break
+            sprint = {"id": sprint_row.id, "name": sprint_row.name, "status": sprint_row.status,
+                       "total_points": sprint_row.total_points, "completed_points": sprint_row.completed_points}
 
-        if not sprint:
-            return {"error": "Sprint not found"}
-
-        # Get sprint tasks
-        sprint_tasks = [t for t in tasks_data.get("tasks", []) if t.get("sprintId") == sprint_id]
+            # Get sprint tasks
+            result = await session.execute(
+                select(TaskModel).where(TaskModel.sprint_id == sprint_id)
+            )
+            sprint_tasks = result.scalars().all()
 
         # Calculate metrics
         total_tasks = len(sprint_tasks)
-        done_tasks = len([t for t in sprint_tasks if t.get("status") == "done"])
-        blocked_tasks = len([t for t in sprint_tasks if t.get("status") == "blocked"])
-        in_progress = len([t for t in sprint_tasks if t.get("status") == "in_progress"])
+        done_tasks = len([t for t in sprint_tasks if t.status == "done"])
+        blocked_tasks = len([t for t in sprint_tasks if t.status == "blocked"])
+        in_progress = len([t for t in sprint_tasks if t.status == "in_progress"])
 
-        total_points = sum(t.get("points", 0) for t in sprint_tasks)
-        completed_points = sum(t.get("points", 0) for t in sprint_tasks if t.get("status") == "done")
+        total_points = sum(t.points or 0 for t in sprint_tasks)
+        completed_points = sum(t.points or 0 for t in sprint_tasks if t.status == "done")
 
         # Calculate health score (0-100)
         if total_tasks == 0:
@@ -265,7 +264,7 @@ Format as JSON with keys: goal, recommended_tasks, estimated_hours, reasoning
 
         # Determine velocity trend
         velocity_trend = "stable"
-        if sprint.get("completedPoints", 0) > sprint.get("totalPoints", 0) * 0.7:
+        if sprint.get("completed_points", 0) > sprint.get("total_points", 0) * 0.7:
             velocity_trend = "improving"
         elif blocked_tasks > total_tasks * 0.2:
             velocity_trend = "declining"
@@ -301,31 +300,37 @@ Format as JSON with keys: goal, recommended_tasks, estimated_hours, reasoning
         Automatically update sprint points and status based on task changes.
         This runs periodically to keep sprint data current.
         """
-        sprints_data = await self.storage.read("sprints.json")
-        tasks_data = await self.storage.read("tasks.json")
-
         updates = []
 
-        for sprint in sprints_data.get("sprints", []):
-            sprint_id = sprint["id"]
-            sprint_tasks = [t for t in tasks_data.get("tasks", []) if t.get("sprintId") == sprint_id]
+        async with get_session() as session:
+            # Get all active/planning sprints
+            result = await session.execute(
+                select(SprintModel).where(SprintModel.status.in_(["active", "planning"]))
+            )
+            sprints = result.scalars().all()
 
-            # Calculate current points
-            total_points = sum(t.get("points", 0) for t in sprint_tasks)
-            completed_points = sum(t.get("points", 0) for t in sprint_tasks if t.get("status") == "done")
+            for sprint in sprints:
+                # Get tasks for this sprint
+                result = await session.execute(
+                    select(TaskModel).where(TaskModel.sprint_id == sprint.id)
+                )
+                sprint_tasks = result.scalars().all()
 
-            # Check if update needed
-            if sprint.get("totalPoints") != total_points or sprint.get("completedPoints") != completed_points:
-                sprint["totalPoints"] = total_points
-                sprint["completedPoints"] = completed_points
-                updates.append({
-                    "sprint_id": sprint_id,
-                    "total_points": total_points,
-                    "completed_points": completed_points
-                })
+                # Calculate current points
+                total_points = sum(t.points or 0 for t in sprint_tasks)
+                completed_points = sum(t.points or 0 for t in sprint_tasks if t.status == "done")
+
+                # Check if update needed
+                if sprint.total_points != total_points or sprint.completed_points != completed_points:
+                    sprint.total_points = total_points
+                    sprint.completed_points = completed_points
+                    updates.append({
+                        "sprint_id": sprint.id,
+                        "total_points": total_points,
+                        "completed_points": completed_points
+                    })
 
         if updates:
-            await self.storage.write("sprints.json", sprints_data)
             logger.info("Sprints auto-updated", count=len(updates))
 
         return {

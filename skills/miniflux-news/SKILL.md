@@ -1,6 +1,6 @@
 ---
 name: miniflux-news
-description: Fetch and triage the latest unread RSS/news entries from a Miniflux instance via its REST API using an API token. Use when the user asks to get the latest Miniflux unread items, list recent entries with titles/links, or generate short summaries of specific Miniflux entries. Includes a bundled script to query Miniflux (/v1/entries and /v1/entries/{id}) using credentials from ~/.config/clawdbot/miniflux-news.json (or MINIFLUX_URL and MINIFLUX_TOKEN overrides).
+description: Fetch and triage the latest unread RSS/news entries from a Miniflux instance via its REST API using an API token. Use when the user asks to get the latest Miniflux unread items, list recent entries with titles/links, or generate short summaries of specific Miniflux entries. Includes a bundled script to query Miniflux (/v1/entries and /v1/entries/{id}) using credentials from ~/.config/zero/miniflux-news.json (or MINIFLUX_URL and MINIFLUX_TOKEN overrides).
 ---
 
 # Miniflux News
@@ -14,7 +14,7 @@ This skill reads Miniflux credentials from a local config file by default.
 ### Config file (recommended)
 
 Path:
-- `~/.config/clawdbot/miniflux-news.json`
+- `~/.config/zero/miniflux-news.json`
 
 Format:
 ```json
@@ -122,6 +122,6 @@ Summarization rules:
 
 ## Troubleshooting
 
-- If the script says missing credentials: set `MINIFLUX_URL`/`MINIFLUX_TOKEN` or create `~/.config/clawdbot/miniflux-news.json`.
+- If the script says missing credentials: set `MINIFLUX_URL`/`MINIFLUX_TOKEN` or create `~/.config/zero/miniflux-news.json`.
 - If you get HTTP 401: token is wrong/expired.
 - If you get HTTP 404: base URL is wrong (should be the Miniflux web root).

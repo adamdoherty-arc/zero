@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { X, FolderOpen, Github } from 'lucide-react'
-import { useCreateProject } from '../hooks/useSprintApi'
+import { X, FolderOpen, Github, Sparkles, Loader2 } from 'lucide-react'
+import { useCreateProject, useAnalyzeProjectPath } from '../hooks/useSprintApi'
 import type { ProjectType } from '../types'
 
 interface RegisterProjectModalProps {
@@ -18,8 +18,32 @@ export function RegisterProjectModal({ isOpen, onClose }: RegisterProjectModalPr
   const [githubSyncEnabled, setGithubSyncEnabled] = useState(false)
 
   const createProject = useCreateProject()
+  const analyzeProject = useAnalyzeProjectPath()
+  const [analyzeError, setAnalyzeError] = useState('')
 
   if (!isOpen) return null
+
+  const handleAnalyze = () => {
+    if (!path.trim()) return
+    setAnalyzeError('')
+    analyzeProject.mutate(path.trim(), {
+      onSuccess: (data) => {
+        if (data.name) setName(data.name)
+        if (data.description) setDescription(data.description)
+        if (data.project_type) {
+          const validTypes = ['local', 'git', 'github', 'gitlab']
+          if (validTypes.includes(data.project_type)) {
+            setProjectType(data.project_type as ProjectType)
+          }
+        }
+        if (data.tags?.length) setTags(data.tags.join(', '))
+        if (data.github_url) setGithubUrl(data.github_url)
+      },
+      onError: (err) => {
+        setAnalyzeError(err instanceof Error ? err.message : 'Analysis failed')
+      },
+    })
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -85,22 +109,41 @@ export function RegisterProjectModal({ isOpen, onClose }: RegisterProjectModalPr
             />
           </div>
 
-          {/* Path */}
+          {/* Path + AI Analyze */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1">
               Path *
             </label>
-            <input
-              type="text"
-              value={path}
-              onChange={e => setPath(e.target.value)}
-              placeholder="C:\code\my-project or /home/user/projects/my-project"
-              className="input-field font-mono text-sm"
-              required
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={path}
+                onChange={e => setPath(e.target.value)}
+                placeholder="C:\code\my-project or /home/user/projects/my-project"
+                className="input-field font-mono text-sm flex-1"
+                required
+              />
+              <button
+                type="button"
+                onClick={handleAnalyze}
+                disabled={!path.trim() || analyzeProject.isPending}
+                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                title="AI Analyze — auto-fill fields from project directory"
+              >
+                {analyzeProject.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                {analyzeProject.isPending ? 'Analyzing...' : 'AI Analyze'}
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mt-1">
-              Full path to the project folder on your machine
+              Full path to the project folder — click AI Analyze to auto-fill fields
             </p>
+            {analyzeError && (
+              <p className="text-xs text-red-400 mt-1">{analyzeError}</p>
+            )}
           </div>
 
           {/* Description */}

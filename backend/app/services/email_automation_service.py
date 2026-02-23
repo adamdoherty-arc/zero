@@ -23,6 +23,8 @@ class EmailAutomationState(TypedDict):
     status: str
     error: Optional[str]
     needs_question: bool
+    matched_rule_ids: Optional[List[str]]
+    rule_actions_results: Optional[List[Dict[str, Any]]]
 
 
 class EmailAutomationService:
@@ -81,22 +83,39 @@ class EmailAutomationService:
     def _build_graph(self):
         """Build LangGraph workflow for email automation."""
         from langgraph.graph import StateGraph, END
-        
+
         # Create graph
         workflow = StateGraph(EmailAutomationState)
-        
+
         # Add nodes
         workflow.add_node("classify", self._classify_node)
+        workflow.add_node("apply_user_rules", self._apply_user_rules_node)
+        workflow.add_node("execute_rule_actions", self._execute_rule_actions_node)
         workflow.add_node("decide", self._decide_node)
         workflow.add_node("create_question", self._create_question_node)
         workflow.add_node("execute_action", self._execute_action_node)
         workflow.add_node("complete", self._complete_node)
-        
+
         # Add edges
+        # classify -> apply_user_rules -> (conditional) ->
+        #   if rules matched: execute_rule_actions -> complete
+        #   if no rules: decide -> [question | execute_action] -> complete
         workflow.set_entry_point("classify")
-        workflow.add_edge("classify", "decide")
-        
-        # Conditional routing from decide
+        workflow.add_edge("classify", "apply_user_rules")
+
+        # Route based on whether user rules matched
+        workflow.add_conditional_edges(
+            "apply_user_rules",
+            lambda state: "rules" if state.get("matched_rule_ids") else "decide",
+            {
+                "rules": "execute_rule_actions",
+                "decide": "decide"
+            }
+        )
+
+        workflow.add_edge("execute_rule_actions", "complete")
+
+        # Conditional routing from decide (existing logic)
         workflow.add_conditional_edges(
             "decide",
             lambda state: "question" if state.get("needs_question") else "action",
@@ -105,11 +124,11 @@ class EmailAutomationService:
                 "action": "execute_action"
             }
         )
-        
+
         workflow.add_edge("create_question", "complete")
         workflow.add_edge("execute_action", "complete")
         workflow.add_edge("complete", END)
-        
+
         self._graph = workflow.compile()
         logger.info("email_automation_graph_compiled")
 
@@ -156,6 +175,94 @@ class EmailAutomationService:
             state["status"] = "error"
             state["error"] = str(e)
         
+        return state
+
+    async def _apply_user_rules_node(self, state: EmailAutomationState) -> EmailAutomationState:
+        """Evaluate user-defined rules against the classified email."""
+        try:
+            from app.services.email_rule_service import get_email_rule_service
+
+            email_data = state.get("email_data", {})
+            if not email_data:
+                state["matched_rule_ids"] = None
+                return state
+
+            # Inject classification into email_data so category conditions work
+            if state.get("classification"):
+                email_data["category"] = state["classification"]
+
+            rule_service = get_email_rule_service()
+            matched_rules = await rule_service.evaluate_rules(email_data)
+
+            if matched_rules:
+                state["matched_rule_ids"] = [r.id for r in matched_rules]
+                state["action"] = "user_rules"
+                state["status"] = "rules_matched"
+                logger.info(
+                    "user_rules_matched",
+                    email_id=state["email_id"],
+                    matched_count=len(matched_rules),
+                    rule_ids=[r.id for r in matched_rules],
+                )
+            else:
+                state["matched_rule_ids"] = None
+                logger.debug("no_user_rules_matched", email_id=state["email_id"])
+
+        except Exception as e:
+            logger.error("apply_user_rules_error", error=str(e))
+            state["matched_rule_ids"] = None
+
+        return state
+
+    async def _execute_rule_actions_node(self, state: EmailAutomationState) -> EmailAutomationState:
+        """Execute actions for all matched user rules."""
+        try:
+            from app.services.email_rule_service import get_email_rule_service
+
+            rule_service = get_email_rule_service()
+            all_results = []
+
+            for rule_id in (state.get("matched_rule_ids") or []):
+                rule = await rule_service.get_rule(rule_id)
+                if not rule:
+                    continue
+                results = await rule_service.execute_actions(
+                    rule, state["email_id"], state.get("email_data", {})
+                )
+                all_results.extend(results)
+
+                if rule.stop_after_match:
+                    break
+
+            state["rule_actions_results"] = all_results
+            state["status"] = "rule_actions_executed"
+
+            # Log to automation history
+            history_entry = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "email_id": state["email_id"],
+                "subject": state.get("email_data", {}).get("subject", ""),
+                "from": state.get("email_data", {}).get("from_address", {}).get("email", ""),
+                "classification": state.get("classification"),
+                "confidence": state.get("confidence"),
+                "action": "user_rules",
+                "rule_ids": state.get("matched_rule_ids", []),
+                "rule_results": all_results,
+                "reversible": False,
+            }
+            self._add_to_history(history_entry)
+
+            logger.info(
+                "rule_actions_executed",
+                email_id=state["email_id"],
+                results_count=len(all_results),
+            )
+
+        except Exception as e:
+            logger.error("execute_rule_actions_error", error=str(e))
+            state["status"] = "error"
+            state["error"] = str(e)
+
         return state
 
     def _decide_node(self, state: EmailAutomationState) -> EmailAutomationState:
@@ -373,7 +480,9 @@ class EmailAutomationService:
             "action": None,
             "status": "pending",
             "error": None,
-            "needs_question": False
+            "needs_question": False,
+            "matched_rule_ids": None,
+            "rule_actions_results": None,
         }
         
         try:
@@ -387,7 +496,9 @@ class EmailAutomationService:
                 "confidence": result.get("confidence"),
                 "action": result.get("action"),
                 "question_id": result.get("question_id"),
-                "error": result.get("error")
+                "matched_rule_ids": result.get("matched_rule_ids"),
+                "rule_actions_results": result.get("rule_actions_results"),
+                "error": result.get("error"),
             }
             
         except Exception as e:

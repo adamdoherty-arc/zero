@@ -2,6 +2,7 @@
 Run script for ZERO API.
 """
 
+import os
 import uvicorn
 
 if __name__ == "__main__":
@@ -9,6 +10,6 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=18792,
-        reload=True,
+        reload=os.getenv("ZERO_DEV_MODE", "").lower() == "true",
         log_level="info"
     )

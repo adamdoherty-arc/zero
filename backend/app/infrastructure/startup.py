@@ -34,6 +34,7 @@ class StartupChecker:
             ("environment_variables", self._check_env_vars, True),
             ("ollama_reachable", self._check_ollama, False),  # non-critical
             ("legion_reachable", self._check_legion, False),  # non-critical
+            ("gpu_manager", self._check_gpu_manager, False),  # non-critical
         ]
 
         all_critical_passed = True
@@ -78,9 +79,12 @@ class StartupChecker:
         from app.infrastructure.config import get_workspace_path
         workspace = get_workspace_path()
 
-        if not workspace.exists():
-            workspace.mkdir(parents=True, exist_ok=True)
-            logger.info("workspace_created", path=str(workspace))
+        try:
+            if not workspace.exists():
+                workspace.mkdir(parents=True, exist_ok=True)
+                logger.info("workspace_created", path=str(workspace))
+        except OSError:
+            pass  # Mount point may already exist
 
         return workspace.is_dir()
 
@@ -111,30 +115,43 @@ class StartupChecker:
         return True
 
     async def _check_env_vars(self) -> bool:
-        """Check that critical environment variables are set."""
-        required = ["CLAWDBOT_GATEWAY_TOKEN"]
-        missing = [v for v in required if not os.getenv(v)]
+        """Check that recommended environment variables are set."""
+        recommended = [
+            "DISCORD_BOT_TOKEN",
+            "SLACK_APP_TOKEN",
+            "GH_TOKEN",
+        ]
 
-        if missing:
-            logger.error("env_vars_missing", missing=missing)
-            return False
+        missing_recommended = [v for v in recommended if not os.getenv(v)]
+
+        if missing_recommended:
+            logger.info("optional_env_vars_missing", missing=missing_recommended)
 
         return True
 
     async def _check_ollama(self) -> bool:
-        """Check if Ollama is reachable (non-critical)."""
-        from app.infrastructure.config import get_settings
-        settings = get_settings()
+        """Check if Ollama is reachable and warm up default model."""
+        import asyncio
+        from app.infrastructure.ollama_client import get_ollama_client
 
-        # Strip /v1 suffix for the health check
-        base = settings.ollama_base_url.replace("/v1", "")
+        client = get_ollama_client()
+        healthy = await client.is_healthy()
 
+        if healthy:
+            # Warm up the default model in background (don't block startup)
+            asyncio.create_task(client.warmup())
+
+        return healthy
+
+    async def _check_gpu_manager(self) -> bool:
+        """Initialize the GPU manager service."""
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=3) as client:
-                resp = await client.get(f"{base}/api/tags")
-                return resp.status_code == 200
-        except Exception:
+            from app.services.gpu_manager_service import get_gpu_manager_service
+            svc = get_gpu_manager_service()
+            await svc.initialize()
+            return True
+        except Exception as e:
+            logger.warning("gpu_manager_init_failed", error=str(e))
             return False
 
     async def _check_legion(self) -> bool:

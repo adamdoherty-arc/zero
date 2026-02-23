@@ -1,7 +1,7 @@
 """
 LangGraph checkpointer factory.
 
-Tries PostgreSQL for persistent crash recovery.
+Tries PostgreSQL (async) for persistent crash recovery.
 Falls back to MemorySaver (in-memory, lost on restart) if unavailable.
 
 Configuration:
@@ -14,16 +14,17 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 _checkpointer = None
+_pg_pool = None
 
 
-def get_checkpointer():
+async def get_checkpointer():
     """
-    Get or create the LangGraph checkpointer.
+    Get or create the LangGraph checkpointer (async).
 
-    Returns PostgresSaver if ZERO_POSTGRES_URL is configured,
-    otherwise MemorySaver.
+    Returns AsyncPostgresSaver with a connection pool if ZERO_POSTGRES_URL
+    is configured, otherwise MemorySaver.
     """
-    global _checkpointer
+    global _checkpointer, _pg_pool
     if _checkpointer is not None:
         return _checkpointer
 
@@ -33,9 +34,19 @@ def get_checkpointer():
 
     if postgres_url:
         try:
-            from langgraph.checkpoint.postgres import PostgresSaver
-            _checkpointer = PostgresSaver.from_conn_string(postgres_url)
-            logger.info("checkpointer_initialized", type="PostgresSaver")
+            from psycopg_pool import AsyncConnectionPool
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            _pg_pool = AsyncConnectionPool(
+                conninfo=postgres_url,
+                min_size=1,
+                max_size=3,
+                kwargs={"autocommit": True, "prepare_threshold": 0},
+            )
+            await _pg_pool.open()
+            _checkpointer = AsyncPostgresSaver(_pg_pool)
+            await _checkpointer.setup()
+            logger.info("checkpointer_initialized", type="AsyncPostgresSaver")
             return _checkpointer
         except ImportError:
             logger.warning("checkpointer_postgres_not_installed", fallback="MemorySaver")

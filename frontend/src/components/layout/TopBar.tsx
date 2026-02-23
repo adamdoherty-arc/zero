@@ -1,7 +1,8 @@
 import { useLocation } from 'react-router-dom'
-import { Search, Bell } from 'lucide-react'
+import { Search } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Separator } from '@/components/ui/separator'
+import { NotificationPanel } from './NotificationPanel'
 
 interface TopBarProps {
   onOpenCommandMenu: () => void
@@ -21,6 +22,7 @@ const routeLabels: Record<string, string> = {
   '/research': 'Research',
   '/analytics': 'Analytics',
   '/settings': 'Settings',
+  '/agent': 'Agent Tasks',
 }
 
 export function TopBar({ onOpenCommandMenu }: TopBarProps) {
@@ -55,9 +57,7 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
       </button>
 
       {/* Notifications */}
-      <button className="btn-icon relative">
-        <Bell className="w-4 h-4" />
-      </button>
+      <NotificationPanel />
     </header>
   )
 }

@@ -10,13 +10,11 @@ Handles scheduled automation tasks including:
 - Workspace backups
 
 Uses APScheduler for cron-based scheduling.
-All job executions are logged to an audit file for observability.
+All job executions are logged to PostgreSQL (scheduler_audit_log) for observability.
 """
 import asyncio
-import json
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional, Dict, Any, List, Callable
 from functools import lru_cache
 import structlog
@@ -24,6 +22,10 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import select, func as sa_func
+
+from app.infrastructure.database import get_session
+from app.db.models import SchedulerAuditLogModel
 
 logger = structlog.get_logger(__name__)
 
@@ -192,6 +194,188 @@ DAILY_SCHEDULE = {
         "description": "Verify improvements were successful, update metrics",
         "enabled": True
     },
+    # Autonomous Task Worker
+    "task_worker": {
+        "cron": "*/2 * * * *",  # Every 2 minutes
+        "description": "Pick up queued autonomous tasks and execute them",
+        "enabled": True
+    },
+    "task_progress_check": {
+        "cron": "*/5 * * * *",  # Every 5 minutes
+        "description": "Report progress on currently executing autonomous task",
+        "enabled": True
+    },
+    # Continuous Enhancement Engine
+    "continuous_enhancement_engine": {
+        "cron": "*/10 * * * *",  # Every 10 minutes
+        "description": "Continuous enhancement engine - scan, analyze, queue improvements for Zero and Legion",
+        "enabled": True
+    },
+    # GPU/Ollama Resource Manager
+    "gpu_refresh": {
+        "cron": "* * * * *",  # Every minute
+        "description": "Refresh GPU/Ollama resource status (loaded models, VRAM)",
+        "enabled": True
+    },
+    # Reminder Check
+    "reminder_check": {
+        "cron": "*/5 * * * *",  # Every 5 minutes
+        "description": "Check for due reminders and send notifications",
+        "enabled": True
+    },
+    # Research Rules Engine
+    "rules_recalibration": {
+        "cron": "0 4 * * 0",  # Sunday 4:00 AM
+        "description": "Weekly recalibration of research rules based on effectiveness",
+        "enabled": True
+    },
+    # Disk Space Monitoring
+    "disk_space_monitor": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Monitor disk space usage and alert when >85% full",
+        "enabled": True
+    },
+    # Embedding Backfill
+    "embedding_backfill": {
+        "cron": "30 3 * * *",  # 3:30 AM daily
+        "description": "Backfill embeddings for notes/facts missing vectors",
+        "enabled": True
+    },
+    # Alerting
+    "alerting_check": {
+        "cron": "*/5 * * * *",  # Every 5 minutes
+        "description": "Evaluate alert rules and send notifications",
+        "enabled": True
+    },
+    # Metrics Snapshot
+    "metrics_snapshot": {
+        "cron": "0 * * * *",  # Every hour
+        "description": "Persist hourly metrics snapshot to PostgreSQL",
+        "enabled": True
+    },
+    # Backup Restore Test
+    "backup_restore_test": {
+        "cron": "0 4 * * 0",  # Sunday 4:00 AM
+        "description": "Weekly backup extraction + validation test",
+        "enabled": True
+    },
+    # Notion Bidirectional Sync
+    "notion_bidirectional_sync": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Bidirectional sync with Notion",
+        "enabled": True
+    },
+    # TikTok Shop Research Agent
+    "tiktok_shop_research": {
+        "cron": "0 10 * * *",  # 10:00 AM daily
+        "description": "TikTok Shop product discovery and opportunity scoring",
+        "enabled": True
+    },
+    "tiktok_shop_deep_research": {
+        "cron": "0 11 * * 6",  # Saturday 11:00 AM
+        "description": "Deep research on top TikTok Shop products",
+        "enabled": True
+    },
+    # TikTok 24/7 Pipeline Automation
+    "tiktok_continuous_research": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Continuous TikTok product discovery pipeline (4x daily)",
+        "enabled": True
+    },
+    "tiktok_niche_deep_dive": {
+        "cron": "0 14 * * *",  # 2:00 PM daily
+        "description": "Deep dive research into top performing niches",
+        "enabled": True
+    },
+    "tiktok_approval_reminder": {
+        "cron": "0 9,17 * * *",  # 9 AM and 5 PM daily
+        "description": "Discord reminder for products pending approval",
+        "enabled": True
+    },
+    "tiktok_auto_content_pipeline": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Auto-generate video scripts for approved products",
+        "enabled": True
+    },
+    "tiktok_content_generation_check": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Poll AIContentTools for completed video generation jobs",
+        "enabled": True
+    },
+    "tiktok_performance_sync": {
+        "cron": "0 */3 * * *",  # Every 3 hours
+        "description": "Sync TikTok performance metrics and run improvement cycle",
+        "enabled": True
+    },
+    "tiktok_pipeline_health": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "TikTok pipeline health check, alert on failures, retry stuck jobs",
+        "enabled": True
+    },
+    "tiktok_weekly_report": {
+        "cron": "0 10 * * 0",  # Sunday 10:00 AM
+        "description": "Weekly TikTok Shop performance report to Discord",
+        "enabled": True
+    },
+    # Content Agent
+    "content_performance_sync": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Sync content performance metrics from AIContentTools",
+        "enabled": True
+    },
+    "content_improvement_cycle": {
+        "cron": "30 9 * * *",  # 9:30 AM daily
+        "description": "Content rule improvement from performance feedback",
+        "enabled": True
+    },
+    "content_trend_research": {
+        "cron": "0 13 * * *",  # 1:00 PM daily
+        "description": "Research trending content for active topics",
+        "enabled": True
+    },
+    # Gateway Auto-Update
+    "gateway_update_check": {
+        "cron": "0 4 * * *",  # 4:00 AM daily
+        "description": "Check for OpenClaw gateway updates via GitHub API",
+        "enabled": True
+    },
+    # Prediction Market Intelligence
+    "prediction_market_sync": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Sync Kalshi + Polymarket markets",
+        "enabled": True
+    },
+    "prediction_price_snapshot": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Capture prediction market price snapshots",
+        "enabled": True
+    },
+    "prediction_bettor_discovery": {
+        "cron": "0 10 * * *",  # 10:00 AM daily
+        "description": "Discover and update top prediction market bettors",
+        "enabled": True
+    },
+    "prediction_research": {
+        "cron": "30 11 * * *",  # 11:30 AM daily
+        "description": "SearXNG prediction market research",
+        "enabled": True
+    },
+    "prediction_push_to_ada": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Push prediction market data to ADA",
+        "enabled": True
+    },
+    "prediction_quality_check": {
+        "cron": "0 9 * * *",  # 9:00 AM daily
+        "description": "Prediction market quality + Legion progress report + Discord alert",
+        "enabled": True
+    },
+    # LLM Budget Reset
+    "llm_budget_reset": {
+        "cron": "0 0 * * *",  # Midnight daily
+        "description": "Reset daily LLM spending counter for budget enforcement",
+        "enabled": True
+    },
 }
 
 
@@ -204,20 +388,13 @@ class SchedulerService:
     Manages scheduled automation tasks for Zero.
 
     Uses APScheduler for reliable cron-based execution.
-    All job executions are logged to workspace/scheduler/audit_log.json.
+    All job executions are logged to PostgreSQL (scheduler_audit_log table).
     """
 
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
         self._running = False
         self._jobs: Dict[str, str] = {}  # job_name -> job_id
-
-        # Audit log
-        self._audit_path = Path("workspace/scheduler")
-        self._audit_path.mkdir(parents=True, exist_ok=True)
-        self._audit_file = self._audit_path / "audit_log.json"
-        if not self._audit_file.exists():
-            self._audit_file.write_text(json.dumps({"executions": []}, indent=2))
 
     async def start(self):
         """Start the scheduler with all configured jobs."""
@@ -293,34 +470,82 @@ class SchedulerService:
             logger.error("job_failed", job=job_name, error=error_msg)
         finally:
             duration = round(time.monotonic() - t0, 2)
-            entry = {
-                "job_name": job_name,
-                "started_at": started.isoformat(),
-                "completed_at": datetime.utcnow().isoformat(),
-                "status": status,
-                "duration_seconds": duration,
-                "error": error_msg,
-            }
-            self._append_audit(entry)
+            completed = datetime.utcnow()
+            await self._append_audit(
+                job_name=job_name,
+                started_at=started,
+                completed_at=completed,
+                status=status,
+                duration_seconds=duration,
+                error=error_msg,
+            )
+            # Record metrics
+            try:
+                from app.services.metrics_service import get_metrics_service
+                m = get_metrics_service()
+                m.record("job_duration", duration, {"job": job_name})
+                m.increment(f"job_{status}")
+                m.increment(f"job_{job_name}_{status}")
+            except Exception:
+                pass
             logger.info("job_audit", job=job_name, status=status, duration=duration)
 
-    def _append_audit(self, entry: Dict[str, Any]):
-        """Append an execution record to the audit log (keep last 500)."""
+    async def _append_audit(
+        self,
+        job_name: str,
+        started_at: datetime,
+        completed_at: datetime,
+        status: str,
+        duration_seconds: float,
+        error: Optional[str] = None,
+    ):
+        """Persist an execution record to the scheduler_audit_log table."""
         try:
-            data = json.loads(self._audit_file.read_text())
-            data["executions"].append(entry)
-            data["executions"] = data["executions"][-500:]
-            self._audit_file.write_text(json.dumps(data, indent=2, default=str))
+            async with get_session() as session:
+                session.add(SchedulerAuditLogModel(
+                    job_name=job_name,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    status=status,
+                    duration_seconds=duration_seconds,
+                    error=error,
+                ))
         except Exception as e:
             logger.error("audit_log_write_failed", error=str(e))
 
-    def get_audit_log(self, limit: int = 50) -> Dict[str, Any]:
-        """Return recent audit log entries."""
+    async def get_audit_log(self, limit: int = 50) -> Dict[str, Any]:
+        """Return recent audit log entries from PostgreSQL."""
         try:
-            data = json.loads(self._audit_file.read_text())
-            executions = data.get("executions", [])
-            return {"executions": executions[-limit:], "total": len(executions)}
-        except Exception:
+            async with get_session() as session:
+                # Get total count
+                count_result = await session.execute(
+                    select(sa_func.count()).select_from(SchedulerAuditLogModel)
+                )
+                total = count_result.scalar() or 0
+
+                # Get recent entries ordered by created_at DESC
+                result = await session.execute(
+                    select(SchedulerAuditLogModel)
+                    .order_by(SchedulerAuditLogModel.created_at.desc())
+                    .limit(limit)
+                )
+                rows = result.scalars().all()
+
+                executions = [
+                    {
+                        "job_name": row.job_name,
+                        "started_at": row.started_at.isoformat() if row.started_at else None,
+                        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+                        "status": row.status,
+                        "duration_seconds": row.duration_seconds,
+                        "error": row.error,
+                    }
+                    for row in reversed(rows)  # Return in chronological order
+                ]
+
+                return {"executions": executions, "total": total}
+        except Exception as e:
+            logger.error("audit_log_read_failed", error=str(e))
             return {"executions": [], "total": 0}
 
     def _get_handler(self, job_name: str) -> Optional[Callable]:
@@ -361,6 +586,56 @@ class SchedulerService:
             "daily_improvement_plan": self._run_daily_improvement_plan,
             "daily_improvement_execute": self._run_daily_improvement_execute,
             "daily_improvement_verify": self._run_daily_improvement_verify,
+            # Autonomous Task Worker
+            "task_worker": self._run_task_worker,
+            "task_progress_check": self._run_task_progress_check,
+            # Continuous Enhancement Engine
+            "continuous_enhancement_engine": self._run_continuous_enhancement_engine,
+            # GPU/Ollama Resource Manager
+            "gpu_refresh": self._run_gpu_refresh,
+            # Reminder Check
+            "reminder_check": self._run_reminder_check,
+            # Research Rules Engine
+            "rules_recalibration": self._run_rules_recalibration,
+            # Disk Space Monitoring
+            "disk_space_monitor": self._run_disk_space_monitor,
+            # Embedding Backfill
+            "embedding_backfill": self._run_embedding_backfill,
+            # Alerting
+            "alerting_check": self._run_alerting_check,
+            # Metrics Snapshot
+            "metrics_snapshot": self._run_metrics_snapshot,
+            # Backup Restore Test
+            "backup_restore_test": self._run_backup_restore_test,
+            # Notion Bidirectional Sync
+            "notion_bidirectional_sync": self._run_notion_bidirectional_sync,
+            # TikTok Shop Research Agent
+            "tiktok_shop_research": self._run_tiktok_shop_research,
+            "tiktok_shop_deep_research": self._run_tiktok_shop_deep_research,
+            # TikTok 24/7 Pipeline Automation
+            "tiktok_continuous_research": self._run_tiktok_continuous_research,
+            "tiktok_niche_deep_dive": self._run_tiktok_niche_deep_dive,
+            "tiktok_approval_reminder": self._run_tiktok_approval_reminder,
+            "tiktok_auto_content_pipeline": self._run_tiktok_auto_content_pipeline,
+            "tiktok_content_generation_check": self._run_tiktok_content_generation_check,
+            "tiktok_performance_sync": self._run_tiktok_performance_sync,
+            "tiktok_pipeline_health": self._run_tiktok_pipeline_health,
+            "tiktok_weekly_report": self._run_tiktok_weekly_report,
+            # Content Agent
+            "content_performance_sync": self._run_content_performance_sync,
+            "content_improvement_cycle": self._run_content_improvement_cycle,
+            "content_trend_research": self._run_content_trend_research,
+            # Gateway Auto-Update
+            "gateway_update_check": self._run_gateway_update_check,
+            # Prediction Market Intelligence
+            "prediction_market_sync": self._run_prediction_market_sync,
+            "prediction_price_snapshot": self._run_prediction_price_snapshot,
+            "prediction_bettor_discovery": self._run_prediction_bettor_discovery,
+            "prediction_research": self._run_prediction_research,
+            "prediction_push_to_ada": self._run_prediction_push_to_ada,
+            "prediction_quality_check": self._run_prediction_quality_check,
+            # LLM Budget Reset
+            "llm_budget_reset": self._run_llm_budget_reset,
         }
         return handlers.get(job_name)
 
@@ -373,7 +648,7 @@ class SchedulerService:
         Morning briefing automation.
 
         1. Generate comprehensive briefing with Legion data
-        2. Send via WhatsApp/Discord
+        2. Send via Discord (direct API + notification service)
         """
         logger.info("running_morning_briefing")
 
@@ -388,13 +663,20 @@ class SchedulerService:
             # Format for messaging
             message = self._format_briefing_message(briefing)
 
-            # Send via notification service
+            # Send via notification service (UI + DB)
             notification_service = get_notification_service()
             await notification_service.create_notification(
                 title="Morning Briefing",
                 message=message,
-                channel="discord",  # Primary channel
+                channel="discord",
                 source="scheduler"
+            )
+
+            # Send directly to Discord #zero channel
+            await self._send_to_discord(
+                title="Morning Briefing",
+                message=message,
+                color=0x57F287,  # green
             )
 
             logger.info(
@@ -439,6 +721,13 @@ class SchedulerService:
                     message=message,
                     channel="discord",
                     source="scheduler"
+                )
+
+                # Send directly to Discord #zero channel
+                await self._send_to_discord(
+                    title="Blocked Tasks Alert",
+                    message=message,
+                    color=0xED4245,  # red
                 )
 
                 logger.info("midday_check_alert_sent", blocked=len(blocked))
@@ -494,6 +783,13 @@ Have a great evening!"""
                 message=message,
                 channel="discord",
                 source="scheduler"
+            )
+
+            # Send directly to Discord #zero channel
+            await self._send_to_discord(
+                title="Evening Progress Report",
+                message=message,
+                color=0xFEE75C,  # yellow
             )
 
             logger.info(
@@ -612,12 +908,21 @@ Have a great evening!"""
                 for idea in top_ideas:
                     lines.append(f"- {idea.title} (Score: {idea.viability_score:.1f})")
 
+            report_message = "\n".join(lines)
+
             notification_service = get_notification_service()
             await notification_service.create_notification(
                 title="Weekly Money Maker Report",
-                message="\n".join(lines),
+                message=report_message,
                 channel="discord",
                 source="money_maker"
+            )
+
+            # Send directly to Discord #zero channel
+            await self._send_to_discord(
+                title="Weekly Money Maker Report",
+                message=report_message,
+                color=0x57F287,  # green
             )
 
             logger.info("money_maker_weekly_report_sent")
@@ -635,7 +940,7 @@ Have a great evening!"""
             from app.services.gmail_service import get_gmail_service
             gmail = get_gmail_service()
 
-            if not gmail.is_connected():
+            if not await gmail.is_connected():
                 return  # Gmail not configured, skip silently
 
             result = await gmail.sync_incremental()
@@ -657,7 +962,7 @@ Have a great evening!"""
 
             gmail = get_gmail_service()
 
-            if not gmail.is_connected():
+            if not await gmail.is_connected():
                 return
 
             digest = await gmail.generate_digest()
@@ -681,12 +986,21 @@ Have a great evening!"""
                 for h in digest.highlights:
                     lines.append(f"  - {h}")
 
+            digest_message = "\n".join(lines)
+
             notification_service = get_notification_service()
             await notification_service.create_notification(
                 title="Daily Email Digest",
-                message="\n".join(lines),
+                message=digest_message,
                 channel="discord",
                 source="scheduler"
+            )
+
+            # Send directly to Discord #zero channel
+            await self._send_to_discord(
+                title="Daily Email Digest",
+                message=digest_message,
+                color=0x5865F2,  # blurple
             )
 
             logger.info("gmail_digest_sent", total=digest.total_emails)
@@ -712,7 +1026,7 @@ Have a great evening!"""
                 return
 
             gmail = get_gmail_service()
-            if not gmail.is_connected():
+            if not await gmail.is_connected():
                 return  # Gmail not configured, skip silently
 
             # First, sync new emails
@@ -840,6 +1154,78 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.error("research_weekly_failed", error=str(e))
+
+    async def _run_rules_recalibration(self):
+        """Weekly recalibration of research rules based on effectiveness."""
+        logger.info("running_rules_recalibration")
+        try:
+            from app.services.research_rules_service import get_research_rules_service
+            svc = get_research_rules_service()
+            result = await svc.recalibrate_rules()
+            logger.info(
+                "rules_recalibration_complete",
+                disabled=len(result.get("disabled", [])),
+                boosted=len(result.get("boosted", [])),
+            )
+        except Exception as e:
+            logger.error("rules_recalibration_failed", error=str(e))
+
+    # ============================================
+    # DISK SPACE & EMBEDDING HANDLERS
+    # ============================================
+
+    async def _run_disk_space_monitor(self):
+        """Monitor disk space and alert when usage exceeds 85%."""
+        import shutil
+        logger.info("running_disk_space_monitor")
+        try:
+            alerts = []
+            paths_to_check = {
+                "workspace": "/app/workspace",
+                "backups": "/app/backups",
+                "system": "/",
+            }
+            for name, path in paths_to_check.items():
+                try:
+                    usage = shutil.disk_usage(path)
+                    pct = (usage.used / usage.total) * 100
+                    if pct > 85:
+                        alerts.append(
+                            f"{name} ({path}): {pct:.1f}% used "
+                            f"({usage.free // (1024**3)}GB free)"
+                        )
+                except OSError:
+                    pass
+
+            if alerts:
+                logger.warning("disk_space_alert", alerts=alerts)
+                try:
+                    from app.services.notification_service import get_notification_service
+                    svc = get_notification_service()
+                    await svc.create_notification(
+                        title="Disk Space Warning",
+                        message="Low disk space:\n" + "\n".join(alerts),
+                        channel="discord",
+                        source="disk_monitor",
+                    )
+                except Exception:
+                    pass
+            else:
+                logger.info("disk_space_ok")
+        except Exception as e:
+            logger.error("disk_space_monitor_failed", error=str(e))
+
+    async def _run_embedding_backfill(self):
+        """Backfill embeddings for notes/facts that don't have them yet."""
+        logger.info("running_embedding_backfill")
+        try:
+            from app.services.knowledge_service import get_knowledge_service
+            svc = get_knowledge_service()
+            result = await svc.backfill_embeddings(batch_size=50)
+            if result["notes"] > 0 or result["facts"] > 0:
+                logger.info("embedding_backfill_complete", **result)
+        except Exception as e:
+            logger.error("embedding_backfill_failed", error=str(e))
 
     # ============================================
     # ECOSYSTEM HANDLERS (S70)
@@ -1006,8 +1392,592 @@ Have a great evening!"""
             logger.error("daily_improvement_verify_failed", error=str(e))
 
     # ============================================
+    # AUTONOMOUS TASK WORKER
+    # ============================================
+
+    async def _run_task_worker(self):
+        """Pick up queued autonomous tasks and execute them."""
+        logger.info("running_task_worker")
+        try:
+            from app.services.task_execution_service import get_task_execution_service
+            executor = get_task_execution_service()
+            await executor.check_and_execute()
+        except Exception as e:
+            logger.error("task_worker_failed", error=str(e))
+
+    async def _run_task_progress_check(self):
+        """Report progress on currently executing autonomous task."""
+        try:
+            from app.services.task_execution_service import get_task_execution_service
+            executor = get_task_execution_service()
+
+            if not executor.is_busy():
+                return
+
+            status = executor.get_status()
+            current = status.get("current_task")
+            if not current:
+                return
+
+            title = current.get("title", "Unknown")
+            step = current.get("current_step", 0)
+            total = current.get("total_steps", 0)
+            progress = current.get("progress_percent", 0)
+
+            logger.info(
+                "task_progress_report",
+                title=title,
+                step=f"{step}/{total}",
+                progress=f"{progress}%",
+            )
+        except Exception as e:
+            logger.error("task_progress_check_failed", error=str(e))
+
+    # ============================================
+    # CONTINUOUS ENHANCEMENT ENGINE
+    # ============================================
+
+    async def _run_continuous_enhancement_engine(self):
+        """Run one cycle of the continuous enhancement engine."""
+        logger.info("running_continuous_enhancement_engine")
+        try:
+            from app.services.continuous_enhancement_service import get_continuous_enhancement_service
+            engine = get_continuous_enhancement_service()
+            await engine.run_cycle()
+        except Exception as e:
+            logger.error("continuous_enhancement_engine_failed", error=str(e))
+
+    async def _run_gpu_refresh(self):
+        """Refresh GPU/Ollama resource status."""
+        try:
+            from app.services.gpu_manager_service import get_gpu_manager_service
+            svc = get_gpu_manager_service()
+            await svc.refresh()
+        except Exception as e:
+            logger.error("gpu_refresh_failed", error=str(e))
+
+    # ============================================
+    # REMINDER CHECK
+    # ============================================
+
+    async def _run_reminder_check(self):
+        """Check for due reminders and send notifications."""
+        try:
+            from app.services.reminder_service import get_reminder_service
+            from app.services.notification_service import get_notification_service
+
+            reminder_service = get_reminder_service()
+            due_reminders = await reminder_service.get_due_reminders()
+
+            if not due_reminders:
+                return
+
+            notification_service = get_notification_service()
+
+            for reminder in due_reminders:
+                # Send notification
+                channel = "discord"
+                if reminder.channels:
+                    channel = reminder.channels[0].value if hasattr(reminder.channels[0], 'value') else reminder.channels[0]
+
+                await notification_service.create_notification(
+                    title=f"Reminder: {reminder.title}",
+                    message=reminder.description or reminder.title,
+                    channel=channel,
+                    source="reminder",
+                    source_id=reminder.id,
+                )
+
+                # Mark as triggered (handles recurrence automatically)
+                await reminder_service.trigger_reminder(reminder.id)
+
+            logger.info("reminder_check_complete", triggered=len(due_reminders))
+
+        except Exception as e:
+            logger.error("reminder_check_failed", error=str(e))
+
+    # ============================================
+    # ALERTING & METRICS HANDLERS
+    # ============================================
+
+    async def _run_alerting_check(self):
+        """Evaluate alert rules and fire Discord notifications."""
+        try:
+            from app.services.alerting_service import get_alerting_service
+            svc = get_alerting_service()
+            await svc.check_alerts()
+        except Exception as e:
+            logger.error("alerting_check_failed", error=str(e))
+
+    async def _run_metrics_snapshot(self):
+        """Persist hourly metrics summary to PostgreSQL."""
+        try:
+            from app.services.metrics_service import get_metrics_service
+            svc = get_metrics_service()
+            await svc.persist_snapshot()
+            logger.info("metrics_snapshot_complete")
+        except Exception as e:
+            logger.error("metrics_snapshot_failed", error=str(e))
+
+    async def _run_backup_restore_test(self):
+        """Weekly backup extraction and validation test."""
+        logger.info("running_backup_restore_test")
+        try:
+            from app.services.backup_service import get_backup_service
+            svc = get_backup_service()
+            result = await svc.test_restore()
+            if result.get("success"):
+                logger.info("backup_restore_test_passed", files=result.get("files_restored", 0))
+            else:
+                logger.error("backup_restore_test_failed", error=result.get("error"))
+                from app.services.notification_service import get_notification_service
+                await get_notification_service().create_notification(
+                    title="Backup Restore Test FAILED",
+                    message=f"Weekly backup test failed: {result.get('error')}",
+                    channel="discord",
+                    source="alerting",
+                )
+        except Exception as e:
+            logger.error("backup_restore_test_failed", error=str(e))
+
+    # ============================================
+    # NOTION BIDIRECTIONAL SYNC
+    # ============================================
+
+    async def _run_notion_bidirectional_sync(self):
+        """Bidirectional sync with Notion."""
+        logger.info("running_notion_bidirectional_sync")
+        try:
+            from app.services.notion_service import get_notion_service
+            svc = get_notion_service()
+            if svc:
+                result = await svc.sync_bidirectional()
+                if result.get("synced_from_notion", 0) > 0:
+                    logger.info("notion_sync_complete", **result)
+        except Exception as e:
+            logger.error("notion_bidirectional_sync_failed", error=str(e))
+
+    # ============================================
+    # TIKTOK SHOP & CONTENT AGENT HANDLERS
+    # ============================================
+
+    async def _run_tiktok_shop_research(self):
+        """Daily TikTok Shop product discovery and opportunity scoring."""
+        logger.info("running_tiktok_shop_research")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            result = await svc.run_daily_research_cycle()
+            logger.info("tiktok_shop_research_complete",
+                        discovered=result.products_discovered,
+                        researched=result.products_researched,
+                        topics_created=result.content_topics_created,
+                        tasks_created=result.legion_tasks_created)
+            if result.products_discovered > 0:
+                await self._send_to_discord(
+                    "TikTok Shop Research",
+                    f"Discovered {result.products_discovered} products, "
+                    f"created {result.content_topics_created} content topics, "
+                    f"{result.legion_tasks_created} Legion tasks",
+                    color=0xFF6B6B,
+                )
+        except Exception as e:
+            logger.error("tiktok_shop_research_failed", error=str(e))
+
+    async def _run_tiktok_shop_deep_research(self):
+        """Saturday deep research on top TikTok Shop products."""
+        logger.info("running_tiktok_shop_deep_research")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            products = await svc.list_products(limit=10)
+            # Deep research on top-scoring products
+            products.sort(key=lambda p: p.opportunity_score or 0, reverse=True)
+            researched = 0
+            for p in products[:5]:
+                try:
+                    await svc.research_product_deep(p.id)
+                    researched += 1
+                except Exception:
+                    continue
+            logger.info("tiktok_shop_deep_research_complete", researched=researched)
+        except Exception as e:
+            logger.error("tiktok_shop_deep_research_failed", error=str(e))
+
+    # ============================================
+    # TIKTOK 24/7 PIPELINE AUTOMATION
+    # ============================================
+
+    async def _run_tiktok_continuous_research(self):
+        """Run the TikTok research pipeline every 4 hours."""
+        logger.info("running_tiktok_continuous_research")
+        try:
+            from app.services.tiktok_agent_graph import invoke_tiktok_pipeline
+            result = await invoke_tiktok_pipeline(mode="research_only")
+            logger.info("tiktok_continuous_research_complete",
+                        status=result["status"],
+                        discovered=result.get("products_discovered", 0))
+            if result.get("products_discovered", 0) > 0:
+                await self._send_to_discord(
+                    "TikTok Continuous Research",
+                    f"Discovered {result['products_discovered']} new products. "
+                    f"Auto-approved: {result.get('auto_approved', 0)}, "
+                    f"Pending review: {result.get('pending_review', 0)}",
+                    color=0xFF6B6B,
+                )
+        except Exception as e:
+            logger.error("tiktok_continuous_research_failed", error=str(e))
+
+    async def _run_tiktok_niche_deep_dive(self):
+        """Deep dive into top-performing niches for new product ideas."""
+        logger.info("running_tiktok_niche_deep_dive")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            stats = await svc.get_stats()
+            top_niches = stats.top_niches[:3] if stats.top_niches else []
+            researched = 0
+            for niche in top_niches:
+                try:
+                    products = await svc.list_products(niche=niche, limit=5)
+                    for p in products[:3]:
+                        await svc.research_product_deep(p.id)
+                        researched += 1
+                except Exception:
+                    continue
+            logger.info("tiktok_niche_deep_dive_complete",
+                        niches=len(top_niches), researched=researched)
+        except Exception as e:
+            logger.error("tiktok_niche_deep_dive_failed", error=str(e))
+
+    async def _run_tiktok_approval_reminder(self):
+        """Send Discord reminder for products pending approval."""
+        logger.info("running_tiktok_approval_reminder")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            pending = await svc.list_pending(limit=50)
+            if pending:
+                lines = [f"**{len(pending)} TikTok products awaiting your approval:**\n"]
+                for p in pending[:10]:
+                    lines.append(f"- [{p.opportunity_score:.0f}] {p.name} ({p.niche or 'general'})")
+                if len(pending) > 10:
+                    lines.append(f"\n...and {len(pending) - 10} more")
+                lines.append("\nReview in the TikTok Shop dashboard → Approval Queue tab.")
+                await self._send_to_discord(
+                    "TikTok Approval Reminder",
+                    "\n".join(lines),
+                    color=0xFFA500,
+                )
+                logger.info("tiktok_approval_reminder_sent", pending=len(pending))
+            else:
+                logger.info("tiktok_approval_reminder_none_pending")
+        except Exception as e:
+            logger.error("tiktok_approval_reminder_failed", error=str(e))
+
+    async def _run_tiktok_auto_content_pipeline(self):
+        """Auto-generate video scripts for approved products that don't have scripts yet."""
+        logger.info("running_tiktok_auto_content_pipeline")
+        try:
+            from app.services.tiktok_agent_graph import invoke_tiktok_pipeline
+            result = await invoke_tiktok_pipeline(mode="content_only")
+            logger.info("tiktok_auto_content_pipeline_complete",
+                        status=result["status"],
+                        scripts=result.get("scripts_generated", 0),
+                        queued=result.get("generation_jobs", 0))
+            if result.get("scripts_generated", 0) > 0:
+                await self._send_to_discord(
+                    "TikTok Content Pipeline",
+                    f"Generated {result['scripts_generated']} video scripts, "
+                    f"queued {result.get('generation_jobs', 0)} for video generation.",
+                    color=0x9B59B6,
+                )
+        except Exception as e:
+            logger.error("tiktok_auto_content_pipeline_failed", error=str(e))
+
+    async def _run_tiktok_content_generation_check(self):
+        """Poll AIContentTools for completed video generation jobs."""
+        logger.info("running_tiktok_content_generation_check")
+        try:
+            from app.services.tiktok_video_service import get_tiktok_video_service
+            video_svc = get_tiktok_video_service()
+            queue = await video_svc.list_content_queue(status="generating")
+            checked = 0
+            completed = 0
+            for item in queue:
+                try:
+                    updated = await video_svc.check_generation_status(item.id)
+                    checked += 1
+                    if updated and updated.status == "completed":
+                        completed += 1
+                except Exception:
+                    continue
+            logger.info("tiktok_content_generation_check_complete",
+                        checked=checked, completed=completed)
+        except Exception as e:
+            logger.error("tiktok_content_generation_check_failed", error=str(e))
+
+    async def _run_tiktok_performance_sync(self):
+        """Sync TikTok performance metrics and run improvement cycle."""
+        logger.info("running_tiktok_performance_sync")
+        try:
+            from app.services.tiktok_agent_graph import invoke_tiktok_pipeline
+            result = await invoke_tiktok_pipeline(mode="performance_only")
+            logger.info("tiktok_performance_sync_complete",
+                        status=result["status"],
+                        summary=result.get("summary", ""))
+        except Exception as e:
+            logger.error("tiktok_performance_sync_failed", error=str(e))
+
+    async def _run_tiktok_pipeline_health(self):
+        """Health check for TikTok pipeline — alert on failures, retry stuck jobs."""
+        logger.info("running_tiktok_pipeline_health")
+        try:
+            from app.services.tiktok_video_service import get_tiktok_video_service
+            video_svc = get_tiktok_video_service()
+            stats = await video_svc.get_queue_stats()
+            issues = []
+            if stats.failed > 0:
+                issues.append(f"{stats.failed} failed generation jobs")
+            # Check for stuck generating jobs (>30 min)
+            generating = await video_svc.list_content_queue(status="generating")
+            stuck = 0
+            for item in generating:
+                try:
+                    from datetime import datetime, timezone
+                    created = datetime.fromisoformat(item.created_at.replace("Z", "+00:00")) if isinstance(item.created_at, str) else item.created_at
+                    if (datetime.now(timezone.utc) - created).total_seconds() > 1800:
+                        stuck += 1
+                except Exception:
+                    pass
+            if stuck > 0:
+                issues.append(f"{stuck} stuck generating jobs (>30 min)")
+            if issues:
+                await self._send_to_discord(
+                    "TikTok Pipeline Health Alert",
+                    "Issues detected:\n" + "\n".join(f"- {i}" for i in issues),
+                    color=0xED4245,
+                )
+            logger.info("tiktok_pipeline_health_check_complete", issues=len(issues))
+        except Exception as e:
+            logger.error("tiktok_pipeline_health_failed", error=str(e))
+
+    async def _run_tiktok_weekly_report(self):
+        """Sunday weekly TikTok Shop performance report to Discord."""
+        logger.info("running_tiktok_weekly_report")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            from app.services.tiktok_video_service import get_tiktok_video_service
+            shop_svc = get_tiktok_shop_service()
+            video_svc = get_tiktok_video_service()
+            stats = await shop_svc.get_stats()
+            queue_stats = await video_svc.get_queue_stats()
+            report = (
+                f"**Weekly TikTok Shop Report**\n\n"
+                f"Products: {stats.total_products} total "
+                f"({stats.active_products} active, {stats.approved_products} approved, "
+                f"{stats.pending_approval_products} pending)\n"
+                f"Avg opportunity score: {stats.avg_opportunity_score:.1f}\n"
+                f"Top niches: {', '.join(stats.top_niches[:5]) if stats.top_niches else 'none'}\n\n"
+                f"**Content Pipeline:**\n"
+                f"Scripts: {queue_stats.total_scripts}\n"
+                f"Videos completed: {queue_stats.completed}\n"
+                f"Videos queued: {queue_stats.total_queued}\n"
+                f"Videos failed: {queue_stats.failed}"
+            )
+            await self._send_to_discord(
+                "TikTok Weekly Report",
+                report,
+                color=0x3498DB,
+            )
+            logger.info("tiktok_weekly_report_sent")
+        except Exception as e:
+            logger.error("tiktok_weekly_report_failed", error=str(e))
+
+    async def _run_content_performance_sync(self):
+        """Sync content performance metrics from AIContentTools."""
+        logger.info("running_content_performance_sync")
+        try:
+            from app.services.content_agent_service import get_content_agent_service
+            svc = get_content_agent_service()
+            updated = await svc.sync_performance_metrics()
+            if updated > 0:
+                logger.info("content_performance_sync_complete", updated=updated)
+        except Exception as e:
+            logger.error("content_performance_sync_failed", error=str(e))
+
+    async def _run_content_improvement_cycle(self):
+        """Daily content rule improvement from performance feedback."""
+        logger.info("running_content_improvement_cycle")
+        try:
+            from app.services.content_agent_service import get_content_agent_service
+            svc = get_content_agent_service()
+            result = await svc.run_improvement_cycle()
+            logger.info("content_improvement_cycle_complete", result=result)
+        except Exception as e:
+            logger.error("content_improvement_cycle_failed", error=str(e))
+
+    async def _run_content_trend_research(self):
+        """Research trending content for active topics."""
+        logger.info("running_content_trend_research")
+        try:
+            from app.services.content_agent_service import get_content_agent_service
+            svc = get_content_agent_service()
+            topics = await svc.list_topics(status="active")
+            researched = 0
+            for topic in topics[:5]:
+                try:
+                    await svc.research_content_trends(topic.id)
+                    researched += 1
+                except Exception:
+                    continue
+            logger.info("content_trend_research_complete", topics_researched=researched)
+        except Exception as e:
+            logger.error("content_trend_research_failed", error=str(e))
+
+    # ============================================
+    # GATEWAY AUTO-UPDATE
+    # ============================================
+
+    async def _run_gateway_update_check(self):
+        """Check for OpenClaw gateway updates via GitHub API."""
+        logger.info("running_gateway_update_check")
+        try:
+            from app.services.gateway_updater_service import get_gateway_updater_service
+            svc = get_gateway_updater_service()
+            result = await svc.check_for_updates()
+            if result.get("update_available"):
+                logger.info(
+                    "gateway_update_available",
+                    current=result["current"],
+                    latest=result["latest"],
+                )
+            else:
+                logger.info("gateway_up_to_date", version=result.get("current"))
+        except Exception as e:
+            logger.error("gateway_update_check_failed", error=str(e))
+
+    # ============================================
+    # PREDICTION MARKET INTELLIGENCE
+    # ============================================
+
+    async def _run_prediction_market_sync(self):
+        """Sync Kalshi + Polymarket markets."""
+        logger.info("running_prediction_market_sync")
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            svc = get_prediction_market_service()
+            kalshi = await svc.sync_kalshi_markets()
+            polymarket = await svc.sync_polymarket_markets()
+            logger.info("prediction_market_sync_complete", kalshi=kalshi, polymarket=polymarket)
+        except Exception as e:
+            logger.error("prediction_market_sync_failed", error=str(e))
+
+    async def _run_prediction_price_snapshot(self):
+        """Capture prediction market price snapshots."""
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            svc = get_prediction_market_service()
+            result = await svc.capture_price_snapshots()
+            logger.info("prediction_price_snapshot_complete", count=result.get("snapshots_created", 0))
+        except Exception as e:
+            logger.error("prediction_price_snapshot_failed", error=str(e))
+
+    async def _run_prediction_bettor_discovery(self):
+        """Discover and update top prediction market bettors."""
+        logger.info("running_prediction_bettor_discovery")
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            svc = get_prediction_market_service()
+            result = await svc.discover_top_bettors()
+            await svc.update_bettor_stats()
+            logger.info("prediction_bettor_discovery_complete", result=result)
+        except Exception as e:
+            logger.error("prediction_bettor_discovery_failed", error=str(e))
+
+    async def _run_prediction_research(self):
+        """SearXNG prediction market research."""
+        logger.info("running_prediction_research")
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            svc = get_prediction_market_service()
+            result = await svc.research_market_insights()
+            logger.info("prediction_research_complete", findings=result.get("findings_count", 0))
+        except Exception as e:
+            logger.error("prediction_research_failed", error=str(e))
+
+    async def _run_prediction_push_to_ada(self):
+        """Push prediction market data to ADA."""
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            svc = get_prediction_market_service()
+            result = await svc.push_to_ada()
+            logger.info("prediction_push_to_ada_complete", result=result)
+        except Exception as e:
+            logger.error("prediction_push_to_ada_failed", error=str(e))
+
+    async def _run_prediction_quality_check(self):
+        """Prediction market quality + Legion progress report."""
+        logger.info("running_prediction_quality_check")
+        try:
+            from app.services.prediction_market_service import get_prediction_market_service
+            from app.services.prediction_legion_manager import get_prediction_legion_manager
+            svc = get_prediction_market_service()
+            mgr = get_prediction_legion_manager()
+
+            quality = await svc.get_quality_report()
+            legion = await mgr.report_legion_quality()
+
+            # Alert to Discord if issues detected
+            issues = []
+            collection = quality.get("collection_health", {})
+            if collection.get("sync_success_rate_24h", 1.0) < 0.9:
+                issues.append(f"Sync success rate: {collection.get('sync_success_rate_24h', 0):.0%}")
+            if legion.get("quality_score", 100) < 50:
+                issues.append(f"Legion quality score: {legion.get('quality_score', 0):.0f}/100")
+
+            if issues:
+                await self._send_to_discord(
+                    "⚠️ Prediction Market Issues",
+                    "\n".join(issues),
+                    color=0xFF9900
+                )
+
+            logger.info(
+                "prediction_quality_check_complete",
+                legion_score=legion.get("quality_score", 0),
+                issues=len(issues),
+            )
+        except Exception as e:
+            logger.error("prediction_quality_check_failed", error=str(e))
+
+    # ============================================
+    # LLM BUDGET RESET
+    # ============================================
+
+    async def _run_llm_budget_reset(self):
+        """Reset daily LLM spend counter at midnight."""
+        try:
+            from app.infrastructure.llm_router import get_llm_router
+            router = get_llm_router()
+            await router.reset_daily_budget()
+            logger.info("llm_budget_reset_complete")
+        except Exception as e:
+            logger.error("llm_budget_reset_failed", error=str(e))
+
+    # ============================================
     # UTILITIES
     # ============================================
+
+    async def _send_to_discord(self, title: str, message: str, color: int = 0x5865F2):
+        """Send a notification to the #zero Discord channel via embed."""
+        try:
+            from app.services.discord_notifier import get_discord_notifier
+            notifier = get_discord_notifier()
+            if notifier.configured:
+                await notifier.send_embed(title=title, description=message[:4096], color=color)
+        except Exception as e:
+            logger.debug("discord_direct_send_skipped", error=str(e))
 
     def _format_briefing_message(self, briefing) -> str:
         """Format briefing for messaging."""

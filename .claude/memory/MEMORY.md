@@ -41,6 +41,12 @@
 - Tailwind CSS for styling
 - Lucide for icons
 
+## QMD Documentation Search
+- Indexed: 511 .md files in project (skills, docs, backend, .claude)
+- Use `qmd_search`, `qmd_vsearch`, `qmd_query` MCP tools before Glob/Grep
+- 6 context descriptions configured for path relevance
+- Collection name: `zero`
+
 ## Quick Reference
 
 ### Start Services

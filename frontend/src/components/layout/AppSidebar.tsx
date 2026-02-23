@@ -16,6 +16,13 @@ import {
   Cog,
   Globe,
   Network,
+  ShieldCheck,
+  Cpu,
+  MessageCircle,
+  HeartPulse,
+  ShoppingBag,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react'
 
 import {
@@ -35,6 +42,7 @@ const navSections = [
   {
     label: 'Overview',
     items: [
+      { label: 'Ask Zero', href: '/ask-zero', icon: MessageCircle },
       { label: 'Dashboard', href: '/', icon: LayoutDashboard },
       { label: 'Ecosystem', href: '/ecosystem', icon: Globe },
       { label: 'Board', href: '/board', icon: Kanban },
@@ -59,16 +67,22 @@ const navSections = [
   {
     label: 'Automation',
     items: [
+      { label: 'Agent Tasks', href: '/agent', icon: Cpu },
       { label: 'Workflows', href: '/workflows', icon: Workflow },
       { label: 'Orchestrator', href: '/orchestrator', icon: Settings },
       { label: 'Money Maker', href: '/money-maker', icon: Zap },
       { label: 'Research', href: '/research', icon: Search },
+      { label: 'TikTok Shop', href: '/tiktok-shop', icon: ShoppingBag },
+      { label: 'Content Agent', href: '/content-agent', icon: Sparkles },
+      { label: 'Predictions', href: '/prediction-markets', icon: TrendingUp },
     ],
   },
   {
     label: 'System',
     items: [
+      { label: 'System Health', href: '/system-health', icon: HeartPulse },
       { label: 'Architecture', href: '/architecture', icon: Network },
+      { label: 'QA', href: '/qa', icon: ShieldCheck },
       { label: 'Analytics', href: '/analytics', icon: BarChart3 },
       { label: 'Settings', href: '/settings', icon: Cog },
     ],

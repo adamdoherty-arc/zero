@@ -6,7 +6,7 @@ Models for generating, researching, and tracking money-making ideas.
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class IdeaStatus(str, Enum):
@@ -80,7 +80,6 @@ class MoneyIdeaAction(BaseModel):
 
 class MoneyIdea(BaseModel):
     """Full money idea model."""
-    model_config = ConfigDict(populate_by_name=True)
 
     id: str
     title: str
@@ -89,41 +88,41 @@ class MoneyIdea(BaseModel):
     status: IdeaStatus = IdeaStatus.NEW
 
     # Scoring (0-100 scale, except revenue_potential which is dollars)
-    revenue_potential: float = Field(0, ge=0, alias="revenuePotential", description="Estimated monthly revenue in dollars")
-    effort_score: float = Field(50, ge=0, le=100, alias="effortScore", description="Effort required (0=easy, 100=hard)")
-    time_to_roi: TimeToROI = Field(TimeToROI.MEDIUM, alias="timeToRoi")
-    market_validation: float = Field(50, ge=0, le=100, alias="marketValidation", description="Market demand validation score")
-    competition_score: float = Field(50, ge=0, le=100, alias="competitionScore", description="Competition level (0=none, 100=saturated)")
-    skill_match: float = Field(50, ge=0, le=100, alias="skillMatch", description="How well idea matches your skills")
+    revenue_potential: float = Field(0, ge=0, description="Estimated monthly revenue in dollars")
+    effort_score: float = Field(50, ge=0, le=100, description="Effort required (0=easy, 100=hard)")
+    time_to_roi: TimeToROI = TimeToROI.MEDIUM
+    market_validation: float = Field(50, ge=0, le=100, description="Market demand validation score")
+    competition_score: float = Field(50, ge=0, le=100, description="Competition level (0=none, 100=saturated)")
+    skill_match: float = Field(50, ge=0, le=100, description="How well idea matches your skills")
 
     # Computed viability score
-    viability_score: float = Field(0, ge=0, le=100, alias="viabilityScore")
+    viability_score: float = Field(0, ge=0, le=100)
 
     # Research data
-    research_notes: Optional[str] = Field(None, alias="researchNotes")
-    market_size: Optional[str] = Field(None, alias="marketSize")
+    research_notes: Optional[str] = None
+    market_size: Optional[str] = None
     competitors: List[str] = Field(default_factory=list)
-    resources_needed: List[str] = Field(default_factory=list, alias="resourcesNeeded")
-    first_steps: List[str] = Field(default_factory=list, alias="firstSteps")
+    resources_needed: List[str] = Field(default_factory=list)
+    first_steps: List[str] = Field(default_factory=list)
 
     # Tracking
     source: str = "llm_generated"
-    rejection_reason: Optional[str] = Field(None, alias="rejectionReason")
-    park_reason: Optional[str] = Field(None, alias="parkReason")
-    linked_task_ids: List[str] = Field(default_factory=list, alias="linkedTaskIds")
+    rejection_reason: Optional[str] = None
+    park_reason: Optional[str] = None
+    linked_task_ids: List[str] = Field(default_factory=list)
 
     # Timestamps
-    generated_at: datetime = Field(default_factory=datetime.utcnow, alias="generatedAt")
-    last_researched_at: Optional[datetime] = Field(None, alias="lastResearchedAt")
-    status_changed_at: Optional[datetime] = Field(None, alias="statusChangedAt")
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_researched_at: Optional[datetime] = None
+    status_changed_at: Optional[datetime] = None
 
 
 class MoneyMakerStats(BaseModel):
     """Statistics about the money maker pipeline."""
-    total_ideas: int = Field(alias="totalIdeas")
-    by_status: dict = Field(alias="byStatus")
-    by_category: dict = Field(alias="byCategory")
-    top_viability_score: float = Field(alias="topViabilityScore")
-    avg_viability_score: float = Field(alias="avgViabilityScore")
-    ideas_this_week: int = Field(alias="ideasThisWeek")
-    researched_this_week: int = Field(alias="researchedThisWeek")
+    total_ideas: int
+    by_status: dict
+    by_category: dict
+    top_viability_score: float
+    avg_viability_score: float
+    ideas_this_week: int
+    researched_this_week: int

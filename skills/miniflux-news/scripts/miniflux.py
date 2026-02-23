@@ -6,7 +6,7 @@ Reads credentials from (in order):
    - MINIFLUX_URL   e.g. https://reader.example.com
    - MINIFLUX_TOKEN your Miniflux API token
 2) Config file (recommended):
-   - ~/.config/clawdbot/miniflux-news.json  (keys: url, token)
+   - ~/.config/zero/miniflux-news.json  (keys: url, token)
 
 Usage examples:
   python3 miniflux.py entries --limit 20
@@ -41,7 +41,7 @@ from html.parser import HTMLParser
 def _config_path() -> str:
     xdg = os.environ.get("XDG_CONFIG_HOME")
     base = xdg if xdg else os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "clawdbot", "miniflux-news.json")
+    return os.path.join(base, "zero", "miniflux-news.json")
 
 
 def _read_config() -> dict:

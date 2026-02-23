@@ -32,6 +32,45 @@ class NoteSource(str, Enum):
     GITHUB = "github"
 
 
+class KnowledgeCategory(BaseModel):
+    """A knowledge category in the taxonomy tree."""
+    id: str
+    name: str
+    slug: str
+    parent_id: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    sort_order: int = 0
+    is_system: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    children: List["KnowledgeCategory"] = Field(default_factory=list)
+
+    class Config:
+        from_attributes = True
+
+
+class KnowledgeCategoryCreate(BaseModel):
+    """Schema for creating a category."""
+    name: str = Field(..., min_length=1, max_length=100)
+    slug: Optional[str] = None  # auto-generated from name if not provided
+    parent_id: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: int = 0
+
+
+class KnowledgeCategoryUpdate(BaseModel):
+    """Schema for updating a category."""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
 class NoteCreate(BaseModel):
     """Schema for creating a new note."""
     type: NoteType = NoteType.NOTE
@@ -42,6 +81,7 @@ class NoteCreate(BaseModel):
     tags: List[str] = Field(default_factory=list)
     project_id: Optional[str] = None
     task_id: Optional[str] = None
+    category_id: Optional[str] = None
 
 
 class NoteUpdate(BaseModel):
@@ -52,6 +92,7 @@ class NoteUpdate(BaseModel):
     tags: Optional[List[str]] = None
     project_id: Optional[str] = None
     task_id: Optional[str] = None
+    category_id: Optional[str] = None
 
 
 class Note(BaseModel):
@@ -65,6 +106,7 @@ class Note(BaseModel):
     tags: List[str] = Field(default_factory=list)
     project_id: Optional[str] = None
     task_id: Optional[str] = None
+    category_id: Optional[str] = None
     embedding: Optional[List[float]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None

@@ -5,12 +5,13 @@ Integrates with Zero's enhancement system to track and create sprint tasks.
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 import structlog
 
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_enhancement_path
+from sqlalchemy import select, func as sa_func
+from app.infrastructure.database import get_session
+from app.db.models import EnhancementSignalModel
 from app.services.task_service import get_task_service
 from app.models.task import TaskCreate, TaskCategory, TaskPriority, TaskSource
 
@@ -56,57 +57,62 @@ async def get_signals(
     limit: int = Query(50, ge=1, le=200)
 ):
     """Get enhancement signals."""
-    storage = JsonStorage(get_enhancement_path())
-    data = await storage.read("signals.json")
+    async with get_session() as session:
+        query = select(EnhancementSignalModel)
+        if status:
+            query = query.where(EnhancementSignalModel.status == status)
+        if type:
+            query = query.where(EnhancementSignalModel.type == type)
+        query = query.order_by(EnhancementSignalModel.detected_at.desc()).limit(limit)
 
-    signals = data.get("signals", [])
+        result = await session.execute(query)
+        rows = result.scalars().all()
 
-    # Apply filters
-    filtered = []
-    for s in signals:
-        if status and s.get("status") != status:
-            continue
-        if type and s.get("type") != type:
-            continue
-        filtered.append(EnhancementSignal(**s))
-        if len(filtered) >= limit:
-            break
-
-    return filtered
+    return [
+        EnhancementSignal(
+            id=r.id, type=r.type, source_file=r.source_file,
+            line_number=r.line_number, message=r.message,
+            severity=r.severity, detected_at=r.detected_at, status=r.status
+        )
+        for r in rows
+    ]
 
 
 @router.get("/stats", response_model=EnhancementStats)
 async def get_stats():
     """Get enhancement system statistics."""
-    storage = JsonStorage(get_enhancement_path())
-    data = await storage.read("signals.json")
-
-    signals = data.get("signals", [])
-
-    # Calculate stats
-    by_type: Dict[str, int] = {}
-    by_severity: Dict[str, int] = {}
-    by_status: Dict[str, int] = {"pending": 0, "converted": 0, "dismissed": 0}
-
-    for s in signals:
-        # By type
-        signal_type = s.get("type", "unknown")
-        by_type[signal_type] = by_type.get(signal_type, 0) + 1
-
-        # By severity
-        severity = s.get("severity", "medium")
-        by_severity[severity] = by_severity.get(severity, 0) + 1
+    async with get_session() as session:
+        # Total count
+        total = (await session.execute(
+            select(sa_func.count()).select_from(EnhancementSignalModel)
+        )).scalar() or 0
 
         # By status
-        status = s.get("status", "pending")
-        if status in by_status:
-            by_status[status] += 1
+        status_result = await session.execute(
+            select(EnhancementSignalModel.status, sa_func.count())
+            .group_by(EnhancementSignalModel.status)
+        )
+        by_status = dict(status_result.all())
+
+        # By type
+        type_result = await session.execute(
+            select(EnhancementSignalModel.type, sa_func.count())
+            .group_by(EnhancementSignalModel.type)
+        )
+        by_type = dict(type_result.all())
+
+        # By severity
+        sev_result = await session.execute(
+            select(EnhancementSignalModel.severity, sa_func.count())
+            .group_by(EnhancementSignalModel.severity)
+        )
+        by_severity = dict(sev_result.all())
 
     return EnhancementStats(
-        total_signals=len(signals),
-        pending=by_status["pending"],
-        converted_to_tasks=by_status["converted"],
-        dismissed=by_status["dismissed"],
+        total_signals=total,
+        pending=by_status.get("pending", 0),
+        converted_to_tasks=by_status.get("converted", 0),
+        dismissed=by_status.get("dismissed", 0),
         by_type=by_type,
         by_severity=by_severity
     )
@@ -115,69 +121,55 @@ async def get_stats():
 @router.post("/signals/{signal_id}/convert")
 async def convert_signal_to_task(signal_id: str, request: SignalToTaskRequest):
     """Convert an enhancement signal to a sprint task."""
-    storage = JsonStorage(get_enhancement_path())
-    data = await storage.read("signals.json")
+    async with get_session() as session:
+        signal = await session.get(EnhancementSignalModel, signal_id)
+        if not signal:
+            raise HTTPException(status_code=404, detail="Signal not found")
 
-    signals = data.get("signals", [])
+        if signal.status == "converted":
+            raise HTTPException(status_code=400, detail="Signal already converted to task")
 
-    # Find the signal
-    signal = None
-    signal_idx = None
-    for i, s in enumerate(signals):
-        if s.get("id") == signal_id:
-            signal = s
-            signal_idx = i
-            break
+        # Map severity to priority
+        severity_to_priority = {
+            "critical": TaskPriority.CRITICAL,
+            "high": TaskPriority.HIGH,
+            "medium": TaskPriority.MEDIUM,
+            "low": TaskPriority.LOW
+        }
 
-    if not signal:
-        raise HTTPException(status_code=404, detail="Signal not found")
+        # Map signal type to category
+        type_to_category = {
+            "todo": TaskCategory.CHORE,
+            "fixme": TaskCategory.BUG,
+            "error": TaskCategory.BUG,
+            "performance": TaskCategory.ENHANCEMENT,
+            "qa_issue": TaskCategory.BUG
+        }
 
-    if signal.get("status") == "converted":
-        raise HTTPException(status_code=400, detail="Signal already converted to task")
+        # Create task
+        task_service = get_task_service()
 
-    # Map severity to priority
-    severity_to_priority = {
-        "critical": TaskPriority.CRITICAL,
-        "high": TaskPriority.HIGH,
-        "medium": TaskPriority.MEDIUM,
-        "low": TaskPriority.LOW
-    }
+        title = request.title or signal.message[:100]
+        priority = request.priority or severity_to_priority.get(signal.severity, TaskPriority.MEDIUM)
+        category = type_to_category.get(signal.type, TaskCategory.ENHANCEMENT)
 
-    # Map signal type to category
-    type_to_category = {
-        "todo": TaskCategory.CHORE,
-        "fixme": TaskCategory.BUG,
-        "error": TaskCategory.BUG,
-        "performance": TaskCategory.ENHANCEMENT,
-        "qa_issue": TaskCategory.BUG
-    }
+        task_data = TaskCreate(
+            title=title,
+            description=f"Source: {signal.source_file or 'unknown'}:{signal.line_number or '?'}\n\n{signal.message}",
+            sprint_id=request.sprint_id,
+            category=category,
+            priority=priority,
+            points=request.points,
+            source=TaskSource.ENHANCEMENT_ENGINE,
+            source_reference=signal_id
+        )
 
-    # Create task
-    task_service = get_task_service()
+        task = await task_service.create_task(task_data)
 
-    title = request.title or signal.get("message", "Enhancement task")[:100]
-    priority = request.priority or severity_to_priority.get(signal.get("severity", "medium"), TaskPriority.MEDIUM)
-    category = type_to_category.get(signal.get("type", "todo"), TaskCategory.ENHANCEMENT)
-
-    task_data = TaskCreate(
-        title=title,
-        description=f"Source: {signal.get('source_file', 'unknown')}:{signal.get('line_number', '?')}\n\n{signal.get('message', '')}",
-        sprint_id=request.sprint_id,
-        category=category,
-        priority=priority,
-        points=request.points,
-        source=TaskSource.ENHANCEMENT_ENGINE,
-        source_reference=signal_id
-    )
-
-    task = await task_service.create_task(task_data)
-
-    # Update signal status
-    signals[signal_idx]["status"] = "converted"
-    signals[signal_idx]["converted_to_task"] = task.id
-    signals[signal_idx]["converted_at"] = datetime.utcnow().isoformat()
-    data["signals"] = signals
-    await storage.write("signals.json", data)
+        # Update signal status
+        signal.status = "converted"
+        signal.converted_to_task = task.id
+        signal.converted_at = datetime.now(timezone.utc)
 
     logger.info("Signal converted to task", signal_id=signal_id, task_id=task.id)
 
@@ -191,24 +183,18 @@ async def convert_signal_to_task(signal_id: str, request: SignalToTaskRequest):
 @router.post("/signals/{signal_id}/dismiss")
 async def dismiss_signal(signal_id: str, reason: Optional[str] = None):
     """Dismiss an enhancement signal."""
-    storage = JsonStorage(get_enhancement_path())
-    data = await storage.read("signals.json")
+    async with get_session() as session:
+        signal = await session.get(EnhancementSignalModel, signal_id)
+        if not signal:
+            raise HTTPException(status_code=404, detail="Signal not found")
 
-    signals = data.get("signals", [])
+        signal.status = "dismissed"
+        if reason:
+            # Store dismiss reason in context field (reusing available column)
+            signal.context = f"Dismissed: {reason}"
 
-    for i, s in enumerate(signals):
-        if s.get("id") == signal_id:
-            signals[i]["status"] = "dismissed"
-            signals[i]["dismissed_at"] = datetime.utcnow().isoformat()
-            if reason:
-                signals[i]["dismiss_reason"] = reason
-            data["signals"] = signals
-            await storage.write("signals.json", data)
-
-            logger.info("Signal dismissed", signal_id=signal_id)
-            return {"status": "dismissed", "signal_id": signal_id}
-
-    raise HTTPException(status_code=404, detail="Signal not found")
+    logger.info("Signal dismissed", signal_id=signal_id)
+    return {"status": "dismissed", "signal_id": signal_id}
 
 
 @router.post("/scan")

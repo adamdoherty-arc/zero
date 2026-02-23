@@ -2,12 +2,11 @@ import { useState } from 'react'
 import { useCurrentSprint, useSprintBoard } from '@/hooks/useSprintApi'
 import { KanbanBoard } from '@/components/KanbanBoard'
 import { SprintHeader } from '@/components/SprintHeader'
-import { CreateTaskModal } from '@/components/CreateTaskModal'
 import { TaskDetailModal } from '@/components/TaskDetailModal'
+import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 import type { Task } from '@/types'
 
 export function BoardPage() {
-  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
 
   const { data: currentSprint, isLoading: isLoadingSprint } = useCurrentSprint()
@@ -21,21 +20,15 @@ export function BoardPage() {
     <div className="page-content">
       <div className="flex items-center justify-between mb-6">
         <h1 className="page-title">Sprint Board</h1>
-        <button
-          onClick={() => setIsCreateTaskOpen(true)}
-          className="btn-primary"
-        >
-          + New Task
-        </button>
       </div>
 
       {isLoadingSprint ? (
-        <div className="text-center py-12 text-muted-foreground">Loading sprint...</div>
+        <LoadingSkeleton variant="inline" message="Loading sprint..." />
       ) : currentSprint ? (
         <>
           <SprintHeader sprint={currentSprint} />
           {isLoadingBoard ? (
-            <div className="text-center py-12 text-muted-foreground">Loading board...</div>
+            <LoadingSkeleton variant="page" message="Loading board..." />
           ) : board ? (
             <KanbanBoard board={board} onTaskClick={handleTaskClick} />
           ) : (
@@ -50,12 +43,6 @@ export function BoardPage() {
           </a>
         </div>
       )}
-
-      <CreateTaskModal
-        isOpen={isCreateTaskOpen}
-        onClose={() => setIsCreateTaskOpen(false)}
-        sprintId={currentSprint?.id}
-      />
 
       <TaskDetailModal
         task={selectedTask}

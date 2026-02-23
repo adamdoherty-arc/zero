@@ -1,13 +1,13 @@
 # Task Status Skill
 
-A Clawdbot skill for sending short status descriptions in chat, with automatic periodic monitoring that updates every 5 seconds.
+A Zero skill for sending short status descriptions in chat, with automatic periodic monitoring that updates every 5 seconds.
 
 ## Quick Start
 
-### Install into Clawdbot
+### Install into Zero
 ```bash
-# Copy to Clawdbot skills directory
-copy task-status "C:\Users\Luffy\AppData\Roaming\npm\node_modules\clawdbot\skills\task-status"
+# Copy to Zero skills directory
+copy task-status "C:\Users\Luffy\AppData\Roaming\npm\node_modules\zero\skills\task-status"
 ```
 
 ### Usage
@@ -108,7 +108,7 @@ task-status/
 └── README.md             # This file
 ```
 
-## Integration with Clawdbot
+## Integration with Zero
 
 Add to your workspace in `AGENTS.md` or `TOOLS.md`:
 

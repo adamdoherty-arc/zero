@@ -2,13 +2,14 @@
 Enhancement Service.
 Detects signals from multiple sources and creates sprint tasks.
 Based on ADA's autonomous enhancement agent patterns.
+
+Persistence: PostgreSQL via SQLAlchemy async (EnhancementSignalModel, ServiceConfigModel).
 """
 
 import asyncio
 import hashlib
 import re
-import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
@@ -16,8 +17,11 @@ from functools import lru_cache
 from pathlib import Path
 import structlog
 
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_workspace_path, get_enhancement_path, get_settings
+from sqlalchemy import select, update, func as sa_func
+
+from app.infrastructure.database import get_session
+from app.infrastructure.config import get_workspace_path, get_settings
+from app.db.models import EnhancementSignalModel, ServiceConfigModel
 from app.models.task import TaskCreate, TaskCategory, TaskPriority, TaskSource
 
 logger = structlog.get_logger()
@@ -60,7 +64,7 @@ class EnhancementSignal:
     source_file: Optional[str] = None
     line_number: Optional[int] = None
     context: Optional[str] = None
-    detected_at: datetime = field(default_factory=datetime.utcnow)
+    detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     status: str = "pending"  # pending, converted, dismissed
     confidence: float = 80.0
     impact_score: float = 50.0
@@ -79,9 +83,6 @@ class EnhancementService:
     """
 
     def __init__(self):
-        self.storage = JsonStorage(get_enhancement_path())
-        self._signals_file = "signals.json"
-
         # Patterns for code scanning
         self.todo_patterns = [
             (r'#\s*TODO[:\s]*(.*)', SignalType.TODO, SignalSeverity.MEDIUM),
@@ -148,9 +149,12 @@ class EnhancementService:
         settings = get_settings()
         projects_root = Path(settings.projects_root)
 
-        # Load previously seen signal IDs to detect NEW signals
-        existing_data = await self.storage.read(self._signals_file)
-        previously_seen = {s.get("id") for s in existing_data.get("signals", [])}
+        # Load previously seen signal IDs from the database
+        async with get_session() as session:
+            result = await session.execute(
+                select(EnhancementSignalModel.id)
+            )
+            previously_seen = {row for row in result.scalars().all()}
 
         all_signals: List[EnhancementSignal] = []
         per_project: Dict[str, Dict[str, Any]] = {}
@@ -394,39 +398,98 @@ class EnhancementService:
         return unique
 
     async def _persist_signals(self, signals: List[EnhancementSignal]) -> None:
-        """Persist signals to storage."""
-        data = await self.storage.read(self._signals_file)
+        """Persist signals to PostgreSQL, preserving status of existing signals."""
+        new_count = 0
 
-        # Merge with existing signals
-        existing_ids = {s.get("id") for s in data.get("signals", [])}
-        new_signals = [s for s in signals if s.id not in existing_ids]
+        async with get_session() as session:
+            # Fetch existing signal IDs and their statuses in one query
+            existing_ids = {s.id for s in signals}
+            if existing_ids:
+                result = await session.execute(
+                    select(
+                        EnhancementSignalModel.id,
+                        EnhancementSignalModel.status,
+                    ).where(EnhancementSignalModel.id.in_(existing_ids))
+                )
+                existing_map: Dict[str, str] = {row.id: row.status for row in result.all()}
+            else:
+                existing_map = {}
 
-        # Convert to dict format
-        signal_dicts = []
-        for s in signals:
-            signal_dicts.append({
-                "id": s.id,
-                "type": s.type.value,
-                "message": s.message,
-                "severity": s.severity.value,
-                "source_file": s.source_file,
-                "line_number": s.line_number,
-                "context": s.context,
-                "detected_at": s.detected_at.isoformat(),
-                "status": s.status,
-                "confidence": s.confidence,
-                "impact_score": s.impact_score,
-                "risk_score": s.risk_score,
-                "priority_score": s.priority_score,
-                "project_name": s.project_name,
-            })
+            for s in signals:
+                existing_status = existing_map.get(s.id)
 
-        data["signals"] = signal_dicts
-        data["lastScanAt"] = datetime.utcnow().isoformat()
-        data["scanCount"] = data.get("scanCount", 0) + 1
+                if existing_status is not None:
+                    # Signal exists -- update fields but preserve status if converted/dismissed
+                    preserved_status = (
+                        existing_status
+                        if existing_status in ("converted", "dismissed")
+                        else s.status
+                    )
+                    await session.execute(
+                        update(EnhancementSignalModel)
+                        .where(EnhancementSignalModel.id == s.id)
+                        .values(
+                            type=s.type.value,
+                            message=s.message,
+                            severity=s.severity.value,
+                            source_file=s.source_file,
+                            line_number=s.line_number,
+                            context=s.context,
+                            status=preserved_status,
+                            confidence=s.confidence,
+                            impact_score=s.impact_score,
+                            risk_score=s.risk_score,
+                            priority_score=s.priority_score,
+                            project_name=s.project_name,
+                        )
+                    )
+                else:
+                    # New signal -- insert
+                    session.add(EnhancementSignalModel(
+                        id=s.id,
+                        type=s.type.value,
+                        message=s.message,
+                        severity=s.severity.value,
+                        source_file=s.source_file,
+                        line_number=s.line_number,
+                        context=s.context,
+                        status=s.status,
+                        confidence=s.confidence,
+                        impact_score=s.impact_score,
+                        risk_score=s.risk_score,
+                        priority_score=s.priority_score,
+                        project_name=s.project_name,
+                        detected_at=s.detected_at,
+                    ))
+                    new_count += 1
 
-        await self.storage.write(self._signals_file, data)
-        logger.info("Signals persisted", count=len(signal_dicts), new=len(new_signals))
+            # Update scan metadata in ServiceConfigModel
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            # Fetch current config to increment scanCount
+            cfg_result = await session.execute(
+                select(ServiceConfigModel).where(
+                    ServiceConfigModel.service_name == "enhancement"
+                )
+            )
+            cfg_row = cfg_result.scalar_one_or_none()
+
+            if cfg_row is not None:
+                current_config = cfg_row.config or {}
+                current_config["lastScanAt"] = now_iso
+                current_config["scanCount"] = current_config.get("scanCount", 0) + 1
+                await session.execute(
+                    update(ServiceConfigModel)
+                    .where(ServiceConfigModel.service_name == "enhancement")
+                    .values(config=current_config)
+                )
+            else:
+                session.add(ServiceConfigModel(
+                    service_name="enhancement",
+                    config={"lastScanAt": now_iso, "scanCount": 1},
+                ))
+
+        logger.info("Signals persisted", count=len(signals), new=new_count)
 
     async def create_tasks_from_signals(self, sprint_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -436,56 +499,58 @@ class EnhancementService:
         from app.services.task_service import get_task_service
         task_service = get_task_service()
 
-        data = await self.storage.read(self._signals_file)
-        signals = data.get("signals", [])
+        # Read pending signals from the database
+        async with get_session() as session:
+            result = await session.execute(
+                select(EnhancementSignalModel).where(
+                    EnhancementSignalModel.status == "pending"
+                )
+            )
+            pending_rows = result.scalars().all()
 
-        created_tasks = []
-        skipped = []
+            created_tasks = []
+            skipped = []
 
-        for signal_data in signals:
-            if signal_data.get("status") != "pending":
-                continue
+            for row in pending_rows:
+                # Check if should auto-create based on confidence
+                confidence = row.confidence
+                severity = row.severity
 
-            # Check if should auto-create based on confidence
-            confidence = signal_data.get("confidence", 0)
-            severity = signal_data.get("severity", "medium")
+                # Auto-create thresholds based on severity
+                auto_threshold = {
+                    "critical": 70,
+                    "high": 80,
+                    "medium": 85,
+                    "low": 90
+                }.get(severity, 85)
 
-            # Auto-create thresholds based on severity
-            auto_threshold = {
-                "critical": 70,
-                "high": 80,
-                "medium": 85,
-                "low": 90
-            }.get(severity, 85)
+                if confidence >= auto_threshold:
+                    # Build a signal dict for _signal_to_task
+                    signal_data = self._row_to_dict(row)
+                    task_data = self._signal_to_task(signal_data, sprint_id)
+                    task = await task_service.create_task(task_data)
 
-            if confidence >= auto_threshold:
-                # Map signal to task
-                task_data = self._signal_to_task(signal_data, sprint_id)
-                task = await task_service.create_task(task_data)
+                    # Update signal status in DB
+                    row.status = "converted"
+                    row.converted_to_task = task.id
+                    row.converted_at = datetime.now(timezone.utc)
 
-                # Update signal status
-                signal_data["status"] = "converted"
-                signal_data["converted_to_task"] = task.id
-                signal_data["converted_at"] = datetime.utcnow().isoformat()
+                    created_tasks.append({
+                        "signal_id": row.id,
+                        "task_id": task.id,
+                        "title": task.title
+                    })
 
-                created_tasks.append({
-                    "signal_id": signal_data["id"],
-                    "task_id": task.id,
-                    "title": task.title
-                })
+                    logger.info("Task created from signal",
+                              signal_id=row.id,
+                              task_id=task.id)
+                else:
+                    skipped.append({
+                        "signal_id": row.id,
+                        "reason": f"Confidence {confidence}% below threshold {auto_threshold}%"
+                    })
 
-                logger.info("Task created from signal",
-                          signal_id=signal_data["id"],
-                          task_id=task.id)
-            else:
-                skipped.append({
-                    "signal_id": signal_data["id"],
-                    "reason": f"Confidence {confidence}% below threshold {auto_threshold}%"
-                })
-
-        # Save updated signals
-        data["signals"] = signals
-        await self.storage.write(self._signals_file, data)
+            # Session auto-commits on context manager exit
 
         return {
             "status": "completed",
@@ -604,73 +669,74 @@ class EnhancementService:
                 }
             sprint_id = current["id"]
 
-        # Get pending signals
-        data = await self.storage.read(self._signals_file)
-        signals = data.get("signals", [])
+        # Get pending signals from the database
+        async with get_session() as session:
+            result = await session.execute(
+                select(EnhancementSignalModel).where(
+                    EnhancementSignalModel.status == "pending"
+                )
+            )
+            pending_rows = result.scalars().all()
 
-        created_tasks = []
-        skipped = []
-        errors = []
+            created_tasks = []
+            skipped = []
+            errors = []
 
-        for signal_data in signals:
-            if signal_data.get("status") != "pending":
-                continue
+            for row in pending_rows:
+                # Check if should auto-create based on confidence
+                confidence = row.confidence
+                severity = row.severity
 
-            # Check if should auto-create based on confidence
-            confidence = signal_data.get("confidence", 0)
-            severity = signal_data.get("severity", "medium")
+                # Auto-create thresholds
+                auto_threshold = {
+                    "critical": 70,
+                    "high": 80,
+                    "medium": 85,
+                    "low": 90
+                }.get(severity, 85)
 
-            # Auto-create thresholds
-            auto_threshold = {
-                "critical": 70,
-                "high": 80,
-                "medium": 85,
-                "low": 90
-            }.get(severity, 85)
+                if confidence >= auto_threshold:
+                    # Map signal to Legion task format
+                    signal_data = self._row_to_dict(row)
+                    task_data = self._signal_to_legion_task(signal_data)
 
-            if confidence >= auto_threshold:
-                # Map signal to Legion task format
-                task_data = self._signal_to_legion_task(signal_data)
+                    try:
+                        # Create task in Legion
+                        task = await legion.create_task(sprint_id, task_data)
 
-                try:
-                    # Create task in Legion
-                    task = await legion.create_task(sprint_id, task_data)
+                        # Update signal status in DB
+                        row.status = "converted"
+                        row.converted_to_legion_task = task.get("id")
+                        row.converted_at = datetime.now(timezone.utc)
 
-                    # Update signal status
-                    signal_data["status"] = "converted"
-                    signal_data["converted_to_legion_task"] = task.get("id")
-                    signal_data["converted_at"] = datetime.utcnow().isoformat()
+                        created_tasks.append({
+                            "signal_id": row.id,
+                            "legion_task_id": task.get("id"),
+                            "title": task_data["title"]
+                        })
 
-                    created_tasks.append({
-                        "signal_id": signal_data["id"],
-                        "legion_task_id": task.get("id"),
-                        "title": task_data["title"]
+                        logger.info(
+                            "Legion task created from signal",
+                            signal_id=row.id,
+                            task_id=task.get("id")
+                        )
+                    except Exception as e:
+                        errors.append({
+                            "signal_id": row.id,
+                            "error": str(e)
+                        })
+                        logger.warning(
+                            "Failed to create Legion task",
+                            signal_id=row.id,
+                            error=str(e)
+                        )
+                else:
+                    skipped.append({
+                        "signal_id": row.id,
+                        "reason": f"Confidence {confidence}% below threshold {auto_threshold}%"
                     })
 
-                    logger.info(
-                        "Legion task created from signal",
-                        signal_id=signal_data["id"],
-                        task_id=task.get("id")
-                    )
-                except Exception as e:
-                    errors.append({
-                        "signal_id": signal_data["id"],
-                        "error": str(e)
-                    })
-                    logger.warning(
-                        "Failed to create Legion task",
-                        signal_id=signal_data["id"],
-                        error=str(e)
-                    )
-            else:
-                skipped.append({
-                    "signal_id": signal_data["id"],
-                    "reason": f"Confidence {confidence}% below threshold {auto_threshold}%"
-                })
-
-        # Save updated signals
-        data["signals"] = signals
-        await self.storage.write(self._signals_file, data)
+            # Session auto-commits on context manager exit
 
         return {
             "status": "completed",
@@ -760,34 +826,87 @@ Please analyze and fix this issue, then run any relevant tests."""
         }
         return points_map.get((severity, signal_type), 3)
 
+    @staticmethod
+    def _row_to_dict(row: EnhancementSignalModel) -> Dict[str, Any]:
+        """Convert an ORM row to a plain dict for helper methods."""
+        return {
+            "id": row.id,
+            "type": row.type,
+            "message": row.message,
+            "severity": row.severity,
+            "source_file": row.source_file,
+            "line_number": row.line_number,
+            "context": row.context,
+            "status": row.status,
+            "confidence": row.confidence,
+            "impact_score": row.impact_score,
+            "risk_score": row.risk_score,
+            "priority_score": row.priority_score,
+            "project_name": row.project_name,
+            "detected_at": row.detected_at.isoformat() if row.detected_at else "",
+            "converted_to_task": row.converted_to_task,
+            "converted_to_legion_task": row.converted_to_legion_task,
+            "converted_at": row.converted_at.isoformat() if row.converted_at else None,
+        }
+
     async def get_stats(self) -> Dict[str, Any]:
-        """Get enhancement system statistics."""
-        data = await self.storage.read(self._signals_file)
-        signals = data.get("signals", [])
+        """Get enhancement system statistics using SQL aggregation."""
+        async with get_session() as session:
+            # Total count
+            total_result = await session.execute(
+                select(sa_func.count(EnhancementSignalModel.id))
+            )
+            total = total_result.scalar_one()
 
-        by_type = {}
-        by_severity = {}
-        by_status = {"pending": 0, "converted": 0, "dismissed": 0}
+            # Counts by status
+            status_result = await session.execute(
+                select(
+                    EnhancementSignalModel.status,
+                    sa_func.count(EnhancementSignalModel.id),
+                ).group_by(EnhancementSignalModel.status)
+            )
+            by_status_raw = {row[0]: row[1] for row in status_result.all()}
+            by_status = {
+                "pending": by_status_raw.get("pending", 0),
+                "converted": by_status_raw.get("converted", 0),
+                "dismissed": by_status_raw.get("dismissed", 0),
+            }
 
-        for s in signals:
-            sig_type = s.get("type", "unknown")
-            severity = s.get("severity", "medium")
-            status = s.get("status", "pending")
+            # Counts by type
+            type_result = await session.execute(
+                select(
+                    EnhancementSignalModel.type,
+                    sa_func.count(EnhancementSignalModel.id),
+                ).group_by(EnhancementSignalModel.type)
+            )
+            by_type = {row[0]: row[1] for row in type_result.all()}
 
-            by_type[sig_type] = by_type.get(sig_type, 0) + 1
-            by_severity[severity] = by_severity.get(severity, 0) + 1
-            if status in by_status:
-                by_status[status] += 1
+            # Counts by severity
+            severity_result = await session.execute(
+                select(
+                    EnhancementSignalModel.severity,
+                    sa_func.count(EnhancementSignalModel.id),
+                ).group_by(EnhancementSignalModel.severity)
+            )
+            by_severity = {row[0]: row[1] for row in severity_result.all()}
+
+            # Scan metadata from ServiceConfigModel
+            cfg_result = await session.execute(
+                select(ServiceConfigModel.config).where(
+                    ServiceConfigModel.service_name == "enhancement"
+                )
+            )
+            cfg = cfg_result.scalar_one_or_none() or {}
 
         return {
-            "total_signals": len(signals),
+            "total_signals": total,
             "pending": by_status["pending"],
             "converted_to_tasks": by_status["converted"],
             "dismissed": by_status["dismissed"],
             "by_type": by_type,
             "by_severity": by_severity,
-            "last_scan_at": data.get("lastScanAt"),
-            "scan_count": data.get("scanCount", 0)
+            "last_scan_at": cfg.get("lastScanAt"),
+            "scan_count": cfg.get("scanCount", 0)
         }
 
 

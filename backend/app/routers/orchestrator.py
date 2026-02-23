@@ -132,10 +132,6 @@ async def trigger_enhancement_scan():
     sprint_id = current_sprint.id if current_sprint else None
     create_result = await enhancement_service.create_tasks_from_signals(sprint_id)
 
-    # Step 4: Update sprint points
-    if sprint_id:
-        await sprint_service.update_sprint_points(sprint_id)
-
     logger.info("Enhancement cycle completed",
                signals_found=scan_result.get("signals_found", 0),
                tasks_created=create_result.get("tasks_created", 0))
@@ -245,7 +241,7 @@ async def get_graph_status():
         from app.services.orchestration_graph import _compiled_graph
         return {
             "graph_compiled": _compiled_graph is not None,
-            "available_routes": ["sprint", "email", "calendar", "enhancement", "briefing", "general"],
+            "available_routes": ["sprint", "task", "email", "calendar", "enhancement", "briefing", "research", "notion", "money_maker", "knowledge", "workflow", "system", "general"],
             "checkpointer": type(_compiled_graph.checkpointer).__name__ if _compiled_graph and hasattr(_compiled_graph, 'checkpointer') and _compiled_graph.checkpointer else "none",
         }
     except ImportError:

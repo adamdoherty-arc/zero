@@ -34,7 +34,7 @@ Semantic search across millions of Reddit posts. Unlike keyword search, this und
 }
 ```
 
-**For Clawdbot** - add to `config/mcporter.json`:
+**For Zero** - add to `config/mcporter.json`:
 ```json
 {
   "mcpServers": {

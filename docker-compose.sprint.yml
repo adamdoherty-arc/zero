@@ -2,35 +2,86 @@
 # Run with: docker-compose -f docker-compose.sprint.yml up
 
 services:
+  # PostgreSQL Database (required)
+  zero-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: zero-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zero
+      POSTGRES_PASSWORD: ${ZERO_POSTGRES_PASSWORD:-zero_dev}
+      POSTGRES_DB: zero
+    volumes:
+      - zero-postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zero"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "25m"
+        max-file: "3"
+
   # FastAPI Backend
   zero-api:
+    container_name: zero-api
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
       - "18792:18792"
+    networks:
+      - default
+      - ada-bridge
     volumes:
       - ./workspace:/app/workspace
       - ./config:/app/config
       - ./backups:/app/backups
-      # Cross-project codebase access (read-only)
+      # Cross-project codebase access
       - C:/code/ADA:/projects/ada:ro
       - C:/code/fortressOS:/projects/fortressos:ro
-      - C:/code/Legion:/projects/legion:ro
-      - C:/code/moltbot:/projects/zero:ro
+      - C:/code/Legion:/projects/legion:rw
+      - C:/code/zero:/projects/zero:rw
     environment:
       - ZERO_WORKSPACE_DIR=/app/workspace
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
       - ZERO_OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - CLAWDBOT_GATEWAY_TOKEN=${CLAWDBOT_GATEWAY_TOKEN}
+      - ZERO_OLLAMA_TIMEOUT=300
+      - ZERO_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
+      - ZERO_GATEWAY_URL=http://zero-gateway:18789
+      - ZERO_POSTGRES_URL=postgresql://zero:${ZERO_POSTGRES_PASSWORD:-zero_dev}@zero-postgres:5432/zero
       # Google OAuth Configuration
       - ZERO_GOOGLE_CLIENT_ID=${ZERO_GOOGLE_CLIENT_ID}
       - ZERO_GOOGLE_CLIENT_SECRET=${ZERO_GOOGLE_CLIENT_SECRET}
       - ZERO_GOOGLE_REDIRECT_URI=${ZERO_GOOGLE_REDIRECT_URI}
       - ZERO_FRONTEND_URL=${ZERO_FRONTEND_URL}
+      # Discord notifications (direct API for proactive alerts)
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID:-}
       # Hugging Face
       - HF_TOKEN=${HF_TOKEN:-}
+      # Multi-Provider LLM API Keys
+      - ZERO_GEMINI_API_KEY=${ZERO_GEMINI_API_KEY:-}
+      - ZERO_OPENROUTER_API_KEY=${ZERO_OPENROUTER_API_KEY:-}
+      - ZERO_HUGGINGFACE_API_KEY=${ZERO_HUGGINGFACE_API_KEY:-}
+      - ZERO_KIMI_API_KEY=${ZERO_KIMI_API_KEY:-}
+      - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
+      # ADA Bridge
+      - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-}
+      - ZERO_ADA_API_TOKEN=${ZERO_ADA_API_TOKEN:-}
+    depends_on:
+      zero-postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18792/health/ready')"]
@@ -49,13 +100,39 @@ services:
         max-size: "50m"
         max-file: "5"
 
-  # React Frontend (dev server)
+  # React Frontend (production build served by nginx)
   zero-ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    ports:
+      - "5173:80"
+    depends_on:
+      - zero-api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Dev Frontend (Vite dev server with hot reload) - use with: --profile dev
+  zero-ui-dev:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
+      - "5174:5173"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
@@ -69,47 +146,13 @@ services:
     depends_on:
       - zero-api
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "25m"
-        max-file: "3"
-
-  # Optional: PostgreSQL for LangGraph checkpointing
-  zero-postgres:
-    image: postgres:16-alpine
-    container_name: zero-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: zero
-      POSTGRES_PASSWORD: ${ZERO_POSTGRES_PASSWORD:-zero_dev}
-      POSTGRES_DB: zero
-    volumes:
-      - zero-postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zero"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     profiles:
-      - postgres
+      - dev
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "25m"
-        max-file: "3"
 
 volumes:
   zero-postgres-data:
@@ -117,3 +160,5 @@ volumes:
 networks:
   default:
     name: zero-network
+  ada-bridge:
+    external: true

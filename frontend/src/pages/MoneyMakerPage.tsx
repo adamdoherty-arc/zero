@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, Search, TrendingUp, DollarSign, Activity, AlertCircle, CheckCircle } from 'lucide-react'
+import { Plus, DollarSign, Activity } from 'lucide-react'
 import {
     useMoneyMakerIdeas,
     useGenerateIdeas,

@@ -1,0 +1,11 @@
+[   28904ms] [ERROR] TypeError: Cannot read properties of undefined (reading 'slice')
+    at A$ (http://localhost:5173/assets/index-DPoi8RTH.js:532:109519)
+    at Hh (http://localhost:5173/assets/index-DPoi8RTH.js:48:48309)
+    at im (http://localhost:5173/assets/index-DPoi8RTH.js:48:71175)
+    at Vv (http://localhost:5173/assets/index-DPoi8RTH.js:48:81565)
+    at j0 (http://localhost:5173/assets/index-DPoi8RTH.js:48:117423)
+    at ZC (http://localhost:5173/assets/index-DPoi8RTH.js:48:116463)
+    at _m (http://localhost:5173/assets/index-DPoi8RTH.js:48:116293)
+    at g0 (http://localhost:5173/assets/index-DPoi8RTH.js:48:113066)
+    at L0 (http://localhost:5173/assets/index-DPoi8RTH.js:48:125056)
+    at Lo (http://localhost:5173/assets/index-DPoi8RTH.js:48:123604) @ http://localhost:5173/assets/index-DPoi8RTH.js:47

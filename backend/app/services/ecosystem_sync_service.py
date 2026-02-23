@@ -689,6 +689,60 @@ class EcosystemSyncService:
             "tasks": project_tasks,
         }
 
+    async def get_cached_project_detail(self, project_id: int) -> Optional[Dict[str, Any]]:
+        """Get enriched project detail from cache: project info + all sprints + tasks."""
+        projects_data = await self._storage.read("projects.json")
+        project = next(
+            (p for p in projects_data.get("projects", []) if p["id"] == project_id),
+            None,
+        )
+        if not project:
+            return None
+
+        # Enrich with health score
+        health_scores = await self.compute_project_health_scores()
+        h = health_scores.get(project_id, {})
+        project["health_score"] = h.get("health_score", 0)
+        project["completion_rate"] = h.get("completion_rate", 0)
+        project["blocked_ratio"] = h.get("blocked_ratio", 0)
+
+        # Get all sprints for this project
+        sprints_data = await self._storage.read("sprints.json")
+        project_sprints = [
+            s for s in sprints_data.get("sprints", [])
+            if s.get("project_id") == project_id
+        ]
+        for sprint in project_sprints:
+            total = sprint.get("total_tasks", 0)
+            completed = sprint.get("completed_tasks", 0)
+            sprint["progress"] = round((completed / total * 100) if total > 0 else 0, 1)
+
+        # Get tasks for this project
+        tasks_data = await self._storage.read("tasks.json")
+        project_tasks = [
+            t for t in tasks_data.get("tasks", [])
+            if t.get("project_id") == project_id
+        ]
+
+        return {
+            "project": project,
+            "sprints": project_sprints,
+            "tasks": project_tasks,
+        }
+
+    async def get_cached_project_sprints(self, project_id: int) -> List[Dict[str, Any]]:
+        """Get all cached sprints for a project with progress."""
+        sprints_data = await self._storage.read("sprints.json")
+        project_sprints = [
+            s for s in sprints_data.get("sprints", [])
+            if s.get("project_id") == project_id
+        ]
+        for sprint in project_sprints:
+            total = sprint.get("total_tasks", 0)
+            completed = sprint.get("completed_tasks", 0)
+            sprint["progress"] = round((completed / total * 100) if total > 0 else 0, 1)
+        return project_sprints
+
     async def get_cached_timeline(self) -> List[Dict[str, Any]]:
         """Get all active sprints for timeline view from cache."""
         sprints_data = await self._storage.read("sprints.json")

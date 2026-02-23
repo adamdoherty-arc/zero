@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { getAuthHeaders } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Mail, Calendar, CheckCircle2, Loader2, LogOut } from 'lucide-react'
@@ -23,7 +24,7 @@ export function GoogleOAuthButton() {
 
     const checkStatus = async () => {
         try {
-            const response = await fetch('http://localhost:18792/api/google/auth/status')
+            const response = await fetch('/api/google/auth/status', { headers: getAuthHeaders() })
             const data = await response.json()
             setStatus(data)
         } catch (error) {
@@ -36,7 +37,7 @@ export function GoogleOAuthButton() {
     const handleConnect = async () => {
         try {
             setConnecting(true)
-            const response = await fetch('http://localhost:18792/api/google/auth/url')
+            const response = await fetch('/api/google/auth/url', { headers: getAuthHeaders() })
             const data = await response.json()
 
             if (data.auth_url) {
@@ -52,8 +53,9 @@ export function GoogleOAuthButton() {
     const handleDisconnect = async () => {
         try {
             setLoading(true)
-            await fetch('http://localhost:18792/api/google/auth/disconnect', {
-                method: 'POST'
+            await fetch('/api/google/auth/disconnect', {
+                method: 'POST',
+                headers: getAuthHeaders(),
             })
             await checkStatus()
         } catch (error) {

@@ -1,0 +1,2 @@
+[     412ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/vite.svg:0
+[    9993ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/api/system/status:0

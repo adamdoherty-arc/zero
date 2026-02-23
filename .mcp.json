@@ -3,6 +3,20 @@
     "playwright": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
+    },
+    "qmd": {
+      "command": "bash",
+      "args": ["C:\\Users\\hadam\\.bun\\install\\global\\node_modules\\qmd\\qmd", "mcp"],
+      "env": {
+        "HOME": "C:\\Users\\hadam"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/memory-mcp"],
+      "env": {
+        "MEMORY_DB_PATH": "C:\\code\\zero\\workspace\\memory\\claude-memory.db"
+      }
     }
   }
 }

@@ -39,7 +39,7 @@ async def fetch_emails(limit: int = 10) -> str:
         Formatted list of emails with subject, sender, date
     """
     service = _get_gmail_service()
-    if not service.is_connected():
+    if not await service.is_connected():
         return "Gmail is not connected. Please connect via /api/email/auth."
 
     try:
@@ -70,7 +70,7 @@ async def get_email_digest() -> str:
         Formatted email digest with categories and highlights
     """
     service = _get_gmail_service()
-    if not service.is_connected():
+    if not await service.is_connected():
         return "Gmail is not connected. Please connect via /api/email/auth."
 
     try:
@@ -112,7 +112,7 @@ async def get_calendar_events(days_ahead: int = 7) -> str:
         Formatted list of upcoming events with time, title, location
     """
     service = _get_calendar_service()
-    sync_status = service.get_sync_status()
+    sync_status = await service.get_sync_status()
 
     if not sync_status.connected:
         return "Calendar is not connected. Please connect via /api/calendar/auth."
@@ -165,7 +165,7 @@ async def get_today_schedule() -> str:
         Formatted today's schedule with events, conflicts, and available time
     """
     service = _get_calendar_service()
-    sync_status = service.get_sync_status()
+    sync_status = await service.get_sync_status()
 
     if not sync_status.connected:
         return "Calendar is not connected. Please connect via /api/calendar/auth."
@@ -218,7 +218,7 @@ async def find_free_slots(duration_minutes: int = 30) -> str:
         List of available time slots meeting the minimum duration
     """
     service = _get_calendar_service()
-    sync_status = service.get_sync_status()
+    sync_status = await service.get_sync_status()
 
     if not sync_status.connected:
         return "Calendar is not connected. Please connect via /api/calendar/auth."

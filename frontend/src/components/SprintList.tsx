@@ -1,6 +1,3 @@
-import { useState } from 'react'
-import { Play, CheckCircle, PauseCircle, Plus } from 'lucide-react'
-import { useStartSprint, useCompleteSprint, useCreateSprint } from '../hooks/useSprintApi'
 import type { Sprint, SprintStatus } from '../types'
 
 interface SprintListProps {
@@ -16,79 +13,15 @@ const STATUS_COLORS: Record<SprintStatus, string> = {
 }
 
 export function SprintList({ sprints }: SprintListProps) {
-  const [isCreating, setIsCreating] = useState(false)
-  const [newSprintName, setNewSprintName] = useState('')
-
-  const startSprint = useStartSprint()
-  const completeSprint = useCompleteSprint()
-  const createSprint = useCreateSprint()
-
-  const handleCreate = () => {
-    if (!newSprintName.trim()) return
-    createSprint.mutate(
-      { name: newSprintName.trim() },
-      {
-        onSuccess: () => {
-          setNewSprintName('')
-          setIsCreating(false)
-        },
-      }
-    )
-  }
-
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold">Sprints</h2>
-        {!isCreating && (
-          <button
-            onClick={() => setIsCreating(true)}
-            className="btn-primary gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Sprint
-          </button>
-        )}
-      </div>
-
-      {/* Create sprint form */}
-      {isCreating && (
-        <div className="glass-card p-4 mb-4">
-          <h3 className="font-medium mb-3">Create New Sprint</h3>
-          <div className="flex gap-3">
-            <input
-              type="text"
-              value={newSprintName}
-              onChange={e => setNewSprintName(e.target.value)}
-              placeholder="Sprint name..."
-              className="flex-1 input-field"
-              autoFocus
-            />
-            <button
-              onClick={handleCreate}
-              disabled={!newSprintName.trim() || createSprint.isPending}
-              className="btn-primary"
-            >
-              {createSprint.isPending ? 'Creating...' : 'Create'}
-            </button>
-            <button
-              onClick={() => {
-                setIsCreating(false)
-                setNewSprintName('')
-              }}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <h2 className="text-xl font-bold mb-6">Sprints</h2>
 
       {/* Sprint list */}
       <div className="space-y-3">
         {sprints.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            No sprints yet. Create your first sprint to get started.
+            No sprints found. Sprints are managed in Legion.
           </div>
         ) : (
           sprints.map(sprint => {
@@ -133,40 +66,6 @@ export function SprintList({ sprints }: SprintListProps) {
                         {sprint.completed_points}/{sprint.total_points} tasks ({progress}%)
                       </span>
                     </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 ml-4">
-                    {sprint.status === 'planning' && (
-                      <button
-                        onClick={() => startSprint.mutate(sprint.id)}
-                        disabled={startSprint.isPending}
-                        className="p-2 text-green-400 hover:bg-green-400/10 rounded-lg transition-colors"
-                        title="Start Sprint"
-                      >
-                        <Play className="w-5 h-5" />
-                      </button>
-                    )}
-                    {sprint.status === 'active' && (
-                      <button
-                        onClick={() => completeSprint.mutate(sprint.id)}
-                        disabled={completeSprint.isPending}
-                        className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
-                        title="Complete Sprint"
-                      >
-                        <CheckCircle className="w-5 h-5" />
-                      </button>
-                    )}
-                    {sprint.status === 'paused' && (
-                      <button
-                        onClick={() => startSprint.mutate(sprint.id)}
-                        disabled={startSprint.isPending}
-                        className="p-2 text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors"
-                        title="Resume Sprint"
-                      >
-                        <PauseCircle className="w-5 h-5" />
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>

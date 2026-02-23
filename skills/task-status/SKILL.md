@@ -115,9 +115,9 @@ def long_task():
     send_status("Step complete", "success", "step1")
 ```
 
-## Automation with Clawdbot Cron
+## Automation with Zero Cron
 
-For scheduled tasks, use Clawdbot's cron feature:
+For scheduled tasks, use Zero's cron feature:
 
 ```python
 # In a script or session
@@ -136,10 +136,10 @@ This allows status updates even when you're not actively watching.
 
 ## Installation
 
-To use this skill, copy the `task-status` folder into your Clawdbot skills directory:
+To use this skill, copy the `task-status` folder into your Zero skills directory:
 
 ```
-C:\Users\Luffy\AppData\Roaming\npm\node_modules\clawdbot\skills\task-status
+C:\Users\Luffy\AppData\Roaming\npm\node_modules\zero\skills\task-status
 ```
 
 Or add it to your workspace and reference it from `AGENTS.md` or `TOOLS.md`.

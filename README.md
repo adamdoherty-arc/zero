@@ -11,7 +11,7 @@ Multi-channel AI assistant powered by Claude, built on [OpenClaw.ai](https://ope
 
 2. **Start the gateway**:
    ```bash
-   cd C:\code\moltbot
+   cd C:\code\zero
    docker-compose up -d
    ```
 

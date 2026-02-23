@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Mail, RefreshCw, Star, Archive, CheckCircle } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/auth'
+import { Mail, RefreshCw, Star, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { GoogleOAuthButton } from '@/components/GoogleOAuthButton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
+import { EmailRulesPanel } from '@/components/email/EmailRulesPanel'
 
 interface Email {
   id: string
@@ -32,7 +34,7 @@ export function EmailPage() {
 
   const checkConnection = async () => {
     try {
-      const response = await fetch('http://localhost:18792/api/google/auth/status')
+      const response = await fetch('/api/google/auth/status', { headers: getAuthHeaders() })
       const data = await response.json()
       setConnected(data.connected)
 
@@ -47,7 +49,7 @@ export function EmailPage() {
   const loadEmails = async () => {
     try {
       setLoading(true)
-      const response = await fetch('http://localhost:18792/api/email/messages?limit=50')
+      const response = await fetch('/api/email/messages?limit=50', { headers: getAuthHeaders() })
       const data = await response.json()
       setEmails(data)
     } catch (error) {
@@ -60,8 +62,9 @@ export function EmailPage() {
   const syncInbox = async () => {
     try {
       setSyncing(true)
-      await fetch('http://localhost:18792/api/email/sync?max_results=100', {
-        method: 'POST'
+      await fetch('/api/email/sync?max_results=100', {
+        method: 'POST',
+        headers: getAuthHeaders(),
       })
       await loadEmails()
     } catch (error) {
@@ -73,8 +76,9 @@ export function EmailPage() {
 
   const markAsRead = async (emailId: string) => {
     try {
-      await fetch(`http://localhost:18792/api/email/messages/${emailId}/read`, {
-        method: 'POST'
+      await fetch(`/api/email/messages/${emailId}/read`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
       })
       // Update local state
       setEmails(emails.map(e =>
@@ -87,8 +91,9 @@ export function EmailPage() {
 
   const toggleStar = async (emailId: string, starred: boolean) => {
     try {
-      await fetch(`http://localhost:18792/api/email/messages/${emailId}/star?starred=${starred}`, {
-        method: 'POST'
+      await fetch(`/api/email/messages/${emailId}/star?starred=${starred}`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
       })
       setEmails(emails.map(e =>
         e.id === emailId ? { ...e, is_starred: starred } : e
@@ -132,6 +137,7 @@ export function EmailPage() {
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="unread">Unread</TabsTrigger>
           <TabsTrigger value="starred">Starred</TabsTrigger>
+          <TabsTrigger value="rules">Rules</TabsTrigger>
         </TabsList>
 
         <TabsContent value="all" className="space-y-2">
@@ -219,6 +225,10 @@ export function EmailPage() {
               <p className="text-sm text-zinc-400">{email.from_address.email}</p>
             </Card>
           ))}
+        </TabsContent>
+
+        <TabsContent value="rules">
+          <EmailRulesPanel />
         </TabsContent>
       </Tabs>
     </div>

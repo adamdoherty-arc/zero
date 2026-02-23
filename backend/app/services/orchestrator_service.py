@@ -269,13 +269,20 @@ class OrchestratorService:
         return {"status": "unknown_action"}
 
     async def _run_code_executor_task(self, task: AgentTask) -> Dict[str, Any]:
-        """Run code execution task."""
-        # This would integrate with LLM for code execution
-        # For now, just acknowledge
+        """Run code execution task via the Task Execution Service."""
+        from app.services.task_execution_service import get_task_execution_service
+        executor = get_task_execution_service()
+
+        result = await executor.submit_task(
+            title=task.description[:200] or "Orchestrator task",
+            description=task.payload.get("description", task.description),
+            project_path=task.payload.get("project_path"),
+            priority=task.priority.value,
+        )
         return {
-            "status": "acknowledged",
-            "task_id": task.task_id,
-            "message": "Code execution queued"
+            "status": "submitted",
+            "task_id": result.get("task_id"),
+            "message": f"Task submitted for autonomous execution: {result.get('task_id')}",
         }
 
     def queue_task(self, task: AgentTask) -> str:

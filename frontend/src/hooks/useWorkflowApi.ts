@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getAuthHeaders } from '@/lib/auth'
 
 const API_BASE = '/api/workflows'
 
 async function fetchJson(url: string, options?: RequestInit) {
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     ...options,
   })
   if (!res.ok) throw new Error(`API error: ${res.status}`)

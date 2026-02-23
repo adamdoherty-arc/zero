@@ -1,5 +1,7 @@
 """
 Gmail service for email operations.
+
+Persistence layer uses PostgreSQL via SQLAlchemy async ORM.
 """
 
 import json
@@ -10,12 +12,17 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import structlog
 
+from sqlalchemy import select, update, func as sa_func
+
 from app.models.email import (
     Email, EmailSummary, EmailThread, EmailLabel,
     EmailCategory, EmailStatus, EmailAddress, EmailAttachment,
     EmailSyncStatus, EmailDigest
 )
 from app.services.gmail_oauth_service import get_gmail_oauth_service
+from app.infrastructure.database import get_session
+from app.infrastructure.circuit_breaker import get_circuit_breaker
+from app.db.models import EmailCacheModel, SyncStatusModel
 
 logger = structlog.get_logger()
 
@@ -27,28 +34,16 @@ class GmailService:
         self.workspace_path = Path(workspace_path)
         self.email_path = self.workspace_path / "email"
         self.email_path.mkdir(parents=True, exist_ok=True)
-        self.cache_file = self.email_path / "email_cache.json"
-        self.sync_file = self.email_path / "sync_status.json"
         self._service = None
-        self._ensure_storage()
+        self._breaker = get_circuit_breaker(
+            "gmail",
+            failure_threshold=3,
+            recovery_timeout=60.0,
+        )
 
-    def _ensure_storage(self):
-        """Ensure storage files exist."""
-        if not self.cache_file.exists():
-            self.cache_file.write_text(json.dumps({"emails": [], "last_sync": None}))
-        if not self.sync_file.exists():
-            self.sync_file.write_text(json.dumps({
-                "connected": False,
-                "email_address": None,
-                "last_sync": None,
-                "total_messages": 0,
-                "unread_count": 0,
-                "sync_errors": []
-            }))
-
-    def is_connected(self) -> bool:
+    async def is_connected(self) -> bool:
         """Check if Gmail is configured and connected."""
-        status = self._load_sync_status()
+        status = await self._load_sync_status()
         return status.connected if hasattr(status, 'connected') else False
 
     def _get_gmail_service(self):
@@ -72,35 +67,53 @@ class GmailService:
                 "Install with: pip install google-api-python-client"
             )
 
-    def _load_cache(self) -> Dict[str, Any]:
-        """Load email cache."""
+    # ------------------------------------------------------------------
+    # Sync Status (PostgreSQL)
+    # ------------------------------------------------------------------
+
+    async def _load_sync_status(self) -> EmailSyncStatus:
+        """Load sync status from PostgreSQL."""
         try:
-            return json.loads(self.cache_file.read_text())
+            async with get_session() as session:
+                row = await session.get(SyncStatusModel, "gmail")
+                if row:
+                    return EmailSyncStatus(
+                        connected=row.connected,
+                        email_address=row.email_address,
+                        last_sync=row.last_sync,
+                        total_messages=(row.metadata_ or {}).get("total_messages", 0),
+                        unread_count=(row.metadata_ or {}).get("unread_count", 0),
+                        sync_errors=row.errors or [],
+                    )
         except Exception:
-            return {"emails": [], "last_sync": None}
+            pass
+        return EmailSyncStatus()
 
-    def _save_cache(self, cache: Dict[str, Any]):
-        """Save email cache."""
-        self.cache_file.write_text(json.dumps(cache, indent=2, default=str))
+    async def _save_sync_status(self, status: EmailSyncStatus) -> None:
+        """Save sync status to PostgreSQL."""
+        async with get_session() as session:
+            await session.merge(SyncStatusModel(
+                service_name="gmail",
+                connected=status.connected,
+                email_address=status.email_address,
+                last_sync=status.last_sync,
+                metadata_={
+                    "total_messages": status.total_messages,
+                    "unread_count": status.unread_count,
+                },
+                errors=status.sync_errors or [],
+            ))
 
-    def _load_sync_status(self) -> EmailSyncStatus:
-        """Load sync status."""
-        try:
-            data = json.loads(self.sync_file.read_text())
-            return EmailSyncStatus(**data)
-        except Exception:
-            return EmailSyncStatus()
-
-    def _save_sync_status(self, status: EmailSyncStatus):
-        """Save sync status."""
-        self.sync_file.write_text(json.dumps(status.model_dump(), indent=2, default=str))
-
-    def get_sync_status(self) -> EmailSyncStatus:
+    async def get_sync_status(self) -> EmailSyncStatus:
         """Get current sync status."""
         oauth_service = get_gmail_oauth_service()
-        status = self._load_sync_status()
+        status = await self._load_sync_status()
         status.connected = oauth_service.has_valid_tokens()
         return status
+
+    # ------------------------------------------------------------------
+    # Email parsing helpers (unchanged)
+    # ------------------------------------------------------------------
 
     def _parse_email_address(self, raw: str) -> EmailAddress:
         """Parse email address string into EmailAddress."""
@@ -182,22 +195,98 @@ Email:
 Reply with ONLY the category name, nothing else."""
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    "http://localhost:11434/api/generate",
-                    json={"model": "qwen3:32b", "prompt": prompt, "stream": False,
-                          "options": {"num_predict": 20, "temperature": 0.1}},
-                )
-                if resp.status_code == 200:
-                    result = resp.json().get("response", "").strip().upper()
-                    # Extract category from response
-                    for cat in EmailCategory:
-                        if cat.value.upper() in result:
-                            return cat
+            from app.infrastructure.ollama_client import get_ollama_client
+            result = await get_ollama_client().chat_safe(
+                prompt, task_type="classification", num_predict=20, temperature=0.1, timeout=60,
+            )
+            if result:
+                result_upper = result.strip().upper()
+                for cat in EmailCategory:
+                    if cat.value.upper() in result_upper:
+                        return cat
         except Exception as e:
             logger.debug("ai_classification_fallback", error=str(e))
 
         return EmailCategory.NORMAL
+
+    # ------------------------------------------------------------------
+    # Helper: build Email pydantic model from ORM row
+    # ------------------------------------------------------------------
+
+    def _row_to_email(self, row: EmailCacheModel) -> Email:
+        """Convert an EmailCacheModel ORM row to an Email pydantic model."""
+        from_addr = EmailAddress(**(row.from_address or {"email": "unknown"}))
+        to_addrs = [EmailAddress(**a) for a in (row.to_addresses or [])]
+        cc_addrs = [EmailAddress(**a) for a in (row.cc_addresses or [])]
+        attachments = [EmailAttachment(**a) for a in (row.attachments or [])]
+
+        return Email(
+            id=row.id,
+            thread_id=row.thread_id or row.id,
+            subject=row.subject or "(No Subject)",
+            snippet=row.snippet or "",
+            body_text=row.body_text,
+            body_html=None,  # not stored in DB
+            from_address=from_addr,
+            to_addresses=to_addrs,
+            cc_addresses=cc_addrs,
+            labels=row.labels or [],
+            attachments=attachments,
+            category=EmailCategory(row.category) if row.category else EmailCategory.NORMAL,
+            status=EmailStatus(row.status) if row.status else EmailStatus.UNREAD,
+            is_starred=row.is_starred or False,
+            is_important=row.is_important or False,
+            received_at=row.received_at or datetime.utcnow(),
+            internal_date=row.internal_date or 0,
+            synced_at=row.synced_at or datetime.utcnow(),
+        )
+
+    def _row_to_summary(self, row: EmailCacheModel) -> EmailSummary:
+        """Convert an EmailCacheModel ORM row to an EmailSummary."""
+        from_addr = EmailAddress(**(row.from_address or {"email": "unknown"}))
+        return EmailSummary(
+            id=row.id,
+            thread_id=row.thread_id or row.id,
+            subject=row.subject or "(No Subject)",
+            snippet=row.snippet or "",
+            from_address=from_addr,
+            category=EmailCategory(row.category) if row.category else EmailCategory.NORMAL,
+            status=EmailStatus(row.status) if row.status else EmailStatus.UNREAD,
+            is_starred=row.is_starred or False,
+            is_important=row.is_important or False,
+            has_attachments=bool(row.attachments),
+            received_at=row.received_at or datetime.utcnow(),
+        )
+
+    # ------------------------------------------------------------------
+    # Helper: build an ORM row from a parsed Gmail API message
+    # ------------------------------------------------------------------
+
+    def _email_to_row(self, email: Email) -> EmailCacheModel:
+        """Convert an Email pydantic model to an EmailCacheModel ORM row."""
+        return EmailCacheModel(
+            id=email.id,
+            thread_id=email.thread_id,
+            subject=email.subject,
+            snippet=email.snippet,
+            body_text=email.body_text,
+            from_address=email.from_address.model_dump(),
+            to_addresses=[a.model_dump() for a in email.to_addresses],
+            cc_addresses=[a.model_dump() for a in email.cc_addresses],
+            labels=email.labels,
+            attachments=[a.model_dump() for a in email.attachments],
+            category=email.category.value,
+            status=email.status.value,
+            is_starred=email.is_starred,
+            is_important=email.is_important,
+            received_at=email.received_at,
+            internal_date=email.internal_date,
+            synced_at=email.synced_at,
+        )
+
+    # ------------------------------------------------------------------
+    # Core operations (PostgreSQL persistence)
+    # ------------------------------------------------------------------
 
     async def sync_inbox(
         self,
@@ -215,19 +304,22 @@ Reply with ONLY the category name, nothing else."""
             Sync result with counts
         """
         service = self._get_gmail_service()
-        status = self._load_sync_status()
+        status = await self._load_sync_status()
 
         # Build query for recent emails
         after_date = datetime.utcnow() - timedelta(days=days_back)
         query = f"after:{after_date.strftime('%Y/%m/%d')}"
 
         try:
-            # Get message list
-            results = service.users().messages().list(
-                userId="me",
-                q=query,
-                maxResults=max_results
-            ).execute()
+            # Get message list (through circuit breaker)
+            async def _list_messages():
+                return service.users().messages().list(
+                    userId="me",
+                    q=query,
+                    maxResults=max_results
+                ).execute()
+
+            results = await self._breaker.call(_list_messages)
 
             messages = results.get("messages", [])
             emails = []
@@ -291,22 +383,26 @@ Reply with ONLY the category name, nothing else."""
                         internal_date=int(msg.get("internalDate", 0)),
                         synced_at=datetime.utcnow()
                     )
-                    emails.append(email.model_dump())
+                    emails.append(email)
 
                 except Exception as e:
                     errors.append(f"Error fetching {msg_ref['id']}: {str(e)}")
                     logger.warning("gmail_message_fetch_error", id=msg_ref["id"], error=str(e))
 
-            # Update cache
-            cache = {"emails": emails, "last_sync": datetime.utcnow().isoformat()}
-            self._save_cache(cache)
+            # Upsert all emails into PostgreSQL
+            async with get_session() as session:
+                for email in emails:
+                    await session.merge(self._email_to_row(email))
 
             # Get profile for email address
-            profile = service.users().getProfile(userId="me").execute()
+            async def _get_profile():
+                return service.users().getProfile(userId="me").execute()
+
+            profile = await self._breaker.call(_get_profile)
 
             # Update sync status
-            unread = len([e for e in emails if e.get("status") == EmailStatus.UNREAD.value])
-            status = EmailSyncStatus(
+            unread = len([e for e in emails if e.status == EmailStatus.UNREAD])
+            sync_status = EmailSyncStatus(
                 connected=True,
                 email_address=profile.get("emailAddress"),
                 last_sync=datetime.utcnow(),
@@ -314,7 +410,21 @@ Reply with ONLY the category name, nothing else."""
                 unread_count=unread,
                 sync_errors=errors
             )
-            self._save_sync_status(status)
+            await self._save_sync_status(sync_status)
+
+            # Store history_id for incremental sync
+            history_id = results.get("historyId") or (
+                service.users().getProfile(userId="me").execute().get("historyId")
+                if not results.get("historyId") else None
+            )
+            if history_id:
+                async with get_session() as session:
+                    row = await session.get(SyncStatusModel, "gmail")
+                    if row:
+                        meta = row.metadata_ or {}
+                        meta["history_id"] = str(history_id)
+                        row.metadata_ = meta
+                        await session.merge(row)
 
             logger.info(
                 "gmail_sync_complete",
@@ -334,7 +444,7 @@ Reply with ONLY the category name, nothing else."""
         except Exception as e:
             logger.error("gmail_sync_failed", error=str(e))
             status.sync_errors.append(str(e))
-            self._save_sync_status(status)
+            await self._save_sync_status(status)
             raise
 
     async def list_emails(
@@ -344,89 +454,81 @@ Reply with ONLY the category name, nothing else."""
         limit: int = 50,
         offset: int = 0
     ) -> List[EmailSummary]:
-        """List emails from cache with optional filters."""
-        cache = self._load_cache()
-        emails = cache.get("emails", [])
+        """List emails from DB with optional filters."""
+        async with get_session() as session:
+            stmt = select(EmailCacheModel)
 
-        # Apply filters
-        if category:
-            emails = [e for e in emails if e.get("category") == category.value]
-        if status:
-            emails = [e for e in emails if e.get("status") == status.value]
+            if category:
+                stmt = stmt.where(EmailCacheModel.category == category.value)
+            if status:
+                stmt = stmt.where(EmailCacheModel.status == status.value)
 
-        # Sort by received date (newest first)
-        emails.sort(key=lambda x: x.get("internal_date", 0), reverse=True)
+            stmt = stmt.order_by(EmailCacheModel.received_at.desc())
+            stmt = stmt.offset(offset).limit(limit)
 
-        # Paginate
-        emails = emails[offset:offset + limit]
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
 
-        # Convert to summaries
-        return [
-            EmailSummary(
-                id=e["id"],
-                thread_id=e["thread_id"],
-                subject=e["subject"],
-                snippet=e["snippet"],
-                from_address=EmailAddress(**e["from_address"]),
-                category=EmailCategory(e.get("category", "normal")),
-                status=EmailStatus(e.get("status", "unread")),
-                is_starred=e.get("is_starred", False),
-                is_important=e.get("is_important", False),
-                has_attachments=len(e.get("attachments", [])) > 0,
-                received_at=datetime.fromisoformat(e["received_at"]) if isinstance(e["received_at"], str) else e["received_at"]
-            )
-            for e in emails
-        ]
+        return [self._row_to_summary(row) for row in rows]
 
     async def get_email(self, email_id: str) -> Optional[Email]:
         """Get full email by ID."""
-        cache = self._load_cache()
-        for e in cache.get("emails", []):
-            if e["id"] == email_id:
-                return Email(**e)
+        async with get_session() as session:
+            row = await session.get(EmailCacheModel, email_id)
+            if row:
+                return self._row_to_email(row)
         return None
 
     async def get_labels(self) -> List[EmailLabel]:
         """Get Gmail labels."""
         service = self._get_gmail_service()
 
-        results = service.users().labels().list(userId="me").execute()
-        labels = []
+        async def _fetch_labels():
+            results = service.users().labels().list(userId="me").execute()
+            labels = []
 
-        for label in results.get("labels", []):
-            # Get label details
-            label_detail = service.users().labels().get(
-                userId="me",
-                id=label["id"]
-            ).execute()
+            for label in results.get("labels", []):
+                # Get label details
+                label_detail = service.users().labels().get(
+                    userId="me",
+                    id=label["id"]
+                ).execute()
 
-            labels.append(EmailLabel(
-                id=label["id"],
-                name=label["name"],
-                type=label.get("type", "user"),
-                message_count=label_detail.get("messagesTotal", 0),
-                unread_count=label_detail.get("messagesUnread", 0)
-            ))
+                labels.append(EmailLabel(
+                    id=label["id"],
+                    name=label["name"],
+                    type=label.get("type", "user"),
+                    message_count=label_detail.get("messagesTotal", 0),
+                    unread_count=label_detail.get("messagesUnread", 0)
+                ))
 
-        return labels
+            return labels
+
+        return await self._breaker.call(_fetch_labels)
 
     async def mark_as_read(self, email_id: str) -> bool:
         """Mark email as read."""
         try:
             service = self._get_gmail_service()
-            service.users().messages().modify(
-                userId="me",
-                id=email_id,
-                body={"removeLabelIds": ["UNREAD"]}
-            ).execute()
 
-            # Update cache
-            cache = self._load_cache()
-            for e in cache.get("emails", []):
-                if e["id"] == email_id:
-                    e["status"] = EmailStatus.READ.value
-                    e["labels"] = [l for l in e.get("labels", []) if l != "UNREAD"]
-            self._save_cache(cache)
+            async def _mark_read():
+                service.users().messages().modify(
+                    userId="me",
+                    id=email_id,
+                    body={"removeLabelIds": ["UNREAD"]}
+                ).execute()
+
+            await self._breaker.call(_mark_read)
+
+            # Update DB
+            async with get_session() as session:
+                row = await session.get(EmailCacheModel, email_id)
+                if row:
+                    row.status = EmailStatus.READ.value
+                    labels = list(row.labels or [])
+                    if "UNREAD" in labels:
+                        labels.remove("UNREAD")
+                    row.labels = labels
 
             return True
         except Exception as e:
@@ -437,19 +539,25 @@ Reply with ONLY the category name, nothing else."""
         """Archive email (remove from inbox)."""
         try:
             service = self._get_gmail_service()
-            service.users().messages().modify(
-                userId="me",
-                id=email_id,
-                body={"removeLabelIds": ["INBOX"]}
-            ).execute()
 
-            # Update cache
-            cache = self._load_cache()
-            for e in cache.get("emails", []):
-                if e["id"] == email_id:
-                    e["status"] = EmailStatus.ARCHIVED.value
-                    e["labels"] = [l for l in e.get("labels", []) if l != "INBOX"]
-            self._save_cache(cache)
+            async def _archive():
+                service.users().messages().modify(
+                    userId="me",
+                    id=email_id,
+                    body={"removeLabelIds": ["INBOX"]}
+                ).execute()
+
+            await self._breaker.call(_archive)
+
+            # Update DB
+            async with get_session() as session:
+                row = await session.get(EmailCacheModel, email_id)
+                if row:
+                    row.status = EmailStatus.ARCHIVED.value
+                    labels = list(row.labels or [])
+                    if "INBOX" in labels:
+                        labels.remove("INBOX")
+                    row.labels = labels
 
             return True
         except Exception as e:
@@ -461,18 +569,21 @@ Reply with ONLY the category name, nothing else."""
         try:
             service = self._get_gmail_service()
             body = {"addLabelIds": ["STARRED"]} if starred else {"removeLabelIds": ["STARRED"]}
-            service.users().messages().modify(
-                userId="me",
-                id=email_id,
-                body=body
-            ).execute()
 
-            # Update cache
-            cache = self._load_cache()
-            for e in cache.get("emails", []):
-                if e["id"] == email_id:
-                    e["is_starred"] = starred
-            self._save_cache(cache)
+            async def _star():
+                service.users().messages().modify(
+                    userId="me",
+                    id=email_id,
+                    body=body
+                ).execute()
+
+            await self._breaker.call(_star)
+
+            # Update DB
+            async with get_session() as session:
+                row = await session.get(EmailCacheModel, email_id)
+                if row:
+                    row.is_starred = starred
 
             return True
         except Exception as e:
@@ -481,53 +592,49 @@ Reply with ONLY the category name, nothing else."""
 
     async def generate_digest(self) -> EmailDigest:
         """Generate email digest summary."""
-        cache = self._load_cache()
-        emails = cache.get("emails", [])
-
-        # Count by category
-        by_category = {}
-        for e in emails:
-            cat = e.get("category", "normal")
-            by_category[cat] = by_category.get(cat, 0) + 1
-
-        # Get urgent and important emails
-        urgent = [
-            EmailSummary(
-                id=e["id"],
-                thread_id=e["thread_id"],
-                subject=e["subject"],
-                snippet=e["snippet"],
-                from_address=EmailAddress(**e["from_address"]),
-                category=EmailCategory(e.get("category", "normal")),
-                status=EmailStatus(e.get("status", "unread")),
-                is_starred=e.get("is_starred", False),
-                is_important=e.get("is_important", False),
-                has_attachments=len(e.get("attachments", [])) > 0,
-                received_at=datetime.fromisoformat(e["received_at"]) if isinstance(e["received_at"], str) else e["received_at"]
+        async with get_session() as session:
+            # Count by category
+            cat_stmt = (
+                select(EmailCacheModel.category, sa_func.count())
+                .group_by(EmailCacheModel.category)
             )
-            for e in emails
-            if e.get("category") == EmailCategory.URGENT.value
-        ][:5]
+            cat_result = await session.execute(cat_stmt)
+            by_category = {row[0]: row[1] for row in cat_result.all()}
 
-        important = [
-            EmailSummary(
-                id=e["id"],
-                thread_id=e["thread_id"],
-                subject=e["subject"],
-                snippet=e["snippet"],
-                from_address=EmailAddress(**e["from_address"]),
-                category=EmailCategory(e.get("category", "normal")),
-                status=EmailStatus(e.get("status", "unread")),
-                is_starred=e.get("is_starred", False),
-                is_important=e.get("is_important", False),
-                has_attachments=len(e.get("attachments", [])) > 0,
-                received_at=datetime.fromisoformat(e["received_at"]) if isinstance(e["received_at"], str) else e["received_at"]
+            # Total count
+            total = sum(by_category.values())
+
+            # Unread count
+            unread_stmt = (
+                select(sa_func.count())
+                .select_from(EmailCacheModel)
+                .where(EmailCacheModel.status == EmailStatus.UNREAD.value)
             )
-            for e in emails
-            if e.get("category") == EmailCategory.IMPORTANT.value
-        ][:5]
+            unread_result = await session.execute(unread_stmt)
+            unread = unread_result.scalar() or 0
 
-        unread = len([e for e in emails if e.get("status") == EmailStatus.UNREAD.value])
+            # Urgent emails (top 5)
+            urgent_stmt = (
+                select(EmailCacheModel)
+                .where(EmailCacheModel.category == EmailCategory.URGENT.value)
+                .order_by(EmailCacheModel.received_at.desc())
+                .limit(5)
+            )
+            urgent_result = await session.execute(urgent_stmt)
+            urgent_rows = urgent_result.scalars().all()
+
+            # Important emails (top 5)
+            important_stmt = (
+                select(EmailCacheModel)
+                .where(EmailCacheModel.category == EmailCategory.IMPORTANT.value)
+                .order_by(EmailCacheModel.received_at.desc())
+                .limit(5)
+            )
+            important_result = await session.execute(important_stmt)
+            important_rows = important_result.scalars().all()
+
+        urgent = [self._row_to_summary(r) for r in urgent_rows]
+        important = [self._row_to_summary(r) for r in important_rows]
 
         # Generate highlights
         highlights = []
@@ -538,7 +645,7 @@ Reply with ONLY the category name, nothing else."""
 
         return EmailDigest(
             date=datetime.utcnow(),
-            total_emails=len(emails),
+            total_emails=total,
             unread_emails=unread,
             by_category=by_category,
             urgent_emails=urgent,
@@ -557,20 +664,27 @@ Reply with ONLY the category name, nothing else."""
         Falls back to full sync if history ID is missing or expired.
         """
         service = self._get_gmail_service()
-        sync_status = self._load_sync_status()
-        cache = self._load_cache()
-        history_id = cache.get("history_id")
+
+        # Load history_id from sync status metadata
+        history_id = None
+        async with get_session() as session:
+            row = await session.get(SyncStatusModel, "gmail")
+            if row and row.metadata_:
+                history_id = row.metadata_.get("history_id")
 
         if not history_id:
             logger.info("no_history_id_falling_back_to_full_sync")
             return await self.sync_inbox(max_results=50, days_back=3)
 
         try:
-            results = service.users().history().list(
-                userId="me",
-                startHistoryId=history_id,
-                historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
-            ).execute()
+            async def _list_history():
+                return service.users().history().list(
+                    userId="me",
+                    startHistoryId=history_id,
+                    historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
+                ).execute()
+
+            results = await self._breaker.call(_list_history)
 
             new_history_id = results.get("historyId")
             histories = results.get("history", [])
@@ -580,9 +694,18 @@ Reply with ONLY the category name, nothing else."""
                 for ma in h.get("messagesAdded", []):
                     added_ids.add(ma["message"]["id"])
 
+            # Find which IDs already exist in DB
+            existing_ids: set[str] = set()
+            if added_ids:
+                async with get_session() as session:
+                    stmt = select(EmailCacheModel.id).where(
+                        EmailCacheModel.id.in_(list(added_ids))
+                    )
+                    result = await session.execute(stmt)
+                    existing_ids = {r[0] for r in result.all()}
+
             new_emails = 0
-            existing_emails = cache.get("emails", [])
-            existing_ids = {e["id"] for e in existing_emails}
+            new_email_objects: list[Email] = []
 
             for msg_id in added_ids:
                 if msg_id in existing_ids:
@@ -616,7 +739,7 @@ Reply with ONLY the category name, nothing else."""
                         internal_date=int(msg.get("internalDate", 0)),
                         synced_at=datetime.utcnow()
                     )
-                    existing_emails.insert(0, email.model_dump())
+                    new_email_objects.append(email)
                     new_emails += 1
 
                     # Check VIP alerts
@@ -625,10 +748,19 @@ Reply with ONLY the category name, nothing else."""
                 except Exception as e:
                     logger.warning("history_message_fetch_error", id=msg_id, error=str(e))
 
-            cache["emails"] = existing_emails
-            cache["history_id"] = new_history_id
-            cache["last_sync"] = datetime.utcnow().isoformat()
-            self._save_cache(cache)
+            # Persist new emails and update history_id
+            async with get_session() as session:
+                for email in new_email_objects:
+                    await session.merge(self._email_to_row(email))
+
+                # Update history_id in sync status metadata
+                row = await session.get(SyncStatusModel, "gmail")
+                if row:
+                    meta = row.metadata_ or {}
+                    meta["history_id"] = str(new_history_id)
+                    row.metadata_ = meta
+                    row.last_sync = datetime.utcnow()
+                    await session.merge(row)
 
             logger.info("gmail_incremental_sync_complete", new_emails=new_emails, history_changes=len(histories))
             return {"status": "success", "type": "incremental", "new_emails": new_emails}

@@ -93,7 +93,7 @@ async def disconnect_calendar():
 async def get_status():
     """Get calendar sync status."""
     service = get_calendar_service()
-    return service.get_sync_status()
+    return await service.get_sync_status()
 
 
 @router.post("/sync")

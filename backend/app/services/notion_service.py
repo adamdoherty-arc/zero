@@ -7,7 +7,9 @@ plus domain-specific sync methods for sprints, tasks, and meeting notes.
 
 import structlog
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+from app.infrastructure.circuit_breaker import get_circuit_breaker
 
 logger = structlog.get_logger()
 
@@ -19,6 +21,11 @@ class NotionService:
         self.api_key = api_key
         self.default_database_id = default_database_id
         self._client = None
+        self._breaker = get_circuit_breaker(
+            "notion",
+            failure_threshold=3,
+            recovery_timeout=120.0,
+        )
 
     def _get_client(self):
         """Lazy-initialize the Notion async client."""
@@ -38,7 +45,11 @@ class NotionService:
         db_id = database_id or self.default_database_id
         if not db_id:
             raise ValueError("No database_id provided and no default configured")
-        result = await client.databases.retrieve(database_id=db_id)
+
+        async def _retrieve():
+            return await client.databases.retrieve(database_id=db_id)
+
+        result = await self._breaker.call(_retrieve)
         logger.info("notion_database_retrieved", database_id=db_id)
         return result
 
@@ -60,7 +71,10 @@ class NotionService:
         if sorts:
             kwargs["sorts"] = sorts
 
-        result = await client.databases.query(**kwargs)
+        async def _query():
+            return await client.databases.query(**kwargs)
+
+        result = await self._breaker.call(_query)
         pages = result.get("results", [])
         logger.info("notion_database_queried", database_id=db_id, results=len(pages))
         return pages
@@ -78,7 +92,11 @@ class NotionService:
         kwargs: Dict[str, Any] = {"parent": parent, "properties": properties}
         if children:
             kwargs["children"] = children
-        result = await client.pages.create(**kwargs)
+
+        async def _create():
+            return await client.pages.create(**kwargs)
+
+        result = await self._breaker.call(_create)
         logger.info("notion_page_created", page_id=result["id"])
         return result
 
@@ -87,15 +105,22 @@ class NotionService:
     ) -> Dict[str, Any]:
         """Update page properties."""
         client = self._get_client()
-        result = await client.pages.update(page_id=page_id, properties=properties)
+
+        async def _update():
+            return await client.pages.update(page_id=page_id, properties=properties)
+
+        result = await self._breaker.call(_update)
         logger.info("notion_page_updated", page_id=page_id)
         return result
 
     async def get_page(self, page_id: str) -> Dict[str, Any]:
         """Get a page by ID."""
         client = self._get_client()
-        result = await client.pages.retrieve(page_id=page_id)
-        return result
+
+        async def _get():
+            return await client.pages.retrieve(page_id=page_id)
+
+        return await self._breaker.call(_get)
 
     # =========================================================================
     # Domain-Specific Sync Methods
@@ -238,7 +263,11 @@ class NotionService:
     async def search_knowledge_base(self, query: str) -> List[Dict[str, Any]]:
         """Search Notion pages by title/content."""
         client = self._get_client()
-        result = await client.search(query=query, page_size=20)
+
+        async def _search():
+            return await client.search(query=query, page_size=20)
+
+        result = await self._breaker.call(_search)
         pages = result.get("results", [])
         return [
             {
@@ -275,6 +304,144 @@ class NotionService:
 
         logger.info("notion_calendar_events_synced", count=len(results))
         return results
+
+    # =========================================================================
+    # Bidirectional Sync
+    # =========================================================================
+
+    async def detect_notion_changes(self, since_minutes: int = 30) -> List[Dict[str, Any]]:
+        """Detect Notion pages edited within the last `since_minutes`."""
+        client = self._get_client()
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+
+        async def _inner():
+            result = await client.search(
+                filter={"property": "object", "value": "page"},
+                sort={"direction": "descending", "timestamp": "last_edited_time"},
+            )
+            pages = result.get("results", [])
+            changed: List[Dict[str, Any]] = []
+            for page in pages:
+                edited_str = page.get("last_edited_time", "")
+                if not edited_str:
+                    continue
+                # Parse ISO-8601 timestamp from Notion
+                edited_dt = datetime.fromisoformat(edited_str.replace("Z", "+00:00"))
+                if edited_dt < cutoff:
+                    # Results are sorted descending by last_edited_time,
+                    # so once we pass the cutoff we can stop.
+                    break
+                changed.append({
+                    "page_id": page["id"],
+                    "title": self._extract_title(page),
+                    "last_edited_time": edited_str,
+                    "url": page.get("url", ""),
+                })
+            return changed
+
+        return await self._breaker.call(_inner)
+
+    async def sync_bidirectional(self) -> Dict[str, Any]:
+        """
+        Bidirectional sync between Notion and local knowledge notes.
+
+        - Detects recently edited Notion pages (last 30 min).
+        - Matches by title to local notes in the DB.
+        - Uses last-writer-wins: if Notion page is newer, update local note.
+        - Returns sync statistics.
+        """
+        from app.infrastructure.database import get_session
+        from app.db.models import NoteModel
+        from sqlalchemy import select
+
+        stats = {"pages_checked": 0, "synced_from_notion": 0, "conflicts": 0}
+
+        try:
+            changed_pages = await self.detect_notion_changes(30)
+        except Exception as e:
+            logger.error("notion_detect_changes_failed", error=str(e))
+            return stats
+
+        stats["pages_checked"] = len(changed_pages)
+        if not changed_pages:
+            return stats
+
+        client = self._get_client()
+
+        async with get_session() as session:
+            for page in changed_pages:
+                title = page["title"]
+                if not title or title == "Untitled":
+                    continue
+
+                # Find matching local note by title
+                result = await session.execute(
+                    select(NoteModel).where(NoteModel.title == title).limit(1)
+                )
+                note = result.scalar_one_or_none()
+                if note is None:
+                    continue
+
+                # Parse Notion edit time
+                notion_edited = datetime.fromisoformat(
+                    page["last_edited_time"].replace("Z", "+00:00")
+                )
+
+                # Compare with local updated_at (or created_at as fallback)
+                local_updated = note.updated_at or note.created_at
+                if local_updated and local_updated.tzinfo is None:
+                    local_updated = local_updated.replace(tzinfo=timezone.utc)
+
+                if local_updated and notion_edited <= local_updated:
+                    # Local is newer or equal -- skip
+                    continue
+
+                # Notion is newer -- fetch page content blocks
+                try:
+                    async def _get_blocks(pid=page["page_id"]):
+                        return await client.blocks.children.list(block_id=pid)
+
+                    blocks_result = await self._breaker.call(_get_blocks)
+                    blocks = blocks_result.get("results", [])
+
+                    # Extract text from paragraph blocks
+                    content_parts: List[str] = []
+                    for block in blocks:
+                        btype = block.get("type", "")
+                        rich_texts = block.get(btype, {}).get("rich_text", [])
+                        for rt in rich_texts:
+                            text = rt.get("text", {}).get("content", "")
+                            if text:
+                                content_parts.append(text)
+
+                    if content_parts:
+                        note.content = "\n".join(content_parts)
+                        note.updated_at = datetime.now(timezone.utc)
+                        stats["synced_from_notion"] += 1
+                        logger.info(
+                            "notion_sync_updated_local_note",
+                            title=title,
+                            page_id=page["page_id"],
+                        )
+                    else:
+                        stats["conflicts"] += 1
+                        logger.warning(
+                            "notion_sync_empty_content",
+                            title=title,
+                            page_id=page["page_id"],
+                        )
+
+                except Exception as e:
+                    stats["conflicts"] += 1
+                    logger.warning(
+                        "notion_sync_conflict",
+                        title=title,
+                        page_id=page["page_id"],
+                        error=str(e),
+                    )
+
+        logger.info("notion_bidirectional_sync_complete", **stats)
+        return stats
 
     @staticmethod
     def _extract_title(page: Dict) -> str:

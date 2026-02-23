@@ -176,19 +176,43 @@ def resolve_dict(data: Any, context: Dict[str, Any]) -> Any:
     return data
 
 
+def _safe_compare(left_str: str, op: str, right_str: str) -> bool:
+    """Safely compare two values with a given operator."""
+    left = left_str.strip().strip("'\"")
+    right = right_str.strip().strip("'\"")
+    # Try numeric comparison first
+    try:
+        left_num, right_num = float(left), float(right)
+        ops = {"==": lambda a, b: a == b, "!=": lambda a, b: a != b,
+               ">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b,
+               ">": lambda a, b: a > b, "<": lambda a, b: a < b}
+        return ops[op](left_num, right_num)
+    except (ValueError, KeyError):
+        pass
+    # Fall back to string comparison
+    if op == "==":
+        return left == right
+    if op == "!=":
+        return left != right
+    return False
+
+
 def evaluate_condition(condition_str: str, context: Dict[str, Any]) -> bool:
-    """Evaluate a {{ }} condition expression."""
+    """Evaluate a {{ }} condition expression safely without eval()."""
     if not condition_str:
         return True
     resolved = resolve_template(condition_str, context)
     if resolved in ("", "None", "0", "false", "False"):
         return False
-    try:
-        # Try evaluating simple comparisons
-        if ">" in resolved or "<" in resolved or "==" in resolved:
-            return bool(eval(resolved, {"__builtins__": {}}, {}))
-    except Exception:
-        pass
+    # Safe comparison parsing - check operators in order (longest first)
+    for op in (">=", "<=", "!=", "==", ">", "<"):
+        if op in resolved:
+            parts = resolved.split(op, 1)
+            if len(parts) == 2:
+                try:
+                    return _safe_compare(parts[0], op, parts[1])
+                except Exception:
+                    pass
     return bool(resolved)
 
 
@@ -241,7 +265,7 @@ class SkillHandler(StepHandler):
     async def _gmail_skill(self, action: str, params: dict) -> Any:
         from app.services.gmail_service import get_gmail_service
         gmail = get_gmail_service()
-        if not gmail.is_connected():
+        if not await gmail.is_connected():
             return {"status": "disconnected", "newCount": 0}
 
         if action == "sync":
@@ -310,35 +334,21 @@ class LLMHandler(StepHandler):
     async def execute(self, step: dict, context: Dict[str, Any]) -> Dict[str, Any]:
         config = resolve_dict(step.get("config", {}), context)
         prompt = config.get("prompt", "")
-        model = config.get("model", "qwen3:32b")
+        model = config.get("model")  # None = use LLM router
         temperature = float(config.get("temperature", 0.7))
 
-        logger.info("llm_handler_execute", model=model, prompt_len=len(prompt))
+        logger.info("llm_handler_execute", model=model or "router:workflow", prompt_len=len(prompt))
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {"temperature": temperature},
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return {
-                        "output": data.get("response", ""),
-                        "status": "completed",
-                        "model": model,
-                        "tokens": data.get("eval_count", 0),
-                    }
-                return {
-                    "output": None,
-                    "status": "failed",
-                    "error": f"Ollama returned {resp.status_code}",
-                }
+            from app.infrastructure.ollama_client import get_ollama_client
+            result = await get_ollama_client().chat(
+                prompt, model=model, task_type="workflow", temperature=temperature, timeout=300,
+            )
+            return {
+                "output": result,
+                "status": "completed",
+                "model": model,
+            }
         except Exception as e:
             return {"output": None, "status": "failed", "error": str(e)}
 

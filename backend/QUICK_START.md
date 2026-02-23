@@ -11,7 +11,7 @@ The backend is now running with email automation enabled. Here's how to interact
 Run the interactive monitoring script:
 
 ```bash
-cd c:\code\moltbot\backend
+cd c:\code\zero\backend
 python monitor_email_automation.py
 ```
 

@@ -1,59 +1,83 @@
 """
 Regression tests for LangGraph orchestration graph.
 
-Sprint S68 Task #121: Verify LangGraph 1.0 API patterns are correct
-and the orchestration graph compiles and routes properly.
-
-These tests do NOT require external services (no Ollama, no Google APIs,
-no PostgreSQL).
+Tests the two-tier classification system (keyword + LLM fallback),
+graph compilation, routing, and new nodes (notion, money_maker).
 """
 import pytest
 from app.services.orchestration_graph import (
-    classify_route,
+    classify_route_keywords,
     build_orchestration_graph,
     OrchestratorState,
     route_by_classification,
+    VALID_ROUTES,
+    KEYWORD_CONFIDENCE_THRESHOLD,
 )
 
 
-class TestClassifyRoute:
-    """Test the route classifier."""
+class TestClassifyRouteKeywords:
+    """Test the Tier 1 keyword-based route classifier."""
 
     def test_sprint_route(self):
-        assert classify_route("show active sprints") == "sprint"
+        route, score = classify_route_keywords("show active sprints")
+        assert route == "sprint"
+        assert score >= 1
 
     def test_email_route(self):
-        assert classify_route("check my email inbox") == "email"
+        route, score = classify_route_keywords("check my email inbox")
+        assert route == "email"
+        assert score >= 1
 
     def test_calendar_route(self):
-        assert classify_route("what's on my schedule") == "calendar"
+        route, score = classify_route_keywords("what's on my schedule")
+        assert route == "calendar"
 
     def test_enhancement_route(self):
-        assert classify_route("scan for todo items to enhance") == "enhancement"
+        route, score = classify_route_keywords("scan for todo items to enhance")
+        assert route == "enhancement"
 
     def test_briefing_route(self):
-        assert classify_route("give me the daily briefing summary") == "briefing"
+        route, score = classify_route_keywords("give me the daily briefing summary")
+        assert route == "briefing"
 
     def test_research_route(self):
-        assert classify_route("show research discoveries") == "research"
+        route, score = classify_route_keywords("show research discoveries")
+        assert route == "research"
+
+    def test_notion_route(self):
+        route, score = classify_route_keywords("check my notion workspace")
+        assert route == "notion"
+
+    def test_money_maker_route(self):
+        route, score = classify_route_keywords("show me money making ideas for income")
+        assert route == "money_maker"
 
     def test_general_fallback(self):
-        assert classify_route("hello world") == "general"
+        route, score = classify_route_keywords("hello world")
+        assert route == "general"
+        assert score == 0
 
     def test_empty_string(self):
-        assert classify_route("") == "general"
+        route, score = classify_route_keywords("")
+        assert route == "general"
+        assert score == 0
 
     def test_multi_keyword_priority(self):
-        # sprint has more keywords than others
-        result = classify_route("sprint task project backlog")
-        assert result == "sprint"
+        route, score = classify_route_keywords("sprint task project backlog")
+        assert route == "sprint"
+        assert score >= 3  # High confidence
+
+    def test_confidence_threshold(self):
+        """High-confidence matches should exceed the threshold."""
+        _, score = classify_route_keywords("sprint task project backlog velocity")
+        assert score >= KEYWORD_CONFIDENCE_THRESHOLD
 
 
 class TestRouteByClassification:
     """Test the conditional edge router."""
 
-    def test_valid_routes(self):
-        for route in ["sprint", "email", "calendar", "enhancement", "briefing", "research", "general"]:
+    def test_all_valid_routes(self):
+        for route in VALID_ROUTES:
             state = {"route": route}
             assert route_by_classification(state) == route
 
@@ -67,7 +91,7 @@ class TestRouteByClassification:
 
 
 class TestGraphCompilation:
-    """Test that the graph compiles successfully."""
+    """Test that the graph compiles successfully with all nodes."""
 
     def test_graph_compiles_without_checkpointer(self):
         graph = build_orchestration_graph(checkpointer=None)
@@ -81,6 +105,11 @@ class TestGraphCompilation:
 
     def test_state_schema(self):
         """Verify OrchestratorState has expected fields."""
-        # TypedDict should have these keys
         expected_keys = {"messages", "route", "context", "result"}
         assert set(OrchestratorState.__annotations__.keys()) == expected_keys
+
+    def test_valid_routes_set(self):
+        """Verify all expected routes are defined."""
+        expected = {"sprint", "email", "calendar", "enhancement", "briefing",
+                    "research", "notion", "money_maker", "general"}
+        assert VALID_ROUTES == expected

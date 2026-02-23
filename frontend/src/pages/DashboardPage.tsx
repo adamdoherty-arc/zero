@@ -1,6 +1,40 @@
 import { useCurrentSprint, useDailyBriefing } from '@/hooks/useSprintApi'
-import { Zap, ListTodo, Mail, Calendar, Brain, RefreshCw } from 'lucide-react'
+import { useHealthReady, useSchedulerStatus } from '@/hooks/useSystemApi'
+import { LoadingSkeleton } from '@/components/LoadingSkeleton'
+import { Zap, ListTodo, Mail, Calendar, Brain, HeartPulse } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { AgentStatusCard } from '@/components/agent/AgentStatusCard'
+import { TaskSubmitForm } from '@/components/agent/TaskSubmitForm'
+import { TaskHistory } from '@/components/agent/TaskHistory'
+
+function SystemStatusCard() {
+  const { data: health } = useHealthReady()
+  const { data: scheduler } = useSchedulerStatus()
+
+  const checks = health?.checks ?? {}
+  const totalChecks = Object.keys(checks).length
+  const okChecks = Object.values(checks).filter((s) => s === 'ok').length
+  const allGreen = totalChecks > 0 && okChecks === totalChecks
+
+  return (
+    <Link to="/system-health" className="glass-card-hover p-4 flex items-center gap-4">
+      <div className={`p-2 rounded-lg ${allGreen ? 'bg-green-500/10' : 'bg-yellow-500/10'}`}>
+        <HeartPulse className={`w-6 h-6 ${allGreen ? 'text-green-400' : 'text-yellow-400'}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-white">System Health</span>
+          <span className={`text-xs px-1.5 py-0.5 rounded-full ${allGreen ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+            {okChecks}/{totalChecks} OK
+          </span>
+        </div>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {scheduler?.job_count ?? 0} jobs {scheduler?.running ? 'running' : 'stopped'}
+        </p>
+      </div>
+    </Link>
+  )
+}
 
 export function DashboardPage() {
   const { data: currentSprint } = useCurrentSprint()
@@ -20,15 +54,26 @@ export function DashboardPage() {
         <h1 className="page-title">Welcome to Zero</h1>
       </div>
 
+      {/* Agent Controls — front and center */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <AgentStatusCard />
+        <TaskSubmitForm />
+      </div>
+
+      {/* System Status */}
+      <div className="mb-8">
+        <SystemStatusCard />
+      </div>
+
       {/* Daily Briefing Card */}
       <div className="glass-card p-6 mb-8 border-l-4 border-l-primary/50">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          <span>🌅 Daily Briefing</span>
+          <span>Daily Briefing</span>
           {briefing?.date && <span className="text-xs font-normal text-muted-foreground ml-auto">{briefing.date}</span>}
         </h2>
 
         {isLoadingBriefing ? (
-          <div className="text-muted-foreground">Loading briefing...</div>
+          <LoadingSkeleton variant="cards" count={4} />
         ) : briefing ? (
           <div className="space-y-4">
             <p className="text-lg font-medium text-accent">{briefing.greeting}</p>
@@ -102,6 +147,11 @@ export function DashboardPage() {
           )}
         </div>
       )}
+
+      {/* Recent Agent Activity */}
+      <div className="mb-8">
+        <TaskHistory />
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {quickLinks.map((link) => (

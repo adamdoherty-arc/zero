@@ -19,22 +19,6 @@ export interface Sprint {
   updated_at?: string
 }
 
-export interface SprintCreate {
-  name: string
-  description?: string
-  duration_days?: number
-  goals?: string[]
-  project_id?: number
-}
-
-export interface SprintUpdate {
-  name?: string
-  description?: string
-  status?: SprintStatus
-  goals?: string[]
-  end_date?: string
-}
-
 // Task types
 export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'testing' | 'done' | 'blocked'
 export type TaskCategory = 'bug' | 'feature' | 'enhancement' | 'chore' | 'documentation'
@@ -300,6 +284,7 @@ export interface Note {
   tags: string[]
   project_id?: string
   task_id?: string
+  category_id?: string
   embedding?: number[]
   created_at: string
   updated_at?: string
@@ -314,6 +299,7 @@ export interface NoteCreate {
   tags?: string[]
   project_id?: string
   task_id?: string
+  category_id?: string
 }
 
 export interface NoteUpdate {
@@ -409,6 +395,109 @@ export interface ProjectContext {
     commit_hash?: string
     commit_message?: string
   }
+}
+
+// ============================================================================
+// Knowledge Category Types
+// ============================================================================
+
+export interface KnowledgeCategory {
+  id: string
+  name: string
+  slug: string
+  parent_id?: string
+  description?: string
+  icon?: string
+  color?: string
+  metadata: Record<string, unknown>
+  sort_order: number
+  is_system: boolean
+  created_at: string
+  children?: KnowledgeCategory[]
+}
+
+export interface KnowledgeCategoryCreate {
+  name: string
+  slug: string
+  parent_id?: string
+  description?: string
+  icon?: string
+  color?: string
+  sort_order?: number
+}
+
+// ============================================================================
+// Research Rule Types
+// ============================================================================
+
+export type RuleType = 'scoring' | 'categorization' | 'routing' | 'scheduling' | 'auto_action'
+
+export interface RuleCondition {
+  operator?: 'and' | 'or'
+  title_contains?: string[]
+  snippet_contains?: string[]
+  url_contains?: string[]
+  url_domain?: string[]
+  min_composite_score?: number
+  min_relevance_score?: number
+  max_composite_score?: number
+  category_is?: string[]
+  topic_tags_include?: string[]
+  source_engine?: string[]
+  conditions?: RuleCondition[]
+}
+
+export interface RuleAction {
+  boost_relevance?: number
+  boost_novelty?: number
+  boost_actionability?: number
+  set_category?: string
+  set_category_id?: string
+  add_tags?: string[]
+  auto_create_task?: boolean
+  auto_dismiss?: boolean
+  notify_discord?: boolean
+  priority_label?: string
+}
+
+export interface ResearchRule {
+  id: string
+  name: string
+  description?: string
+  rule_type: RuleType
+  conditions: RuleCondition
+  actions: RuleAction
+  priority: number
+  enabled: boolean
+  category_id?: string
+  times_fired: number
+  times_useful: number
+  effectiveness_score: number
+  created_by: string
+  created_at: string
+  updated_at?: string
+}
+
+export interface ResearchRuleCreate {
+  name: string
+  description?: string
+  rule_type: RuleType
+  conditions: RuleCondition
+  actions: RuleAction
+  priority?: number
+  enabled?: boolean
+  category_id?: string
+}
+
+export interface ResearchRuleStats {
+  total_rules: number
+  enabled_rules: number
+  by_type: Record<string, number>
+  by_creator: Record<string, number>
+  top_effective: Array<Record<string, unknown>>
+  low_effective: Array<Record<string, unknown>>
+  total_fires: number
+  total_useful: number
 }
 
 // ============================================================================
@@ -757,4 +846,410 @@ export interface ReminderStats {
   by_status: Record<string, number>
   upcoming_24h: number
   active: number
+}
+
+// ============================================================================
+// Agent / Autonomous Execution Types
+// ============================================================================
+
+export interface AgentLogEntry {
+  step: number
+  action: string
+  file?: string
+  description: string
+  instructions?: string
+  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped'
+  result_message: string
+  started_at?: string
+  completed_at?: string
+}
+
+export interface AgentTaskExecution {
+  task_id: string
+  title: string
+  description: string
+  status: 'planning' | 'executing' | 'validating' | 'complete' | 'failed' | 'stopped' | 'idle'
+  current_step: number
+  total_steps: number
+  current_file: string
+  started_at?: string
+  progress_percent: number
+  log: AgentLogEntry[]
+}
+
+export interface AgentStatus {
+  running: boolean
+  paused: boolean
+  status: string
+  current_task: AgentTaskExecution | null
+  queue_depth: number
+  completed_today: number
+}
+
+export interface AgentQueueItem {
+  task_id: string
+  title: string
+  description: string
+  project_path?: string
+  priority: string
+  status: string
+  submitted_at: string
+}
+
+export interface AgentHistoryItem {
+  task_id: string
+  title: string
+  description: string
+  status: string
+  submitted_at: string
+  started_at?: string
+  completed_at?: string
+  result?: {
+    total_steps: number
+    completed: number
+    failed: number
+    files_modified: number
+    duration_seconds: number
+    error?: string
+  }
+  execution_log?: AgentLogEntry[]
+}
+
+export interface AgentSubmitRequest {
+  title: string
+  description: string
+  project_path?: string
+  priority?: string
+}
+
+export interface AgentSettings {
+  max_files_per_task: number
+  max_lines_per_file: number
+  max_ollama_retries: number
+  ollama_timeout: number
+  coding_model: string
+  protected_paths: string[]
+}
+
+// ============================================================================
+// System / Scheduler Types
+// ============================================================================
+
+export interface SchedulerJob {
+  id: string
+  name: string
+  next_run: string | null
+  schedule?: string
+  last_run?: string | null
+  enabled?: boolean
+}
+
+export interface SchedulerStatus {
+  running: boolean
+  jobs: SchedulerJob[]
+  job_count: number
+  total_jobs?: number
+}
+
+export interface SchedulerAuditEntry {
+  job_name: string
+  started_at: string
+  completed_at: string
+  status: 'completed' | 'failed'
+  duration_seconds: number
+  error: string | null
+}
+
+export interface HealthReadyResponse {
+  ready: boolean
+  checks: Record<string, string>
+  timestamp: string
+}
+
+// ============================================================================
+// Enhancement Engine Types
+// ============================================================================
+
+export interface EngineStatus {
+  enabled: boolean
+  running: boolean
+  cycle_count: number
+  improvements_today: number
+  improvements_this_hour: number
+  queued_total: number
+  completed_total: number
+  failed_total: number
+  last_cycle_at: string | null
+  last_improvement_at: string | null
+  cooldown_until: string | null
+  target_projects: string[]
+  config: EngineConfig
+}
+
+export interface EngineConfig {
+  enabled: boolean
+  cycle_interval_minutes: number
+  max_improvements_per_cycle: number
+  max_improvements_per_hour: number
+  max_improvements_per_day: number
+  target_projects: string[]
+  auto_sprint_batch_threshold: number
+  cooldown_after_failure_minutes: number
+  analysis_model: string
+}
+
+export interface ActivityEvent {
+  event_id: string
+  timestamp: string
+  event_type: string
+  project: string
+  title: string
+  details: Record<string, unknown>
+  source: string
+  status: string
+}
+
+export interface ActivitySummary {
+  total_events: number
+  hours: number
+  by_type: Record<string, number>
+  by_project: Record<string, number>
+  by_status: Record<string, number>
+  files_changed: number
+  improvements_completed: number
+}
+
+// ============================================================================
+// GPU / Ollama Resource Management Types
+// ============================================================================
+
+export interface GpuInfo {
+  name: string
+  total_vram_mb: number
+  used_vram_mb: number
+  free_vram_mb: number
+  utilization_percent: number
+  temperature_c: number | null
+  available: boolean
+}
+
+export interface LoadedModel {
+  name: string
+  size_bytes: number
+  size_vram_bytes: number
+  size_vram_mb: number
+  vram_percent: number
+  expires_at: string | null
+  context_length: number | null
+}
+
+export interface OllamaModelInfo {
+  name: string
+  size_bytes: number
+  size_gb: number
+  parameter_size: string | null
+  quantization: string | null
+  family: string | null
+  modified_at: string | null
+}
+
+export interface ProjectUsage {
+  project: string
+  model: string
+  last_used_at: string
+  request_count: number
+}
+
+export interface VramBudget {
+  total_vram_mb: number
+  used_vram_mb: number
+  free_vram_mb: number
+  loaded_models: LoadedModel[]
+  can_fit: boolean
+  requested_model: string | null
+  requested_model_size_mb: number | null
+  models_to_unload: string[]
+  recommendation: string
+}
+
+export interface GpuStatus {
+  gpu: GpuInfo
+  ollama_healthy: boolean
+  ollama_url: string
+  loaded_models: LoadedModel[]
+  available_models: OllamaModelInfo[]
+  project_usage: ProjectUsage[]
+  vram_budget: VramBudget
+  last_refresh: string | null
+  refresh_interval_seconds: number
+}
+
+export interface GpuManagerConfig {
+  total_vram_mb: number
+  refresh_interval_seconds: number
+  default_keep_alive: string
+  vram_safety_margin_mb: number
+  preferred_model: string
+  project_priorities: Record<string, number>
+  nvidia_smi_proxy_url: string | null
+}
+
+// ============================================
+// LLM Router Types
+// ============================================
+
+export interface ModelAssignment {
+  model: string
+  fallbacks: string[] | null
+  temperature: number | null
+  num_predict: number | null
+  keep_alive: string | null
+}
+
+export interface LlmRouterConfig {
+  default_model: string
+  task_assignments: Record<string, ModelAssignment>
+  daily_budget_usd: number
+  current_spend_usd: number
+}
+
+export interface LlmRouterStatus {
+  default_model: string
+  task_assignments: Record<string, ModelAssignment>
+  active_model?: string | null
+  daily_budget_usd: number
+  current_spend_usd: number
+}
+
+export interface LlmProvider {
+  name: string
+  configured: boolean
+  healthy: boolean
+}
+
+export interface LlmUsageByProvider {
+  provider: string
+  calls: number
+  cost_usd: number
+  tokens: number
+}
+
+export interface LlmUsageByTask {
+  task_type: string
+  calls: number
+  cost_usd: number
+}
+
+export interface LlmUsageToday {
+  date: string
+  total_calls: number
+  total_cost_usd: number
+  prompt_tokens: number
+  completion_tokens: number
+  avg_latency_ms: number
+  daily_budget_usd: number
+  remaining_budget_usd: number
+  by_provider: LlmUsageByProvider[]
+  by_task_type: LlmUsageByTask[]
+}
+
+// ============================================
+// Research Types
+// ============================================
+
+export type ResearchTopicStatus = 'active' | 'paused' | 'archived'
+export type FindingStatus = 'new' | 'reviewed' | 'actionable' | 'task_created' | 'dismissed'
+export type FindingCategory = 'tool' | 'pattern' | 'technique' | 'project' | 'article' | 'repo' | 'other'
+
+export interface ResearchTopic {
+  id: string
+  name: string
+  description?: string
+  search_queries: string[]
+  aspects: string[]
+  category_tags: string[]
+  status: ResearchTopicStatus
+  frequency: 'daily' | 'weekly'
+  last_researched_at?: string
+  findings_count: number
+  relevance_score: number
+  category_id?: string
+}
+
+export interface ResearchTopicCreate {
+  name: string
+  description?: string
+  search_queries?: string[]
+  aspects?: string[]
+  category_tags?: string[]
+  frequency?: 'daily' | 'weekly'
+}
+
+export interface ResearchFinding {
+  id: string
+  topic_id: string
+  title: string
+  url: string
+  snippet: string
+  source_engine?: string
+  category: FindingCategory
+  status: FindingStatus
+  relevance_score: number
+  novelty_score: number
+  actionability_score: number
+  composite_score: number
+  llm_summary?: string
+  tags: string[]
+  suggested_task?: string
+  linked_task_id?: string
+  category_id?: string
+  fired_rule_ids?: string[]
+  discovered_at: string
+  reviewed_at?: string
+}
+
+export interface ResearchCycleResult {
+  cycle_id: string
+  started_at: string
+  completed_at?: string
+  topics_researched: number
+  total_results: number
+  new_findings: number
+  duplicate_filtered: number
+  high_value_findings: number
+  tasks_created: number
+  errors: string[]
+}
+
+export interface ResearchStats {
+  total_topics: number
+  active_topics: number
+  total_findings: number
+  findings_this_week: number
+  tasks_created_total: number
+  tasks_created_this_week: number
+  avg_relevance_score: number
+  top_finding?: string
+  last_cycle_at?: string
+}
+
+// Ask Zero Chat
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: ChatSource[]
+}
+
+export interface ChatSource {
+  name: string
+  description: string
+}
+
+export interface ChatSession {
+  session_id: string
+  title?: string
+  project_id?: string
+  message_count: number
+  created_at: string
+  last_active: string
 }

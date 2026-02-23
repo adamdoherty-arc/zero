@@ -8,6 +8,7 @@ import {
 import { ProjectCard } from '@/components/ecosystem/ProjectCard'
 import { AlertsPanel } from '@/components/ecosystem/AlertsPanel'
 import { SprintTimeline } from '@/components/ecosystem/SprintTimeline'
+import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 import { OrchestrationPanel } from '@/components/ecosystem/OrchestrationPanel'
 import { OrchestrationLog } from '@/components/ecosystem/OrchestrationLog'
 import {
@@ -64,10 +65,7 @@ export function EcosystemPage() {
           <Globe className="w-8 h-8 text-primary" />
           <h1 className="page-title">Ecosystem</h1>
         </div>
-        <div className="glass-card p-12 text-center">
-          <RefreshCw className="w-8 h-8 text-muted-foreground animate-spin mx-auto mb-3" />
-          <p className="text-muted-foreground">Loading ecosystem data...</p>
-        </div>
+        <LoadingSkeleton variant="page" message="Loading ecosystem data..." />
       </div>
     )
   }

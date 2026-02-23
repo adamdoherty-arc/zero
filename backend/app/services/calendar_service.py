@@ -1,5 +1,7 @@
 """
 Google Calendar service for calendar operations.
+
+Persistence layer uses PostgreSQL via SQLAlchemy async ORM.
 """
 
 import json
@@ -9,11 +11,15 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import structlog
 
+from sqlalchemy import select, func as sa_func
+
 from app.models.calendar import (
     CalendarEvent, EventSummary, Calendar, EventCreate, EventUpdate,
     EventStatus, EventVisibility, EventDateTime, EventAttendee,
     EventReminder, EventResponseStatus, CalendarSyncStatus, TodaySchedule
 )
+from app.infrastructure.database import get_session
+from app.db.models import CalendarEventCacheModel, SyncStatusModel
 
 logger = structlog.get_logger()
 
@@ -33,24 +39,7 @@ class CalendarService:
         self.calendar_path.mkdir(parents=True, exist_ok=True)
         self.credentials_file = self.calendar_path / "calendar_credentials.json"
         self.tokens_file = self.calendar_path / "calendar_tokens.json"
-        self.cache_file = self.calendar_path / "events_cache.json"
-        self.sync_file = self.calendar_path / "sync_status.json"
         self._service = None
-        self._ensure_storage()
-
-    def _ensure_storage(self):
-        """Ensure storage files exist."""
-        if not self.cache_file.exists():
-            self.cache_file.write_text(json.dumps({"events": [], "last_sync": None}))
-        if not self.sync_file.exists():
-            self.sync_file.write_text(json.dumps({
-                "connected": False,
-                "email_address": None,
-                "last_sync": None,
-                "calendars_count": 0,
-                "upcoming_events_count": 0,
-                "sync_errors": []
-            }))
 
     def _load_google_modules(self):
         """Lazy load Google OAuth modules."""
@@ -76,7 +65,7 @@ class CalendarService:
     def has_valid_tokens(self) -> bool:
         """Check if valid tokens exist (from Gmail OAuth service)."""
         from app.services.gmail_oauth_service import get_gmail_oauth_service
-        
+
         gmail_oauth = get_gmail_oauth_service()
         return gmail_oauth.has_valid_tokens()
 
@@ -146,29 +135,29 @@ class CalendarService:
     def _get_credentials(self):
         """Get valid OAuth credentials from Gmail OAuth service."""
         from app.services.gmail_oauth_service import get_gmail_oauth_service, GOOGLE_SCOPES
-        
+
         gmail_oauth = get_gmail_oauth_service()
-        
+
         # Check if Gmail OAuth has valid tokens
         if not gmail_oauth.has_valid_tokens():
             return None
-        
+
         # Get credentials from Gmail OAuth service
         _, Credentials = self._load_google_modules()
         tokens_file = gmail_oauth.tokens_file
-        
+
         if not tokens_file.exists():
             return None
-        
+
         # IMPORTANT: Use GOOGLE_SCOPES (not CALENDAR_SCOPES) because tokens were issued with unified scopes
         creds = Credentials.from_authorized_user_file(str(tokens_file), GOOGLE_SCOPES)
-        
+
         if creds.expired and creds.refresh_token:
             from google.auth.transport.requests import Request
             creds.refresh(Request())
             # Save refreshed tokens back to Gmail OAuth service
             tokens_file.write_text(creds.to_json())
-        
+
         return creds if creds.valid else None
 
     def _get_service(self):
@@ -184,31 +173,46 @@ class CalendarService:
         self._service = build("calendar", "v3", credentials=creds)
         return self._service
 
-    def _load_cache(self) -> Dict[str, Any]:
-        """Load events cache."""
+    # ------------------------------------------------------------------
+    # Sync Status (PostgreSQL)
+    # ------------------------------------------------------------------
+
+    async def _load_sync_status(self) -> CalendarSyncStatus:
+        """Load sync status from PostgreSQL."""
         try:
-            return json.loads(self.cache_file.read_text())
+            async with get_session() as session:
+                row = await session.get(SyncStatusModel, "calendar")
+                if row:
+                    return CalendarSyncStatus(
+                        connected=row.connected,
+                        email_address=row.email_address,
+                        last_sync=row.last_sync,
+                        calendars_count=(row.metadata_ or {}).get("calendars_count", 0),
+                        upcoming_events_count=(row.metadata_ or {}).get("upcoming_events_count", 0),
+                        sync_errors=row.errors or [],
+                    )
         except Exception:
-            return {"events": [], "last_sync": None}
+            pass
+        return CalendarSyncStatus()
 
-    def _save_cache(self, cache: Dict[str, Any]):
-        """Save events cache."""
-        self.cache_file.write_text(json.dumps(cache, indent=2, default=str))
+    async def _save_sync_status(self, status: CalendarSyncStatus) -> None:
+        """Save sync status to PostgreSQL."""
+        async with get_session() as session:
+            await session.merge(SyncStatusModel(
+                service_name="calendar",
+                connected=status.connected,
+                email_address=status.email_address,
+                last_sync=status.last_sync,
+                metadata_={
+                    "calendars_count": status.calendars_count,
+                    "upcoming_events_count": status.upcoming_events_count,
+                },
+                errors=status.sync_errors or [],
+            ))
 
-    def _load_sync_status(self) -> CalendarSyncStatus:
-        """Load sync status."""
-        try:
-            return CalendarSyncStatus(**json.loads(self.sync_file.read_text()))
-        except Exception:
-            return CalendarSyncStatus()
-
-    def _save_sync_status(self, status: CalendarSyncStatus):
-        """Save sync status."""
-        self.sync_file.write_text(json.dumps(status.model_dump(), indent=2, default=str))
-
-    def get_sync_status(self) -> CalendarSyncStatus:
+    async def get_sync_status(self) -> CalendarSyncStatus:
         """Get current sync status."""
-        status = self._load_sync_status()
+        status = await self._load_sync_status()
         status.connected = self.has_valid_tokens()
         return status
 
@@ -218,6 +222,10 @@ class CalendarService:
             self.tokens_file.unlink()
         self._service = None
         logger.info("calendar_disconnected")
+
+    # ------------------------------------------------------------------
+    # Event parsing helpers (unchanged)
+    # ------------------------------------------------------------------
 
     def _parse_event_datetime(self, dt_data: Dict) -> EventDateTime:
         """Parse Google Calendar datetime object."""
@@ -275,82 +283,97 @@ class CalendarService:
             updated_at=datetime.fromisoformat(event["updated"].replace("Z", "+00:00")) if event.get("updated") else None
         )
 
-    async def sync_events(self, days_ahead: int = 30) -> Dict[str, Any]:
-        """Sync calendar events."""
-        service = self._get_service()
+    # ------------------------------------------------------------------
+    # Helper: ORM row <-> Pydantic model conversion
+    # ------------------------------------------------------------------
 
-        now = datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + timedelta(days=days_ahead)).isoformat() + "Z"
+    def _calendar_event_to_row(self, event: CalendarEvent) -> CalendarEventCacheModel:
+        """Convert a CalendarEvent pydantic model to a CalendarEventCacheModel ORM row."""
+        return CalendarEventCacheModel(
+            id=event.id,
+            calendar_id=event.calendar_id,
+            summary=event.summary,
+            description=event.description,
+            location=event.location,
+            start_dt=event.start.model_dump(mode="json"),
+            end_dt=event.end.model_dump(mode="json"),
+            status=event.status.value,
+            visibility=event.visibility.value,
+            html_link=event.html_link,
+            hangout_link=event.hangout_link,
+            attendees=[a.model_dump(mode="json") for a in event.attendees],
+            reminders=[r.model_dump(mode="json") for r in event.reminders],
+            recurrence=event.recurrence,
+            recurring_event_id=event.recurring_event_id,
+            is_all_day=event.is_all_day,
+            created_at=event.created_at,
+            updated_at=event.updated_at,
+            synced_at=datetime.utcnow(),
+        )
 
-        try:
-            results = service.events().list(
-                calendarId="primary",
-                timeMin=time_min,
-                timeMax=time_max,
-                maxResults=250,
-                singleEvents=True,
-                orderBy="startTime"
-            ).execute()
+    def _row_to_calendar_event(self, row: CalendarEventCacheModel) -> CalendarEvent:
+        """Convert an ORM row to a CalendarEvent pydantic model."""
+        start_dt = row.start_dt or {}
+        end_dt = row.end_dt or {}
 
-            events = [self._event_to_model(e).model_dump() for e in results.get("items", [])]
+        attendees = [EventAttendee(**a) for a in (row.attendees or [])]
+        reminders = [EventReminder(**r) for r in (row.reminders or [])]
 
-            cache = {"events": events, "last_sync": datetime.utcnow().isoformat()}
-            self._save_cache(cache)
+        return CalendarEvent(
+            id=row.id,
+            calendar_id=row.calendar_id or "primary",
+            summary=row.summary,
+            description=row.description,
+            location=row.location,
+            start=EventDateTime(**start_dt),
+            end=EventDateTime(**end_dt),
+            status=EventStatus(row.status) if row.status else EventStatus.CONFIRMED,
+            visibility=EventVisibility(row.visibility) if row.visibility else EventVisibility.DEFAULT,
+            html_link=row.html_link,
+            hangout_link=row.hangout_link,
+            attendees=attendees,
+            reminders=reminders,
+            recurrence=row.recurrence,
+            recurring_event_id=row.recurring_event_id,
+            is_all_day=row.is_all_day or False,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
-            # Get calendars count
-            calendars = service.calendarList().list().execute()
+    def _row_to_event_summary(self, row: CalendarEventCacheModel) -> EventSummary:
+        """Convert an ORM row to an EventSummary."""
+        start_dt = row.start_dt or {}
+        end_dt = row.end_dt or {}
 
-            status = CalendarSyncStatus(
-                connected=True,
-                email_address=results.get("summary"),
-                last_sync=datetime.utcnow(),
-                calendars_count=len(calendars.get("items", [])),
-                upcoming_events_count=len(events)
-            )
-            self._save_sync_status(status)
+        return EventSummary(
+            id=row.id,
+            summary=row.summary,
+            start=EventDateTime(**start_dt),
+            end=EventDateTime(**end_dt),
+            location=row.location,
+            is_all_day=row.is_all_day or False,
+            status=EventStatus(row.status) if row.status else EventStatus.CONFIRMED,
+            has_attendees=bool(row.attendees),
+            html_link=row.html_link,
+        )
 
-            return {
-                "status": "success",
-                "synced_at": datetime.utcnow().isoformat(),
-                "events_count": len(events)
-            }
+    def _row_to_event_dict(self, row: CalendarEventCacheModel) -> Dict[str, Any]:
+        """Convert ORM row to the dict format used by helper methods like _detect_conflicts."""
+        return {
+            "id": row.id,
+            "summary": row.summary,
+            "start": row.start_dt or {},
+            "end": row.end_dt or {},
+            "location": row.location,
+            "is_all_day": row.is_all_day or False,
+            "status": row.status,
+            "attendees": row.attendees or [],
+            "html_link": row.html_link,
+        }
 
-        except Exception as e:
-            logger.error("calendar_sync_failed", error=str(e))
-            raise
-
-    async def list_events(
-        self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        limit: int = 50
-    ) -> List[EventSummary]:
-        """List events from cache."""
-        cache = self._load_cache()
-        events = cache.get("events", [])
-
-        # Filter by date range
-        if start_date:
-            events = [e for e in events if self._event_start_datetime(e) >= start_date]
-        if end_date:
-            events = [e for e in events if self._event_start_datetime(e) <= end_date]
-
-        # Convert to summaries
-        return [
-            EventSummary(
-                id=e["id"],
-                summary=e["summary"],
-                start=EventDateTime(**e["start"]),
-                end=EventDateTime(**e["end"]),
-                location=e.get("location"),
-                is_all_day=e.get("is_all_day", False),
-                status=EventStatus(e.get("status", "confirmed")),
-                has_attendees=len(e.get("attendees", [])) > 0,
-                html_link=e.get("html_link")
-            )
-            for e in events[:limit]
-        ]
+    # ------------------------------------------------------------------
+    # Event datetime helpers (unchanged logic, work with dicts)
+    # ------------------------------------------------------------------
 
     def _event_start_datetime(self, event: Dict) -> datetime:
         """Get event start as datetime."""
@@ -442,137 +465,94 @@ class CalendarService:
             })
         return slots
 
-    async def suggest_meeting_time(
-        self,
-        duration_minutes: int = 30,
-        preferences: Optional[Dict[str, Any]] = None,
-        work_start: int = 9,
-        work_end: int = 17,
-    ) -> List[Dict[str, Any]]:
-        """Suggest optimal meeting times using free slot analysis and AI ranking.
+    # ------------------------------------------------------------------
+    # Core operations (PostgreSQL persistence)
+    # ------------------------------------------------------------------
 
-        Args:
-            duration_minutes: Required meeting duration
-            preferences: Optional dict with keys like 'prefer_morning', 'avoid_after_lunch'
-            work_start: Work day start hour
-            work_end: Work day end hour
+    async def sync_events(self, days_ahead: int = 30) -> Dict[str, Any]:
+        """Sync calendar events."""
+        service = self._get_service()
 
-        Returns:
-            List of suggested time slots with reasoning
-        """
-        cache = self._load_cache()
-        events = cache.get("events", [])
-        today = datetime.utcnow().date()
-        today_events = [e for e in events if self._event_start_datetime(e).date() == today]
+        now = datetime.utcnow()
+        time_min = now.isoformat() + "Z"
+        time_max = (now + timedelta(days=days_ahead)).isoformat() + "Z"
 
-        free_slots = self._calculate_free_slots(today_events, work_start, work_end)
-
-        # Filter slots that are long enough
-        valid_slots = [
-            s for s in free_slots
-            if int(s.get("duration_minutes", 0)) >= duration_minutes
-        ]
-
-        if not valid_slots:
-            return [{"slot": None, "reason": "No free slots available for the requested duration"}]
-
-        # Use AI to rank slots based on preferences
         try:
-            ranked = await self._ai_rank_slots(valid_slots, duration_minutes, preferences or {})
-            return ranked
-        except Exception as e:
-            logger.warning("ai_slot_ranking_failed", error=str(e))
-            # Fallback: return slots sorted by start time
-            return [
-                {"slot": s, "reason": "Available slot", "score": 1.0 - i * 0.1}
-                for i, s in enumerate(valid_slots[:3])
-            ]
+            results = service.events().list(
+                calendarId="primary",
+                timeMin=time_min,
+                timeMax=time_max,
+                maxResults=250,
+                singleEvents=True,
+                orderBy="startTime"
+            ).execute()
 
-    async def _ai_rank_slots(
-        self,
-        slots: List[Dict[str, str]],
-        duration_minutes: int,
-        preferences: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
-        """Use Ollama to rank time slots by preference."""
-        from app.infrastructure.config import get_settings
-        import httpx
+            events = [self._event_to_model(e) for e in results.get("items", [])]
 
-        settings = get_settings()
+            # Upsert all events into PostgreSQL
+            async with get_session() as session:
+                for event in events:
+                    await session.merge(self._calendar_event_to_row(event))
 
-        slot_descriptions = "\n".join(
-            f"- {s['start']} to {s['end']} ({s.get('duration_minutes', '?')} min available)"
-            for s in slots
-        )
-        pref_text = ", ".join(f"{k}: {v}" for k, v in preferences.items()) if preferences else "none specified"
+            # Get calendars count
+            calendars = service.calendarList().list().execute()
 
-        prompt = (
-            f"I need to schedule a {duration_minutes}-minute meeting today.\n"
-            f"Available slots:\n{slot_descriptions}\n"
-            f"Preferences: {pref_text}\n\n"
-            f"Rank the top 3 best slots. For each, give: slot start time, end time, and a brief reason.\n"
-            f"Respond as JSON array: [{{'start': 'HH:MM', 'end': 'HH:MM', 'reason': '...', 'score': 0.0-1.0}}]"
-        )
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{settings.ollama_base_url}/chat/completions",
-                json={
-                    "model": settings.ollama_model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                },
+            status = CalendarSyncStatus(
+                connected=True,
+                email_address=results.get("summary"),
+                last_sync=datetime.utcnow(),
+                calendars_count=len(calendars.get("items", [])),
+                upcoming_events_count=len(events)
             )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
+            await self._save_sync_status(status)
 
-            # Try to parse JSON from response
-            import json as _json
-            # Find JSON array in response
-            start_idx = content.find("[")
-            end_idx = content.rfind("]") + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                ranked = _json.loads(content[start_idx:end_idx])
-                return ranked[:3]
+            return {
+                "status": "success",
+                "synced_at": datetime.utcnow().isoformat(),
+                "events_count": len(events)
+            }
 
-        # Fallback
-        return [{"slot": s, "reason": "Available", "score": 0.5} for s in slots[:3]]
+        except Exception as e:
+            logger.error("calendar_sync_failed", error=str(e))
+            raise
 
-    async def smart_reschedule(
-        self, event_id: str, reason: str = ""
-    ) -> List[Dict[str, Any]]:
-        """Find alternative time slots when an event needs rescheduling.
+    async def list_events(
+        self,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 50
+    ) -> List[EventSummary]:
+        """List events from DB."""
+        async with get_session() as session:
+            stmt = select(CalendarEventCacheModel)
 
-        Args:
-            event_id: ID of the event to reschedule
-            reason: Why it needs rescheduling
+            # We need to load all rows and filter by parsed start_dt JSONB
+            # since start_dt is JSONB (contains date_time or date fields)
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
 
-        Returns:
-            List of alternative time slot suggestions
-        """
-        event = await self.get_event(event_id)
-        if not event:
-            return [{"error": f"Event {event_id} not found"}]
+        # Filter by date range in Python (JSONB datetime filtering)
+        filtered = []
+        for row in rows:
+            event_dict = self._row_to_event_dict(row)
+            event_start = self._event_start_datetime(event_dict)
+            if start_date and event_start < start_date:
+                continue
+            if end_date and event_start > end_date:
+                continue
+            filtered.append((event_start, row))
 
-        # Calculate event duration
-        start = self._event_start_datetime({"start": {"date_time": event.start.date_time.isoformat() if event.start.date_time else None}})
-        end = self._event_end_datetime({"end": {"date_time": event.end.date_time.isoformat() if event.end.date_time else None}})
-        duration_minutes = int((end - start).total_seconds() / 60)
+        # Sort by start time
+        filtered.sort(key=lambda x: x[0])
 
-        # Find alternative slots
-        suggestions = await self.suggest_meeting_time(
-            duration_minutes=duration_minutes,
-            preferences={"reason_for_reschedule": reason},
-        )
-
-        return suggestions
+        return [self._row_to_event_summary(row) for _, row in filtered[:limit]]
 
     async def get_event(self, event_id: str) -> Optional[CalendarEvent]:
         """Get event by ID."""
-        cache = self._load_cache()
-        for e in cache.get("events", []):
-            if e["id"] == event_id:
-                return CalendarEvent(**e)
+        async with get_session() as session:
+            row = await session.get(CalendarEventCacheModel, event_id)
+            if row:
+                return self._row_to_calendar_event(row)
         return None
 
     async def create_event(self, event_data: EventCreate) -> CalendarEvent:
@@ -739,28 +719,23 @@ class CalendarService:
 
     async def get_today_schedule(self) -> TodaySchedule:
         """Get today's schedule."""
-        cache = self._load_cache()
-        events = cache.get("events", [])
-
         today = datetime.utcnow().date()
+
+        # Load events from DB
+        async with get_session() as session:
+            result = await session.execute(select(CalendarEventCacheModel))
+            rows = result.scalars().all()
+
         today_events = []
+        today_raw = []
 
-        for e in events:
-            event_date = self._event_start_datetime(e).date()
+        for row in rows:
+            event_dict = self._row_to_event_dict(row)
+            event_date = self._event_start_datetime(event_dict).date()
             if event_date == today:
-                today_events.append(EventSummary(
-                    id=e["id"],
-                    summary=e["summary"],
-                    start=EventDateTime(**e["start"]),
-                    end=EventDateTime(**e["end"]),
-                    location=e.get("location"),
-                    is_all_day=e.get("is_all_day", False),
-                    status=EventStatus(e.get("status", "confirmed")),
-                    has_attendees=len(e.get("attendees", [])) > 0,
-                    html_link=e.get("html_link")
-                ))
+                today_events.append(self._row_to_event_summary(row))
+                today_raw.append(event_dict)
 
-        today_raw = [e for e in events if self._event_start_datetime(e).date() == today]
         conflicts = self._detect_conflicts(today_raw)
         free_slots = self._calculate_free_slots(today_raw)
 
@@ -771,6 +746,131 @@ class CalendarService:
             has_conflicts=len(conflicts) > 0,
             free_slots=free_slots
         )
+
+    async def suggest_meeting_time(
+        self,
+        duration_minutes: int = 30,
+        preferences: Optional[Dict[str, Any]] = None,
+        work_start: int = 9,
+        work_end: int = 17,
+    ) -> List[Dict[str, Any]]:
+        """Suggest optimal meeting times using free slot analysis and AI ranking.
+
+        Args:
+            duration_minutes: Required meeting duration
+            preferences: Optional dict with keys like 'prefer_morning', 'avoid_after_lunch'
+            work_start: Work day start hour
+            work_end: Work day end hour
+
+        Returns:
+            List of suggested time slots with reasoning
+        """
+        today = datetime.utcnow().date()
+
+        # Load today's events from DB
+        async with get_session() as session:
+            result = await session.execute(select(CalendarEventCacheModel))
+            rows = result.scalars().all()
+
+        today_events = []
+        for row in rows:
+            event_dict = self._row_to_event_dict(row)
+            if self._event_start_datetime(event_dict).date() == today:
+                today_events.append(event_dict)
+
+        free_slots = self._calculate_free_slots(today_events, work_start, work_end)
+
+        # Filter slots that are long enough
+        valid_slots = [
+            s for s in free_slots
+            if int(s.get("duration_minutes", 0)) >= duration_minutes
+        ]
+
+        if not valid_slots:
+            return [{"slot": None, "reason": "No free slots available for the requested duration"}]
+
+        # Use AI to rank slots based on preferences
+        try:
+            ranked = await self._ai_rank_slots(valid_slots, duration_minutes, preferences or {})
+            return ranked
+        except Exception as e:
+            logger.warning("ai_slot_ranking_failed", error=str(e))
+            # Fallback: return slots sorted by start time
+            return [
+                {"slot": s, "reason": "Available slot", "score": 1.0 - i * 0.1}
+                for i, s in enumerate(valid_slots[:3])
+            ]
+
+    async def _ai_rank_slots(
+        self,
+        slots: List[Dict[str, str]],
+        duration_minutes: int,
+        preferences: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Use Ollama to rank time slots by preference."""
+        from app.infrastructure.config import get_settings
+        import httpx
+
+        settings = get_settings()
+
+        slot_descriptions = "\n".join(
+            f"- {s['start']} to {s['end']} ({s.get('duration_minutes', '?')} min available)"
+            for s in slots
+        )
+        pref_text = ", ".join(f"{k}: {v}" for k, v in preferences.items()) if preferences else "none specified"
+
+        prompt = (
+            f"I need to schedule a {duration_minutes}-minute meeting today.\n"
+            f"Available slots:\n{slot_descriptions}\n"
+            f"Preferences: {pref_text}\n\n"
+            f"Rank the top 3 best slots. For each, give: slot start time, end time, and a brief reason.\n"
+            f"Respond as JSON array: [{{'start': 'HH:MM', 'end': 'HH:MM', 'reason': '...', 'score': 0.0-1.0}}]"
+        )
+
+        from app.infrastructure.ollama_client import get_ollama_client
+        content = await get_ollama_client().chat_safe(
+            prompt, task_type="planning", temperature=0.3, num_predict=500, timeout=120,
+        )
+
+        if content:
+            import json as _json
+            start_idx = content.find("[")
+            end_idx = content.rfind("]") + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                ranked = _json.loads(content[start_idx:end_idx])
+                return ranked[:3]
+
+        # Fallback
+        return [{"slot": s, "reason": "Available", "score": 0.5} for s in slots[:3]]
+
+    async def smart_reschedule(
+        self, event_id: str, reason: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Find alternative time slots when an event needs rescheduling.
+
+        Args:
+            event_id: ID of the event to reschedule
+            reason: Why it needs rescheduling
+
+        Returns:
+            List of alternative time slot suggestions
+        """
+        event = await self.get_event(event_id)
+        if not event:
+            return [{"error": f"Event {event_id} not found"}]
+
+        # Calculate event duration
+        start = self._event_start_datetime({"start": {"date_time": event.start.date_time.isoformat() if event.start.date_time else None}})
+        end = self._event_end_datetime({"end": {"date_time": event.end.date_time.isoformat() if event.end.date_time else None}})
+        duration_minutes = int((end - start).total_seconds() / 60)
+
+        # Find alternative slots
+        suggestions = await self.suggest_meeting_time(
+            duration_minutes=duration_minutes,
+            preferences={"reason_for_reschedule": reason},
+        )
+
+        return suggestions
 
     async def sync_events_to_notion(
         self,
@@ -795,18 +895,25 @@ class CalendarService:
         if notion is None:
             return {"synced": 0, "error": "Notion not configured"}
 
-        cache = self._load_cache()
-        events = cache.get("events", [])
-
         now = datetime.utcnow()
         cutoff = now + timedelta(days=days_ahead)
 
+        # Load events from DB
+        async with get_session() as session:
+            result = await session.execute(select(CalendarEventCacheModel))
+            rows = result.scalars().all()
+
         upcoming = []
-        for e in events:
+        for row in rows:
+            event_dict = self._row_to_event_dict(row)
             try:
-                start = self._event_start_datetime(e)
+                start = self._event_start_datetime(event_dict)
                 if now <= start <= cutoff:
-                    upcoming.append(e)
+                    # Include full dict for Notion sync compatibility
+                    event_dict["calendar_id"] = row.calendar_id
+                    event_dict["description"] = row.description
+                    event_dict["visibility"] = row.visibility
+                    upcoming.append(event_dict)
             except Exception:
                 continue
 

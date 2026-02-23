@@ -1,7 +1,7 @@
 # FastAPI Backend Requirements
-fastapi>=0.109.0
+fastapi>=0.115.0
 uvicorn[standard]>=0.27.0
-pydantic>=2.5.0
+pydantic>=2.10.0
 pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
@@ -9,7 +9,7 @@ python-dotenv>=1.0.0
 aiofiles>=23.2.0
 
 # CORS support
-python-multipart>=0.0.6
+python-multipart>=0.0.18
 
 # HTTP Client (Synchronous) for scripts
 requests>=2.31.0
@@ -19,10 +19,10 @@ python-dateutil>=2.8.2
 
 # LLM Integration (Ollama via OpenAI-compatible API)
 openai>=1.10.0
-httpx>=0.26.0
+httpx>=0.28.0
 
 # Logging
-structlog>=24.1.0
+structlog>=25.1.0
 
 # Audio Transcription (Local Whisper)
 faster-whisper>=1.0.0
@@ -37,11 +37,15 @@ aiohttp>=3.9.0
 
 # LangGraph Orchestration
 langgraph>=1.0.8
-langchain-core>=1.2.0
+langchain-core>=1.2.11
+langchain-ollama>=1.0.1
 
-# PostgreSQL checkpointing for LangGraph (optional, for crash recovery)
+# PostgreSQL Database
 langgraph-checkpoint-postgres>=1.0.0
 psycopg[binary]>=3.1.0
+sqlalchemy[asyncio]>=2.0.36
+alembic>=1.13.0
+pgvector>=0.3.0
 
 # Task Scheduling
 apscheduler>=3.10.0
@@ -51,9 +55,15 @@ thefuzz>=0.22.1
 
 # Email Automation with LangChain
 langchain-google-community>=0.1.0
-transformers>=4.36.0
-torch>=2.1.0
-sentence-transformers>=2.2.0
 
 # Notion Integration
 notion-client>=2.2.0
+
+# Structured LLM Outputs (Research Rules Engine)
+instructor>=1.0.0
+
+# Prediction Market APIs
+kalshi-python>=0.2.0
+
+# Multi-Provider LLM Support
+google-generativeai>=0.8.0

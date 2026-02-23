@@ -23,8 +23,21 @@ class GitHubConnectRequest(BaseModel):
     sync_prs: bool = True
     auto_sync: bool = False
 
+
+class AnalyzePathRequest(BaseModel):
+    """Request to analyze a project path with AI."""
+    path: str
+
+
 router = APIRouter()
 logger = structlog.get_logger()
+
+
+@router.post("/analyze")
+async def analyze_project_path(request: AnalyzePathRequest) -> Dict[str, Any]:
+    """Use AI to analyze a project directory and suggest metadata."""
+    service = get_project_service()
+    return await service.analyze_path(request.path)
 
 
 @router.get("", response_model=List[Project])
@@ -147,17 +160,17 @@ async def connect_github(project_id: str, request: GitHubConnectRequest) -> Dict
     projects = data.get("projects", [])
     for i, p in enumerate(projects):
         if p["id"] == project_id:
-            p["githubRepoUrl"] = request.github_url
-            p["githubOwner"] = owner
-            p["githubRepo"] = repo
-            p["githubDefaultBranch"] = repo_info.get("default_branch")
-            p["githubSyncEnabled"] = request.auto_sync
-            p["githubSyncIssues"] = request.sync_issues
-            p["githubSyncPrs"] = request.sync_prs
-            p["githubStars"] = repo_info.get("stars", 0)
-            p["githubForks"] = repo_info.get("forks", 0)
-            p["githubOpenIssues"] = repo_info.get("open_issues_count", 0)
-            p["updatedAt"] = datetime.utcnow().isoformat()
+            p["github_repo_url"] = request.github_url
+            p["github_owner"] = owner
+            p["github_repo"] = repo
+            p["github_default_branch"] = repo_info.get("default_branch")
+            p["github_sync_enabled"] = request.auto_sync
+            p["github_sync_issues"] = request.sync_issues
+            p["github_sync_prs"] = request.sync_prs
+            p["github_stars"] = repo_info.get("stars", 0)
+            p["github_forks"] = repo_info.get("forks", 0)
+            p["github_open_issues"] = repo_info.get("open_issues_count", 0)
+            p["updated_at"] = datetime.utcnow().isoformat()
             projects[i] = p
             break
 
@@ -203,13 +216,13 @@ async def sync_github(project_id: str) -> Dict[str, Any]:
     projects = data.get("projects", [])
     for i, p in enumerate(projects):
         if p["id"] == project_id:
-            p["githubLastSync"] = datetime.utcnow().isoformat()
+            p["github_last_sync"] = datetime.utcnow().isoformat()
             if sync_result.get("repo_info"):
-                p["githubStars"] = sync_result["repo_info"].get("stars", 0)
-                p["githubForks"] = sync_result["repo_info"].get("forks", 0)
-            p["githubOpenIssues"] = sync_result.get("issues_count", 0)
-            p["githubOpenPrs"] = sync_result.get("prs_count", 0)
-            p["updatedAt"] = datetime.utcnow().isoformat()
+                p["github_stars"] = sync_result["repo_info"].get("stars", 0)
+                p["github_forks"] = sync_result["repo_info"].get("forks", 0)
+            p["github_open_issues"] = sync_result.get("issues_count", 0)
+            p["github_open_prs"] = sync_result.get("prs_count", 0)
+            p["updated_at"] = datetime.utcnow().isoformat()
             projects[i] = p
             break
 
@@ -281,19 +294,19 @@ async def disconnect_github(project_id: str) -> Dict[str, Any]:
     projects = data.get("projects", [])
     for i, p in enumerate(projects):
         if p["id"] == project_id:
-            p["githubRepoUrl"] = None
-            p["githubOwner"] = None
-            p["githubRepo"] = None
-            p["githubDefaultBranch"] = None
-            p["githubSyncEnabled"] = False
-            p["githubLastSync"] = None
-            p["githubSyncIssues"] = True
-            p["githubSyncPrs"] = True
-            p["githubOpenIssues"] = 0
-            p["githubOpenPrs"] = 0
-            p["githubStars"] = 0
-            p["githubForks"] = 0
-            p["updatedAt"] = datetime.utcnow().isoformat()
+            p["github_repo_url"] = None
+            p["github_owner"] = None
+            p["github_repo"] = None
+            p["github_default_branch"] = None
+            p["github_sync_enabled"] = False
+            p["github_last_sync"] = None
+            p["github_sync_issues"] = True
+            p["github_sync_prs"] = True
+            p["github_open_issues"] = 0
+            p["github_open_prs"] = 0
+            p["github_stars"] = 0
+            p["github_forks"] = 0
+            p["updated_at"] = datetime.utcnow().isoformat()
             projects[i] = p
             break
 

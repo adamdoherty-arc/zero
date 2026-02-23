@@ -119,6 +119,80 @@ class BackupService:
         actual = await self._sha256(archive)
         return {"valid": stored == actual, "stored": stored, "actual": actual}
 
+    async def test_restore(self) -> Dict[str, Any]:
+        """Test that the most recent backup can be extracted and validates.
+
+        Extracts to a temp directory, checks for expected structure, then cleans up.
+        """
+        import tempfile
+        import tarfile
+
+        # Find the most recent backup across all tiers
+        latest: Optional[Path] = None
+        latest_mtime = 0.0
+        for tier in RETENTION:
+            tier_path = self.backup_path / tier
+            for f in tier_path.glob("zero_*.tar.gz"):
+                mt = f.stat().st_mtime
+                if mt > latest_mtime:
+                    latest = f
+                    latest_mtime = mt
+
+        if not latest:
+            return {"success": False, "error": "No backups found"}
+
+        logger.info("backup_test_restore_starting", file=latest.name)
+
+        try:
+            # Verify checksum first
+            checksum_file = latest.with_suffix(latest.suffix + ".sha256")
+            if checksum_file.exists():
+                stored = (await asyncio.to_thread(checksum_file.read_text)).split()[0]
+                actual = await self._sha256(latest)
+                if stored != actual:
+                    return {"success": False, "error": "Checksum mismatch", "file": latest.name}
+
+            # Extract to temp dir
+            tmpdir = Path(tempfile.mkdtemp(prefix="zero_restore_test_"))
+            try:
+                def _extract():
+                    with tarfile.open(latest, "r:gz") as tar:
+                        tar.extractall(path=tmpdir)
+
+                await asyncio.to_thread(_extract)
+
+                # Validate structure — workspace dir should exist
+                workspace_dirs = list(tmpdir.glob("workspace*"))
+                if not workspace_dirs:
+                    return {
+                        "success": False,
+                        "error": "No workspace directory in backup",
+                        "file": latest.name,
+                    }
+
+                # Count files
+                file_count = sum(1 for _ in workspace_dirs[0].rglob("*") if _.is_file())
+
+                logger.info(
+                    "backup_test_restore_success",
+                    file=latest.name,
+                    files_restored=file_count,
+                )
+
+                return {
+                    "success": True,
+                    "file": latest.name,
+                    "files_restored": file_count,
+                    "checksum_valid": True,
+                }
+            finally:
+                # Clean up temp dir
+                await asyncio.to_thread(shutil.rmtree, tmpdir, True)
+
+        except Exception as e:
+            logger.error("backup_test_restore_failed", error=str(e))
+            return {"success": False, "error": str(e), "file": latest.name}
+
     async def _sha256(self, path: Path) -> str:
         def _hash():
             h = hashlib.sha256()

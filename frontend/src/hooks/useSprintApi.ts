@@ -1,13 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type {
-  Sprint, SprintCreate, SprintUpdate, SprintBoard,
+  Sprint, SprintBoard,
   Task, TaskCreate, TaskUpdate, TaskMove,
   OrchestratorStatus, EnhancementSignal, EnhancementStats,
   Project, ProjectCreate, ProjectUpdate, ProjectScanResult, ProjectContext, ProjectStatus,
   GitHubConnectRequest, GitHubStatus, GitHubSyncResult,
   Note, NoteCreate, NoteUpdate, NoteType,
   UserProfile, UserProfileUpdate, UserFact, UserContact,
-  RecallResult, KnowledgeStats,
+  RecallResult, KnowledgeStats, KnowledgeCategory,
   TranscriptionResult, TranscriptionJob, TranscriptionStatus,
   WhisperModel, WhisperModelInfo, TranscribeToNoteResult,
   Email, EmailSummary, EmailLabel, EmailDigest, EmailSyncStatus,
@@ -15,8 +15,11 @@ import type {
   CalendarEvent, EventSummary, CalendarInfo, EventCreate, EventUpdate,
   CalendarSyncStatus, TodaySchedule, TaskToEventRequest,
   Reminder, ReminderCreate, ReminderUpdate, ReminderStatus,
-  DailyBriefing, Notification, NotificationChannel, AssistantStatus, ReminderStats
+  DailyBriefing, Notification, NotificationChannel, AssistantStatus, ReminderStats,
+  ResearchRule, ResearchRuleStats,
 } from '../types'
+
+import { getAuthHeaders } from '@/lib/auth'
 
 const API_BASE = '/api'
 
@@ -62,6 +65,7 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...getAuthHeaders(),
       ...options?.headers,
     },
     ...options,
@@ -110,57 +114,6 @@ export function useSprintBoard(id: string) {
     queryFn: () => fetchApi<SprintBoard>(`/sprints/${id}/board`),
     enabled: !!id,
     refetchInterval: 30000, // Refresh board every 30s
-  })
-}
-
-export function useCreateSprint() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (data: SprintCreate) =>
-      fetchApi<Sprint>('/sprints', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: sprintKeys.all })
-    },
-  })
-}
-
-export function useUpdateSprint() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: SprintUpdate }) =>
-      fetchApi<Sprint>(`/sprints/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: sprintKeys.detail(id) })
-      queryClient.invalidateQueries({ queryKey: sprintKeys.current() })
-    },
-  })
-}
-
-export function useStartSprint() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) =>
-      fetchApi<Sprint>(`/sprints/${id}/start`, { method: 'POST' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: sprintKeys.all })
-    },
-  })
-}
-
-export function useCompleteSprint() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (id: string) =>
-      fetchApi<Sprint>(`/sprints/${id}/complete`, { method: 'POST' }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: sprintKeys.all })
-    },
   })
 }
 
@@ -400,6 +353,23 @@ export function useScanProject() {
   })
 }
 
+export function useAnalyzeProjectPath() {
+  return useMutation({
+    mutationFn: (path: string) =>
+      fetchApi<{
+        name: string
+        description: string
+        project_type: string
+        tech_stack: string[]
+        tags: string[]
+        github_url?: string
+      }>('/projects/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+      }),
+  })
+}
+
 // ============================================================================
 // GitHub Integration Hooks
 // ============================================================================
@@ -479,15 +449,23 @@ export function useGitHubSyncToTasks() {
 export const knowledgeKeys = {
   all: ['knowledge'] as const,
   notes: () => [...knowledgeKeys.all, 'notes'] as const,
-  notesList: (filters?: { type?: NoteType; tags?: string; search?: string }) =>
+  notesList: (filters?: { type?: NoteType; tags?: string; search?: string; category_id?: string }) =>
     [...knowledgeKeys.notes(), 'list', filters] as const,
   noteDetail: (id: string) => [...knowledgeKeys.notes(), 'detail', id] as const,
   user: () => [...knowledgeKeys.all, 'user'] as const,
   stats: () => [...knowledgeKeys.all, 'stats'] as const,
   recall: (context: string) => [...knowledgeKeys.all, 'recall', context] as const,
+  categories: () => [...knowledgeKeys.all, 'categories'] as const,
 }
 
-export function useNotes(filters?: { type?: NoteType; tags?: string; search?: string; limit?: number }) {
+export function useKnowledgeCategories() {
+  return useQuery({
+    queryKey: knowledgeKeys.categories(),
+    queryFn: () => fetchApi<KnowledgeCategory[]>('/knowledge/categories?tree=true'),
+  })
+}
+
+export function useNotes(filters?: { type?: NoteType; tags?: string; search?: string; category_id?: string; limit?: number }) {
   return useQuery({
     queryKey: knowledgeKeys.notesList(filters),
     queryFn: () => {
@@ -495,6 +473,7 @@ export function useNotes(filters?: { type?: NoteType; tags?: string; search?: st
       if (filters?.type) params.set('type', filters.type)
       if (filters?.tags) params.set('tags', filters.tags)
       if (filters?.search) params.set('search', filters.search)
+      if (filters?.category_id) params.set('category_id', filters.category_id)
       if (filters?.limit) params.set('limit', String(filters.limit))
       const queryStr = params.toString()
       return fetchApi<Note[]>(`/knowledge/notes${queryStr ? `?${queryStr}` : ''}`)
@@ -1362,6 +1341,26 @@ export interface EcosystemTimeline {
   progress: number
 }
 
+export interface EcosystemProjectTask {
+  id: number
+  sprint_id: number
+  title: string
+  status: string
+  priority: number
+  description?: string
+  story_points?: number
+  blocked_reason?: string
+  project_id: number
+  project_name: string
+  sprint_name: string
+}
+
+export interface EcosystemProjectDetail {
+  project: EcosystemProject
+  sprints: EcosystemTimeline[]
+  tasks: EcosystemProjectTask[]
+}
+
 export const ecosystemKeys = {
   all: ['ecosystem'] as const,
   status: () => [...ecosystemKeys.all, 'status'] as const,
@@ -1369,6 +1368,8 @@ export const ecosystemKeys = {
   timeline: () => [...ecosystemKeys.all, 'timeline'] as const,
   suggestions: () => [...ecosystemKeys.all, 'suggestions'] as const,
   syncStatus: () => [...ecosystemKeys.all, 'sync-status'] as const,
+  projectDetail: (id: number) => [...ecosystemKeys.all, 'project', id] as const,
+  projectSprints: (id: number) => [...ecosystemKeys.all, 'project', id, 'sprints'] as const,
 }
 
 export function useEcosystemStatus() {
@@ -1413,6 +1414,22 @@ export function useTriggerEcosystemSync() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ecosystemKeys.all })
     },
+  })
+}
+
+export function useEcosystemProjectDetail(projectId: number) {
+  return useQuery({
+    queryKey: ecosystemKeys.projectDetail(projectId),
+    queryFn: () => fetchApi<EcosystemProjectDetail>(`/ecosystem/projects/${projectId}/detail`),
+    enabled: projectId > 0,
+  })
+}
+
+export function useEcosystemProjectSprints(projectId: number) {
+  return useQuery({
+    queryKey: ecosystemKeys.projectSprints(projectId),
+    queryFn: () => fetchApi<{ sprints: EcosystemTimeline[]; count: number }>(`/ecosystem/projects/${projectId}/sprints`),
+    enabled: projectId > 0,
   })
 }
 
@@ -1488,6 +1505,230 @@ export function useTriggerOrchestration() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orchestrationKeys.all })
       queryClient.invalidateQueries({ queryKey: ecosystemKeys.all })
+    },
+  })
+}
+
+// ============================================================================
+// Research Hooks
+// ============================================================================
+
+export const researchKeys = {
+  all: ['research'] as const,
+  topics: () => [...researchKeys.all, 'topics'] as const,
+  topicsList: (status?: string) => [...researchKeys.topics(), 'list', status] as const,
+  topicDetail: (id: string) => [...researchKeys.topics(), 'detail', id] as const,
+  findings: () => [...researchKeys.all, 'findings'] as const,
+  findingsList: (filters?: Record<string, unknown>) => [...researchKeys.findings(), 'list', filters] as const,
+  findingsTop: (limit?: number) => [...researchKeys.findings(), 'top', limit] as const,
+  cycles: () => [...researchKeys.all, 'cycles'] as const,
+  stats: () => [...researchKeys.all, 'stats'] as const,
+}
+
+export function useResearchTopics(status?: string) {
+  return useQuery({
+    queryKey: researchKeys.topicsList(status),
+    queryFn: () => {
+      const params = status ? `?status=${status}` : ''
+      return fetchApi<import('@/types').ResearchTopic[]>(`/research/topics${params}`)
+    },
+  })
+}
+
+export function useResearchTopic(id: string) {
+  return useQuery({
+    queryKey: researchKeys.topicDetail(id),
+    queryFn: () => fetchApi<import('@/types').ResearchTopic>(`/research/topics/${id}`),
+    enabled: !!id,
+  })
+}
+
+export function useCreateResearchTopic() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: import('@/types').ResearchTopicCreate) =>
+      fetchApi<import('@/types').ResearchTopic>('/research/topics', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.topics() })
+      queryClient.invalidateQueries({ queryKey: researchKeys.stats() })
+    },
+  })
+}
+
+export function useDeleteResearchTopic() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<{ status: string }>(`/research/topics/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.topics() })
+      queryClient.invalidateQueries({ queryKey: researchKeys.stats() })
+    },
+  })
+}
+
+export function useResearchFindings(filters?: { topic_id?: string; status?: string; min_score?: number; limit?: number }) {
+  return useQuery({
+    queryKey: researchKeys.findingsList(filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (filters?.topic_id) params.set('topic_id', filters.topic_id)
+      if (filters?.status) params.set('status', filters.status)
+      if (filters?.min_score) params.set('min_score', String(filters.min_score))
+      if (filters?.limit) params.set('limit', String(filters.limit))
+      const queryStr = params.toString()
+      return fetchApi<import('@/types').ResearchFinding[]>(`/research/findings${queryStr ? `?${queryStr}` : ''}`)
+    },
+  })
+}
+
+export function useTopFindings(limit: number = 10) {
+  return useQuery({
+    queryKey: researchKeys.findingsTop(limit),
+    queryFn: () => fetchApi<import('@/types').ResearchFinding[]>(`/research/findings/top?limit=${limit}`),
+  })
+}
+
+export function useReviewFinding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<import('@/types').ResearchFinding>(`/research/findings/${id}/review`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.findings() })
+    },
+  })
+}
+
+export function useDismissFinding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<import('@/types').ResearchFinding>(`/research/findings/${id}/dismiss`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.findings() })
+    },
+  })
+}
+
+export function useCreateTaskFromFinding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchApi<{ status: string }>(`/research/findings/${id}/create-task`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.findings() })
+      queryClient.invalidateQueries({ queryKey: researchKeys.stats() })
+    },
+  })
+}
+
+export function useResearchCycles(limit: number = 10) {
+  return useQuery({
+    queryKey: researchKeys.cycles(),
+    queryFn: () => fetchApi<import('@/types').ResearchCycleResult[]>(`/research/cycles?limit=${limit}`),
+  })
+}
+
+export function useResearchStats() {
+  return useQuery({
+    queryKey: researchKeys.stats(),
+    queryFn: () => fetchApi<import('@/types').ResearchStats>('/research/stats'),
+  })
+}
+
+export function useRunResearchCycle() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi<import('@/types').ResearchCycleResult>('/research/cycle/run', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.all })
+    },
+  })
+}
+
+export function useSeedResearchTopics() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi<{ status: string; created: number }>('/research/topics/seed', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchKeys.topics() })
+      queryClient.invalidateQueries({ queryKey: researchKeys.stats() })
+    },
+  })
+}
+
+// --- Research Rules ---
+
+export const researchRulesKeys = {
+  all: ['research-rules'] as const,
+  list: (filters?: Record<string, unknown>) => [...researchRulesKeys.all, 'list', filters] as const,
+  detail: (id: string) => [...researchRulesKeys.all, 'detail', id] as const,
+  stats: () => [...researchRulesKeys.all, 'stats'] as const,
+}
+
+export function useResearchRules(filters?: { rule_type?: string; enabled?: boolean }) {
+  return useQuery({
+    queryKey: researchRulesKeys.list(filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (filters?.rule_type) params.set('rule_type', filters.rule_type)
+      if (filters?.enabled !== undefined) params.set('enabled', String(filters.enabled))
+      const queryStr = params.toString()
+      return fetchApi<ResearchRule[]>(`/research/rules${queryStr ? `?${queryStr}` : ''}`)
+    },
+  })
+}
+
+export function useResearchRuleStats() {
+  return useQuery({
+    queryKey: researchRulesKeys.stats(),
+    queryFn: () => fetchApi<ResearchRuleStats>('/research/rules/stats'),
+  })
+}
+
+export function useCreateResearchRule() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      fetchApi<ResearchRule>('/research/rules', { method: 'POST', body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchRulesKeys.all })
+    },
+  })
+}
+
+export function useToggleResearchRule() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ruleId: string) =>
+      fetchApi<ResearchRule>(`/research/rules/${ruleId}/toggle`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchRulesKeys.all })
+    },
+  })
+}
+
+export function useDeleteResearchRule() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ruleId: string) =>
+      fetchApi<{ status: string }>(`/research/rules/${ruleId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchRulesKeys.all })
+    },
+  })
+}
+
+export function useRecalibrateRules() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi<Record<string, unknown>>('/research/rules/recalibrate', { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: researchRulesKeys.all })
     },
   })
 }

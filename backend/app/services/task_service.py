@@ -8,27 +8,17 @@ from typing import List, Optional, Dict, Any
 from functools import lru_cache
 import structlog
 
+from sqlalchemy import select, func as sa_func
+
 from app.models.task import Task, TaskCreate, TaskUpdate, TaskMove, TaskStatus
-from app.infrastructure.storage import JsonStorage
-from app.infrastructure.config import get_sprints_path
+from app.infrastructure.database import get_session
+from app.db.models import TaskModel
 
 logger = structlog.get_logger()
 
 
 class TaskService:
     """Service for task management operations."""
-
-    def __init__(self):
-        self.storage = JsonStorage(get_sprints_path())
-        self._tasks_file = "tasks.json"
-
-    async def _load_data(self) -> Dict[str, Any]:
-        """Load tasks data from storage."""
-        return await self.storage.read(self._tasks_file)
-
-    async def _save_data(self, data: Dict[str, Any]) -> bool:
-        """Save tasks data to storage."""
-        return await self.storage.write(self._tasks_file, data)
 
     async def list_tasks(
         self,
@@ -38,174 +28,94 @@ class TaskService:
         limit: int = 100
     ) -> List[Task]:
         """Get tasks with optional filters."""
-        data = await self._load_data()
-        tasks_data = data.get("tasks", [])
+        async with get_session() as session:
+            query = select(TaskModel)
 
-        tasks = []
-        for t in tasks_data:
-            # Apply filters
-            if sprint_id and t.get("sprintId") != sprint_id:
-                continue
-            if project_id and t.get("projectId") != project_id:
-                continue
-            if status and t.get("status") != status.value:
-                continue
+            if sprint_id:
+                query = query.where(TaskModel.sprint_id == sprint_id)
+            if project_id:
+                query = query.where(TaskModel.project_id == project_id)
+            if status:
+                query = query.where(TaskModel.status == status.value)
 
-            # Normalize field names for Pydantic
-            normalized = self._normalize_task_data(t)
-            tasks.append(Task(**normalized))
+            query = query.order_by(TaskModel.created_at.desc()).limit(limit)
 
-            if len(tasks) >= limit:
-                break
+            result = await session.execute(query)
+            rows = result.scalars().all()
 
-        return tasks
-
-    def _normalize_task_data(self, task_data: Dict) -> Dict:
-        """Normalize task data from storage format to Pydantic model format."""
-        return {
-            "id": task_data.get("id"),
-            "sprint_id": task_data.get("sprintId"),
-            "project_id": task_data.get("projectId"),
-            "title": task_data.get("title"),
-            "description": task_data.get("description"),
-            "status": task_data.get("status", "backlog"),
-            "category": task_data.get("category", "feature"),
-            "priority": task_data.get("priority", "medium"),
-            "points": task_data.get("points"),
-            "source": task_data.get("source", "MANUAL"),
-            "source_reference": task_data.get("sourceReference"),
-            "blocked_reason": task_data.get("blockedReason"),
-            "started_at": task_data.get("startedAt"),
-            "completed_at": task_data.get("completedAt"),
-            "created_at": task_data.get("createdAt"),
-            "updated_at": task_data.get("updatedAt"),
-        }
-
-    def _to_storage_format(self, task: Task) -> Dict:
-        """Convert task to storage format (camelCase)."""
-        return {
-            "id": task.id,
-            "sprintId": task.sprint_id,
-            "projectId": task.project_id,
-            "title": task.title,
-            "description": task.description,
-            "status": task.status.value if hasattr(task.status, 'value') else task.status,
-            "category": task.category.value if hasattr(task.category, 'value') else task.category,
-            "priority": task.priority.value if hasattr(task.priority, 'value') else task.priority,
-            "points": task.points,
-            "source": task.source.value if hasattr(task.source, 'value') else task.source,
-            "sourceReference": task.source_reference,
-            "blockedReason": task.blocked_reason,
-            "startedAt": task.started_at.isoformat() if task.started_at else None,
-            "completedAt": task.completed_at.isoformat() if task.completed_at else None,
-            "createdAt": task.created_at.isoformat() if task.created_at else None,
-            "updatedAt": task.updated_at.isoformat() if task.updated_at else None,
-        }
+            return [Task.model_validate(row, from_attributes=True) for row in rows]
 
     async def get_task(self, task_id: str) -> Optional[Task]:
         """Get task by ID."""
-        data = await self._load_data()
-        for t in data.get("tasks", []):
-            if t["id"] == task_id:
-                normalized = self._normalize_task_data(t)
-                return Task(**normalized)
-        return None
+        async with get_session() as session:
+            row = await session.get(TaskModel, task_id)
+            if row is None:
+                return None
+            return Task.model_validate(row, from_attributes=True)
 
     async def create_task(self, task_data: TaskCreate) -> Task:
         """Create a new task."""
-        data = await self._load_data()
+        async with get_session() as session:
+            # Generate new task ID by counting existing tasks + 1
+            count_result = await session.execute(
+                select(sa_func.count()).select_from(TaskModel)
+            )
+            next_id = count_result.scalar_one() + 1
+            task_id = f"task-{next_id}"
 
-        # Generate new task ID
-        next_id = data.get("nextTaskId", 1)
-        task_id = f"task-{next_id}"
+            now = datetime.utcnow()
 
-        now = datetime.utcnow()
+            orm_obj = TaskModel(
+                id=task_id,
+                sprint_id=task_data.sprint_id,
+                project_id=task_data.project_id,
+                title=task_data.title,
+                description=task_data.description,
+                status=TaskStatus.BACKLOG.value,
+                category=task_data.category.value if hasattr(task_data.category, 'value') else task_data.category,
+                priority=task_data.priority.value if hasattr(task_data.priority, 'value') else task_data.priority,
+                points=task_data.points,
+                source=task_data.source.value if hasattr(task_data.source, 'value') else task_data.source,
+                source_reference=task_data.source_reference,
+                blocked_reason=task_data.blocked_reason,
+                created_at=now,
+            )
 
-        task = Task(
-            id=task_id,
-            sprint_id=task_data.sprint_id,
-            project_id=task_data.project_id,
-            title=task_data.title,
-            description=task_data.description,
-            status=TaskStatus.BACKLOG,
-            category=task_data.category,
-            priority=task_data.priority,
-            points=task_data.points,
-            source=task_data.source,
-            source_reference=task_data.source_reference,
-            blocked_reason=task_data.blocked_reason,
-            created_at=now
-        )
+            session.add(orm_obj)
+            # Flush to populate server defaults before reading back
+            await session.flush()
 
-        # Add to tasks list
-        tasks = data.get("tasks", [])
-        tasks.append(self._to_storage_format(task))
-
-        # Update data
-        data["tasks"] = tasks
-        data["nextTaskId"] = next_id + 1
-
-        await self._save_data(data)
-
-        # Update sprint points if assigned to a sprint
-        if task.sprint_id:
-            from app.services.sprint_service import get_sprint_service
-            sprint_service = get_sprint_service()
-            await sprint_service.update_sprint_points(task.sprint_id)
+            task = Task.model_validate(orm_obj, from_attributes=True)
 
         logger.info("Task created", task_id=task_id, title=task.title)
         return task
 
     async def update_task(self, task_id: str, updates: TaskUpdate) -> Optional[Task]:
         """Update a task."""
-        data = await self._load_data()
-        tasks = data.get("tasks", [])
+        async with get_session() as session:
+            row = await session.get(TaskModel, task_id)
+            if row is None:
+                return None
 
-        for i, t in enumerate(tasks):
-            if t["id"] == task_id:
-                old_sprint_id = t.get("sprintId")
+            old_sprint_id = row.sprint_id
 
-                # Apply updates
-                update_dict = updates.model_dump(exclude_unset=True)
-                for key, value in update_dict.items():
-                    if value is not None:
-                        # Convert snake_case to camelCase for storage
-                        storage_key = key
-                        if key == "sprint_id":
-                            storage_key = "sprintId"
-                        elif key == "project_id":
-                            storage_key = "projectId"
-                        elif key == "source_reference":
-                            storage_key = "sourceReference"
-                        elif key == "blocked_reason":
-                            storage_key = "blockedReason"
+            # Apply updates
+            update_dict = updates.model_dump(exclude_unset=True)
+            for key, value in update_dict.items():
+                if value is not None:
+                    # Convert enums to their string values
+                    if hasattr(value, 'value'):
+                        value = value.value
+                    setattr(row, key, value)
 
-                        # Handle enums
-                        if hasattr(value, 'value'):
-                            value = value.value
+            row.updated_at = datetime.utcnow()
 
-                        t[storage_key] = value
+            await session.flush()
 
-                t["updatedAt"] = datetime.utcnow().isoformat()
-                tasks[i] = t
-                data["tasks"] = tasks
-                await self._save_data(data)
+            task = Task.model_validate(row, from_attributes=True)
 
-                # Update sprint points if needed
-                from app.services.sprint_service import get_sprint_service
-                sprint_service = get_sprint_service()
-
-                new_sprint_id = t.get("sprintId")
-                if old_sprint_id:
-                    await sprint_service.update_sprint_points(old_sprint_id)
-                if new_sprint_id and new_sprint_id != old_sprint_id:
-                    await sprint_service.update_sprint_points(new_sprint_id)
-
-                logger.info("Task updated", task_id=task_id)
-                normalized = self._normalize_task_data(t)
-                return Task(**normalized)
-
-        return None
+        logger.info("Task updated", task_id=task_id)
+        return task
 
     async def move_task(self, task_id: str, move: TaskMove) -> Optional[Task]:
         """Move task to a new status."""
@@ -232,39 +142,28 @@ class TaskService:
 
     async def delete_task(self, task_id: str) -> bool:
         """Delete a task."""
-        data = await self._load_data()
-        tasks = data.get("tasks", [])
+        async with get_session() as session:
+            row = await session.get(TaskModel, task_id)
+            if row is None:
+                return False
 
-        for i, t in enumerate(tasks):
-            if t["id"] == task_id:
-                sprint_id = t.get("sprintId")
-                del tasks[i]
-                data["tasks"] = tasks
-                await self._save_data(data)
+            await session.delete(row)
 
-                # Update sprint points
-                if sprint_id:
-                    from app.services.sprint_service import get_sprint_service
-                    sprint_service = get_sprint_service()
-                    await sprint_service.update_sprint_points(sprint_id)
-
-                logger.info("Task deleted", task_id=task_id)
-                return True
-
-        return False
+        logger.info("Task deleted", task_id=task_id)
+        return True
 
     async def get_backlog(self) -> List[Task]:
         """Get all backlog tasks (not assigned to any sprint)."""
-        data = await self._load_data()
-        tasks_data = data.get("tasks", [])
+        async with get_session() as session:
+            query = select(TaskModel).where(
+                (TaskModel.sprint_id.is_(None)) | (TaskModel.sprint_id == "backlog")
+            )
+            query = query.order_by(TaskModel.created_at.desc())
 
-        tasks = []
-        for t in tasks_data:
-            if not t.get("sprintId"):
-                normalized = self._normalize_task_data(t)
-                tasks.append(Task(**normalized))
+            result = await session.execute(query)
+            rows = result.scalars().all()
 
-        return tasks
+            return [Task.model_validate(row, from_attributes=True) for row in rows]
 
 
 @lru_cache()

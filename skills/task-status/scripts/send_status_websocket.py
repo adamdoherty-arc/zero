@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Send status messages using Clawdbot WebSocket API (fast).
+Send status messages using Zero WebSocket API (fast).
 """
 
 import sys
@@ -44,12 +44,12 @@ def send_status(message: str, status_type: str, step_name: str, details: str = N
         formatted = formatted[:137] + "..."
     
     # Send via WebSocket
-    gateway_port = os.environ.get("CLAWDBOT_GATEWAY_PORT", "18789")
-    gateway_token = os.environ.get("CLAWDBOT_GATEWAY_TOKEN")
+    gateway_port = os.environ.get("ZERO_GATEWAY_PORT", "18789")
+    gateway_token = os.environ.get("ZERO_GATEWAY_TOKEN")
     target = os.environ.get("TELEGRAM_TARGET", "7590912486")
     
     if not gateway_token:
-        print(f"✗ CLAWDBOT_GATEWAY_TOKEN not found", file=sys.stderr)
+        print(f"✗ ZERO_GATEWAY_TOKEN not found", file=sys.stderr)
         return formatted
     
     ws_url = f"ws://127.0.0.1:{gateway_port}/ws"

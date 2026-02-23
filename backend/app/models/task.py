@@ -5,7 +5,7 @@ Task data models.
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class TaskStatus(str, Enum):
@@ -81,11 +81,10 @@ class TaskMove(BaseModel):
 
 class Task(BaseModel):
     """Full task model."""
-    model_config = ConfigDict(populate_by_name=True)
 
     id: str
-    sprint_id: Optional[str] = Field(None, alias="sprintId")
-    project_id: Optional[str] = Field(None, alias="projectId")
+    sprint_id: Optional[str] = None
+    project_id: Optional[str] = None
     title: str
     description: Optional[str] = None
     status: TaskStatus = TaskStatus.BACKLOG
@@ -93,9 +92,9 @@ class Task(BaseModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     points: Optional[int] = None
     source: TaskSource = TaskSource.MANUAL
-    source_reference: Optional[str] = Field(None, alias="sourceReference")
-    blocked_reason: Optional[str] = Field(None, alias="blockedReason")
-    started_at: Optional[datetime] = Field(None, alias="startedAt")
-    completed_at: Optional[datetime] = Field(None, alias="completedAt")
-    created_at: datetime = Field(default_factory=datetime.utcnow, alias="createdAt")
-    updated_at: Optional[datetime] = Field(None, alias="updatedAt")
+    source_reference: Optional[str] = None
+    blocked_reason: Optional[str] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None

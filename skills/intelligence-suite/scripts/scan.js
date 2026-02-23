@@ -8,7 +8,7 @@
  * 2. Filter for high-impact keywords.
  * 3. DEEP DIVE: Visit URLs, scrape full text (cheerio).
  * 4. LLM ANALYSIS: Summarize and inject Makima's persona using `llm` (if available) or internal simulation.
- *    (Since we don't have a direct `llm.generate` in this script env yet, we will simulate the "Insight" structure for now, 
+ *    (Since we don't have a direct `ll. generate` in this script env yet, we will simulate the "Insight" structure for now, 
  *     or prepare the data structure so the main Agent can perform the final LLM pass).
  */
 
@@ -90,7 +90,7 @@ async function scan() {
         return;
     }
 
-    console.log(`\nFound ${items.length} potential signals. Initiating Deep Scan...`);
+    console.log(`\nFound ${items.length} potential signals. Initiating Deep Scan. ..`);
 
     for (const item of items) {
         console.log(`\nReading: ${item.title}...`);
@@ -108,4 +108,4 @@ async function scan() {
     console.log("Scan complete. Ready for Makima's analysis.");
 }
 
-scan();
+scan()

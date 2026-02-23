@@ -1,5 +1,17 @@
 # SearXNG settings for Zero Research Agent
-use_default_settings: true
+use_default_settings:
+  engines:
+    keep_only:
+      - google
+      - google images
+      - bing
+      - bing images
+      - brave
+      - wikipedia
+      - wikidata
+      - github
+      - stackoverflow
+      - currency convert
 
 general:
   instance_name: "Zero Research"
@@ -13,6 +25,9 @@ search:
   formats:
     - html
     - json
+  suspended_times:
+    SearxEngineCaptchaException: 86400
+    SearxEngineAccessDeniedException: 3600
 
 server:
   secret_key: "zero-research-agent-secret-key"
@@ -26,3 +41,4 @@ ui:
   default_theme: simple
   theme_args:
     simple_style: dark
+
