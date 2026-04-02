@@ -120,6 +120,21 @@ class ChatService:
                 session.project_id = project_id
             return session
 
+        # Try loading from persistent storage
+        if session_id:
+            try:
+                from app.services.memory_service import get_memory_service
+                import asyncio
+                mem = get_memory_service()
+                # Check if session exists in DB (sync wrapper for static method)
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're in async context but this is a sync method
+                    # Just create new session, it will be persisted on first message
+                    pass
+            except Exception:
+                pass
+
         new_id = session_id or str(uuid.uuid4())
         session = ConversationSession(
             session_id=new_id,
@@ -359,6 +374,17 @@ class ChatService:
         live_ctx, sources = await ChatService._gather_context(session.project_id)
         prompt_parts.append(f"\n## Live Context\n{live_ctx}")
 
+        # Inject recent conversation history for context carry-over
+        if session.session_id:
+            try:
+                from app.services.memory_service import get_memory_service
+                mem = get_memory_service()
+                history = await mem.get_recent_context(session.session_id, max_messages=10, max_chars=4000)
+                if history:
+                    prompt_parts.append(f"\n## Recent Conversation History\n{history}")
+            except Exception as e:
+                logger.debug("chat_history_inject_failed", error=str(e))
+
         return "\n".join(prompt_parts), sources
 
     # ------------------------------------------------------------------
@@ -421,6 +447,18 @@ class ChatService:
 
         session.messages.append(AIMessage(content=content))
 
+        # Persist to database
+        try:
+            from app.services.memory_service import get_memory_service
+            mem = get_memory_service()
+            await mem.create_session(session_id=session.session_id, project_id=session.project_id)
+            await mem.add_message(session.session_id, "human", message)
+            await mem.add_message(session.session_id, "ai", content, metadata={"model": model, "sources": [s["name"] for s in sources]})
+            if len(session.messages) <= 2:
+                await mem.generate_title(session.session_id)
+        except Exception as e:
+            logger.debug("chat_persist_failed", error=str(e))
+
         return ChatResponse(
             content=content,
             session_id=session.session_id,
@@ -468,6 +506,18 @@ class ChatService:
             full_content = error_msg
 
         session.messages.append(AIMessage(content=full_content))
+
+        # Persist to database
+        try:
+            from app.services.memory_service import get_memory_service
+            mem = get_memory_service()
+            await mem.create_session(session_id=session.session_id, project_id=session.project_id)
+            await mem.add_message(session.session_id, "human", message)
+            await mem.add_message(session.session_id, "ai", full_content, metadata={"model": model_name, "sources": [s["name"] for s in sources]})
+            if len(session.messages) <= 2:
+                await mem.generate_title(session.session_id)
+        except Exception as e:
+            logger.debug("chat_stream_persist_failed", error=str(e))
 
         yield f'data: {json.dumps({"type": "done", "session_id": session.session_id, "sources": sources, "model": model_name})}\n\n'
 

@@ -24,6 +24,7 @@ from app.routers import (
     ecosystem_health,
     tts, reachy,
     feedback, goals, memory,
+    vision, focus,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -275,6 +276,10 @@ app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
 app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
 app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
+
+# Vision & Cross-Domain Focus
+app.include_router(vision.router, prefix="/api/vision", tags=["Vision"])
+app.include_router(focus.router, prefix="/api/focus", tags=["Focus"])
 
 
 @app.get("/")
