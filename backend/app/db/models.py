@@ -631,6 +631,7 @@ class TikTokProductModel(Base):
     image_url: Mapped[Optional[str]] = mapped_column(Text)
     image_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
     image_search_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    image_validated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Success rating
     success_rating: Mapped[Optional[float]] = mapped_column(Float)
@@ -644,8 +645,20 @@ class TikTokProductModel(Base):
     sourcing_links: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
     listing_steps: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
 
+    # Affiliate & import tracking
+    affiliate_link: Mapped[Optional[str]] = mapped_column(Text)
+    tiktok_shop_url: Mapped[Optional[str]] = mapped_column(Text)
+    import_url: Mapped[Optional[str]] = mapped_column(Text)
+    import_source: Mapped[Optional[str]] = mapped_column(String(30))
+
+    # Content performance feedback (Sprint 2)
+    content_performance_score: Mapped[Optional[float]] = mapped_column(Float)
+    best_template_type: Mapped[Optional[str]] = mapped_column(String(30))
+    last_performance_update_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
     discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_researched_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         Index("idx_tiktok_products_score", "opportunity_score"),
@@ -784,9 +797,50 @@ class VideoScriptModel(Base):
     voiceover_script: Mapped[Optional[str]] = mapped_column(Text)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=30)
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    reference_video_id: Mapped[Optional[str]] = mapped_column(String(64))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Reference Videos (TikTok video inspiration / copy)
+# ---------------------------------------------------------------------------
+
+class ReferenceVideoModel(Base):
+    __tablename__ = "reference_videos"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tiktok_url: Mapped[str] = mapped_column(Text, nullable=False)
+    product_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+
+    # oEmbed metadata
+    title: Mapped[Optional[str]] = mapped_column(Text)
+    author_name: Mapped[Optional[str]] = mapped_column(String(200))
+    author_url: Mapped[Optional[str]] = mapped_column(Text)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(Text)
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
+    # Engagement metrics
+    views: Mapped[Optional[int]] = mapped_column(Integer)
+    likes: Mapped[Optional[int]] = mapped_column(Integer)
+    comments: Mapped[Optional[int]] = mapped_column(Integer)
+    shares: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # LLM analysis
+    hook_analysis: Mapped[Optional[str]] = mapped_column(Text)
+    structure_analysis: Mapped[Optional[str]] = mapped_column(Text)
+    style_notes: Mapped[Optional[str]] = mapped_column(Text)
+    content_type: Mapped[Optional[str]] = mapped_column(String(30))
+    estimated_duration: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # Generated script link
+    generated_script_id: Mapped[Optional[str]] = mapped_column(String(64))
+
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 # ---------------------------------------------------------------------------
@@ -804,6 +858,17 @@ class ContentQueueModel(Base):
     act_generation_id: Mapped[Optional[str]] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Publishing
+    publish_status: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    publish_platform: Mapped[Optional[str]] = mapped_column(String(30))
+    publish_url: Mapped[Optional[str]] = mapped_column(Text)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    publish_error: Mapped[Optional[str]] = mapped_column(Text)
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags: Mapped[Optional[list]] = mapped_column(JSONB)
+
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
@@ -900,6 +965,64 @@ class PredictionSnapshotModel(Base):
 # LLM Usage Tracking
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Orchestrator Conversations & Traces
+# ---------------------------------------------------------------------------
+
+class OrchestratorConversationModel(Base):
+    """Every message exchanged through the orchestrator gateway."""
+    __tablename__ = "orchestrator_conversations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="api")
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    route: Mapped[Optional[str]] = mapped_column(String(30), index=True)
+    route_method: Mapped[Optional[str]] = mapped_column(String(30))
+    route_confidence: Mapped[Optional[int]] = mapped_column(Integer)
+    latency_ms: Mapped[Optional[float]] = mapped_column(Float)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_orch_conv_thread_created", "thread_id", "created_at"),
+        Index("idx_orch_conv_channel", "channel"),
+    )
+
+
+class OrchestratorTraceModel(Base):
+    """Per-node execution trace for an orchestrator invocation."""
+    __tablename__ = "orchestrator_traces"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), ForeignKey("orchestrator_conversations.id", ondelete="CASCADE"), index=True)
+    thread_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    node_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    node_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+    output_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_used: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("idx_orch_trace_conv", "conversation_id"),
+        Index("idx_orch_trace_node_time", "node_name", "started_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# LLM Usage Tracking
+# ---------------------------------------------------------------------------
+
 class LlmUsageModel(Base):
     """Track all LLM API calls across providers for cost/performance analysis."""
     __tablename__ = "llm_usage"
@@ -921,3 +1044,320 @@ class LlmUsageModel(Base):
         Index("ix_llm_usage_provider_date", "provider", "created_at"),
         Index("ix_llm_usage_task_provider", "task_type", "provider"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Sprint 2: Gateway Agent Configs
+# ---------------------------------------------------------------------------
+
+class GatewayAgentConfigModel(Base):
+    __tablename__ = "gateway_agent_configs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(String(30), default="general", index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    routes: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    channels: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    model_override: Mapped[Optional[str]] = mapped_column(String(100))
+    system_prompt_override: Mapped[Optional[str]] = mapped_column(Text)
+    temperature: Mapped[float] = mapped_column(Float, default=0.7)
+    proactive_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    proactive_triggers: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: Observability Spans
+# ---------------------------------------------------------------------------
+
+class ObservabilitySpanModel(Base):
+    __tablename__ = "observability_spans"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    parent_span_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    span_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    input_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+    output_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float)
+    tokens_in: Mapped[int] = mapped_column(Integer, default=0)
+    tokens_out: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    quality_score: Mapped[Optional[float]] = mapped_column(Float)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("idx_obs_span_trace", "trace_id"),
+        Index("idx_obs_span_type_time", "span_type", "started_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sprint 3: Approval Requests (Human-in-the-Loop)
+# ---------------------------------------------------------------------------
+
+class ApprovalRequestModel(Base):
+    __tablename__ = "approval_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    request_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    context_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+    initiated_by: Mapped[str] = mapped_column(String(50), default="system")
+    route: Mapped[Optional[str]] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    decision_by: Mapped[Optional[str]] = mapped_column(String(50))
+    decision_reason: Mapped[Optional[str]] = mapped_column(Text)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    auto_action_on_expiry: Mapped[str] = mapped_column(String(20), default="reject")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_approval_status_created", "status", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Visual Workflow Definitions
+# ---------------------------------------------------------------------------
+
+class VisualWorkflowDefinitionModel(Base):
+    __tablename__ = "visual_workflow_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    nodes: Mapped[dict] = mapped_column(JSONB, nullable=False, default=[])
+    edges: Mapped[dict] = mapped_column(JSONB, nullable=False, default=[])
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    trigger_type: Mapped[Optional[str]] = mapped_column(String(30))
+    trigger_config: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
+class VisualWorkflowExecutionModel(Base):
+    __tablename__ = "visual_workflow_executions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(String(64), ForeignKey("visual_workflow_definitions.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    current_node_id: Mapped[Optional[str]] = mapped_column(String(64))
+    execution_log: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    output: Mapped[Optional[dict]] = mapped_column(JSONB)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4: Outcome Tracking (Business KPIs)
+# ---------------------------------------------------------------------------
+
+class OutcomeTrackingModel(Base):
+    __tablename__ = "outcome_tracking"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    action_source: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    action_id: Mapped[Optional[str]] = mapped_column(String(64))
+    kpi_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    kpi_value: Mapped[float] = mapped_column(Float, nullable=False)
+    kpi_unit: Mapped[str] = mapped_column(String(30), default="count")
+    extra_data: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_outcome_source_type", "action_source", "kpi_type"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Meeting Intelligence (migrated from DailyMemory)
+# ---------------------------------------------------------------------------
+
+class MeetingModel(Base):
+    __tablename__ = "meetings"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    calendar_event_id: Mapped[Optional[str]] = mapped_column(String(255))
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    participants: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_meetings_start_time", "start_time"),
+    )
+
+
+class MeetingRecordingModel(Base):
+    __tablename__ = "meeting_recordings"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(64), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_path: Mapped[str] = mapped_column(Text, nullable=False)
+    format: Mapped[str] = mapped_column(String(10), default="wav")
+    sample_rate: Mapped[int] = mapped_column(Integer, default=16000)
+    channels: Mapped[int] = mapped_column(Integer, default=1)
+    duration_seconds: Mapped[Optional[float]] = mapped_column(Float)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(String(10), default="mixed")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MeetingTranscriptSegmentModel(Base):
+    __tablename__ = "meeting_transcript_segments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[str] = mapped_column(String(64), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    speaker: Mapped[Optional[str]] = mapped_column(String(100))
+    start_time: Mapped[float] = mapped_column(Float, nullable=False)
+    end_time: Mapped[float] = mapped_column(Float, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[Optional[float]] = mapped_column(Float)
+    embedding = mapped_column(Vector(768), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MeetingSummaryModel(Base):
+    __tablename__ = "meeting_summaries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(64), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    key_topics: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    action_items: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    decisions: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    model_used: Mapped[Optional[str]] = mapped_column(String(100))
+    token_count: Mapped[Optional[int]] = mapped_column(Integer)
+    generation_time_ms: Mapped[Optional[int]] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MeetingSpeakerMappingModel(Base):
+    __tablename__ = "meeting_speaker_mappings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meeting_id: Mapped[str] = mapped_column(String(64), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
+    speaker_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Conversation Sessions (persistent)
+# ---------------------------------------------------------------------------
+
+class ConversationSessionModel(Base):
+    """Persistent conversation sessions that survive restarts."""
+    __tablename__ = "conversation_sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[Optional[str]] = mapped_column(Text)
+    project_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="web")
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_active: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("ix_sessions_last_active", "last_active"),
+    )
+
+
+class ConversationMessageModel(Base):
+    """Individual messages within a conversation session."""
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(64), ForeignKey("conversation_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # human, ai, system
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Feedback & Preference Learning
+# ---------------------------------------------------------------------------
+
+class FeedbackModel(Base):
+    """User feedback on AI responses for learning."""
+    __tablename__ = "user_feedback"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # -1, 0, 1
+    feedback_type: Mapped[str] = mapped_column(String(30), default="response_quality")  # response_quality, routing, tone, detail_level
+    comment: Mapped[Optional[str]] = mapped_column(Text)
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})  # route, model, response_length, etc.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LearnedPreferenceModel(Base):
+    """Preferences learned from user behavior and feedback."""
+    __tablename__ = "learned_preferences"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)  # response_style, detail_level, tone, schedule
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=1)
+    last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_pref_cat_key", "category", "key", unique=True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Goal Tracking
+# ---------------------------------------------------------------------------
+
+class GoalModel(Base):
+    """User goals with progress tracking."""
+    __tablename__ = "user_goals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(50), default="general", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)  # active, completed, paused, abandoned
+    target_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    progress_pct: Mapped[float] = mapped_column(Float, default=0.0)
+    milestones: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    metrics: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
+class GoalCheckInModel(Base):
+    """Weekly/daily check-ins on goal progress."""
+    __tablename__ = "goal_checkins"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    goal_id: Mapped[str] = mapped_column(String(64), ForeignKey("user_goals.id", ondelete="CASCADE"), nullable=False, index=True)
+    progress_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    blockers: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

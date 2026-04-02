@@ -23,6 +23,7 @@ from app.routers import (
     meeting_chat, meeting_search, meeting_speakers, meeting_ws,
     ecosystem_health,
     tts, reachy,
+    feedback, goals, memory,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -269,6 +270,11 @@ app.include_router(meeting_chat.router, prefix="/api/meeting-chat", tags=["Meeti
 app.include_router(meeting_search.router, prefix="/api/meeting-search", tags=["Meeting Search"])
 app.include_router(meeting_speakers.router, prefix="/api/meetings", tags=["Meeting Speakers"])
 app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
+
+# Personal Assistant (feedback, goals, memory)
+app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
+app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
+app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
 
 
 @app.get("/")

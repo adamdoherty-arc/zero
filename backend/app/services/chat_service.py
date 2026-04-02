@@ -318,6 +318,34 @@ class ChatService:
         except Exception as e:
             logger.debug("chat_context_notifications_failed", error=str(e))
 
+        # Learned preferences context
+        try:
+            from app.services.feedback_service import get_feedback_service
+            guidelines = await get_feedback_service().get_response_guidelines()
+            if guidelines:
+                parts.append(guidelines)
+        except Exception as e:
+            logger.debug("chat_context_preferences_failed", error=str(e))
+
+        # Goal tracking context
+        try:
+            from app.services.goal_tracking_service import get_goal_tracking_service
+            goal_context = await get_goal_tracking_service().get_goal_context_for_briefing()
+            if goal_context:
+                parts.append(goal_context)
+                sources.append({"name": "goals", "description": "Active goals and alerts"})
+        except Exception as e:
+            logger.debug("chat_context_goals_failed", error=str(e))
+
+        # Context awareness (time, availability, sentiment)
+        try:
+            from app.services.context_awareness_service import get_context_awareness_service
+            ctx_section = await get_context_awareness_service().get_context_prompt_section()
+            if ctx_section:
+                parts.append(ctx_section)
+        except Exception as e:
+            logger.debug("chat_context_awareness_failed", error=str(e))
+
         context_text = "\n\n".join(parts) if parts else "No live data available."
         return context_text, sources
 
