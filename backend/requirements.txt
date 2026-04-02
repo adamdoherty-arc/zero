@@ -24,8 +24,16 @@ httpx>=0.28.0
 # Logging
 structlog>=25.1.0
 
-# Audio Transcription (Local Whisper)
-faster-whisper>=1.0.0
+# Audio Transcription (faster-whisper works in Docker via CTranslate2)
+faster-whisper>=1.1.0
+numpy>=1.24.0
+soundfile>=0.12.1
+
+# Meeting Intelligence - Heavy/platform-specific deps (install natively, NOT in Docker)
+# pip install pyannote.audio sounddevice PyAudioWPatch
+# pyannote.audio: speaker diarization (requires torch ~5GB, HF_TOKEN)
+# PyAudioWPatch: Windows WASAPI loopback audio capture (Windows-only)
+# sounddevice: microphone input (needs PortAudio system lib)
 
 # Google APIs (Gmail, Calendar)
 google-auth>=2.23.0
@@ -65,5 +73,26 @@ instructor>=1.0.0
 # Prediction Market APIs
 kalshi-python>=0.2.0
 
-# Multi-Provider LLM Support
-google-generativeai>=0.8.0
+# Multi-Provider LLM Support (unified google-genai SDK, replaces deprecated google-generativeai)
+google-genai>=1.0.0
+
+# Rate Limiting
+slowapi>=0.1.9
+
+# Retry with backoff
+tenacity>=9.0.0
+
+# Discord Bot (replaces OpenClaw gateway for Discord channel)
+discord.py>=2.7.0
+
+# Claude Agent SDK (messaging bridge — Claude as orchestrator brain)
+claude-agent-sdk>=0.1.48
+
+# MCP Server SDK (for zero-api and kimi-llm MCP servers)
+mcp>=1.26.0
+
+# Text-to-Speech
+edge-tts>=6.1.0
+
+# Reachy Mini Robot Integration
+# reachy-mini>=1.0.0  # Install when robot arrives

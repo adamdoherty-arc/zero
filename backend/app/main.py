@@ -18,10 +18,21 @@ from app.routers import (
     audio, email, calendar, assistant, money_maker, workflows,
     system, research, ecosystem, google_oauth, qa, notion, agent, engine,
     gpu, llm, chat, research_rules, tiktok_shop, tiktok_content, content_agent,
-    prediction_markets,
+    prediction_markets, llc_guidance, approvals, visual_workflows,
+    meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
+    meeting_chat, meeting_search, meeting_speakers, meeting_ws,
+    ecosystem_health,
+    tts, reachy,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Set root logger to INFO so structlog filter_by_level passes INFO+ messages
+import logging
+logging.basicConfig(format="%(message)s", level=logging.INFO)
 
 # Configure structured logging
 structlog.configure(
@@ -76,6 +87,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to initialize database", error=str(e))
 
+    # Ensure recordings directory exists
+    from app.infrastructure.config import get_recordings_path
+    recordings_path = get_recordings_path()
+    recordings_path.mkdir(parents=True, exist_ok=True)
+    logger.info("Recordings directory ready", path=str(recordings_path))
+
     # Initialize centralized LLM router (must happen before startup checks)
     from app.infrastructure.llm_router import get_llm_router
     await get_llm_router().initialize()
@@ -93,6 +110,37 @@ async def lifespan(app: FastAPI):
         logger.info("Daily automation scheduler started")
     except Exception as e:
         logger.warning("Failed to start scheduler", error=str(e))
+
+    # Start Discord bot (Claude Agent SDK messaging bridge)
+    # NOTE: The bot uses claude-agent-sdk which requires the `claude` CLI binary.
+    # With the Max plan, auth is handled by the local Claude Code installation.
+    # In Docker, `claude` CLI isn't available — run the bot standalone on the host:
+    #   cd backend && python -m app.services.discord_bot
+    discord_task = None
+    try:
+        import shutil
+        claude_available = shutil.which("claude") is not None
+        from app.services.discord_bot import start_bot, stop_bot, BOT_TOKEN
+        if not BOT_TOKEN:
+            logger.info("discord_bot_disabled", reason="DISCORD_BOT_TOKEN not set")
+        elif not claude_available:
+            logger.info("discord_bot_skipped",
+                        reason="claude CLI not found (run standalone on host: python -m app.services.discord_bot)")
+        else:
+            discord_task = asyncio.create_task(start_bot(), name="discord_bot")
+
+            def _discord_done(task: asyncio.Task):
+                if task.cancelled():
+                    logger.info("discord_bot_cancelled")
+                elif task.exception():
+                    logger.error("discord_bot_crashed", error=str(task.exception()))
+                else:
+                    logger.info("discord_bot_stopped_cleanly")
+
+            discord_task.add_done_callback(_discord_done)
+            logger.info("discord_bot_starting")
+    except Exception as e:
+        logger.warning("discord_bot_import_failed", error=str(e))
 
     # Register graceful shutdown
     import signal
@@ -112,6 +160,14 @@ async def lifespan(app: FastAPI):
             logger.info("Scheduler stopped")
         except Exception as e:
             logger.warning("Failed to stop scheduler", error=str(e))
+
+        # Stop Discord bot
+        try:
+            from app.services.discord_bot import stop_bot
+            await stop_bot()
+            logger.info("Discord bot stopped")
+        except Exception:
+            pass
 
         # Close shared Ollama client
         try:
@@ -149,6 +205,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Register global exception handlers
 register_exception_handlers(app)
 
@@ -178,6 +239,7 @@ app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"]
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(research.router, prefix="/api/research", tags=["Research"])
 app.include_router(ecosystem.router, prefix="/api/ecosystem", tags=["Ecosystem"])
+app.include_router(ecosystem_health.router, prefix="/api/ecosystem/health", tags=["Ecosystem Health"])
 app.include_router(qa.router, prefix="/api/qa", tags=["QA Verification"])
 app.include_router(notion.router, prefix="/api/notion", tags=["Notion"])
 app.include_router(agent.router, prefix="/api/agent", tags=["Agent"])
@@ -190,6 +252,23 @@ app.include_router(tiktok_shop.router, prefix="/api/tiktok-shop", tags=["TikTok 
 app.include_router(tiktok_content.router, prefix="/api/tiktok-content", tags=["TikTok Content"])
 app.include_router(content_agent.router, prefix="/api/content-agent", tags=["Content Agent"])
 app.include_router(prediction_markets.router, prefix="/api/prediction-markets", tags=["Prediction Markets"])
+app.include_router(llc_guidance.router, prefix="/api/llc-guidance", tags=["LLC Guidance"])
+app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"])
+app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags=["Visual Workflows"])
+
+# Text-to-Speech & Reachy Mini Robot
+app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
+app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
+
+# Meeting Intelligence (DailyMemory)
+app.include_router(meetings.router, prefix="/api/meetings", tags=["Meetings"])
+app.include_router(meeting_recordings.router, prefix="/api/meeting-recordings", tags=["Meeting Recordings"])
+app.include_router(meeting_transcriptions.router, prefix="/api/meeting-transcriptions", tags=["Meeting Transcriptions"])
+app.include_router(meeting_summaries.router, prefix="/api/meeting-summaries", tags=["Meeting Summaries"])
+app.include_router(meeting_chat.router, prefix="/api/meeting-chat", tags=["Meeting Chat"])
+app.include_router(meeting_search.router, prefix="/api/meeting-search", tags=["Meeting Search"])
+app.include_router(meeting_speakers.router, prefix="/api/meetings", tags=["Meeting Speakers"])
+app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
 
 
 @app.get("/")
