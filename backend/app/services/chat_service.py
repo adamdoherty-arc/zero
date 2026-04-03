@@ -352,6 +352,16 @@ class ChatService:
         except Exception as e:
             logger.debug("chat_context_goals_failed", error=str(e))
 
+        # Habit tracking context
+        try:
+            from app.services.habit_service import get_habit_service
+            habit_context = await get_habit_service().get_habit_context_for_briefing()
+            if habit_context:
+                parts.append(habit_context)
+                sources.append({"name": "habits", "description": "Daily habit tracking"})
+        except Exception as e:
+            logger.debug("chat_context_habits_failed", error=str(e))
+
         # Context awareness (time, availability, sentiment)
         try:
             from app.services.context_awareness_service import get_context_awareness_service

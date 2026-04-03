@@ -1361,3 +1361,61 @@ class GoalCheckInModel(Base):
     note: Mapped[Optional[str]] = mapped_column(Text)
     blockers: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Habit Tracking
+# ---------------------------------------------------------------------------
+
+class HabitModel(Base):
+    """Recurring habits to track daily."""
+    __tablename__ = "habits"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    frequency: Mapped[str] = mapped_column(String(20), default="daily")  # daily, weekday, weekly
+    target_count: Mapped[int] = mapped_column(Integer, default=1)  # times per frequency
+    category: Mapped[str] = mapped_column(String(50), default="general")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    streak_current: Mapped[int] = mapped_column(Integer, default=0)
+    streak_best: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class HabitLogModel(Base):
+    """Daily habit completion log."""
+    __tablename__ = "habit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    habit_id: Mapped[str] = mapped_column(String(64), ForeignKey("habits.id", ondelete="CASCADE"), nullable=False, index=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    date_key: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # YYYY-MM-DD for dedup
+
+    __table_args__ = (
+        Index("ix_habit_log_unique", "habit_id", "date_key", unique=True),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Daily Journal
+# ---------------------------------------------------------------------------
+
+class JournalEntryModel(Base):
+    """Daily journal entries with mood and reflections."""
+    __tablename__ = "journal_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    date_key: Mapped[str] = mapped_column(String(10), nullable=False, unique=True, index=True)  # YYYY-MM-DD
+    mood: Mapped[Optional[str]] = mapped_column(String(20))  # great, good, okay, rough, bad
+    energy: Mapped[Optional[int]] = mapped_column(Integer)  # 1-5
+    highlights: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    challenges: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    gratitude: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    reflection: Mapped[Optional[str]] = mapped_column(Text)
+    auto_summary: Mapped[Optional[str]] = mapped_column(Text)  # AI-generated from day's activity
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())

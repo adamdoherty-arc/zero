@@ -25,6 +25,8 @@ from app.routers import (
     tts, reachy,
     feedback, goals, memory,
     vision, focus,
+    email_drafts, routine,
+    habits, journal,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -280,6 +282,14 @@ app.include_router(memory.router, prefix="/api/memory", tags=["Memory"])
 # Vision & Cross-Domain Focus
 app.include_router(vision.router, prefix="/api/vision", tags=["Vision"])
 app.include_router(focus.router, prefix="/api/focus", tags=["Focus"])
+
+# Smart Email Drafting & Daily Routine
+app.include_router(email_drafts.router, prefix="/api/email/drafts", tags=["Email Drafts"])
+app.include_router(routine.router, prefix="/api/routine", tags=["Daily Routine"])
+
+# Habit Tracking & Daily Journal
+app.include_router(habits.router, prefix="/api/habits", tags=["Habits"])
+app.include_router(journal.router, prefix="/api/journal", tags=["Journal"])
 
 
 @app.get("/")
