@@ -80,7 +80,12 @@ Return JSON array. Each fact:
   "verified": true/false
 }}
 
-Sort by surprise_score descending. Write facts in the style of TikTok carousel text: direct, punchy, with dramatic pauses using "..." and bold claims."""
+Sort by surprise_score descending. Write facts in the style of TikTok carousel text: direct, punchy, with dramatic pauses using "..." and bold claims.
+
+FORMATTING RULES (strict):
+- NEVER use em dashes. Use periods, commas, or colons instead.
+- NEVER use markdown asterisks (*text* or **text**). Write plain text only.
+- NEVER use parenthetical asides with dashes. Use separate sentences."""
 
 CAROUSEL_SYSTEM_PROMPT = """You are a viral TikTok content creator specializing in character development carousels.
 Your posts get 100K+ likes using this formula:
@@ -89,6 +94,8 @@ Your posts get 100K+ likes using this formula:
 - Final slide: Engagement CTA
 - Caption: Emotional, debate-sparking, with emojis
 - Hashtags: character + franchise + niche tags
+
+CRITICAL: Never use em dashes, markdown asterisks, or any formatting markup. Plain text only.
 
 Return ONLY valid JSON."""
 
@@ -124,7 +131,16 @@ Style rules:
 - Include dramatic pauses with "..."
 - End text with impact words or emojis (🤯 ⚡ 💀)
 - Caption should provoke comments ("Comment which fact surprised you most 👇")
-- 5-8 hashtags mixing character name, franchise, and broad tags"""
+
+Hashtag strategy (include exactly 9 hashtags in this mix):
+- 3 broad hashtags (e.g., #marvel, #dc, #anime, #moviefacts, #characterfacts)
+- 3 niche hashtags specific to the character (e.g., #lokilore, #marveltheory, #batmanfacts)
+- 3 trending/topical hashtags (e.g., #fyp, #viral, #didyouknow, #mindblown)
+
+FORMATTING RULES (strict):
+- NEVER use em dashes. Use periods, commas, or colons instead.
+- NEVER use markdown asterisks (*text* or **text**). Write plain text only.
+- NEVER use parenthetical asides with dashes. Use separate sentences."""
 
 AI_REVIEW_SYSTEM_PROMPT = """You are a TikTok content strategist reviewing carousel posts for viral potential.
 Score each dimension 1-10 and provide actionable feedback.
@@ -168,6 +184,32 @@ class CharacterContentService:
 
     def _generate_id(self, prefix: str = "ch") -> str:
         return f"{prefix}-{uuid.uuid4().hex[:12]}"
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """Strip AI-generated formatting: em dashes, markdown asterisks, en dashes."""
+        if not text:
+            return text
+        # Replace em dashes with period + space or comma
+        text = text.replace("\u2014", ". ")  # em dash
+        text = text.replace("\u2013", "-")   # en dash -> hyphen
+        # Strip markdown bold/italic asterisks but keep the text
+        text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
+        # Clean up double spaces and ". ." from replacements
+        text = re.sub(r'\.\s*\.', '.', text)
+        text = re.sub(r'\s{2,}', ' ', text)
+        return text.strip()
+
+    def _sanitize_carousel(self, result: dict) -> dict:
+        """Sanitize all text fields in a carousel result."""
+        if result.get("hook_text"):
+            result["hook_text"] = self._sanitize_text(result["hook_text"])
+        if result.get("caption"):
+            result["caption"] = self._sanitize_text(result["caption"])
+        for slide in result.get("slides", []):
+            if slide.get("text"):
+                slide["text"] = self._sanitize_text(slide["text"])
+        return result
 
     # ------------------------------------------------------------------
     # ORM → Pydantic helpers
@@ -214,6 +256,7 @@ class CharacterContentService:
             hashtags=row.hashtags or [],
             music_mood=row.music_mood,
             ai_review=row.ai_review,
+            ai_review_score=(row.ai_review or {}).get("overall_score"),
             human_notes=row.human_notes,
             status=row.status or "draft",
             content_queue_id=row.content_queue_id,
@@ -234,6 +277,10 @@ class CharacterContentService:
             text_overlay_specs=row.text_overlay_specs or [],
             brain_context_used=row.brain_context_used,
             generation_metadata=row.generation_metadata or {},
+            publish_status=row.publish_status,
+            publish_platform=row.publish_platform,
+            download_urls=row.download_urls,
+            watermark_applied=row.watermark_applied if row.watermark_applied is not None else False,
         )
 
     def _image_to_pydantic(self, row: CharacterImageModel) -> CharacterImage:
@@ -405,6 +452,9 @@ class CharacterContentService:
                 len(fact_bank) * 1.5
             ))
 
+            # Extract relationship map from research data
+            rel_map = self._extract_relationship_map(research_data)
+
             # Save everything
             async with get_session() as session:
                 row = await session.get(CharacterModel, character_id)
@@ -415,6 +465,8 @@ class CharacterContentService:
                     row.last_researched = datetime.now(timezone.utc)
                     row.research_sources = list(source_types)
                     row.research_depth_score = depth_score
+                    if rel_map:
+                        row.relationship_map = rel_map
                     if images:
                         row.image_url = images[0].get("url")
                         row.image_urls = [img.get("url") for img in images[:10]]
@@ -423,9 +475,9 @@ class CharacterContentService:
             logger.info("character_research_completed",
                         character_id=character_id, facts=len(fact_bank),
                         images=len(images), sources=list(source_types),
-                        depth_score=depth_score)
+                        depth_score=depth_score, relationships=len(rel_map))
 
-        except Exception as e:  # noqa: broad-except - background pipeline must not crash
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError, json.JSONDecodeError, OSError, RuntimeError) as e:
             logger.error("character_research_failed", character_id=character_id, error=str(e))
             async with get_session() as session:
                 row = await session.get(CharacterModel, character_id)
@@ -573,6 +625,9 @@ class CharacterContentService:
         """Extract and parse JSON from LLM response text, handling truncation."""
         raw = raw.strip()
 
+        # Strip <think>...</think> tags (qwen3-coder-next reasoning output)
+        raw = re.sub(r'<think>[\s\S]*?</think>', '', raw).strip()
+
         # Try direct parse first
         try:
             return json.loads(raw)
@@ -591,8 +646,15 @@ class CharacterContentService:
         for pattern in [r'\{[\s\S]*\}', r'\[[\s\S]*\]']:
             match = re.search(pattern, raw)
             if match:
+                candidate = match.group(0)
                 try:
-                    return json.loads(match.group(0))
+                    return json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+                # Fix common LLM JSON quirks: trailing commas before } or ]
+                cleaned = re.sub(r',\s*([}\]])', r'\1', candidate)
+                try:
+                    return json.loads(cleaned)
                 except json.JSONDecodeError:
                     pass
 
@@ -680,6 +742,62 @@ class CharacterContentService:
             pass
 
         return None
+
+    def _extract_relationship_map(self, research_data: Dict) -> Dict[str, Any]:
+        """Extract relationship map from synthesized research data."""
+        rel_map = {}
+        key_rels = research_data.get("key_relationships", [])
+        if isinstance(key_rels, list):
+            for rel in key_rels:
+                if isinstance(rel, dict):
+                    char_name = rel.get("name", "")
+                    if char_name:
+                        rel_map[char_name] = {
+                            "relation": rel.get("relation", "unknown"),
+                            "details": rel.get("details", ""),
+                        }
+                elif isinstance(rel, str):
+                    rel_map[rel] = {"relation": "associated", "details": ""}
+        return rel_map
+
+    async def backfill_depth_scores(self) -> Dict[str, Any]:
+        """Recalculate depth_score and relationship_map for all researched characters."""
+        updated = 0
+        async with get_session() as session:
+            result = await session.execute(
+                select(CharacterModel).where(
+                    CharacterModel.research_status == "completed"
+                )
+            )
+            rows = result.scalars().all()
+
+            for row in rows:
+                changed = False
+                # Backfill depth_score if it's 0 but research exists
+                if (row.research_depth_score or 0.0) < 1.0 and row.fact_bank:
+                    source_types = set(row.research_sources or [])
+                    depth_score = min(100.0, (
+                        len(source_types) * 15 +
+                        len(row.fact_bank) * 1.5
+                    ))
+                    row.research_depth_score = depth_score
+                    changed = True
+
+                # Backfill relationship_map from research_data
+                if not row.relationship_map and row.research_data:
+                    rel_map = self._extract_relationship_map(row.research_data)
+                    if rel_map:
+                        row.relationship_map = rel_map
+                        changed = True
+
+                if changed:
+                    updated += 1
+
+            if updated > 0:
+                await session.commit()
+
+        logger.info("depth_scores_backfilled", updated=updated, total=len(rows))
+        return {"updated": updated, "total": len(rows)}
 
     async def _extract_facts(self, name: str, research_data: Dict,
                               search_results: List[Dict],
@@ -769,7 +887,7 @@ class CharacterContentService:
                                 query_used=query,
                             ))
                             await session.commit()
-                    except Exception:  # noqa: broad-except - DB duplicate skip
+                    except (ValueError, OSError) as _dup_err:  # DB duplicate skip
                         pass
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError) as e:
                 logger.warning("image_search_failed", query=query, error=str(e))
@@ -923,6 +1041,7 @@ class CharacterContentService:
                 max_retries=1,
             )
             result = self._parse_json_response(result, f"carousel_{name}")
+            result = self._sanitize_carousel(result)
             if not isinstance(result, dict) or "slides" not in result:
                 raise ValueError("Invalid carousel JSON structure")
         except (ValueError, json.JSONDecodeError, TimeoutError, ConnectionError) as e:
@@ -1107,6 +1226,16 @@ class CharacterContentService:
 
         # If score >= 7, ready for human review. Otherwise try one rewrite.
         new_status = "pending_review" if overall >= 7 else "ai_reviewed"
+
+        # Record outcome for learning
+        try:
+            from app.services.content_learning_engine import get_content_learning_engine
+            engine = get_content_learning_engine()
+            await engine.register_prompt_evolution(
+                carousel_id, str(row.slides)[:500], overall
+            )
+        except (ValueError, KeyError, TypeError, ImportError):
+            pass  # Learning failure should not block review
 
         # Apply rewrites if provided and score is low
         if overall < 7:
@@ -1307,16 +1436,24 @@ class CharacterContentService:
     # ==================================================================
 
     async def get_research_queue_status(self) -> ResearchQueueStatus:
-        """Return research queue status. Uses in-memory queue when running, falls back to DB."""
+        """Return research queue status. Merges in-memory live jobs with DB state."""
         global _research_queue
 
-        # If a live queue is running, return in-memory step-by-step progress
+        # If a live queue is running, merge in-memory jobs with DB-sourced jobs
         if _research_queue["running"] and _research_queue["order"]:
-            jobs_list = []
+            live_jobs = []
+            live_char_ids = set()
             for job_id in _research_queue["order"]:
                 job_data = _research_queue["jobs"].get(job_id)
                 if job_data:
-                    jobs_list.append(ResearchJob(**job_data))
+                    live_jobs.append(ResearchJob(**job_data))
+                    live_char_ids.add(job_data.get("character_id"))
+
+            # Also pull DB jobs not in the live queue (previously completed/failed)
+            db_jobs = await self._get_db_jobs(exclude_char_ids=live_char_ids)
+
+            # Live jobs first (active/queued), then DB jobs (completed/failed/pending)
+            jobs_list = live_jobs + db_jobs
 
             queued = sum(1 for j in jobs_list if j.status == ResearchJobStatus.QUEUED)
             researching = sum(1 for j in jobs_list if j.status == ResearchJobStatus.RESEARCHING)
@@ -1325,7 +1462,7 @@ class CharacterContentService:
 
             current_character = None
             current_step = None
-            for j in jobs_list:
+            for j in live_jobs:
                 if j.status == ResearchJobStatus.RESEARCHING:
                     current_character = j.character_name
                     for step in j.steps:
@@ -1348,90 +1485,7 @@ class CharacterContentService:
             )
 
         # No live queue — rebuild status from database
-        jobs_list = []
-        async with get_session() as session:
-            from sqlalchemy import text as sql_text
-            rows = await session.execute(
-                select(CharacterModel)
-                .order_by(
-                    # Show completed first, then researching, then failed, then pending
-                    sql_text("CASE research_status "
-                             "WHEN 'researching' THEN 0 "
-                             "WHEN 'failed' THEN 1 "
-                             "WHEN 'completed' THEN 2 "
-                             "ELSE 3 END"),
-                    CharacterModel.last_researched.desc().nulls_last(),
-                    CharacterModel.name,
-                )
-            )
-            characters = rows.scalars().all()
-
-            # Count images per character
-            img_counts = {}
-            img_rows = await session.execute(
-                select(
-                    CharacterImageModel.character_id,
-                    sql_func.count().label("cnt"),
-                ).group_by(CharacterImageModel.character_id)
-            )
-            for row in img_rows.all():
-                img_counts[row[0]] = row[1]
-
-        step_names = [
-            "searxng_search", "wiki_scrape", "deep_research",
-            "synthesis", "fact_extraction", "image_sourcing", "save_results",
-        ]
-
-        for char in characters:
-            status = char.research_status or "pending"
-            # Map DB status to job status
-            if status == "completed":
-                job_status = "completed"
-                steps = [
-                    ResearchJobStep(
-                        name=s, status="completed",
-                        completed_at=char.last_researched,
-                    ).model_dump() for s in step_names
-                ]
-            elif status == "failed":
-                job_status = "failed"
-                err = ""
-                if isinstance(char.research_data, dict):
-                    err = char.research_data.get("error", "Unknown error")
-                steps = [
-                    ResearchJobStep(name=s, status="failed", error=err if s == "save_results" else None).model_dump()
-                    for s in step_names
-                ]
-            elif status == "researching":
-                job_status = "researching"
-                steps = [
-                    ResearchJobStep(name=s, status="pending").model_dump()
-                    for s in step_names
-                ]
-            else:  # pending
-                job_status = "queued"
-                steps = [
-                    ResearchJobStep(name=s, status="pending").model_dump()
-                    for s in step_names
-                ]
-
-            fact_count = len(char.fact_bank) if char.fact_bank else 0
-            image_count = img_counts.get(char.id, 0)
-
-            jobs_list.append(ResearchJob(
-                id=f"db-{char.id}",
-                character_id=char.id,
-                character_name=char.name,
-                universe=char.universe or "unknown",
-                status=job_status,
-                steps=steps,
-                started_at=char.last_researched if status in ("completed", "researching") else None,
-                completed_at=char.last_researched if status == "completed" else None,
-                facts_found=fact_count,
-                images_found=image_count,
-                sources_used=char.research_sources or [],
-                depth_score=char.research_depth_score or 0.0,
-            ))
+        jobs_list = await self._get_db_jobs()
 
         queued = sum(1 for j in jobs_list if j.status == ResearchJobStatus.QUEUED)
         researching = sum(1 for j in jobs_list if j.status == ResearchJobStatus.RESEARCHING)
@@ -1456,6 +1510,97 @@ class CharacterContentService:
             started_at=None,
             estimated_completion=None,
         )
+
+    async def _get_db_jobs(self, exclude_char_ids: set = None) -> list:
+        """Build ResearchJob list from DB. Optionally exclude characters already in live queue."""
+        exclude_char_ids = exclude_char_ids or set()
+        jobs_list = []
+
+        async with get_session() as session:
+            from sqlalchemy import text as sql_text
+            rows = await session.execute(
+                select(CharacterModel)
+                .order_by(
+                    sql_text("CASE research_status "
+                             "WHEN 'researching' THEN 0 "
+                             "WHEN 'failed' THEN 1 "
+                             "WHEN 'completed' THEN 2 "
+                             "ELSE 3 END"),
+                    CharacterModel.last_researched.desc().nulls_last(),
+                    CharacterModel.name,
+                )
+            )
+            characters = rows.scalars().all()
+
+            img_counts = {}
+            img_rows = await session.execute(
+                select(
+                    CharacterImageModel.character_id,
+                    sql_func.count().label("cnt"),
+                ).group_by(CharacterImageModel.character_id)
+            )
+            for row in img_rows.all():
+                img_counts[row[0]] = row[1]
+
+        step_names = [
+            "searxng_search", "wiki_scrape", "deep_research",
+            "synthesis", "fact_extraction", "image_sourcing", "save_results",
+        ]
+
+        for char in characters:
+            if char.id in exclude_char_ids:
+                continue
+
+            status = char.research_status or "pending"
+            if status == "completed":
+                job_status = "completed"
+                steps = [
+                    ResearchJobStep(
+                        name=s, status="completed",
+                        completed_at=char.last_researched,
+                    ).model_dump() for s in step_names
+                ]
+            elif status == "failed":
+                job_status = "failed"
+                err = ""
+                if isinstance(char.research_data, dict):
+                    err = char.research_data.get("error", "Unknown error")
+                steps = [
+                    ResearchJobStep(name=s, status="failed", error=err if s == "save_results" else None).model_dump()
+                    for s in step_names
+                ]
+            elif status == "researching":
+                job_status = "researching"
+                steps = [
+                    ResearchJobStep(name=s, status="pending").model_dump()
+                    for s in step_names
+                ]
+            else:
+                job_status = "queued"
+                steps = [
+                    ResearchJobStep(name=s, status="pending").model_dump()
+                    for s in step_names
+                ]
+
+            fact_count = len(char.fact_bank) if char.fact_bank else 0
+            image_count = img_counts.get(char.id, 0)
+
+            jobs_list.append(ResearchJob(
+                id=f"db-{char.id}",
+                character_id=char.id,
+                character_name=char.name,
+                universe=char.universe or "unknown",
+                status=job_status,
+                steps=steps,
+                started_at=char.last_researched if status in ("completed", "researching") else None,
+                completed_at=char.last_researched if status == "completed" else None,
+                facts_found=fact_count,
+                images_found=image_count,
+                sources_used=char.research_sources or [],
+                depth_score=char.research_depth_score or 0.0,
+            ))
+
+        return jobs_list
 
     async def start_batch_research_async(
         self, universe: Optional[str] = None, limit: int = 24
@@ -1537,54 +1682,157 @@ class CharacterContentService:
             "message": "Cancel requested. Current character will finish, then queue stops.",
         }
 
-    async def _run_research_queue(self):
-        """Process the research queue sequentially with per-step tracking."""
+    async def retry_research_job(self, character_id: str) -> ResearchQueueStatus:
+        """Retry a failed or stuck research job for a specific character."""
         global _research_queue
+
+        # Verify the character exists in the database
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+            char_name = row.name
+            char_universe = row.universe or ""
+            # Reset the character's research status in DB
+            row.research_status = "pending"
+            await session.commit()
+
+        step_names = [
+            "searxng_search", "wiki_scrape", "deep_research",
+            "synthesis", "fact_extraction", "image_sourcing", "save_results",
+        ]
+        fresh_steps = [
+            {"name": s, "status": "pending", "started_at": None,
+             "completed_at": None, "result_summary": None, "error": None}
+            for s in step_names
+        ]
+
+        # Check if a job for this character already exists in the queue
+        existing_job_id = None
+        for job_id, job_data in _research_queue["jobs"].items():
+            if job_data["character_id"] == character_id:
+                existing_job_id = job_id
+                break
+
+        if existing_job_id:
+            # Reset the existing job
+            job = _research_queue["jobs"][existing_job_id]
+            job["status"] = "queued"
+            job["steps"] = fresh_steps
+            job["error"] = None
+            job["started_at"] = None
+            job["completed_at"] = None
+            job["facts_found"] = 0
+            job["images_found"] = 0
+            job["sources_used"] = []
+            job["depth_score"] = 0.0
+            job_id = existing_job_id
+        else:
+            # Create a new job entry
+            job_id = f"rj-{uuid.uuid4().hex[:12]}"
+            job_data = ResearchJob(
+                id=job_id,
+                character_id=character_id,
+                character_name=char_name,
+                universe=char_universe,
+                status=ResearchJobStatus.QUEUED,
+                steps=fresh_steps,
+            ).model_dump()
+            job_data["status"] = "queued"
+            _research_queue["jobs"][job_id] = job_data
+
+        if _research_queue["running"]:
+            # Queue is already running — insert at front of remaining order
+            if job_id in _research_queue["order"]:
+                _research_queue["order"].remove(job_id)
+            # Find the first queued job and insert before it
+            insert_idx = 0
+            for i, oid in enumerate(_research_queue["order"]):
+                j = _research_queue["jobs"].get(oid, {})
+                if j.get("status") == "queued":
+                    insert_idx = i
+                    break
+            else:
+                insert_idx = len(_research_queue["order"])
+            _research_queue["order"].insert(insert_idx, job_id)
+        else:
+            # Queue is not running — set up and start it
+            if job_id not in _research_queue["order"]:
+                _research_queue["order"].append(job_id)
+            _research_queue["running"] = True
+            _research_queue["cancel_requested"] = False
+            _research_queue["started_at"] = datetime.now(timezone.utc)
+            asyncio.create_task(self._run_research_queue())
+
+        logger.info("retry_research_job", character_id=character_id, name=char_name, job_id=job_id)
+        return await self.get_research_queue_status()
+
+    async def _run_research_queue(self):
+        """Process the research queue with concurrent batch processing (3 at a time)."""
+        global _research_queue
+        BATCH_SIZE = 3
         try:
-            for job_id in _research_queue["order"]:
-                # Check cancellation
+            order = list(_research_queue["order"])
+            idx = 0
+            while idx < len(order):
                 if _research_queue["cancel_requested"]:
                     logger.info("research_queue_cancelled")
                     break
 
-                job = _research_queue["jobs"][job_id]
-                job["status"] = "researching"
-                job["started_at"] = datetime.now(timezone.utc).isoformat()
+                # Collect next batch of queued jobs
+                batch_ids = []
+                while idx < len(order) and len(batch_ids) < BATCH_SIZE:
+                    jid = order[idx]
+                    job = _research_queue["jobs"].get(jid)
+                    if job and job["status"] == "queued":
+                        batch_ids.append(jid)
+                    idx += 1
 
-                # Mark character as researching in DB
-                try:
-                    async with get_session() as session:
-                        row = await session.get(CharacterModel, job["character_id"])
-                        if row:
-                            row.research_status = "researching"
-                            await session.commit()
-                except Exception:  # noqa: broad-except - DB status update must not block queue
-                    pass
+                if not batch_ids:
+                    continue
 
-                try:
-                    await self._research_pipeline_tracked(job_id)
-                    job["status"] = "completed"
-                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
-                    logger.info("research_queue_job_done",
-                                character=job["character_name"],
-                                facts=job["facts_found"],
-                                images=job["images_found"])
-                except Exception as e:  # noqa: broad-except - queue must continue on job failure
-                    job["status"] = "failed"
-                    job["error"] = str(e)
-                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
-                    logger.warning("research_queue_job_failed",
-                                   character=job["character_name"], error=str(e))
-                    # Mark character as failed in DB
+                # Start all jobs in the batch concurrently
+                async def _process_one(job_id: str):
+                    job = _research_queue["jobs"][job_id]
+                    job["status"] = "researching"
+                    job["started_at"] = datetime.now(timezone.utc).isoformat()
                     try:
                         async with get_session() as session:
                             row = await session.get(CharacterModel, job["character_id"])
                             if row:
-                                row.research_status = "failed"
-                                row.research_data = {"error": str(e)}
+                                row.research_status = "researching"
                                 await session.commit()
-                    except Exception:  # noqa: broad-except - DB error cleanup must not crash
+                    except (OSError, ValueError, RuntimeError):
                         pass
+
+                    try:
+                        await self._research_pipeline_tracked(job_id)
+                        job["status"] = "completed"
+                        job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        logger.info("research_queue_job_done",
+                                    character=job["character_name"],
+                                    facts=job["facts_found"],
+                                    images=job["images_found"])
+                    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError, json.JSONDecodeError, OSError, RuntimeError) as e:
+                        job["status"] = "failed"
+                        job["error"] = str(e)
+                        job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                        logger.warning("research_queue_job_failed",
+                                       character=job["character_name"], error=str(e))
+                        try:
+                            async with get_session() as session:
+                                row = await session.get(CharacterModel, job["character_id"])
+                                if row:
+                                    row.research_status = "failed"
+                                    row.research_data = {"error": str(e)}
+                                    await session.commit()
+                        except (OSError, ValueError, RuntimeError):
+                            pass
+
+                logger.info("research_queue_batch_start",
+                            batch=[_research_queue["jobs"][jid]["character_name"] for jid in batch_ids],
+                            size=len(batch_ids))
+                await asyncio.gather(*[_process_one(jid) for jid in batch_ids])
 
         finally:
             _research_queue["running"] = False
@@ -1671,7 +1919,7 @@ class CharacterContentService:
                             metadata_=frag.metadata,
                         ))
                     await session.commit()
-            except Exception as e:  # noqa: broad-except - DB fragment save must not block pipeline
+            except (OSError, ValueError, RuntimeError) as e:
                 logger.warning("tracked_research_fragment_save_failed", error=str(e))
 
         # Step 4: LLM synthesis
@@ -1722,6 +1970,9 @@ class CharacterContentService:
                 len(fact_bank) * 1.5
             ))
 
+            # Extract relationship map from research data
+            rel_map = self._extract_relationship_map(research_data)
+
             async with get_session() as session:
                 row = await session.get(CharacterModel, character_id)
                 if row:
@@ -1731,6 +1982,8 @@ class CharacterContentService:
                     row.last_researched = datetime.now(timezone.utc)
                     row.research_sources = list(source_types)
                     row.research_depth_score = depth_score
+                    if rel_map:
+                        row.relationship_map = rel_map
                     if images:
                         row.image_url = images[0].get("url")
                         row.image_urls = [img.get("url") for img in images[:10]]
@@ -1739,8 +1992,8 @@ class CharacterContentService:
             job["sources_used"] = list(source_types)
             job["depth_score"] = depth_score
             _update_step("save_results", "completed",
-                         result_summary=f"Saved with depth score {depth_score:.1f}")
-        except Exception as e:  # noqa: broad-except - DB save is final step, re-raises
+                         result_summary=f"Saved with depth score {depth_score:.1f}, {len(rel_map)} relationships")
+        except (OSError, ValueError, RuntimeError) as e:
             _update_step("save_results", "failed", error=str(e))
             raise  # Re-raise so the job is marked as failed
 
@@ -1798,6 +2051,63 @@ class CharacterContentService:
             "errors": errors,
             "total_candidates": len(chars),
         }
+
+    # ==================================================================
+    # SERIES & MULTI-CHARACTER GENERATION
+    # ==================================================================
+
+    async def generate_series(
+        self,
+        character_id: str,
+        angle: str = "hidden_truths",
+        parts: int = 3,
+        story_template: Optional[str] = None,
+    ) -> List[CharacterCarousel]:
+        """Generate a multi-part carousel series for one character."""
+        series_id = f"series-{uuid.uuid4().hex[:8]}"
+        carousels = []
+
+        for part in range(1, parts + 1):
+            try:
+                carousel = await self.generate_carousel(CarouselCreate(
+                    character_id=character_id,
+                    angle=ContentAngle(angle) if angle in [a.value for a in ContentAngle] else ContentAngle.hidden_truths,
+                    story_template=story_template,
+                    slide_count=6,
+                    series_id=series_id,
+                    series_part=part,
+                ))
+                carousels.append(carousel)
+            except (ValueError, json.JSONDecodeError, TimeoutError, ConnectionError) as e:
+                logger.warning("series_generate_failed", part=part, error=str(e))
+
+        logger.info("series_generated", series_id=series_id, parts=len(carousels))
+        return carousels
+
+    async def generate_multi_character_carousel(
+        self,
+        primary_character_id: str,
+        secondary_character_ids: List[str],
+        angle: str = "vs_comparison",
+        story_template: Optional[str] = None,
+    ) -> CharacterCarousel:
+        """Generate a carousel featuring multiple characters (vs, hidden_connection)."""
+        # Default to multi-character templates
+        if not story_template:
+            template_svc = get_story_template_service()
+            templates = await template_svc.list_templates()
+            multi_templates = [t for t in templates if t.template_type in ("versus_breakdown", "hidden_connection")]
+            if multi_templates:
+                story_template = multi_templates[0].template_type
+
+        carousel = await self.generate_carousel(CarouselCreate(
+            character_id=primary_character_id,
+            angle=ContentAngle(angle) if angle in [a.value for a in ContentAngle] else ContentAngle.vs_comparison,
+            story_template=story_template,
+            slide_count=8,
+            multi_character_ids=secondary_character_ids[:3],
+        ))
+        return carousel
 
     # ==================================================================
     # BATCH OPERATIONS
@@ -2031,7 +2341,11 @@ class CharacterContentService:
     # ==================================================================
 
     async def smart_batch_generate(self, count: int = 12) -> Dict[str, Any]:
-        """Smart batch: prioritizes characters, rotates angles/templates, auto-reviews."""
+        """Smart batch: prioritizes characters, rotates angles/templates, auto-reviews.
+
+        Includes angle diversity enforcement: underused angles get priority,
+        and no more than 3 carousels per angle per batch.
+        """
         characters = await self.list_characters(research_status="completed")
         if not characters:
             return {"generated": 0, "top_scored": [], "needs_work": [], "message": "No researched characters"}
@@ -2054,13 +2368,33 @@ class CharacterContentService:
         templates = await template_svc.list_templates()
         template_types = [t.template_type for t in templates] if templates else [None]
 
-        angles = list(ContentAngle)
+        # Angle diversity: prefer underused angles
+        underused_angles = await self._get_underused_angles(limit=len(ContentAngle))
+        angles = [ContentAngle(a) for a in underused_angles] if underused_angles else list(ContentAngle)
+        angle_usage_this_batch: Dict[str, int] = {}
+        max_per_angle = 3
+
         generated = []
         top_scored = []
         needs_work = []
 
         for idx, (_, char) in enumerate(scored[:count]):
-            angle = angles[idx % len(angles)]
+            # Pick angle with diversity enforcement
+            selected_angle = None
+            for candidate in angles:
+                angle_val = candidate.value if hasattr(candidate, "value") else candidate
+                if angle_usage_this_batch.get(angle_val, 0) < max_per_angle:
+                    selected_angle = candidate
+                    break
+            if selected_angle is None:
+                selected_angle = angles[idx % len(angles)]
+
+            angle = selected_angle
+            angle_val = angle.value if hasattr(angle, "value") else angle
+            angle_usage_this_batch[angle_val] = angle_usage_this_batch.get(angle_val, 0) + 1
+            # Rotate angles for next iteration
+            angles = angles[1:] + angles[:1]
+
             template = template_types[idx % len(template_types)]
             try:
                 carousel = await self.generate_carousel(CarouselCreate(
@@ -2133,6 +2467,161 @@ class CharacterContentService:
             sources.append({"source": src, "fragment_count": stats["fragment_count"], "avg_relevance": avg_rel})
 
         return {"sources": sources, "total_fragments": len(fragments)}
+
+    # ==================================================================
+    # PUBLISHING PIPELINE
+    # ==================================================================
+
+    async def queue_for_publishing(
+        self, carousel_id: str, platform: str = "tiktok", schedule_at: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """Queue carousel for publishing. Must be approved first."""
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                raise ValueError(f"Carousel {carousel_id} not found")
+            if row.status != "approved":
+                raise ValueError(f"Carousel must be approved first (current: {row.status})")
+            row.publish_status = "queued"
+            row.publish_platform = platform
+            await session.commit()
+            return {
+                "carousel_id": carousel_id,
+                "publish_status": "queued",
+                "publish_platform": platform,
+                "published_at": None,
+                "publish_url": row.publish_url,
+                "download_urls": row.download_urls,
+            }
+
+    async def publish_carousel(self, carousel_id: str) -> Dict[str, Any]:
+        """Render and export carousel for publishing."""
+        from app.services.carousel_renderer_service import get_carousel_renderer
+
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                raise ValueError(f"Carousel {carousel_id} not found")
+            if row.publish_status != "queued":
+                raise ValueError("Carousel not queued for publishing")
+            row.publish_status = "publishing"
+            await session.commit()
+
+            slides = row.slides or []
+            text_overlay_specs = row.text_overlay_specs or []
+            character_id = row.character_id
+
+        # Get character image for rendering
+        char = await self.get_character(character_id)
+        image_url = char.image_url if char else None
+        image_urls = char.image_urls if char else []
+
+        # Render all slides
+        renderer = get_carousel_renderer()
+        render_result = await renderer.render_carousel(
+            carousel_id=carousel_id,
+            slides=slides,
+            text_overlay_specs=text_overlay_specs,
+            character_image_url=image_url,
+            character_image_urls=image_urls,
+        )
+        rendered_paths = render_result.get("paths", [])
+
+        # Mark published
+        now = datetime.now(timezone.utc)
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if row:
+                row.publish_status = "published"
+                row.published_at = now
+                row.download_urls = rendered_paths
+                row.status = "published"
+                row.watermark_applied = True
+                await session.commit()
+
+        return {
+            "carousel_id": carousel_id,
+            "publish_status": "published",
+            "download_urls": rendered_paths,
+            "published_at": now.isoformat(),
+            "publish_platform": row.publish_platform if row else None,
+            "publish_url": None,
+        }
+
+    async def get_download_urls(self, carousel_id: str) -> List[str]:
+        """Get rendered slide paths for manual download."""
+        from app.services.carousel_renderer_service import get_carousel_renderer
+        renderer = get_carousel_renderer()
+        return await renderer.list_rendered(carousel_id)
+
+    async def generate_caption_variants(self, carousel_id: str, count: int = 3) -> List[str]:
+        """Generate A/B caption variants for a carousel."""
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                raise ValueError("Carousel not found")
+            character_name = ""
+            char = await session.get(CharacterModel, row.character_id)
+            if char:
+                character_name = char.name
+            hook_text = row.hook_text or ""
+            angle = row.angle or ""
+
+        variants = []
+        for i in range(count):
+            prompt = (
+                f"Write a TikTok caption variant #{i+1} for a carousel about {character_name}. "
+                f"Hook: {hook_text}. Angle: {angle}. Keep under 150 chars. Include 3 hashtags. "
+                f"Return ONLY the caption text, no explanation.\n\n/no_think"
+            )
+            try:
+                response = await self._ollama.chat(
+                    prompt=prompt,
+                    system="You are a viral TikTok caption writer. Return only the caption.",
+                    model=RESEARCH_LLM_MODEL,
+                    temperature=0.9,
+                    num_predict=256,
+                    timeout=60,
+                )
+                text = response.strip() if isinstance(response, str) else str(response)
+                variants.append(text)
+            except (ValueError, TimeoutError, ConnectionError) as e:
+                logger.debug("caption_variant_failed", variant=i, error=str(e))
+
+        return variants
+
+    async def export_for_platform(self, carousel_id: str, platform: str) -> List[str]:
+        """Export carousel in platform-specific format.
+
+        Platform dimension targets:
+        - tiktok: 1080x1350
+        - instagram: 1080x1080
+        - youtube: 1280x720
+
+        Currently returns rendered slides as-is (TikTok format is default).
+        """
+        return await self.get_download_urls(carousel_id)
+
+    # ==================================================================
+    # ANGLE DIVERSITY HELPERS
+    # ==================================================================
+
+    async def _get_underused_angles(self, limit: int = 5) -> List[str]:
+        """Return angles with fewer carousels, useful for diversifying content."""
+        all_angles = [a.value for a in ContentAngle]
+        async with get_session() as session:
+            angle_counts = await session.execute(
+                select(
+                    CharacterCarouselModel.angle,
+                    sql_func.count().label("cnt"),
+                )
+                .group_by(CharacterCarouselModel.angle)
+            )
+            counts = {r[0]: r[1] for r in angle_counts.all()}
+
+        # Return angles sorted by usage count (ascending), least used first
+        sorted_angles = sorted(all_angles, key=lambda a: counts.get(a, 0))
+        return sorted_angles[:limit]
 
 
 @lru_cache()

@@ -4,11 +4,12 @@ REST API for managing character profiles, research pipelines, carousel generatio
 AI review, and human approval for TikTok character development posts.
 """
 
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from typing import List, Optional, Dict, Any
 import structlog
 from pydantic import BaseModel
 
+from app.infrastructure.auth import require_auth
 from app.models.character_content import (
     Character, CharacterCreate, CharacterUpdate,
     CharacterCarousel, CarouselCreate, CarouselUpdate,
@@ -20,6 +21,7 @@ from app.models.character_content import (
     MusicTrack, MusicTrackCreate,
     StoryTemplate, StoryTemplateCreate,
     ResearchQueueStatus,
+    PublishRequest, PublishStatus,
 )
 from app.services.character_content_service import get_character_content_service
 from app.services.content_inspiration_service import get_content_inspiration_service
@@ -139,7 +141,7 @@ class BatchResearchRequest(BaseModel):
     limit: int = 24
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger()
 
 
@@ -159,6 +161,13 @@ async def get_review_queue(limit: int = Query(50, ge=1, le=200)):
     """Get carousels pending human review."""
     service = get_character_content_service()
     return await service.list_review_queue(limit=limit)
+
+
+@router.post("/backfill-depth-scores", response_model=Dict[str, Any])
+async def backfill_depth_scores():
+    """Recalculate depth_score and relationship_map for all researched characters."""
+    service = get_character_content_service()
+    return await service.backfill_depth_scores()
 
 
 @router.post("/seed", response_model=List[Character])
@@ -209,6 +218,17 @@ async def cancel_research_queue():
     return await service.cancel_research_queue()
 
 
+@router.post("/research-queue/retry/{character_id}", response_model=ResearchQueueStatus)
+async def retry_research_job(character_id: str):
+    """Retry a failed or stuck research job for a specific character."""
+    service = get_character_content_service()
+    try:
+        result = await service.retry_research_job(character_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ============================================
 # SMART BATCH & REVIEW
 # ============================================
@@ -228,8 +248,54 @@ async def get_smart_review_queue(limit: int = Query(50, ge=1, le=200)):
 
 
 # ============================================
-# INSPIRATIONS
+# SERIES & MULTI-CHARACTER
 # ============================================
+
+class SeriesRequest(BaseModel):
+    character_id: str
+    angle: str = "hidden_truths"
+    parts: int = 3
+    story_template: Optional[str] = None
+
+class MultiCharRequest(BaseModel):
+    primary_character_id: str
+    secondary_character_ids: List[str]
+    angle: str = "vs_comparison"
+    story_template: Optional[str] = None
+
+@router.post("/generate-series", response_model=List[CharacterCarousel])
+async def generate_series(data: SeriesRequest):
+    """Generate a multi-part carousel series for one character."""
+    service = get_character_content_service()
+    return await service.generate_series(
+        character_id=data.character_id,
+        angle=data.angle,
+        parts=data.parts,
+        story_template=data.story_template,
+    )
+
+@router.post("/generate-multi-character", response_model=CharacterCarousel)
+async def generate_multi_character(data: MultiCharRequest):
+    """Generate a carousel featuring multiple characters (vs, hidden_connection)."""
+    service = get_character_content_service()
+    return await service.generate_multi_character_carousel(
+        primary_character_id=data.primary_character_id,
+        secondary_character_ids=data.secondary_character_ids,
+        angle=data.angle,
+        story_template=data.story_template,
+    )
+
+
+# ============================================
+# TRENDING & INSPIRATIONS
+# ============================================
+
+@router.get("/trending", response_model=List[Dict[str, Any]])
+async def get_trending_topics(limit: int = Query(10, ge=1, le=50)):
+    """Get trending topics for content inspiration."""
+    svc = get_content_inspiration_service()
+    return await svc.get_trending_topics(limit)
+
 
 @router.post("/inspirations/discover", response_model=List[ContentInspiration])
 async def discover_inspirations(data: DiscoverInspirationRequest = Body(default=DiscoverInspirationRequest())):
@@ -442,6 +508,54 @@ async def get_rendered_slides(carousel_id: str):
     if not paths:
         raise HTTPException(status_code=404, detail="No rendered slides found. Call POST /render first.")
     return {"carousel_id": carousel_id, "slides": paths, "count": len(paths)}
+
+
+# ============================================
+# PUBLISHING PIPELINE
+# ============================================
+
+@router.post("/carousels/{carousel_id}/queue-publish", response_model=PublishStatus)
+async def queue_for_publishing(carousel_id: str, req: PublishRequest = Body(default=PublishRequest())):
+    """Queue an approved carousel for publishing."""
+    svc = get_character_content_service()
+    try:
+        return await svc.queue_for_publishing(carousel_id, req.platform, req.schedule_at)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/carousels/{carousel_id}/publish", response_model=PublishStatus)
+async def publish_carousel(carousel_id: str):
+    """Publish a queued carousel (renders + exports)."""
+    svc = get_character_content_service()
+    try:
+        return await svc.publish_carousel(carousel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/carousels/{carousel_id}/download", response_model=List[str])
+async def get_download_urls(carousel_id: str):
+    """Get rendered slide download URLs for manual upload."""
+    svc = get_character_content_service()
+    return await svc.get_download_urls(carousel_id)
+
+
+@router.post("/carousels/{carousel_id}/caption-variants", response_model=List[str])
+async def generate_caption_variants(carousel_id: str, count: int = Query(3, ge=1, le=10)):
+    """Generate A/B caption variants for a carousel."""
+    svc = get_character_content_service()
+    try:
+        return await svc.generate_caption_variants(carousel_id, count)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/carousels/{carousel_id}/export/{platform}", response_model=List[str])
+async def export_for_platform(carousel_id: str, platform: str):
+    """Export carousel in platform-specific format."""
+    svc = get_character_content_service()
+    return await svc.export_for_platform(carousel_id, platform)
 
 
 # ============================================

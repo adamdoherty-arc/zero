@@ -60,6 +60,45 @@ class ContentInspirationService:
         self._ollama = OllamaClient()
         self._timeout = aiohttp.ClientTimeout(total=20)
 
+    async def get_trending_topics(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get trending topics relevant to character content from SearXNG."""
+        topics: List[Dict[str, Any]] = []
+        queries = [
+            "trending movies 2026",
+            "new Marvel news",
+            "upcoming DC movies",
+            "anime trending",
+            "viral character facts TikTok",
+        ]
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            for q in queries:
+                try:
+                    params = {
+                        "q": q,
+                        "format": "json",
+                        "engines": "google",
+                        "categories": "general",
+                    }
+                    async with session.get(
+                        f"{self._searxng_url}/search", params=params
+                    ) as resp:
+                        if resp.status != 200:
+                            continue
+                        data = await resp.json()
+
+                    for r in data.get("results", [])[:3]:
+                        topics.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("url", ""),
+                            "query": q,
+                            "snippet": r.get("content", "")[:200],
+                        })
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError) as e:
+                    logger.debug("trending_topic_search_failed", query=q, error=str(e))
+
+        logger.info("trending_topics_fetched", count=len(topics))
+        return topics[:limit]
+
     async def discover_carousel_creators(
         self, niche: str = "character facts"
     ) -> List[ContentInspiration]:
@@ -357,7 +396,7 @@ class ContentInspirationService:
                 session.add(row)
                 await session.flush()
             return self._row_to_model(row)
-        except Exception as e:  # noqa: broad-except - DB save with fallback to None
+        except (OSError, ValueError, RuntimeError) as e:
             logger.warning("save_inspiration_error", error=str(e))
             return None
 

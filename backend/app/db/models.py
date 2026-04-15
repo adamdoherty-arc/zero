@@ -868,6 +868,18 @@ class ContentQueueModel(Base):
     caption: Mapped[Optional[str]] = mapped_column(Text)
     hashtags: Mapped[Optional[list]] = mapped_column(JSONB)
 
+    # Content format & video
+    video_url: Mapped[Optional[str]] = mapped_column(Text)
+    content_format: Mapped[str] = mapped_column(String(20), default="video")
+    carousel_data: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    # Manual posting & performance tracking
+    manually_published_url: Mapped[Optional[str]] = mapped_column(Text)
+    performance_views: Mapped[Optional[int]] = mapped_column(Integer)
+    performance_likes: Mapped[Optional[int]] = mapped_column(Integer)
+    performance_comments: Mapped[Optional[int]] = mapped_column(Integer)
+    performance_shares: Mapped[Optional[int]] = mapped_column(Integer)
+
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -1419,3 +1431,484 @@ class JournalEntryModel(Base):
     tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# AI Company: Agent Roles
+# ---------------------------------------------------------------------------
+
+class AgentRoleModel(Base):
+    __tablename__ = "agent_roles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    capabilities: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    llm_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    llm_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    llm_temperature: Mapped[float] = mapped_column(Float, default=0.7)
+    execution_llm_provider: Mapped[Optional[str]] = mapped_column(String(64))
+    execution_llm_model: Mapped[Optional[str]] = mapped_column(String(128))
+    delegation_rules: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# AI Company: Agent Tasks
+# ---------------------------------------------------------------------------
+
+class AgentTaskModel(Base):
+    __tablename__ = "agent_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    project_id: Mapped[Optional[str]] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    assigned_role: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("agent_roles.id", ondelete="SET NULL"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=3)
+    dependencies: Mapped[Optional[list]] = mapped_column(ARRAY(String(64)), default=[])
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    result: Mapped[Optional[dict]] = mapped_column(JSONB)
+    parent_task_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("idx_agent_tasks_created", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI Company: Experiments
+# ---------------------------------------------------------------------------
+
+class ExperimentModel(Base):
+    __tablename__ = "experiments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    methodology: Mapped[Optional[str]] = mapped_column(Text)
+    experiment_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="designed", index=True)
+    parameters: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    metrics: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    results: Mapped[Optional[dict]] = mapped_column(JSONB)
+    conclusion: Mapped[Optional[str]] = mapped_column(Text)
+    linked_idea_id: Mapped[Optional[str]] = mapped_column(String(64))
+    linked_research_id: Mapped[Optional[str]] = mapped_column(String(64))
+    created_by_role: Mapped[Optional[str]] = mapped_column(String(64))
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# AI Company: Council Decisions
+# ---------------------------------------------------------------------------
+
+class CouncilDecisionModel(Base):
+    __tablename__ = "council_decisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    proposer_role: Mapped[Optional[str]] = mapped_column(String(64))
+    rounds: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    votes: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    decision: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    confidence_score: Mapped[Optional[float]] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# AI Company: Deep Research Reports
+# ---------------------------------------------------------------------------
+
+class DeepResearchReportModel(Base):
+    __tablename__ = "deep_research_reports"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    outline: Mapped[Optional[dict]] = mapped_column(JSONB)
+    perspectives: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    sources: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    sections: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    report_markdown: Mapped[Optional[str]] = mapped_column(Text)
+    executive_summary: Mapped[Optional[str]] = mapped_column(Text)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Characters
+# ---------------------------------------------------------------------------
+
+class CharacterModel(Base):
+    __tablename__ = "characters"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    universe: Mapped[str] = mapped_column(String(50), default="other", index=True)
+    franchise: Mapped[Optional[str]] = mapped_column(String(200))
+    real_name: Mapped[Optional[str]] = mapped_column(String(200))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    image_url: Mapped[Optional[str]] = mapped_column(Text)
+    image_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    research_data: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    research_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    fact_bank: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    posts_created: Mapped[int] = mapped_column(Integer, default=0)
+    total_views: Mapped[int] = mapped_column(Integer, default=0)
+    total_likes: Mapped[int] = mapped_column(Integer, default=0)
+    avg_engagement: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    last_researched: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Phase 019 additions
+    research_sources: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    relationship_map: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    research_depth_score: Mapped[float] = mapped_column(Float, default=0.0)
+    content_themes: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
+    __table_args__ = (
+        Index("idx_characters_universe_status", "universe", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Carousels
+# ---------------------------------------------------------------------------
+
+class CharacterCarouselModel(Base):
+    __tablename__ = "character_carousels"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    angle: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(300))
+    hook_text: Mapped[Optional[str]] = mapped_column(Text)
+    slides: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    music_mood: Mapped[Optional[str]] = mapped_column(String(50))
+    ai_review: Mapped[Optional[dict]] = mapped_column(JSONB)
+    human_notes: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+    content_queue_id: Mapped[Optional[str]] = mapped_column(String(64))
+    publish_url: Mapped[Optional[str]] = mapped_column(Text)
+    views: Mapped[Optional[int]] = mapped_column(Integer)
+    likes: Mapped[Optional[int]] = mapped_column(Integer)
+    comments: Mapped[Optional[int]] = mapped_column(Integer)
+    shares: Mapped[Optional[int]] = mapped_column(Integer)
+    saves: Mapped[Optional[int]] = mapped_column(Integer)
+    engagement_rate: Mapped[Optional[float]] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Phase 019 additions
+    story_template: Mapped[Optional[str]] = mapped_column(String(100))
+    series_id: Mapped[Optional[str]] = mapped_column(String(64))
+    series_part: Mapped[Optional[int]] = mapped_column(Integer)
+    multi_character_ids: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    music_track: Mapped[Optional[dict]] = mapped_column(JSONB)
+    text_overlay_specs: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    brain_context_used: Mapped[Optional[dict]] = mapped_column(JSONB)
+    generation_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+
+    # Publishing pipeline fields
+    publish_status: Mapped[Optional[str]] = mapped_column(String(30), default=None, index=True)  # queued, publishing, published, failed
+    publish_platform: Mapped[Optional[str]] = mapped_column(String(50), default=None)  # tiktok, instagram, youtube
+    download_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=None)  # rendered slide URLs for manual download
+    watermark_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("idx_carousel_character_status", "character_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Sourced Images
+# ---------------------------------------------------------------------------
+
+class CharacterImageModel(Base):
+    __tablename__ = "character_images"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+    query_used: Mapped[Optional[str]] = mapped_column(Text)
+    width: Mapped[Optional[int]] = mapped_column(Integer)
+    height: Mapped[Optional[int]] = mapped_column(Integer)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Research Fragments
+# ---------------------------------------------------------------------------
+
+class CharacterResearchFragmentModel(Base):
+    __tablename__ = "character_research_fragments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text)
+    relevance_score: Mapped[float] = mapped_column(Float, default=0.5)
+    fragment_type: Mapped[str] = mapped_column(String(50), index=True)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Cross-Character Relationships
+# ---------------------------------------------------------------------------
+
+class CharacterRelationshipModel(Base):
+    __tablename__ = "character_relationships"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_a_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    character_b_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    relationship_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    strength: Mapped[float] = mapped_column(Float, default=0.5)
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_char_rel_pair", "character_a_id", "character_b_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Content Inspirations (Viral Carousel References)
+# ---------------------------------------------------------------------------
+
+class ContentInspirationModel(Base):
+    __tablename__ = "content_inspirations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    creator_handle: Mapped[Optional[str]] = mapped_column(String(200))
+    content_type: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    hook_text: Mapped[Optional[str]] = mapped_column(Text)
+    slide_count: Mapped[Optional[int]] = mapped_column(Integer)
+    structure_analysis: Mapped[Optional[dict]] = mapped_column(JSONB)
+    engagement_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    patterns_extracted: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Music Tracks Library
+# ---------------------------------------------------------------------------
+
+class MusicTrackModel(Base):
+    __tablename__ = "music_tracks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    artist: Mapped[Optional[str]] = mapped_column(String(200))
+    mood: Mapped[str] = mapped_column(String(50), index=True)
+    energy_level: Mapped[Optional[str]] = mapped_column(String(20))
+    genre: Mapped[Optional[str]] = mapped_column(String(100))
+    tiktok_sound_id: Mapped[Optional[str]] = mapped_column(String(100))
+    tiktok_sound_url: Mapped[Optional[str]] = mapped_column(Text)
+    is_trending: Mapped[bool] = mapped_column(Boolean, default=False)
+    trending_score: Mapped[float] = mapped_column(Float, default=0.0)
+    use_count: Mapped[int] = mapped_column(Integer, default=0)
+    avg_engagement: Mapped[float] = mapped_column(Float, default=0.0)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_checked: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Story Templates (Carousel Generation Templates)
+# ---------------------------------------------------------------------------
+
+class StoryTemplateModel(Base):
+    __tablename__ = "story_templates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    template_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    slide_structure: Mapped[list] = mapped_column(JSONB, nullable=False)
+    prompt_template: Mapped[str] = mapped_column(Text, nullable=False)
+    example_hook: Mapped[Optional[str]] = mapped_column(Text)
+    suitable_angles: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    suitable_universes: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    times_used: Mapped[int] = mapped_column(Integer, default=0)
+    avg_score: Mapped[float] = mapped_column(Float, default=0.0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Episodic Memories
+# ---------------------------------------------------------------------------
+
+class EpisodicMemoryModel(Base):
+    __tablename__ = "episodic_memories"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    namespace: Mapped[str] = mapped_column(String(50), nullable=False, default="general", index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    source_id: Mapped[Optional[str]] = mapped_column(String(64))
+    importance: Mapped[float] = mapped_column(Float, default=50.0)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    embedding = mapped_column(Vector(768))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_episodic_importance", "importance"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Outcome Records
+# ---------------------------------------------------------------------------
+
+class BrainOutcomeRecordModel(Base):
+    __tablename__ = "brain_outcome_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    domain: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    action_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    action_id: Mapped[Optional[str]] = mapped_column(String(64))
+    strategy_used: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    predicted_score: Mapped[Optional[float]] = mapped_column(Float)
+    actual_score: Mapped[Optional[float]] = mapped_column(Float)
+    metrics: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    learnings: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Prompt Variants
+# ---------------------------------------------------------------------------
+
+class PromptVariantModel(Base):
+    __tablename__ = "prompt_variants"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    variant_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    prompt_template: Mapped[str] = mapped_column(Text, nullable=False)
+    parameters: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    success_count: Mapped[int] = mapped_column(Integer, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_uses: Mapped[int] = mapped_column(Integer, default=0)
+    avg_score: Mapped[float] = mapped_column(Float, default=50.0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_baseline: Mapped[bool] = mapped_column(Boolean, default=False)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(64))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("idx_prompt_score", "avg_score"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Benchmark Scores
+# ---------------------------------------------------------------------------
+
+class BenchmarkScoreModel(Base):
+    __tablename__ = "benchmark_scores"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    dimension: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    computed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Benchmark History
+# ---------------------------------------------------------------------------
+
+class BenchmarkHistoryModel(Base):
+    __tablename__ = "benchmark_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    overall_score: Mapped[float] = mapped_column(Float, nullable=False)
+    dimension_scores: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    weakest_dimension: Mapped[Optional[str]] = mapped_column(String(50))
+    improvement_action: Mapped[Optional[str]] = mapped_column(Text)
+    snapshot_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Learning Cycles
+# ---------------------------------------------------------------------------
+
+class LearningCycleModel(Base):
+    __tablename__ = "learning_cycles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cycle_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    input_data: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    results: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    improvements: Mapped[Optional[dict]] = mapped_column(JSONB, default=[])
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Content Experiments
+# ---------------------------------------------------------------------------
+
+class ContentExperimentModel(Base):
+    __tablename__ = "content_experiments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    experiment_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    control_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    variant_config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    sample_size_target: Mapped[int] = mapped_column(Integer, default=10)
+    control_results: Mapped[Optional[dict]] = mapped_column(JSONB, default=[])
+    variant_results: Mapped[Optional[dict]] = mapped_column(JSONB, default=[])
+    conclusion: Mapped[Optional[str]] = mapped_column(Text)
+    winner: Mapped[Optional[str]] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

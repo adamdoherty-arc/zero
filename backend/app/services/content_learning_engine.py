@@ -92,6 +92,43 @@ class ContentLearningEngine:
             logger.error("content_outcome_processing_failed", error=str(e))
             return {"processed": 0, "error": str(e)}
 
+    async def register_prompt_evolution(
+        self, carousel_id: str, original_prompt: str, ai_score: float
+    ) -> Dict[str, Any]:
+        """Register a carousel's prompt for evolution tracking.
+
+        High-scoring prompts (>8.0) get marked as 'winning' templates.
+        Low-scoring prompts (<5.0) get flagged for revision.
+        """
+        category = (
+            "winning" if ai_score >= 8.0
+            else "needs_revision" if ai_score < 5.0
+            else "neutral"
+        )
+        logger.info(
+            "prompt_evolution_registered",
+            carousel_id=carousel_id,
+            score=ai_score,
+            category=category,
+        )
+
+        # Store as episodic memory if winning
+        if category == "winning":
+            try:
+                from app.services.episodic_memory_service import get_episodic_memory_service
+                memory_svc = get_episodic_memory_service()
+                await memory_svc.store_direct(
+                    content=f"Winning carousel prompt (score={ai_score:.1f}): {original_prompt[:500]}",
+                    source_type="prompt_evolution",
+                    namespace="content",
+                    importance=70,
+                    tags=["winning_prompt", "carousel", f"score_{int(ai_score)}"],
+                )
+            except (ValueError, KeyError, TypeError, ImportError) as e:
+                logger.debug("prompt_evolution_memory_failed", error=str(e))
+
+        return {"carousel_id": carousel_id, "category": category, "score": ai_score}
+
     async def get_product_performance_insights(self) -> Dict[str, Any]:
         """Which product categories perform best? Which template types?"""
         try:

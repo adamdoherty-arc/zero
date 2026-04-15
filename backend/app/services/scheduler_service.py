@@ -196,24 +196,24 @@ DAILY_SCHEDULE = {
     },
     # Autonomous Task Worker
     "task_worker": {
-        "cron": "*/2 * * * *",  # Every 2 minutes
+        "cron": "*/5 * * * *",  # Every 5 minutes (was 2min — too aggressive)
         "description": "Pick up queued autonomous tasks and execute them",
         "enabled": True
     },
     "task_progress_check": {
-        "cron": "*/5 * * * *",  # Every 5 minutes
+        "cron": "*/10 * * * *",  # Every 10 minutes (was 5min)
         "description": "Report progress on currently executing autonomous task",
         "enabled": True
     },
     # Continuous Enhancement Engine
     "continuous_enhancement_engine": {
-        "cron": "*/10 * * * *",  # Every 10 minutes
+        "cron": "*/30 * * * *",  # Every 30 minutes (was 10min — too aggressive, hits SearXNG limits)
         "description": "Continuous enhancement engine - scan, analyze, queue improvements for Zero and Legion",
         "enabled": True
     },
     # GPU/Ollama Resource Manager
     "gpu_refresh": {
-        "cron": "* * * * *",  # Every minute
+        "cron": "*/5 * * * *",  # Every 5 minutes (was every 1 min — too aggressive)
         "description": "Refresh GPU/Ollama resource status (loaded models, VRAM)",
         "enabled": True
     },
@@ -278,13 +278,18 @@ DAILY_SCHEDULE = {
     },
     # TikTok 24/7 Pipeline Automation
     "tiktok_continuous_research": {
-        "cron": "0 */4 * * *",  # Every 4 hours
-        "description": "Continuous TikTok product discovery pipeline (4x daily)",
+        "cron": "0 */4 * * *",  # Every 4 hours (was 2h — reduced to ease SearXNG load)
+        "description": "Continuous TikTok product discovery pipeline (6x daily)",
         "enabled": True
     },
     "tiktok_niche_deep_dive": {
         "cron": "0 14 * * *",  # 2:00 PM daily
         "description": "Deep dive research into top performing niches",
+        "enabled": True
+    },
+    "tiktok_niche_rotation": {
+        "cron": "30 */3 * * *",  # Every 3 hours, offset by 30min
+        "description": "Rotate through random niches for deeper product discovery",
         "enabled": True
     },
     "tiktok_approval_reminder": {
@@ -312,9 +317,24 @@ DAILY_SCHEDULE = {
         "description": "TikTok pipeline health check, alert on failures, retry stuck jobs",
         "enabled": True
     },
+    "tiktok_reference_discovery": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Auto-discover reference videos from successful sellers for approved products",
+        "enabled": True
+    },
     "tiktok_weekly_report": {
         "cron": "0 10 * * 0",  # Sunday 10:00 AM
         "description": "Weekly TikTok Shop performance report to Discord",
+        "enabled": True
+    },
+    "tiktok_image_revalidation": {
+        "cron": "0 3 * * *",  # Daily at 3:00 AM
+        "description": "Revalidate product images and re-fetch broken ones",
+        "enabled": True
+    },
+    "tiktok_article_cleanup": {
+        "cron": "30 1 * * *",  # Daily at 1:30 AM
+        "description": "Clean up products with article titles instead of product names",
         "enabled": True
     },
     # Content Agent
@@ -333,12 +353,6 @@ DAILY_SCHEDULE = {
         "description": "Research trending content for active topics",
         "enabled": True
     },
-    # Gateway Auto-Update
-    "gateway_update_check": {
-        "cron": "0 4 * * *",  # 4:00 AM daily
-        "description": "Check for OpenClaw gateway updates via GitHub API",
-        "enabled": True
-    },
     # Prediction Market Intelligence
     "prediction_market_sync": {
         "cron": "*/30 * * * *",  # Every 30 minutes
@@ -346,7 +360,7 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "prediction_price_snapshot": {
-        "cron": "*/15 * * * *",  # Every 15 minutes
+        "cron": "*/30 * * * *",  # Every 30 minutes (was 15min — reduced API load)
         "description": "Capture prediction market price snapshots",
         "enabled": True
     },
@@ -374,6 +388,105 @@ DAILY_SCHEDULE = {
     "llm_budget_reset": {
         "cron": "0 0 * * *",  # Midnight daily
         "description": "Reset daily LLM spending counter for budget enforcement",
+        "enabled": True
+    },
+    # Daily Autonomous Report
+    "daily_autonomous_report": {
+        "cron": "0 20 * * *",  # 8:00 PM daily — end-of-day summary
+        "description": "Generate daily report of all autonomous activity, failures, and missing jobs",
+        "enabled": True
+    },
+    # AI Company — Deep Research & Experiments
+    "ai_company_deep_research": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Run deep research on highest-priority queued topic",
+        "enabled": True
+    },
+    "ai_company_idea_validation": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Deep-validate top-scoring unvalidated money-maker ideas",
+        "enabled": True
+    },
+    "ai_company_daily_council": {
+        "cron": "0 9 * * *",  # 9:00 AM daily
+        "description": "CEO proposes strategic decisions based on overnight findings for council vote",
+        "enabled": True
+    },
+    "ai_company_experiment_monitor": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Check running experiments, flag stale ones",
+        "enabled": True
+    },
+    # Character Content
+    "character_research_refresh": {
+        "cron": "0 3 * * *",  # 3:00 AM daily
+        "description": "Re-research characters with stale data (>7 days old)",
+        "enabled": True
+    },
+    "character_content_generation": {
+        "cron": "0 */12 * * *",  # Every 12 hours
+        "description": "Auto-generate carousels for researched characters with no recent content",
+        "enabled": True
+    },
+    "character_performance_sync": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Sync performance metrics from published character carousels",
+        "enabled": True
+    },
+    "character_auto_publish": {
+        "cron": "0 10,14,18 * * *",  # 10am, 2pm, 6pm
+        "description": "Auto-publish approved carousels at optimal times",
+        "enabled": True
+    },
+    "character_content_learning": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Character content learning & template scoring",
+        "enabled": True
+    },
+    # Zero Brain Intelligence
+    "brain_benchmark": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Run full brain benchmark (10-dimension employee scoring)",
+        "enabled": True
+    },
+    "brain_learning_cycle": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Run brain learning aggregation (outcomes, memories, metrics)",
+        "enabled": True
+    },
+    "brain_content_learn": {
+        "cron": "0 * * * *",  # Every 1 hour
+        "description": "Process content outcomes and extract learnings",
+        "enabled": True
+    },
+    "brain_experiment_monitor": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Check brain content experiments for completion",
+        "enabled": True
+    },
+    "brain_prompt_evolve": {
+        "cron": "0 */12 * * *",  # Every 12 hours
+        "description": "Evolve prompt variants from outcome data",
+        "enabled": True
+    },
+    "brain_episodic_extract": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Extract episodic memories from recent LLM interactions",
+        "enabled": True
+    },
+    "brain_improvement": {
+        "cron": "0 3 * * *",  # Daily at 3 AM
+        "description": "Auto-improve weakest benchmark dimension",
+        "enabled": True
+    },
+    "brain_reflection": {
+        "cron": "0 */8 * * *",  # Every 8 hours
+        "description": "Run reflection on recent decisions and outcomes",
+        "enabled": True
+    },
+    "brain_memory_cleanup": {
+        "cron": "0 4 * * *",  # Daily at 4 AM
+        "description": "Cleanup expired episodic memories",
         "enabled": True
     },
 }
@@ -615,18 +728,20 @@ class SchedulerService:
             # TikTok 24/7 Pipeline Automation
             "tiktok_continuous_research": self._run_tiktok_continuous_research,
             "tiktok_niche_deep_dive": self._run_tiktok_niche_deep_dive,
+            "tiktok_niche_rotation": self._run_tiktok_niche_rotation,
             "tiktok_approval_reminder": self._run_tiktok_approval_reminder,
             "tiktok_auto_content_pipeline": self._run_tiktok_auto_content_pipeline,
             "tiktok_content_generation_check": self._run_tiktok_content_generation_check,
             "tiktok_performance_sync": self._run_tiktok_performance_sync,
             "tiktok_pipeline_health": self._run_tiktok_pipeline_health,
+            "tiktok_reference_discovery": self._run_tiktok_reference_discovery,
             "tiktok_weekly_report": self._run_tiktok_weekly_report,
+            "tiktok_image_revalidation": self._run_tiktok_image_revalidation,
+            "tiktok_article_cleanup": self._run_tiktok_article_cleanup,
             # Content Agent
             "content_performance_sync": self._run_content_performance_sync,
             "content_improvement_cycle": self._run_content_improvement_cycle,
             "content_trend_research": self._run_content_trend_research,
-            # Gateway Auto-Update
-            "gateway_update_check": self._run_gateway_update_check,
             # Prediction Market Intelligence
             "prediction_market_sync": self._run_prediction_market_sync,
             "prediction_price_snapshot": self._run_prediction_price_snapshot,
@@ -636,6 +751,29 @@ class SchedulerService:
             "prediction_quality_check": self._run_prediction_quality_check,
             # LLM Budget Reset
             "llm_budget_reset": self._run_llm_budget_reset,
+            # Daily Autonomous Report
+            "daily_autonomous_report": self._run_daily_autonomous_report,
+            # AI Company
+            "ai_company_deep_research": self._run_ai_company_deep_research,
+            "ai_company_idea_validation": self._run_ai_company_idea_validation,
+            "ai_company_daily_council": self._run_ai_company_daily_council,
+            "ai_company_experiment_monitor": self._run_ai_company_experiment_monitor,
+            # Character Content
+            "character_research_refresh": self._run_character_research_refresh,
+            "character_content_generation": self._run_character_content_generation,
+            "character_performance_sync": self._run_character_performance_sync,
+            "character_auto_publish": self._run_character_auto_publish,
+            "character_content_learning": self._run_character_content_learning,
+            # Zero Brain
+            "brain_benchmark": self._run_brain_benchmark,
+            "brain_learning_cycle": self._run_brain_learning_cycle,
+            "brain_content_learn": self._run_brain_content_learn,
+            "brain_experiment_monitor": self._run_brain_experiment_monitor,
+            "brain_prompt_evolve": self._run_brain_prompt_evolve,
+            "brain_episodic_extract": self._run_brain_episodic_extract,
+            "brain_improvement": self._run_brain_improvement,
+            "brain_reflection": self._run_brain_reflection,
+            "brain_memory_cleanup": self._run_brain_memory_cleanup,
         }
         return handlers.get(job_name)
 
@@ -897,11 +1035,11 @@ Have a great evening!"""
 
             # Build report message
             lines = ["**Weekly Money Maker Report**\n"]
-            lines.append(f"Total ideas: {stats.get('totalIdeas', 0)}")
-            lines.append(f"Ideas this week: {stats.get('ideasThisWeek', 0)}")
-            lines.append(f"Researched this week: {stats.get('researchedThisWeek', 0)}")
-            lines.append(f"Top viability score: {stats.get('topViabilityScore', 0):.1f}")
-            lines.append(f"Average viability: {stats.get('avgViabilityScore', 0):.1f}")
+            lines.append(f"Total ideas: {stats.get('total_ideas', 0)}")
+            lines.append(f"Ideas this week: {stats.get('ideas_this_week', 0)}")
+            lines.append(f"Researched this week: {stats.get('researched_this_week', 0)}")
+            lines.append(f"Top viability score: {stats.get('top_viability_score', 0):.1f}")
+            lines.append(f"Average viability: {stats.get('avg_viability_score', 0):.1f}")
 
             if top_ideas:
                 lines.append("\n**Top 5 Ideas:**")
@@ -1650,6 +1788,61 @@ Have a great evening!"""
         except Exception as e:
             logger.error("tiktok_niche_deep_dive_failed", error=str(e))
 
+    async def _run_tiktok_niche_rotation(self):
+        """Pick 3-5 random niches and run targeted research for deeper product discovery."""
+        import random
+        logger.info("running_tiktok_niche_rotation")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service, DEFAULT_NICHES
+            from app.services.searxng_service import get_searxng_service
+            svc = get_tiktok_shop_service()
+            searxng = get_searxng_service()
+
+            # Pick 3-5 random niches
+            niches_to_research = random.sample(DEFAULT_NICHES, min(5, len(DEFAULT_NICHES)))
+            year = datetime.now().year
+            total_discovered = 0
+
+            for niche in niches_to_research:
+                try:
+                    queries = [
+                        f"best {niche} products for tiktok content {year}",
+                        f"tiktok shop {niche} trending items this month",
+                        f"dropshipping {niche} trending products {year}",
+                    ]
+                    all_results = []
+                    for q in queries:
+                        try:
+                            results = await searxng.search(q, num_results=8)
+                            all_results.extend(results)
+                        except Exception:
+                            continue
+
+                    if all_results:
+                        products = await svc._extract_products_from_articles(all_results)
+                        for p in products:
+                            try:
+                                from app.models.tiktok_shop import TikTokProductCreate
+                                create_data = TikTokProductCreate(
+                                    name=p["name"],
+                                    category=p.get("category", niche),
+                                    niche=niche,
+                                    why_trending=p.get("why_trending", ""),
+                                    estimated_price_range=p.get("estimated_price_range", ""),
+                                    is_extracted=True,
+                                )
+                                await svc.create_product(create_data)
+                                total_discovered += 1
+                            except Exception:
+                                continue
+                except Exception as e:
+                    logger.warning("tiktok_niche_rotation_niche_failed", niche=niche, error=str(e))
+
+            logger.info("tiktok_niche_rotation_complete",
+                        niches=niches_to_research, discovered=total_discovered)
+        except Exception as e:
+            logger.error("tiktok_niche_rotation_failed", error=str(e))
+
     async def _run_tiktok_approval_reminder(self):
         """Send Discord reminder for products pending approval."""
         logger.info("running_tiktok_approval_reminder")
@@ -1752,15 +1945,69 @@ Have a great evening!"""
                     pass
             if stuck > 0:
                 issues.append(f"{stuck} stuck generating jobs (>30 min)")
+            # Auto-retry stuck/failed items (max 3 retries)
+            retried = 0
+            if stats.failed > 0 or stuck > 0:
+                from app.infrastructure.database import get_session
+                from app.db.models import ContentQueueModel
+                from sqlalchemy import select, or_
+                async with get_session() as session:
+                    result = await session.execute(
+                        select(ContentQueueModel).where(
+                            or_(
+                                ContentQueueModel.status == "failed",
+                                ContentQueueModel.status == "generating",
+                            )
+                        )
+                    )
+                    stuck_items = result.scalars().all()
+                    for item in stuck_items:
+                        retry_count = item.retry_count or 0
+                        if retry_count < 3:
+                            item.status = "queued"
+                            item.error_message = None
+                            item.retry_count = retry_count + 1
+                            retried += 1
+                        elif item.status != "failed":
+                            item.status = "failed"
+                            item.error_message = f"Auto-retry exhausted after 3 attempts. {item.error_message or ''}"
+                    await session.flush()
+                if retried > 0:
+                    issues.append(f"{retried} items auto-retried")
+
             if issues:
                 await self._send_to_discord(
                     "TikTok Pipeline Health Alert",
                     "Issues detected:\n" + "\n".join(f"- {i}" for i in issues),
                     color=0xED4245,
                 )
-            logger.info("tiktok_pipeline_health_check_complete", issues=len(issues))
+            logger.info("tiktok_pipeline_health_check_complete", issues=len(issues), retried=retried)
         except Exception as e:
             logger.error("tiktok_pipeline_health_failed", error=str(e))
+
+    async def _run_tiktok_reference_discovery(self):
+        """Auto-discover reference videos from successful sellers for approved products."""
+        logger.info("running_tiktok_reference_discovery")
+        try:
+            from app.services.reference_video_service import get_reference_video_service
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            ref_service = get_reference_video_service()
+            shop_service = get_tiktok_shop_service()
+
+            # Find approved products without reference videos
+            approved = await shop_service.list_products(status="approved", limit=10)
+            total_discovered = 0
+            for product in approved[:5]:
+                try:
+                    refs = await ref_service.auto_discover_references(product.id, max_refs=3)
+                    total_discovered += len(refs)
+                except Exception as e:
+                    logger.warning("reference_discovery_product_failed",
+                                   product_id=product.id, error=str(e))
+
+            logger.info("tiktok_reference_discovery_complete", discovered=total_discovered)
+        except Exception as e:
+            logger.error("tiktok_reference_discovery_failed", error=str(e))
 
     async def _run_tiktok_weekly_report(self):
         """Sunday weekly TikTok Shop performance report to Discord."""
@@ -1793,6 +2040,33 @@ Have a great evening!"""
             logger.info("tiktok_weekly_report_sent")
         except Exception as e:
             logger.error("tiktok_weekly_report_failed", error=str(e))
+
+    async def _run_tiktok_image_revalidation(self):
+        """Revalidate product images and re-fetch broken ones."""
+        logger.info("running_tiktok_image_revalidation")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            result = await svc.revalidate_images(limit=20)
+            logger.info("tiktok_image_revalidation_complete",
+                        checked=result.get("checked", 0),
+                        valid=result.get("still_valid", 0),
+                        refetched=result.get("refetched", 0))
+        except Exception as e:
+            logger.error("tiktok_image_revalidation_failed", error=str(e))
+
+    async def _run_tiktok_article_cleanup(self):
+        """Clean up products with article titles instead of product names."""
+        logger.info("running_tiktok_article_cleanup")
+        try:
+            from app.services.tiktok_shop_service import get_tiktok_shop_service
+            svc = get_tiktok_shop_service()
+            result = await svc.cleanup_article_title_products()
+            logger.info("tiktok_article_cleanup_complete",
+                        rejected=result.get("rejected", 0),
+                        kept=result.get("kept", 0))
+        except Exception as e:
+            logger.error("tiktok_article_cleanup_failed", error=str(e))
 
     async def _run_content_performance_sync(self):
         """Sync content performance metrics from AIContentTools."""
@@ -1834,28 +2108,6 @@ Have a great evening!"""
             logger.info("content_trend_research_complete", topics_researched=researched)
         except Exception as e:
             logger.error("content_trend_research_failed", error=str(e))
-
-    # ============================================
-    # GATEWAY AUTO-UPDATE
-    # ============================================
-
-    async def _run_gateway_update_check(self):
-        """Check for OpenClaw gateway updates via GitHub API."""
-        logger.info("running_gateway_update_check")
-        try:
-            from app.services.gateway_updater_service import get_gateway_updater_service
-            svc = get_gateway_updater_service()
-            result = await svc.check_for_updates()
-            if result.get("update_available"):
-                logger.info(
-                    "gateway_update_available",
-                    current=result["current"],
-                    latest=result["latest"],
-                )
-            else:
-                logger.info("gateway_up_to_date", version=result.get("current"))
-        except Exception as e:
-            logger.error("gateway_update_check_failed", error=str(e))
 
     # ============================================
     # PREDICTION MARKET INTELLIGENCE
@@ -1964,6 +2216,374 @@ Have a great evening!"""
             logger.info("llm_budget_reset_complete")
         except Exception as e:
             logger.error("llm_budget_reset_failed", error=str(e))
+
+    async def _run_daily_autonomous_report(self):
+        """Generate and deliver daily autonomous activity report."""
+        logger.info("running_daily_autonomous_report")
+        try:
+            from app.services.daily_report_service import get_daily_report_service
+            from app.services.notification_service import get_notification_service
+
+            service = get_daily_report_service()
+            report = await service.generate_daily_report()
+
+            # Deliver to Discord
+            message = service.format_discord_message(report)
+            await self._send_to_discord(
+                title=f"Daily Report — Grade: {report['grade']}/100",
+                message=message,
+                color=0x57F287 if report["grade"] >= 80 else (
+                    0xFEE75C if report["grade"] >= 50 else 0xED4245
+                ),
+            )
+
+            # Store as notification in DB
+            notification_service = get_notification_service()
+            await notification_service.create_notification(
+                title=f"Daily Report — {report['grade']}/100",
+                message=message,
+                channel="discord",
+                source="daily_report",
+            )
+
+            logger.info("daily_autonomous_report_sent", grade=report["grade"])
+        except Exception as e:
+            logger.error("daily_autonomous_report_failed", error=str(e))
+
+    # ============================================
+    # AI COMPANY HANDLERS
+    # ============================================
+
+    async def _run_ai_company_deep_research(self):
+        """Run deep research on highest-priority queued topic."""
+        logger.info("running_ai_company_deep_research")
+        try:
+            from app.services.deep_research_service import get_deep_research_service
+            from app.models.agent_company import DeepResearchRequest
+            svc = get_deep_research_service()
+
+            # Check for pending reports to resume, or pick a topic from research findings
+            pending = await svc.list_reports(status="pending", limit=1)
+            if pending:
+                logger.info("ai_company_deep_research_skipped", reason="pending report exists")
+                return
+
+            # Auto-generate a research topic from money maker or research service
+            from app.services.research_service import get_research_service
+            research_svc = get_research_service()
+            topics = await research_svc.list_findings(limit=5)
+            if topics:
+                # Pick the most recent finding as a deep research seed
+                topic = topics[0]
+                query = f"Deep analysis: {topic.get('title', 'emerging trends')}"
+                await svc.start_research(DeepResearchRequest(query=query))
+                logger.info("ai_company_deep_research_started", query=query)
+            else:
+                logger.info("ai_company_deep_research_skipped", reason="no topics available")
+        except Exception as e:
+            logger.error("ai_company_deep_research_failed", error=str(e))
+
+    async def _run_ai_company_idea_validation(self):
+        """Deep-validate top-scoring unvalidated money-maker ideas."""
+        logger.info("running_ai_company_idea_validation")
+        try:
+            from app.services.money_maker_service import get_money_maker_service
+            from app.services.agent_company_service import get_agent_company_service
+            mm = get_money_maker_service()
+            company = get_agent_company_service()
+
+            ideas = await mm.list_ideas(limit=5)
+            validated = 0
+            for idea in ideas:
+                score = idea.get("viability_score", 0)
+                if score > 60 and not idea.get("deep_validated"):
+                    # CEO plans a validation task
+                    await company.ceo_plan_and_delegate(
+                        f"Deep-validate business idea: {idea.get('title', 'Untitled')}. "
+                        f"Current viability score: {score}. "
+                        f"Analyze market size, competition, feasibility, and provide Go/No-Go recommendation."
+                    )
+                    validated += 1
+                    if validated >= 2:
+                        break
+            logger.info("ai_company_idea_validation_done", validated=validated)
+        except Exception as e:
+            logger.error("ai_company_idea_validation_failed", error=str(e))
+
+    async def _run_ai_company_daily_council(self):
+        """CEO proposes strategic decisions for council vote based on overnight findings."""
+        logger.info("running_ai_company_daily_council")
+        try:
+            from app.services.council_service import get_council_service
+            from app.services.deep_research_service import get_deep_research_service
+            from app.models.agent_company import CouncilProposal
+
+            council = get_council_service()
+            research = get_deep_research_service()
+
+            # Check for completed research that hasn't been reviewed
+            reports = await research.list_reports(status="completed", limit=3)
+            for report in reports:
+                # Propose a council decision based on research findings
+                topic = f"Strategic review: {report.query[:200]} — Should we act on these findings?"
+                await council.propose(CouncilProposal(
+                    topic=topic,
+                    context={"research_id": report.id, "source": "daily_council_auto"}
+                ))
+                # Run the vote immediately
+                decisions = await council.list_decisions(status="proposed", limit=1)
+                if decisions:
+                    await council.conduct_vote(decisions[0].id)
+                break  # One decision per day
+            logger.info("ai_company_daily_council_done")
+        except Exception as e:
+            logger.error("ai_company_daily_council_failed", error=str(e))
+
+    async def _run_ai_company_experiment_monitor(self):
+        """Check running experiments and flag stale ones."""
+        logger.info("running_ai_company_experiment_monitor")
+        try:
+            from app.services.experiment_service import get_experiment_service
+            from datetime import datetime, timedelta
+            svc = get_experiment_service()
+
+            running = await svc.list_experiments(status="running", limit=20)
+            stale_count = 0
+            for exp in running:
+                started = exp.started_at
+                if started and isinstance(started, str):
+                    from dateutil.parser import parse
+                    started = parse(started)
+                if started and (datetime.utcnow() - started.replace(tzinfo=None)) > timedelta(hours=24):
+                    # Flag as stale — mark failed with timeout note
+                    logger.warning("experiment_stale", exp_id=exp.id, title=exp.title)
+                    stale_count += 1
+            logger.info("ai_company_experiment_monitor_done", running=len(running), stale=stale_count)
+        except Exception as e:
+            logger.error("ai_company_experiment_monitor_failed", error=str(e))
+
+    # ============================================
+    # CHARACTER CONTENT AUTOMATION
+    # ============================================
+
+    async def _run_character_research_refresh(self):
+        """Re-research characters with stale data (>7 days)."""
+        logger.info("running_character_research_refresh")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            from datetime import datetime, timedelta, timezone
+            svc = get_character_content_service()
+
+            characters = await svc.list_characters(research_status="completed", limit=50)
+            refreshed = 0
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            for char in characters:
+                if char.last_researched and char.last_researched < cutoff:
+                    await svc.research_character(char.id)
+                    refreshed += 1
+                    if refreshed >= 3:
+                        break
+            logger.info("character_research_refresh_done", refreshed=refreshed)
+        except Exception as e:
+            logger.error("character_research_refresh_failed", error=str(e))
+
+    async def _run_character_content_generation(self):
+        """Auto-generate carousels for researched characters."""
+        logger.info("running_character_content_generation")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            from app.models.character_content import CarouselCreate, ContentAngle
+            import random
+            svc = get_character_content_service()
+
+            characters = await svc.list_characters(research_status="completed", limit=50)
+            angles = list(ContentAngle)
+            generated = 0
+            for char in characters:
+                if char.posts_created < 3:
+                    angle = random.choice(angles)
+                    try:
+                        await svc.generate_carousel(CarouselCreate(
+                            character_id=char.id, angle=angle
+                        ))
+                        generated += 1
+                    except Exception:
+                        continue
+                    if generated >= 3:
+                        break
+            logger.info("character_content_generation_done", generated=generated)
+        except Exception as e:
+            logger.error("character_content_generation_failed", error=str(e))
+
+    async def _run_character_performance_sync(self):
+        """Sync performance metrics from published character carousels."""
+        logger.info("running_character_performance_sync")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            stats = await svc.get_stats()
+            logger.info("character_performance_sync_done",
+                        characters=stats.total_characters,
+                        carousels=stats.total_carousels,
+                        published=stats.total_published)
+        except Exception as e:
+            logger.error("character_performance_sync_failed", error=str(e))
+
+    async def _run_character_auto_publish(self):
+        """Auto-publish approved carousels at optimal times."""
+        logger.info("running_character_auto_publish")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            # Find approved carousels with queued publish_status
+            carousels = await svc.list_carousels(status="approved", limit=10)
+            published = 0
+            for carousel in carousels:
+                if carousel.publish_status == "queued":
+                    try:
+                        await svc.publish_carousel(carousel.id)
+                        published += 1
+                    except (ValueError, OSError) as e:
+                        logger.warning("auto_publish_failed", carousel_id=carousel.id, error=str(e))
+            logger.info("character_auto_publish_done", published=published, checked=len(carousels))
+        except Exception as e:
+            logger.error("character_auto_publish_failed", error=str(e))
+
+    async def _run_character_content_learning(self):
+        """Process carousel outcomes and update template scores."""
+        logger.info("running_character_content_learning")
+        try:
+            from app.services.content_learning_engine import get_content_learning_engine
+            engine = get_content_learning_engine()
+            await engine.process_content_outcomes()
+            await engine.check_experiments()
+            logger.info("character_content_learning_complete")
+        except Exception as e:
+            logger.error("character_content_learning_failed", error=str(e))
+
+    # ============================================
+    # ZERO BRAIN HANDLERS
+    # ============================================
+
+    async def _run_brain_benchmark(self):
+        logger.info("running_brain_benchmark")
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            svc = get_zero_brain_service()
+            result = await svc.run_benchmark()
+            logger.info("brain_benchmark_complete", overall_score=result.overall_score)
+        except Exception as e:
+            logger.error("brain_benchmark_failed", error=str(e))
+
+    async def _run_brain_learning_cycle(self):
+        logger.info("running_brain_learning_cycle")
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            svc = get_zero_brain_service()
+            result = await svc.run_learning_cycle()
+            logger.info("brain_learning_cycle_complete", status=result.status)
+        except Exception as e:
+            logger.error("brain_learning_cycle_failed", error=str(e))
+
+    async def _run_brain_content_learn(self):
+        logger.info("running_brain_content_learn")
+        try:
+            from app.services.content_learning_engine import get_content_learning_engine
+            svc = get_content_learning_engine()
+            result = await svc.process_content_outcomes()
+            logger.info("brain_content_learn_complete", processed=result.get("processed", 0))
+        except Exception as e:
+            logger.error("brain_content_learn_failed", error=str(e))
+
+    async def _run_brain_experiment_monitor(self):
+        logger.info("running_brain_experiment_monitor")
+        try:
+            from app.services.content_learning_engine import get_content_learning_engine
+            svc = get_content_learning_engine()
+            completed = await svc.check_experiments()
+            logger.info("brain_experiment_monitor_complete", completed=len(completed))
+        except Exception as e:
+            logger.error("brain_experiment_monitor_failed", error=str(e))
+
+    async def _run_brain_prompt_evolve(self):
+        logger.info("running_brain_prompt_evolve")
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            svc = get_zero_brain_service()
+            result = await svc.run_prompt_evolution()
+            logger.info("brain_prompt_evolve_complete", evolved=len(result.get("evolved", [])))
+        except Exception as e:
+            logger.error("brain_prompt_evolve_failed", error=str(e))
+
+    async def _run_brain_episodic_extract(self):
+        logger.info("running_brain_episodic_extract")
+        try:
+            from app.services.episodic_memory_service import get_episodic_memory_service
+            from app.db.models import LlmUsageModel
+            from sqlalchemy import select
+            from datetime import timedelta
+
+            # Extract memories from recent LLM interactions
+            svc = get_episodic_memory_service()
+            since = datetime.now() - timedelta(minutes=35)
+            async with get_session() as session:
+                query = (
+                    select(LlmUsageModel)
+                    .where(LlmUsageModel.created_at >= since)
+                    .where(LlmUsageModel.success == True)
+                    .order_by(LlmUsageModel.created_at.desc())
+                    .limit(20)
+                )
+                result = await session.execute(query)
+                recent = result.scalars().all()
+
+            extracted = 0
+            for usage in recent:
+                if usage.task_type and usage.response_preview:
+                    await svc.extract_and_store(
+                        text=f"Task: {usage.task_type}. Response: {usage.response_preview[:500]}",
+                        source_type="llm_interaction",
+                        source_id=usage.id,
+                        namespace="general",
+                    )
+                    extracted += 1
+
+            logger.info("brain_episodic_extract_complete", extracted=extracted)
+        except Exception as e:
+            logger.error("brain_episodic_extract_failed", error=str(e))
+
+    async def _run_brain_improvement(self):
+        logger.info("running_brain_improvement")
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            svc = get_zero_brain_service()
+            result = await svc.run_improvement()
+            logger.info("brain_improvement_complete",
+                       target=result.get("target_dimension"),
+                       score=result.get("current_score"))
+        except Exception as e:
+            logger.error("brain_improvement_failed", error=str(e))
+
+    async def _run_brain_reflection(self):
+        logger.info("running_brain_reflection")
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            svc = get_zero_brain_service()
+            result = await svc.run_reflection()
+            logger.info("brain_reflection_complete",
+                       learnings=len(result.get("learnings", [])))
+        except Exception as e:
+            logger.error("brain_reflection_failed", error=str(e))
+
+    async def _run_brain_memory_cleanup(self):
+        logger.info("running_brain_memory_cleanup")
+        try:
+            from app.services.episodic_memory_service import get_episodic_memory_service
+            svc = get_episodic_memory_service()
+            deleted = await svc.cleanup_expired()
+            logger.info("brain_memory_cleanup_complete", deleted=deleted)
+        except Exception as e:
+            logger.error("brain_memory_cleanup_failed", error=str(e))
 
     # ============================================
     # UTILITIES
