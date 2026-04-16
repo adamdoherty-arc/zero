@@ -108,4 +108,66 @@ async def create_tables() -> None:
         # Enable pgvector extension for semantic search embeddings
         await conn.execute(sqlalchemy.text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+
+        # Safe column additions for existing tables (idempotent)
+        safe_columns = [
+            ("content_queue", "publish_status", "VARCHAR(20)"),
+            ("content_queue", "publish_platform", "VARCHAR(30)"),
+            ("content_queue", "publish_url", "TEXT"),
+            ("content_queue", "published_at", "TIMESTAMPTZ"),
+            ("content_queue", "publish_error", "TEXT"),
+            ("content_queue", "caption", "TEXT"),
+            ("content_queue", "hashtags", "JSONB"),
+            # Sprint 1: affiliate links, import tracking
+            ("tiktok_products", "affiliate_link", "TEXT"),
+            ("tiktok_products", "tiktok_shop_url", "TEXT"),
+            ("tiktok_products", "import_url", "TEXT"),
+            ("tiktok_products", "import_source", "VARCHAR(30)"),
+            # Sprint 1: reference video link on video_scripts
+            ("video_scripts", "reference_video_id", "VARCHAR(64)"),
+            # Sprint 2: content performance feedback
+            ("tiktok_products", "content_performance_score", "FLOAT"),
+            ("tiktok_products", "best_template_type", "VARCHAR(30)"),
+            ("tiktok_products", "last_performance_update_at", "TIMESTAMPTZ"),
+            # Sprint 6: soft delete + auto-retry
+            ("tiktok_products", "archived_at", "TIMESTAMPTZ"),
+            ("content_queue", "retry_count", "INTEGER DEFAULT 0"),
+            # Phase 024: Character Autopilot
+            ("characters", "autonomous_disabled", "BOOLEAN DEFAULT FALSE"),
+            ("characters", "priority_tier", "VARCHAR(20) DEFAULT 'standard'"),
+            ("characters", "discovery_source", "VARCHAR(50)"),
+            ("characters", "discovery_evidence", "JSONB DEFAULT '{}'::jsonb"),
+            ("characters", "discovery_hits", "INTEGER DEFAULT 0"),
+            ("character_carousels", "auto_approved", "BOOLEAN"),
+            ("character_carousels", "auto_approved_at", "TIMESTAMPTZ"),
+            ("character_carousels", "auto_approve_reason", "TEXT"),
+            # Content variety: hook style + content format
+            ("character_carousels", "hook_style", "VARCHAR(50)"),
+            ("character_carousels", "content_format", "VARCHAR(50)"),
+        ]
+        for table, col, col_type in safe_columns:
+            try:
+                await conn.execute(sqlalchemy.text(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                ))
+            except Exception:
+                pass  # Column already exists or table doesn't exist yet
+
+        # Composite indexes for common query patterns (idempotent)
+        safe_indexes = [
+            ("idx_tiktok_products_status_score", "tiktok_products", "(status, opportunity_score DESC)"),
+            ("idx_tiktok_products_status_discovered", "tiktok_products", "(status, discovered_at DESC)"),
+            ("idx_video_scripts_product_status", "video_scripts", "(product_id, status)"),
+            ("idx_content_queue_product_status", "content_queue", "(product_id, status)"),
+            ("idx_content_queue_publish_status", "content_queue", "(publish_status, created_at DESC)"),
+            ("idx_reference_videos_product_status", "reference_videos", "(product_id, status)"),
+        ]
+        for idx_name, table, cols in safe_indexes:
+            try:
+                await conn.execute(sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table} {cols}"
+                ))
+            except Exception:
+                pass  # Index already exists or table doesn't exist yet
+
     logger.info("database_tables_created")

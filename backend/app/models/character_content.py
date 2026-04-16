@@ -5,7 +5,7 @@ Models for character profiles, carousel posts, images, and content review.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -43,6 +43,7 @@ class CarouselStatus(str, Enum):
     REJECTED = "rejected"
     PUBLISHING = "publishing"
     PUBLISHED = "published"
+    ARCHIVED = "archived"
 
 
 class ContentAngle(str, Enum):
@@ -61,6 +62,8 @@ class ContentAngle(str, Enum):
     CROSSOVER_CONNECTIONS = "crossover_connections"
     WHAT_IF = "what_if"
     TIMELINE_DEEP_DIVE = "timeline_deep_dive"
+    STORYLINE_RECAP = "storyline_recap"
+    POWER_RANKING = "power_ranking"
 
 
 class StoryTemplateType(str, Enum):
@@ -74,6 +77,30 @@ class StoryTemplateType(str, Enum):
     WHAT_THEY_CHANGED = "what_they_changed"
     REAL_LIFE_INSPIRATION = "real_life_inspiration"
     DELETED_SCENES = "deleted_scenes"
+    STORYLINE_RECAP = "storyline_recap"
+    POWER_RANKING = "power_ranking"
+    VERSUS_BATTLE = "versus_battle"
+    TIMELINE_STORY = "timeline_story"
+    HOT_TAKE = "hot_take"
+
+
+class HookStyle(str, Enum):
+    NUMBERED_LIST = "numbered_list"
+    STORY_OPENER = "story_opener"
+    HOT_TAKE = "hot_take"
+    QUESTION = "question"
+    COMPARISON = "comparison"
+    REVEAL = "reveal"
+    SUPERLATIVE = "superlative"
+
+
+class ContentFormat(str, Enum):
+    FACT_LIST = "fact_list"
+    STORYLINE = "storyline"
+    RANKING = "ranking"
+    VERSUS = "versus"
+    TIMELINE = "timeline"
+    HOT_TAKE = "hot_take"
 
 
 class MusicMood(str, Enum):
@@ -123,6 +150,7 @@ class Character(BaseModel):
     fact_bank: List[Dict[str, Any]] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     posts_created: int = 0
+    carousels_created: int = 0
     total_views: int = 0
     total_likes: int = 0
     avg_engagement: float = 0.0
@@ -134,6 +162,7 @@ class Character(BaseModel):
     relationship_map: Dict[str, Any] = Field(default_factory=dict)
     research_depth_score: float = 0.0
     content_themes: List[str] = Field(default_factory=list)
+    blocked_image_urls: List[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +184,8 @@ class CarouselCreate(BaseModel):
     series_id: Optional[str] = None
     series_part: Optional[int] = None
     slide_count: int = 6
+    hook_style: Optional[str] = None
+    content_format: Optional[str] = None
 
 
 class CarouselUpdate(BaseModel):
@@ -209,10 +240,120 @@ class CharacterCarousel(BaseModel):
     text_overlay_specs: List[Dict[str, Any]] = Field(default_factory=list)
     brain_context_used: Optional[Dict[str, Any]] = None
     generation_metadata: Dict[str, Any] = Field(default_factory=dict)
+    hook_style: Optional[str] = None
+    content_format: Optional[str] = None
     publish_status: Optional[str] = None
     publish_platform: Optional[str] = None
     download_urls: Optional[List[str]] = None
     watermark_applied: bool = False
+    final_review: Optional[Dict[str, Any]] = None
+    final_review_score: Optional[float] = None
+    final_review_model: Optional[str] = None
+    auto_approved: Optional[bool] = None
+    auto_approved_at: Optional[datetime] = None
+    auto_approve_reason: Optional[str] = None
+    current_version_id: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Carousel Versioning + AI Enhancement (Phase 027)
+# ---------------------------------------------------------------------------
+
+CarouselEnhanceTarget = Literal["hook", "slide", "caption", "hashtags", "all"]
+CarouselVersionSource = Literal["manual_edit", "enhance", "council_vote", "restore", "backfill"]
+
+
+class CarouselVersion(BaseModel):
+    id: str
+    carousel_id: str
+    version_number: int
+    parent_version_id: Optional[str] = None
+    title: Optional[str] = None
+    hook_text: Optional[str] = None
+    slides: List[Dict[str, Any]] = Field(default_factory=list)
+    caption: Optional[str] = None
+    hashtags: List[str] = Field(default_factory=list)
+    human_notes: Optional[str] = None
+    music_track: Optional[Dict[str, Any]] = None
+    text_overlay_specs: List[Dict[str, Any]] = Field(default_factory=list)
+    source: CarouselVersionSource
+    source_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class EnhanceCarouselRequest(BaseModel):
+    target: CarouselEnhanceTarget = "hook"
+    slide_num: Optional[int] = None  # required when target="slide"
+    provider: Optional[str] = None   # ollama | kimi | minimax | gemini
+    model: Optional[str] = None      # e.g. "kimi-k2.5" or "MiniMax-M2.7"
+    instruction: Optional[str] = None  # optional user steering text
+    n_variants: int = Field(1, ge=1, le=5)
+
+
+class EnhanceCarouselVariant(BaseModel):
+    target: CarouselEnhanceTarget
+    slide_num: Optional[int] = None
+    text: str
+    provider: str
+    model: str
+    cost_usd: Optional[float] = None
+
+
+class EnhanceCarouselResponse(BaseModel):
+    carousel_id: str
+    variants: List[EnhanceCarouselVariant] = Field(default_factory=list)
+
+
+class ApplyEnhanceRequest(BaseModel):
+    target: CarouselEnhanceTarget
+    slide_num: Optional[int] = None
+    text: str
+    provider: str = "manual"
+    model: str = "manual"
+
+
+class CouncilVoteRequest(BaseModel):
+    target: CarouselEnhanceTarget = "hook"
+    slide_num: Optional[int] = None
+    n_variants: int = Field(3, ge=2, le=5)
+    providers: Optional[List[str]] = None  # mix of ollama/kimi/minimax; default auto
+
+
+class CouncilVoteResponse(BaseModel):
+    carousel_id: str
+    decision_id: str
+    target: CarouselEnhanceTarget
+    slide_num: Optional[int] = None
+    winning_variant: EnhanceCarouselVariant
+    winning_rank: int
+    variants: List[EnhanceCarouselVariant] = Field(default_factory=list)
+    votes: Dict[str, Any] = Field(default_factory=dict)
+    reasoning: List[str] = Field(default_factory=list)
+
+
+class ApplyCouncilWinnerRequest(BaseModel):
+    target: CarouselEnhanceTarget
+    slide_num: Optional[int] = None
+    text: str
+    decision_id: Optional[str] = None
+
+
+class RestoreVersionResponse(BaseModel):
+    carousel: CharacterCarousel
+    restored_from: str
+
+
+class BackfillBannedHooksRequest(BaseModel):
+    limit: int = Field(100, ge=1, le=1000)
+    dry_run: bool = False
+
+
+class BackfillBannedHooksResult(BaseModel):
+    scanned: int = 0
+    flagged: int = 0
+    rewritten: int = 0
+    errors: List[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +378,12 @@ class CharacterImage(BaseModel):
     is_valid: bool = True
     is_primary: bool = False
     usage_count: int = 0
+    quality_score: float = 0.0
+    content_type: Optional[str] = None
+    file_size: Optional[int] = None
+    is_approved: Optional[bool] = None
+    feedback_reason: Optional[str] = None
+    validated_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
 
 
@@ -279,6 +426,31 @@ class BatchGenerateRequest(BaseModel):
     count: int = 5
     story_template: Optional[str] = None
     use_brain: bool = True
+    hook_style: Optional[str] = None
+    content_format: Optional[str] = None
+
+
+class EnhanceCharacterRequest(BaseModel):
+    refresh_research: bool = True
+    add_images: int = 8
+    regenerate_weak_carousels: bool = True
+    weak_threshold: float = 7.0
+
+
+class EnhanceCharacterResult(BaseModel):
+    character_id: str
+    facts_before: int = 0
+    facts_after: int = 0
+    facts_added: int = 0
+    images_before: int = 0
+    images_after: int = 0
+    images_added: int = 0
+    carousels_regenerated: int = 0
+    carousels_archived: int = 0
+    research_depth_before: float = 0.0
+    research_depth_after: float = 0.0
+    research_depth_delta: float = 0.0
+    errors: List[str] = Field(default_factory=list)
 
 
 class CharacterStats(BaseModel):
@@ -366,6 +538,7 @@ class MusicTrack(BaseModel):
     genre: Optional[str] = None
     tiktok_sound_id: Optional[str] = None
     tiktok_sound_url: Optional[str] = None
+    preview_url: Optional[str] = None  # Short audio preview URL (mp3/m4a) for in-app playback
     is_trending: bool = False
     trending_score: float = 0.0
     use_count: int = 0
@@ -383,6 +556,7 @@ class MusicTrackCreate(BaseModel):
     genre: Optional[str] = None
     tiktok_sound_id: Optional[str] = None
     tiktok_sound_url: Optional[str] = None
+    preview_url: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
 
 
@@ -446,6 +620,13 @@ class ResearchJobStatus(str, Enum):
     FAILED = "failed"
 
 
+class ResearchLink(BaseModel):
+    """A link found during research."""
+    url: str
+    title: str = ""
+    source: str = ""  # e.g. "searxng", "wikipedia", "fandom", "reddit"
+
+
 class ResearchJobStep(BaseModel):
     """A single step in the research pipeline."""
     name: str  # e.g. "searxng_search", "wiki_scrape", "deep_research", "synthesis", "facts", "images"
@@ -454,6 +635,10 @@ class ResearchJobStep(BaseModel):
     completed_at: Optional[datetime] = None
     result_summary: Optional[str] = None
     error: Optional[str] = None
+    links_found: List[ResearchLink] = Field(default_factory=list)
+    # Historical average duration for this step across completed jobs (ms).
+    # Populated on read in get_research_queue_status() from a rolling sample.
+    avg_duration_ms: Optional[int] = None
 
 
 class ResearchJob(BaseModel):
@@ -471,6 +656,10 @@ class ResearchJob(BaseModel):
     images_found: int = 0
     sources_used: List[str] = Field(default_factory=list)
     depth_score: float = 0.0
+    # Estimated seconds until this job completes. For queued jobs this is the
+    # sum of average step durations; for running jobs it accounts for elapsed
+    # time on the current step.
+    eta_seconds: Optional[int] = None
 
 
 class ResearchQueueStatus(BaseModel):

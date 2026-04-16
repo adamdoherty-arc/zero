@@ -4,13 +4,14 @@ SQLAlchemy ORM models for ZERO API.
 All tables for the PostgreSQL database, replacing JSON file storage.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -1058,6 +1060,15 @@ class LlmUsageModel(Base):
     )
 
 
+class LlmDailySpendModel(Base):
+    """Per-provider daily spend counters for budget caps (character autopilot)."""
+    __tablename__ = "llm_daily_spend"
+
+    provider: Mapped[str] = mapped_column(String(50), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    spend_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+
 # ---------------------------------------------------------------------------
 # Sprint 2: Gateway Agent Configs
 # ---------------------------------------------------------------------------
@@ -1585,6 +1596,14 @@ class CharacterModel(Base):
     relationship_map: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
     research_depth_score: Mapped[float] = mapped_column(Float, default=0.0)
     content_themes: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    blocked_image_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
+    # Phase 024: Character Autopilot
+    autonomous_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    priority_tier: Mapped[str] = mapped_column(String(20), default="standard", index=True)
+    discovery_source: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    discovery_evidence: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    discovery_hits: Mapped[int] = mapped_column(Integer, default=0)
 
     __table_args__ = (
         Index("idx_characters_universe_status", "universe", "status"),
@@ -1631,14 +1650,65 @@ class CharacterCarouselModel(Base):
     brain_context_used: Mapped[Optional[dict]] = mapped_column(JSONB)
     generation_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
 
+    # Content variety fields
+    hook_style: Mapped[Optional[str]] = mapped_column(String(50))
+    content_format: Mapped[Optional[str]] = mapped_column(String(50))
+
     # Publishing pipeline fields
     publish_status: Mapped[Optional[str]] = mapped_column(String(30), default=None, index=True)  # queued, publishing, published, failed
     publish_platform: Mapped[Optional[str]] = mapped_column(String(50), default=None)  # tiktok, instagram, youtube
     download_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=None)  # rendered slide URLs for manual download
     watermark_applied: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Phase 022: Two-stage review. Minimax (with Kimi fallback) final polish
+    final_review: Mapped[Optional[dict]] = mapped_column(JSONB)
+    final_review_score: Mapped[Optional[float]] = mapped_column(Float)
+    final_review_model: Mapped[Optional[str]] = mapped_column(String(64))
+
+    # Phase 024: Character Autopilot auto-approval
+    auto_approved: Mapped[Optional[bool]] = mapped_column(Boolean)
+    auto_approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    auto_approve_reason: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Phase 027: Carousel versions. Pointer to latest snapshot row for fast head lookup.
+    current_version_id: Mapped[Optional[str]] = mapped_column(String(64))
+
     __table_args__ = (
         Index("idx_carousel_character_status", "character_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Carousel Version Snapshots (Phase 027)
+# ---------------------------------------------------------------------------
+
+class CharacterCarouselVersionModel(Base):
+    __tablename__ = "character_carousel_versions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    carousel_id: Mapped[str] = mapped_column(String(64), ForeignKey("character_carousels.id", ondelete="CASCADE"), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_version_id: Mapped[Optional[str]] = mapped_column(String(64))
+
+    # Snapshot of mutable fields
+    title: Mapped[Optional[str]] = mapped_column(String(300))
+    hook_text: Mapped[Optional[str]] = mapped_column(Text)
+    slides: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    human_notes: Mapped[Optional[str]] = mapped_column(Text)
+    music_track: Mapped[Optional[dict]] = mapped_column(JSONB)
+    text_overlay_specs: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
+    # Provenance
+    source: Mapped[str] = mapped_column(String(30), nullable=False)  # manual_edit|enhance|council_vote|restore|backfill
+    source_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    created_by: Mapped[Optional[str]] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_carousel_versions_carousel_version", "carousel_id", "version_number", unique=True),
+        Index("ix_carousel_versions_created_at", "created_at"),
     )
 
 
@@ -1659,7 +1729,78 @@ class CharacterImageModel(Base):
     is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    content_type: Mapped[Optional[str]] = mapped_column(String(50))
+    file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    is_approved: Mapped[Optional[bool]] = mapped_column(Boolean)
+    feedback_reason: Mapped[Optional[str]] = mapped_column(Text)
+    validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("character_id", "url", name="uq_character_image_url"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Character Content: Reference Videos (TikTok videos captured from phone)
+# ---------------------------------------------------------------------------
+
+class CharacterReferenceVideoModel(Base):
+    __tablename__ = "character_reference_videos"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tiktok_url: Mapped[str] = mapped_column(Text, nullable=False)
+    tiktok_video_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    character_id: Mapped[Optional[str]] = mapped_column(
+        String(64), ForeignKey("characters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    intent: Mapped[str] = mapped_column(String(20), nullable=False, default="inbox")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # TikTok metadata
+    title: Mapped[Optional[str]] = mapped_column(Text)
+    author_name: Mapped[Optional[str]] = mapped_column(String(200))
+    author_url: Mapped[Optional[str]] = mapped_column(Text)
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    thumbnail_url: Mapped[Optional[str]] = mapped_column(Text)
+    views: Mapped[Optional[int]] = mapped_column(Integer)
+    likes: Mapped[Optional[int]] = mapped_column(Integer)
+
+    # Local storage (workspace-relative)
+    video_path: Mapped[Optional[str]] = mapped_column(Text)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(Text)
+    audio_path: Mapped[Optional[str]] = mapped_column(Text)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    # Transcription
+    transcript: Mapped[Optional[str]] = mapped_column(Text)
+    transcript_language: Mapped[Optional[str]] = mapped_column(String(10))
+    transcribed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Intent-specific LLM outputs
+    style_analysis: Mapped[Optional[dict]] = mapped_column(JSONB)
+    extracted_facts: Mapped[Optional[list]] = mapped_column(JSONB)
+    proposed_character: Mapped[Optional[dict]] = mapped_column(JSONB)
+    analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # User notes and promotion tracking
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    promoted_character_id: Mapped[Optional[str]] = mapped_column(String(64))
+    applied_fact_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_cref_intent_status", "intent", "status"),
+        Index("idx_cref_character_created", "character_id", "created_at"),
+        UniqueConstraint("tiktok_video_id", "character_id", name="uq_cref_video_character"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1678,6 +1819,25 @@ class CharacterResearchFragmentModel(Base):
     fragment_type: Mapped[str] = mapped_column(String(50), index=True)
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CharacterResearchStepStatModel(Base):
+    """Per-step durations for each research job. Used to compute running
+    averages so the UI can show realistic ETAs.
+    """
+
+    __tablename__ = "character_research_step_stats"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    character_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    step_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    model: Mapped[Optional[str]] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1739,6 +1899,7 @@ class MusicTrackModel(Base):
     genre: Mapped[Optional[str]] = mapped_column(String(100))
     tiktok_sound_id: Mapped[Optional[str]] = mapped_column(String(100))
     tiktok_sound_url: Mapped[Optional[str]] = mapped_column(Text)
+    preview_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_trending: Mapped[bool] = mapped_column(Boolean, default=False)
     trending_score: Mapped[float] = mapped_column(Float, default=0.0)
     use_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -1839,6 +2000,48 @@ class PromptVariantModel(Base):
 
     __table_args__ = (
         Index("idx_prompt_score", "avg_score"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Zero Brain: Prompt Runs (full request/response capture + LLM-as-judge grades)
+# ---------------------------------------------------------------------------
+
+class PromptRunModel(Base):
+    __tablename__ = "prompt_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    variant_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    task_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    source_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text)
+    user_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    rendered_variables: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    response_text: Mapped[Optional[str]] = mapped_column(Text)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    success: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    error_type: Mapped[Optional[str]] = mapped_column(String(80))
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    quality_score: Mapped[Optional[float]] = mapped_column(Float)
+    quality_flags: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    quality_summary: Mapped[Optional[str]] = mapped_column(Text)
+    grader_model: Mapped[Optional[str]] = mapped_column(String(120))
+    graded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    outcome_score: Mapped[Optional[float]] = mapped_column(Float)
+    outcome_recorded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_prompt_runs_ungraded", "graded_at", "success"),
+        Index("idx_prompt_runs_source_created", "source", "created_at"),
+        Index("idx_prompt_runs_task_created", "task_type", "created_at"),
     )
 
 
