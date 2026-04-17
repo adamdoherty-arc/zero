@@ -212,6 +212,7 @@ async def lifespan(app: FastAPI):
                 _research_queue["running"] = False
         else:
             # No persisted queue; fall back to resetting stuck characters
+            # and auto-starting if there are pending characters
             async with get_session() as session:
                 from sqlalchemy import update as sa_update
                 await session.execute(
@@ -220,6 +221,15 @@ async def lifespan(app: FastAPI):
                     .values(research_status="pending", research_completed_steps=[])
                 )
                 await session.commit()
+                result = await session.execute(
+                    select(func.count()).where(
+                        CharacterModel.research_status.in_(["pending", "failed", "needs_retry"])
+                    )
+                )
+                pending_count = result.scalar() or 0
+            if pending_count > 0:
+                logger.info("auto_start_research_queue", pending=pending_count)
+                await svc.start_batch_research_async(limit=pending_count)
     except Exception as e:
         logger.warning("auto_resume_research_failed", error=str(e))
 
