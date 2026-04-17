@@ -1,10 +1,8 @@
 """
-Kimi (Moonshot AI) provider — primary paid LLM provider.
+Kimi (Moonshot AI) provider — paid LLM provider.
 
 Uses OpenAI-compatible API at configurable base URL (default: api.moonshot.ai/v1).
-Primary model: kimi-k2.5 ($0.60/1M input, $2.50/1M output, 256K context).
-Budget model: moonshot-v1-32k ($0.024/1M tokens, 32K context).
-Handles research, planning, structured output, classification, and extraction tasks.
+Models: K2.5 (batch/legacy), K2 family (primary reasoning), V1 series (legacy).
 Only active if ZERO_KIMI_API_KEY is set.
 """
 
@@ -21,10 +19,18 @@ from app.infrastructure.llm_providers.base import BaseLLMProvider
 logger = structlog.get_logger(__name__)
 
 KIMI_PRICING = {
-    "kimi-k2.5": {"input": 0.60, "output": 2.50},
-    "moonshot-v1-8k": {"input": 0.012, "output": 0.012},
-    "moonshot-v1-32k": {"input": 0.024, "output": 0.024},
-    "moonshot-v1-128k": {"input": 0.06, "output": 0.06},
+    # K2.5 - batch API eligible, thinking enabled by default on API side
+    "kimi-k2.5": {"input": 0.60, "output": 3.00},
+    # K2 family - primary reasoning models, cheaper output than K2.5
+    "kimi-k2-0905-preview": {"input": 0.60, "output": 2.50},
+    "kimi-k2-0711-preview": {"input": 0.60, "output": 2.50},
+    "kimi-k2-turbo-preview": {"input": 1.15, "output": 8.00},
+    "kimi-k2-thinking": {"input": 0.60, "output": 2.50},
+    "kimi-k2-thinking-turbo": {"input": 1.15, "output": 8.00},
+    # V1 legacy models - official pricing from platform.kimi.ai
+    "moonshot-v1-8k": {"input": 0.20, "output": 2.00},
+    "moonshot-v1-32k": {"input": 1.00, "output": 3.00},
+    "moonshot-v1-128k": {"input": 2.00, "output": 5.00},
 }
 DEFAULT_PRICING = {"input": 0.60, "output": 2.50}
 
@@ -63,10 +69,13 @@ class KimiProvider(BaseLLMProvider):
         thinking_mode = kwargs.get("thinking_mode", False)
 
         async def _call():
-            # kimi-k2.5 ONLY accepts temperature=1 (API enforced since ~March 2026)
-            # Other moonshot models accept variable temperature
+            # kimi-k2.5 ONLY accepts temperature=1 (API enforced since ~March 2026).
+            # K2-thinking models also work best with higher temperature.
+            # Other Kimi/moonshot models accept variable temperature.
             if model == "kimi-k2.5":
                 temp = 1.0
+            elif model.startswith("kimi-k2-thinking"):
+                temp = max(temperature, 0.6)
             elif thinking_mode:
                 temp = max(temperature, 0.6)
             else:
@@ -82,9 +91,13 @@ class KimiProvider(BaseLLMProvider):
             if kwargs.get("json_mode"):
                 payload["response_format"] = {"type": "json_object"}
 
-            # Note: thinking is disabled by default; only enable when requested
-            if thinking_mode:
-                payload["thinking"] = {"type": "enabled"}
+            # K2.5 API defaults to thinking=enabled, so we must explicitly
+            # disable it when not requested to avoid paying for thinking tokens.
+            if model == "kimi-k2.5":
+                if thinking_mode:
+                    payload["thinking"] = {"type": "enabled"}
+                else:
+                    payload["thinking"] = {"type": "disabled"}
 
             response = await self._client.post(
                 f"{self._base_url}/chat/completions",

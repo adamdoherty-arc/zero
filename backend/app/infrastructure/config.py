@@ -113,7 +113,7 @@ class Settings(BaseSettings):
 
     # Character Content Autopilot
     character_autopilot_enabled: bool = True
-    character_minimax_daily_cap_usd: float = 2.0
+    character_minimax_daily_cap_usd: float = 3.50
     character_minimax_min_stage2_score: float = 80.0
     character_auto_approve_threshold: float = 85.0
     character_discovery_enabled: bool = True
