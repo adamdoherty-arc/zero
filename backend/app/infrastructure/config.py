@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     character_minimax_min_stage2_score: float = 80.0
     character_auto_approve_threshold: float = 85.0
     character_discovery_enabled: bool = True
-    character_discovery_daily_cap: int = 10
+    character_discovery_daily_cap: int = 20
 
     # Meeting Intelligence (DailyMemory)
     whisper_model_size: str = "large-v3"

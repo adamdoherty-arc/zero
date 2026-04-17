@@ -247,19 +247,28 @@ class CharacterDiscoveryService:
         matched = 0
         scanned = 0
         endpoints = [
+            # Trending (existing)
             ("https://api.themoviedb.org/3/trending/movie/week", "movie"),
             ("https://api.themoviedb.org/3/trending/tv/week", "tv"),
+            # Now playing / upcoming / airing (newer content focus)
+            ("https://api.themoviedb.org/3/movie/now_playing", "movie"),
+            ("https://api.themoviedb.org/3/movie/upcoming", "movie"),
+            ("https://api.themoviedb.org/3/tv/airing_today", "tv"),
+            ("https://api.themoviedb.org/3/tv/on_the_air", "tv"),
         ]
         try:
             async with self._semaphore:
                 async with aiohttp.ClientSession(timeout=self._http_timeout) as http:
+                    params = {"api_key": api_key} if not api_key.startswith("eyJ") else {}
+                    headers = {"Authorization": f"Bearer {api_key}"} if api_key.startswith("eyJ") else {}
                     for url, kind in endpoints:
-                        params = {"api_key": api_key} if not api_key.startswith("eyJ") else {}
-                        headers = {"Authorization": f"Bearer {api_key}"} if api_key.startswith("eyJ") else {}
                         async with http.get(url, params=params, headers=headers) as resp:
                             if resp.status != 200:
                                 continue
                             data = await resp.json()
+                        # Derive source label from URL path
+                        url_tag = url.rsplit("/", 1)[-1]  # e.g. "week", "now_playing", "upcoming"
+                        source_label = f"tmdb_{url_tag}"
                         for item in (data.get("results") or [])[:limit]:
                             scanned += 1
                             item_id = item.get("id")
@@ -283,7 +292,7 @@ class CharacterDiscoveryService:
                                     name=char_name,
                                     universe="other",
                                     franchise=franchise,
-                                    source="tmdb_trending",
+                                    source=source_label,
                                     evidence={"franchise": franchise, "kind": kind, "tmdb_id": item_id},
                                 )
                                 if r.get("created"):

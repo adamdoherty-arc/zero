@@ -494,6 +494,11 @@ DAILY_SCHEDULE = {
         "description": "Promote proposed characters from analyzed TikTok reference videos",
         "enabled": True
     },
+    "character_auto_research": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Auto-start research for pending characters if queue is idle",
+        "enabled": True
+    },
     "character_final_review_backfill": {
         "cron": "*/20 * * * *",  # Every 20 minutes
         "description": "Run Stage 2 final review on carousels with ai_review_score >= 7 AND final_review_score IS NULL",
@@ -836,6 +841,7 @@ class SchedulerService:
             "character_gap_audit": self._run_character_gap_audit,
             "character_hook_audit": self._run_character_hook_audit,
             "character_discovery_refvideos": self._run_character_discovery_refvideos,
+            "character_auto_research": self._run_character_auto_research,
             "character_final_review_backfill": self._run_character_final_review_backfill,
             # Zero Brain
             "brain_benchmark": self._run_brain_benchmark,
@@ -2793,6 +2799,25 @@ Have a great evening!"""
                 logger.info("character_discovery_refvideos_tick", **result)
         except Exception as e:
             logger.error("character_discovery_refvideos_failed", error=str(e))
+
+    async def _run_character_auto_research(self):
+        """Auto-start research for pending characters if the queue is idle."""
+        if self._autopilot_disabled("character_auto_research"):
+            return
+        try:
+            from app.services.character_content_service import get_character_content_service, _research_queue
+            if _research_queue.get("running"):
+                logger.debug("character_auto_research_skipped_running")
+                return
+            svc = get_character_content_service()
+            pending = await svc.list_characters(research_status="pending", limit=1)
+            if not pending:
+                logger.debug("character_auto_research_skipped_none_pending")
+                return
+            logger.info("character_auto_research_starting")
+            await svc.start_batch_research_async(limit=24)
+        except Exception as e:
+            logger.error("character_auto_research_failed", error=str(e))
 
     # ============================================
     # ZERO BRAIN HANDLERS

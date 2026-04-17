@@ -2651,7 +2651,7 @@ class CharacterContentService:
         jobs: List[ResearchJob],
         averages: Dict[str, Dict[str, int]],
     ) -> Optional[str]:
-        """Compute wall-clock ETA for the full queue given BATCH_SIZE parallelism.
+        """Compute wall-clock ETA for the queue given sliding-window concurrency.
 
         Returns an ISO 8601 timestamp string to match ResearchQueueStatus schema.
         """
@@ -2667,12 +2667,12 @@ class CharacterContentService:
                 for s in _STEP_DURATION_PRIORS_MS.keys()
             )
             job_avg_sec = max(1, job_avg_ms // 1000)
-            # We process BATCH_SIZE in parallel. Running job's remaining time
-            # is captured in its eta_seconds; assume the longest remaining
-            # running ETA dominates the current batch.
+            # Sliding window: up to concurrency characters run at once.
+            # Running job's remaining time is captured in eta_seconds;
+            # assume the longest remaining running ETA dominates.
             running = [j for j in active if j.status == ResearchJobStatus.RESEARCHING]
             queued = [j for j in active if j.status == ResearchJobStatus.QUEUED]
-            batch_size = 3
+            batch_size = 3  # matches CONCURRENCY in _run_research_queue
             # Time to finish the batch currently running.
             current_batch_remaining = max(
                 (j.eta_seconds or job_avg_sec for j in running),
@@ -2897,6 +2897,9 @@ class CharacterContentService:
             universe=universe, research_status="needs_retry", limit=limit,
         )
         chars.extend(needs_retry)
+        # Newest characters first so recently-discovered trending characters
+        # get researched before older seed characters.
+        chars.sort(key=lambda c: c.created_at or "", reverse=True)
         chars = chars[:limit]
 
         if not chars:
@@ -3036,77 +3039,95 @@ class CharacterContentService:
         return await self.get_research_queue_status()
 
     async def _run_research_queue(self):
-        """Process the research queue in parallel batches.
+        """Process the research queue with a sliding window.
 
-        Multiple characters run concurrently through the cheap I/O steps
-        (searxng, wiki, deep_research, image_sourcing). Heavy LLM steps
-        (synthesis, fact_extraction) are serialized via _OLLAMA_SEMAPHORE
-        so we don't thrash the GPU.
+        Up to CONCURRENCY characters run at once. When one finishes the next
+        starts immediately (no waiting for the whole batch). Heavy LLM steps
+        are still serialized via _OLLAMA_SEMAPHORE. Each character has a
+        TIMEOUT_SEC cap so a stuck job never blocks the pipeline.
         """
         global _research_queue
-        BATCH_SIZE = 3  # Parallelize cheap steps; Ollama serialized by semaphore
+        CONCURRENCY = 3
+        TIMEOUT_SEC = 30 * 60  # 30 min per character
+        concurrency_sem = asyncio.Semaphore(CONCURRENCY)
+
         try:
             order = list(_research_queue["order"])
-            idx = 0
-            while idx < len(order):
-                if _research_queue["cancel_requested"]:
-                    logger.info("research_queue_cancelled")
-                    break
 
-                # Collect next batch of queued jobs
-                batch_ids = []
-                while idx < len(order) and len(batch_ids) < BATCH_SIZE:
-                    jid = order[idx]
-                    job = _research_queue["jobs"].get(jid)
-                    if job and job["status"] == "queued":
-                        batch_ids.append(jid)
-                    idx += 1
+            async def _process_one(job_id: str):
+                job = _research_queue["jobs"][job_id]
+                job["status"] = "researching"
+                job["started_at"] = datetime.now(timezone.utc).isoformat()
+                try:
+                    async with get_session() as session:
+                        row = await session.get(CharacterModel, job["character_id"])
+                        if row:
+                            row.research_status = "researching"
+                            await session.commit()
+                except (OSError, ValueError, RuntimeError):
+                    pass
 
-                if not batch_ids:
-                    continue
-
-                # Start all jobs in the batch concurrently
-                async def _process_one(job_id: str):
-                    job = _research_queue["jobs"][job_id]
-                    job["status"] = "researching"
-                    job["started_at"] = datetime.now(timezone.utc).isoformat()
+                try:
+                    await self._research_pipeline_tracked(job_id)
+                    job["status"] = "completed"
+                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    logger.info("research_queue_job_done",
+                                character=job["character_name"],
+                                facts=job["facts_found"],
+                                images=job["images_found"])
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as e:
+                    job["status"] = "failed"
+                    job["error"] = str(e)
+                    job["completed_at"] = datetime.now(timezone.utc).isoformat()
+                    logger.warning("research_queue_job_failed",
+                                   character=job["character_name"], error=str(e))
                     try:
                         async with get_session() as session:
                             row = await session.get(CharacterModel, job["character_id"])
                             if row:
-                                row.research_status = "researching"
+                                row.research_status = "failed"
+                                row.research_data = {"error": str(e)}
                                 await session.commit()
                     except (OSError, ValueError, RuntimeError):
                         pass
 
+            async def _process_with_limit(job_id: str):
+                async with concurrency_sem:
+                    if _research_queue["cancel_requested"]:
+                        return
+                    logger.info("research_queue_job_start",
+                                character=_research_queue["jobs"][job_id]["character_name"])
                     try:
-                        await self._research_pipeline_tracked(job_id)
-                        job["status"] = "completed"
-                        job["completed_at"] = datetime.now(timezone.utc).isoformat()
-                        logger.info("research_queue_job_done",
-                                    character=job["character_name"],
-                                    facts=job["facts_found"],
-                                    images=job["images_found"])
-                    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as e:  # Catch all to prevent queue from dying on unexpected errors
+                        await asyncio.wait_for(_process_one(job_id), timeout=TIMEOUT_SEC)
+                    except asyncio.TimeoutError:
+                        job = _research_queue["jobs"][job_id]
                         job["status"] = "failed"
-                        job["error"] = str(e)
+                        job["error"] = f"timeout_{TIMEOUT_SEC // 60}m"
                         job["completed_at"] = datetime.now(timezone.utc).isoformat()
-                        logger.warning("research_queue_job_failed",
-                                       character=job["character_name"], error=str(e))
+                        logger.warning("research_queue_job_timeout",
+                                       character=job["character_name"],
+                                       timeout_min=TIMEOUT_SEC // 60)
                         try:
                             async with get_session() as session:
                                 row = await session.get(CharacterModel, job["character_id"])
                                 if row:
                                     row.research_status = "failed"
-                                    row.research_data = {"error": str(e)}
+                                    row.research_data = {"error": f"timeout_{TIMEOUT_SEC // 60}m"}
                                     await session.commit()
                         except (OSError, ValueError, RuntimeError):
                             pass
 
-                logger.info("research_queue_batch_start",
-                            batch=[_research_queue["jobs"][jid]["character_name"] for jid in batch_ids],
-                            size=len(batch_ids))
-                await asyncio.gather(*[_process_one(jid) for jid in batch_ids])
+            # Launch all queued jobs; the semaphore limits to CONCURRENCY at a time
+            tasks = []
+            for jid in order:
+                job = _research_queue["jobs"].get(jid)
+                if job and job["status"] == "queued":
+                    tasks.append(asyncio.create_task(_process_with_limit(jid)))
+
+            if tasks:
+                logger.info("research_queue_sliding_start",
+                            total=len(tasks), concurrency=CONCURRENCY)
+                await asyncio.gather(*tasks)
 
         finally:
             _research_queue["running"] = False
