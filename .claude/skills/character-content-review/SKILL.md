@@ -1,4 +1,7 @@
-# /character-content-review
+# /character-content-review [DEPRECATED]
+
+> **DEPRECATED**: This skill has been merged into `/zero-character-content --review`. Use that instead.
+> `/zero-character-content` combines operations + review + self-improvement into one unified employee skill.
 
 Comprehensive audit, grading, and improvement planner for Zero's Character Content Creation system. Reviews all dimensions of the content pipeline. Research quality, generation output, UI/UX, code quality, automation, and content strategy. Then researches best practices and produces an actionable improvement plan.
 

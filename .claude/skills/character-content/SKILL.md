@@ -1,4 +1,7 @@
-# /character-content
+# /character-content [DEPRECATED]
+
+> **DEPRECATED**: This skill has been merged into `/zero-character-content`. Use that instead.
+> `/zero-character-content` combines operations + review + self-improvement into one unified employee skill.
 
 Comprehensive character content pipeline management skill for TikTok character development posts. Use when asked to improve characters, generate content, review carousels, add new characters, research characters, source images, or optimize the character content system.
 
