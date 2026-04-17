@@ -1,5 +1,5 @@
 """
-Centralized LLM Router — Multi-Provider Model Routing.
+Centralized LLM Router. Multi-Provider Model Routing.
 
 Every service that needs an LLM model should call:
     get_llm_router().resolve(task_type)
@@ -10,15 +10,17 @@ for backward compat (returns model name string), or:
 for the full (provider, model, fallbacks) tuple.
 
 Supports:
-- provider/model specs: "gemini/gemini-3.1-pro-preview", "ollama/qwen3:8b"
-- Fallback chains: primary → fallback1 → fallback2
-- Daily budget enforcement: expensive providers blocked when budget exceeded
+- provider/model specs: "gemini/gemini-3.1-pro-preview", "ollama/qwen3.6:35b-a3b-q8_0"
+- Fallback chains: primary -> fallback1 -> fallback2
+- Daily budget enforcement: global spend + per-provider caps
 - Runtime reconfiguration via API without restart
 - Persisted config in workspace/llm/router_config.json
 """
 
+import asyncio
+from datetime import date
 from functools import lru_cache
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import structlog
 
@@ -38,6 +40,7 @@ class LlmRouter:
         self._storage = JsonStorage(get_workspace_path("llm"))
         self._config = LlmRouterConfig()
         self._initialized = False
+        self._budget_lock = asyncio.Lock()
 
     async def initialize(self):
         """Load persisted config from storage."""
@@ -118,10 +121,20 @@ class LlmRouter:
             return float("inf")
         return max(0.0, self._config.daily_budget_usd - self._config.current_spend_usd)
 
-    async def record_spend(self, cost_usd: float):
-        """Add to daily spend counter and persist."""
-        self._config.current_spend_usd += cost_usd
-        await self._save()
+    async def record_spend(self, cost_usd: float, provider: Optional[str] = None):
+        """Add to daily spend counter and persist (thread-safe).
+
+        Also records per-provider spend to the llm_daily_spend DB table when
+        a provider is supplied.
+        """
+        async with self._budget_lock:
+            self._config.current_spend_usd += cost_usd
+            await self._save()
+        if provider and cost_usd > 0:
+            try:
+                await self._record_provider_spend(provider, cost_usd)
+            except Exception as e:
+                logger.warning("llm_provider_spend_record_failed", provider=provider, error=str(e))
 
     async def reset_daily_budget(self):
         """Reset daily spend to 0. Called by midnight scheduler job."""
@@ -129,6 +142,77 @@ class LlmRouter:
         self._config.current_spend_usd = 0.0
         await self._save()
         logger.info("llm_budget_reset", previous_spend=old)
+
+    # ------------------------------------------------------------------
+    # Per-provider daily spend (backed by llm_daily_spend table)
+    # ------------------------------------------------------------------
+
+    async def _record_provider_spend(self, provider: str, cost_usd: float):
+        """Upsert into llm_daily_spend(provider, day, spend_usd)."""
+        from app.infrastructure.database import get_session
+        from sqlalchemy import text
+
+        today = date.today()
+        async with get_session() as session:
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO llm_daily_spend (provider, day, spend_usd)
+                    VALUES (:provider, :day, :amount)
+                    ON CONFLICT (provider, day)
+                    DO UPDATE SET spend_usd = llm_daily_spend.spend_usd + :amount
+                    """
+                ),
+                {"provider": provider, "day": today, "amount": float(cost_usd)},
+            )
+            await session.commit()
+
+    async def get_daily_spend(self, provider: str) -> float:
+        """Get today's total spend for a specific provider."""
+        from app.infrastructure.database import get_session
+        from sqlalchemy import text
+
+        today = date.today()
+        try:
+            async with get_session() as session:
+                result = await session.execute(
+                    text(
+                        "SELECT spend_usd FROM llm_daily_spend "
+                        "WHERE provider = :provider AND day = :day"
+                    ),
+                    {"provider": provider, "day": today},
+                )
+                row = result.first()
+                return float(row[0]) if row else 0.0
+        except Exception as e:
+            logger.warning("llm_provider_spend_read_failed", provider=provider, error=str(e))
+            return 0.0
+
+    async def is_budget_exceeded(self, provider: str, daily_cap_usd: float) -> bool:
+        """Check if provider has exceeded its configured daily cap."""
+        if daily_cap_usd <= 0:
+            return False  # No cap
+        spent = await self.get_daily_spend(provider)
+        return spent >= daily_cap_usd
+
+    async def get_all_daily_spend(self) -> Dict[str, float]:
+        """Return today's spend for all providers."""
+        from app.infrastructure.database import get_session
+        from sqlalchemy import text
+
+        today = date.today()
+        try:
+            async with get_session() as session:
+                result = await session.execute(
+                    text(
+                        "SELECT provider, spend_usd FROM llm_daily_spend WHERE day = :day"
+                    ),
+                    {"day": today},
+                )
+                return {row[0]: float(row[1]) for row in result.all()}
+        except Exception as e:
+            logger.warning("llm_all_spend_read_failed", error=str(e))
+            return {}
 
     # ------------------------------------------------------------------
     # Properties

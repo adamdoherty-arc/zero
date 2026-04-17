@@ -10,6 +10,8 @@ interface TopBarProps {
 
 const routeLabels: Record<string, string> = {
   '/': 'Dashboard',
+  '/operations': 'Operations',
+  '/ecosystem': 'Ecosystem',
   '/board': 'Sprint Board',
   '/sprints': 'Sprints',
   '/projects': 'Projects',
@@ -22,12 +24,46 @@ const routeLabels: Record<string, string> = {
   '/research': 'Research',
   '/analytics': 'Analytics',
   '/settings': 'Settings',
+  '/architecture': 'Architecture',
+  '/qa': 'QA',
   '/agent': 'Agent Tasks',
+  '/ask-zero': 'Ask Zero',
+  '/system-health': 'System Health',
+  '/tiktok-shop': 'TikTok Shop',
+  '/content-agent': 'Content Agent',
+  '/prediction-markets': 'Prediction Markets',
+  '/llc-guidance': 'LLC Guidance',
+  '/execution-dashboard': 'Execution Dashboard',
+  '/visual-workflows': 'Visual Workflows',
+  '/outcomes': 'Outcomes',
+  '/meetings': 'Meetings',
+  '/meeting-search': 'Meeting Search',
+  '/ai-company': 'AI Company',
+  '/deep-research': 'Deep Research',
+  '/experiments': 'Experiment Lab',
+  '/council': 'Council Room',
+  '/brain': 'Zero Brain',
+  '/characters': 'Character Content',
+  '/money-maker': 'Money Maker',
+}
+
+const dynamicRouteLabels: [RegExp, string][] = [
+  [/^\/tiktok-shop\/product\//, 'Product Detail'],
+  [/^\/meetings\//, 'Meeting Detail'],
+  [/^\/characters\//, 'Character Detail'],
+]
+
+function getRouteLabel(pathname: string): string {
+  if (routeLabels[pathname]) return routeLabels[pathname]
+  for (const [pattern, label] of dynamicRouteLabels) {
+    if (pattern.test(pathname)) return label
+  }
+  return 'Zero'
 }
 
 export function TopBar({ onOpenCommandMenu }: TopBarProps) {
   const location = useLocation()
-  const currentLabel = routeLabels[location.pathname] || 'Zero'
+  const currentLabel = getRouteLabel(location.pathname)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b border-sidebar-border bg-background/80 backdrop-blur-lg px-4">

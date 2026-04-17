@@ -55,7 +55,7 @@ class EcosystemSyncService:
             return {"status": "error", "error": str(e)}
 
         # Load previous state for change detection
-        prev = await self._storage.read("quick_sync.json")
+        prev = await self._storage.read("quick_sync.json") or {}
         prev_blocked = {t.get("id") for t in prev.get("blocked_tasks", [])}
 
         # Detect new blocked tasks
@@ -121,7 +121,7 @@ class EcosystemSyncService:
             return {"status": "error", "error": str(e)}
 
         # Load previous data for change detection
-        prev_sprints_data = await self._storage.read("sprints.json")
+        prev_sprints_data = await self._storage.read("sprints.json") or {}
         prev_sprint_map = {
             s["id"]: s for s in prev_sprints_data.get("sprints", [])
         }
@@ -285,7 +285,7 @@ class EcosystemSyncService:
             return {"status": "error", "error": str(e)}
 
         # Load previous executions for change detection
-        prev_data = await self._storage.read("executions.json")
+        prev_data = await self._storage.read("executions.json") or {}
         prev_map = {
             e.get("id", e.get("task_id")): e
             for e in prev_data.get("executions", [])
@@ -365,7 +365,7 @@ class EcosystemSyncService:
         - Velocity drops
         Runs daily at 6:55 AM.
         """
-        sprints_data = await self._storage.read("sprints.json")
+        sprints_data = await self._storage.read("sprints.json") or {}
         sprints = sprints_data.get("sprints", [])
         now = datetime.utcnow()
 
@@ -461,7 +461,7 @@ class EcosystemSyncService:
 
     async def generate_lifecycle_suggestions(self) -> List[str]:
         """Generate natural language suggestions from lifecycle events."""
-        data = await self._storage.read("lifecycle_events.json")
+        data = await self._storage.read("lifecycle_events.json") or {}
         events = data.get("events", [])
 
         suggestions = []
@@ -487,7 +487,7 @@ class EcosystemSyncService:
         Compute health score for each project (0-100).
         Formula: completion_rate * 60 - blocked_ratio * 30 + velocity_bonus (max 10)
         """
-        projects_data = await self._storage.read("projects.json")
+        projects_data = await self._storage.read("projects.json") or {}
         projects = projects_data.get("projects", [])
 
         scores = {}
@@ -542,7 +542,7 @@ class EcosystemSyncService:
         risks = []
 
         # Sprint lifecycle events (stale, overdue, high blocked)
-        lifecycle_data = await self._storage.read("lifecycle_events.json")
+        lifecycle_data = await self._storage.read("lifecycle_events.json") or {}
         for event in lifecycle_data.get("events", []):
             risks.append({
                 "source": "lifecycle",
@@ -553,7 +553,7 @@ class EcosystemSyncService:
             })
 
         # Execution failures
-        exec_data = await self._storage.read("executions.json")
+        exec_data = await self._storage.read("executions.json") or {}
         failures = [
             e for e in exec_data.get("executions", [])
             if e.get("status") == "failed"
@@ -580,7 +580,7 @@ class EcosystemSyncService:
         alerts = []
 
         # Lifecycle events
-        lifecycle_data = await self._storage.read("lifecycle_events.json")
+        lifecycle_data = await self._storage.read("lifecycle_events.json") or {}
         for event in lifecycle_data.get("events", []):
             alerts.append({
                 "id": f"lifecycle_{event.get('sprint_id')}_{event.get('type')}",
@@ -594,7 +594,7 @@ class EcosystemSyncService:
             })
 
         # Execution failures
-        exec_data = await self._storage.read("executions.json")
+        exec_data = await self._storage.read("executions.json") or {}
         for exe in exec_data.get("executions", []):
             if exe.get("status") == "failed":
                 exe_id = exe.get("id", exe.get("task_id"))
@@ -609,7 +609,7 @@ class EcosystemSyncService:
                 })
 
         # Blocked tasks from quick sync
-        quick_data = await self._storage.read("quick_sync.json")
+        quick_data = await self._storage.read("quick_sync.json") or {}
         for task in quick_data.get("blocked_tasks", []):
             alerts.append({
                 "id": f"blocked_{task.get('id')}",
@@ -636,7 +636,7 @@ class EcosystemSyncService:
         Get full ecosystem status from cache.
         Used by GET /api/ecosystem/status — no Legion API calls.
         """
-        projects_data = await self._storage.read("projects.json")
+        projects_data = await self._storage.read("projects.json") or {}
         projects = projects_data.get("projects", [])
 
         health_scores = await self.compute_project_health_scores()
@@ -664,13 +664,13 @@ class EcosystemSyncService:
             "total_blocked_tasks": total_blocked,
             "overall_health": overall_health,
             "alert_count": len(alerts),
-            "last_quick_sync": (await self._storage.read("quick_sync.json")).get("synced_at"),
+            "last_quick_sync": (await self._storage.read("quick_sync.json") or {}).get("synced_at"),
             "last_full_sync": projects_data.get("last_full_sync"),
         }
 
     async def get_cached_project_sprint(self, project_id: int) -> Optional[Dict[str, Any]]:
         """Get current sprint + tasks for a specific project from cache."""
-        projects_data = await self._storage.read("projects.json")
+        projects_data = await self._storage.read("projects.json") or {}
         project = next(
             (p for p in projects_data.get("projects", []) if p["id"] == project_id),
             None,
@@ -678,7 +678,7 @@ class EcosystemSyncService:
         if not project:
             return None
 
-        tasks_data = await self._storage.read("tasks.json")
+        tasks_data = await self._storage.read("tasks.json") or {}
         project_tasks = [
             t for t in tasks_data.get("tasks", [])
             if t.get("project_id") == project_id
@@ -691,7 +691,7 @@ class EcosystemSyncService:
 
     async def get_cached_project_detail(self, project_id: int) -> Optional[Dict[str, Any]]:
         """Get enriched project detail from cache: project info + all sprints + tasks."""
-        projects_data = await self._storage.read("projects.json")
+        projects_data = await self._storage.read("projects.json") or {}
         project = next(
             (p for p in projects_data.get("projects", []) if p["id"] == project_id),
             None,
@@ -707,7 +707,7 @@ class EcosystemSyncService:
         project["blocked_ratio"] = h.get("blocked_ratio", 0)
 
         # Get all sprints for this project
-        sprints_data = await self._storage.read("sprints.json")
+        sprints_data = await self._storage.read("sprints.json") or {}
         project_sprints = [
             s for s in sprints_data.get("sprints", [])
             if s.get("project_id") == project_id
@@ -718,7 +718,7 @@ class EcosystemSyncService:
             sprint["progress"] = round((completed / total * 100) if total > 0 else 0, 1)
 
         # Get tasks for this project
-        tasks_data = await self._storage.read("tasks.json")
+        tasks_data = await self._storage.read("tasks.json") or {}
         project_tasks = [
             t for t in tasks_data.get("tasks", [])
             if t.get("project_id") == project_id
@@ -732,7 +732,7 @@ class EcosystemSyncService:
 
     async def get_cached_project_sprints(self, project_id: int) -> List[Dict[str, Any]]:
         """Get all cached sprints for a project with progress."""
-        sprints_data = await self._storage.read("sprints.json")
+        sprints_data = await self._storage.read("sprints.json") or {}
         project_sprints = [
             s for s in sprints_data.get("sprints", [])
             if s.get("project_id") == project_id
@@ -745,7 +745,7 @@ class EcosystemSyncService:
 
     async def get_cached_timeline(self) -> List[Dict[str, Any]]:
         """Get all active sprints for timeline view from cache."""
-        sprints_data = await self._storage.read("sprints.json")
+        sprints_data = await self._storage.read("sprints.json") or {}
         active = [
             s for s in sprints_data.get("sprints", [])
             if s.get("status") == "active"
@@ -761,10 +761,10 @@ class EcosystemSyncService:
 
     async def get_sync_status(self) -> Dict[str, Any]:
         """Get sync status and timing info."""
-        quick = await self._storage.read("quick_sync.json")
-        projects = await self._storage.read("projects.json")
-        execs = await self._storage.read("executions.json")
-        events = await self._storage.read("change_events.json")
+        quick = await self._storage.read("quick_sync.json") or {}
+        projects = await self._storage.read("projects.json") or {}
+        execs = await self._storage.read("executions.json") or {}
+        events = await self._storage.read("change_events.json") or {}
 
         return {
             "last_quick_sync": quick.get("synced_at"),
@@ -775,7 +775,7 @@ class EcosystemSyncService:
 
     async def get_change_events(self, since: Optional[datetime] = None, limit: int = 50) -> List[Dict]:
         """Get recent change events, optionally filtered by time."""
-        data = await self._storage.read("change_events.json")
+        data = await self._storage.read("change_events.json") or {}
         events = data.get("events", [])
 
         if since:
@@ -790,7 +790,7 @@ class EcosystemSyncService:
 
     async def _append_change_events(self, new_events: List[Dict]):
         """Append change events to the bounded event log."""
-        data = await self._storage.read("change_events.json")
+        data = await self._storage.read("change_events.json") or {}
         events = data.get("events", [])
 
         now = datetime.utcnow().isoformat()

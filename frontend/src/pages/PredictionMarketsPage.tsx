@@ -66,17 +66,8 @@ export function PredictionMarketsPage() {
 
   return (
     <div className="p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-indigo-400" />
-            Prediction Markets
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Kalshi + Polymarket data collection, bettor tracking, and ADA sync
-          </p>
-        </div>
+      {/* Action buttons */}
+      <div className="flex items-center justify-end mb-6">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"

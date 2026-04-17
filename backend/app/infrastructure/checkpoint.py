@@ -41,6 +41,7 @@ async def get_checkpointer():
                 conninfo=postgres_url,
                 min_size=1,
                 max_size=3,
+                open=False,
                 kwargs={"autocommit": True, "prepare_threshold": 0},
             )
             await _pg_pool.open()

@@ -827,18 +827,21 @@ class CalendarService:
             f"Respond as JSON array: [{{'start': 'HH:MM', 'end': 'HH:MM', 'reason': '...', 'score': 0.0-1.0}}]"
         )
 
-        from app.infrastructure.ollama_client import get_ollama_client
-        content = await get_ollama_client().chat_safe(
-            prompt, task_type="planning", temperature=0.3, num_predict=500, timeout=120,
-        )
+        try:
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-        if content:
-            import json as _json
-            start_idx = content.find("[")
-            end_idx = content.rfind("]") + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                ranked = _json.loads(content[start_idx:end_idx])
+            client = get_unified_llm_client()
+            ranked = await client.structured_chat(
+                prompt=prompt,
+                task_type="structured_output",
+                temperature=0.3,
+                max_tokens=1024,
+                output_schema=[{"start": "HH:MM", "end": "HH:MM", "reason": "str", "score": 0.9}],
+            )
+            if isinstance(ranked, list):
                 return ranked[:3]
+        except Exception:
+            pass
 
         # Fallback
         return [{"slot": s, "reason": "Available", "score": 0.5} for s in slots[:3]]

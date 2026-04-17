@@ -122,16 +122,15 @@ class EmailRuleService:
 
     async def generate_rule_from_prompt(self, prompt: str) -> EmailRuleCreate:
         """Use LLM to generate an EmailRuleCreate from a natural language description."""
-        from app.infrastructure.ollama_client import get_ollama_client
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         raw = await client.chat(
-            prompt=f"{prompt}\n\n/no_think",
+            prompt=prompt,
             system=self._get_rule_generation_system_prompt(),
-            task_type="workflow",
+            task_type="structured_output",
             temperature=0.1,
-            num_predict=1024,
-            timeout=30,
+            max_tokens=1024,
         )
 
         if not raw.strip():
@@ -423,7 +422,6 @@ RULES:
 
     async def _execute_create_calendar_event(self, email_data: dict, params: dict) -> dict:
         """Extract event info from email via LLM and create a calendar event."""
-        from app.infrastructure.ollama_client import get_ollama_client
         from app.services.calendar_service import get_calendar_service
         from app.models.calendar import EventCreate, EventDateTime
 
@@ -448,9 +446,13 @@ RULES:
             f'If no date found, respond: {{"title":null}}\n/no_think'
         )
 
-        content = await get_ollama_client().chat_safe(
-            prompt, task_type="analysis", temperature=0.1, num_predict=300
-        )
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        try:
+            content = await get_unified_llm_client().chat(
+                prompt, task_type="extraction", temperature=0.1, max_tokens=300
+            )
+        except Exception:
+            content = ""
 
         if not content:
             return {"message": "LLM returned empty response, skipping calendar event"}

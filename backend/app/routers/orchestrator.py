@@ -1,10 +1,15 @@
 """
 Agent orchestrator API endpoints.
-Provides control over code execution agents and triggers.
+Provides control over code execution agents, LangGraph gateway,
+conversation history, execution traces, and real-time activity feed.
 """
 
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
 from typing import Dict, Any, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import structlog
 
@@ -53,7 +58,6 @@ async def trigger_action(trigger: AgentTrigger):
     orchestrator = get_orchestrator()
 
     if not orchestrator.is_running:
-        # Auto-start if needed
         await orchestrator.start()
 
     logger.info("Action triggered", action=trigger.action)
@@ -108,27 +112,19 @@ async def trigger_action(trigger: AgentTrigger):
 
 @router.post("/trigger-enhancement")
 async def trigger_enhancement_scan():
-    """
-    Trigger full enhancement cycle: scan + create tasks.
-    This is the main endpoint for automated enhancement detection.
-    """
+    """Trigger full enhancement cycle: scan + create tasks."""
     orchestrator = get_orchestrator()
 
     if not orchestrator.is_running:
         await orchestrator.start()
 
-    # Run enhancement scan directly for immediate results
     enhancement_service = get_enhancement_service()
-
-    # Step 1: Scan for signals
     scan_result = await enhancement_service.scan_for_signals()
 
-    # Step 2: Get current sprint
     from app.services.sprint_service import get_sprint_service
     sprint_service = get_sprint_service()
     current_sprint = await sprint_service.get_current_sprint()
 
-    # Step 3: Create tasks from high-confidence signals
     sprint_id = current_sprint.id if current_sprint else None
     create_result = await enhancement_service.create_tasks_from_signals(sprint_id)
 
@@ -146,12 +142,9 @@ async def trigger_enhancement_scan():
 
 @router.post("/trigger-intelligence")
 async def trigger_sprint_intelligence(sprint_id: Optional[str] = None):
-    """
-    Trigger sprint intelligence analysis: health check + proposal generation.
-    """
+    """Trigger sprint intelligence analysis: health check + proposal generation."""
     intelligence_service = get_sprint_intelligence_service()
 
-    # Get sprint ID if not provided
     if not sprint_id:
         from app.services.sprint_service import get_sprint_service
         sprint_service = get_sprint_service()
@@ -161,26 +154,19 @@ async def trigger_sprint_intelligence(sprint_id: Optional[str] = None):
     results = {"sprint_id": sprint_id}
 
     if sprint_id:
-        # Get health assessment
         health = await intelligence_service.get_sprint_health(sprint_id)
         results["health"] = health
-
-        # Generate proposal
         proposal = await intelligence_service.generate_sprint_proposal(sprint_id)
         results["proposal"] = proposal
 
-    # Auto-update all sprints
     update_result = await intelligence_service.auto_update_sprints()
     results["sprint_updates"] = update_result
-
     return results
 
 
 @router.post("/trigger-auto-update")
 async def trigger_auto_update():
-    """
-    Trigger automatic sprint updates (recalculate points, sync state).
-    """
+    """Trigger automatic sprint updates (recalculate points, sync state)."""
     intelligence_service = get_sprint_intelligence_service()
     result = await intelligence_service.auto_update_sprints()
     return result
@@ -201,27 +187,25 @@ async def generate_sprint_proposal(sprint_id: str):
 
 
 # =============================================================================
-# LangGraph Orchestration Gateway (Sprint 53)
+# LangGraph Orchestration Gateway
 # =============================================================================
 
 class OrchestrationRequest(BaseModel):
     """Request schema for LangGraph orchestration."""
     message: str
     thread_id: str = "default"
+    channel: str = "api"
 
 
 @router.post("/graph/invoke")
 async def invoke_graph(request: OrchestrationRequest):
-    """Invoke the LangGraph orchestration graph with a user message.
-
-    Routes the message through the supervisor to specialized subgraphs
-    (sprint, email, calendar, enhancement, briefing).
-    """
+    """Invoke the LangGraph orchestration graph with a user message."""
     try:
         from app.services.orchestration_graph import invoke_orchestration
         result = await invoke_orchestration(
             message=request.message,
             thread_id=request.thread_id,
+            channel=request.channel,
         )
         return result
     except ImportError as e:
@@ -241,7 +225,12 @@ async def get_graph_status():
         from app.services.orchestration_graph import _compiled_graph
         return {
             "graph_compiled": _compiled_graph is not None,
-            "available_routes": ["sprint", "task", "email", "calendar", "enhancement", "briefing", "research", "notion", "money_maker", "knowledge", "workflow", "system", "general"],
+            "available_routes": [
+                "sprint", "task", "email", "calendar", "enhancement",
+                "briefing", "research", "notion", "money_maker", "knowledge",
+                "workflow", "system", "tiktok", "content", "prediction_market",
+                "planner", "general",
+            ],
             "checkpointer": type(_compiled_graph.checkpointer).__name__ if _compiled_graph and hasattr(_compiled_graph, 'checkpointer') and _compiled_graph.checkpointer else "none",
         }
     except ImportError:
@@ -249,3 +238,118 @@ async def get_graph_status():
             "graph_compiled": False,
             "error": "LangGraph not installed",
         }
+
+
+# =============================================================================
+# Conversation History & Traces
+# =============================================================================
+
+@router.get("/conversations")
+async def list_conversations(
+    thread_id: Optional[str] = None,
+    channel: Optional[str] = None,
+    route: Optional[str] = None,
+    errors_only: bool = False,
+    limit: int = Query(default=50, le=200),
+    offset: int = 0,
+):
+    """List orchestrator conversations with optional filters."""
+    from app.services.orchestrator_trace_service import list_conversations as _list
+    return await _list(
+        thread_id=thread_id,
+        channel=channel,
+        route=route,
+        errors_only=errors_only,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation_detail(conversation_id: str):
+    """Get a single conversation with its full execution trace."""
+    from app.services.orchestrator_trace_service import get_conversation_with_traces
+    detail = await get_conversation_with_traces(conversation_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return detail
+
+
+@router.get("/threads")
+async def get_threads(
+    limit: int = Query(default=20, le=100),
+    offset: int = 0,
+):
+    """List unique conversation threads."""
+    from app.services.orchestrator_trace_service import list_threads as _list
+    return await _list(limit=limit, offset=offset)
+
+
+@router.get("/threads/{thread_id}")
+async def get_thread_history(
+    thread_id: str,
+    limit: int = Query(default=100, le=500),
+):
+    """Get full message history for a thread."""
+    from app.services.orchestrator_trace_service import get_thread_history as _get
+    return await _get(thread_id=thread_id, limit=limit)
+
+
+@router.get("/graph/routes/stats")
+async def get_route_stats(hours: int = Query(default=24, le=720)):
+    """Get aggregated route statistics for the given time period."""
+    from app.services.orchestrator_trace_service import get_route_stats as _get
+    return await _get(hours=hours)
+
+
+@router.get("/activity/feed")
+async def get_activity_feed(limit: int = Query(default=50, le=200)):
+    """Get recent activity events."""
+    from app.services.orchestrator_trace_service import get_activity_feed as _get
+    return await _get(limit=limit)
+
+
+# =============================================================================
+# SSE Activity Stream
+# =============================================================================
+
+@router.get("/activity/stream")
+async def activity_stream():
+    """Server-Sent Events stream for real-time orchestrator activity.
+
+    Clients connect and receive events as they happen:
+    - invocation: new user message received
+    - response: agent response sent
+    - trace: node execution completed
+    - error: an error occurred
+    """
+    from app.services.orchestrator_trace_service import subscribe_activity, unsubscribe_activity
+
+    queue = subscribe_activity()
+
+    async def event_generator():
+        try:
+            # Send initial keepalive
+            yield f"data: {json.dumps({'event_type': 'connected', 'status': 'ok'})}\n\n"
+
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"data: {json.dumps(event, default=str)}\n\n"
+                except asyncio.TimeoutError:
+                    # Send keepalive every 30s
+                    yield f": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            unsubscribe_activity(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -112,8 +112,8 @@ async def approval_check_node(state: TikTokAgentState) -> dict:
         from app.services.tiktok_shop_service import get_tiktok_shop_service
         service = get_tiktok_shop_service()
 
-        # Auto-approve high confidence
-        auto_approved = await service.auto_approve_high_confidence(threshold=85.0)
+        # Auto-approve high confidence (uses configurable threshold from service_configs)
+        auto_approved = await service.auto_approve_high_confidence()
 
         # Count remaining pending
         pending = await service.list_pending()
@@ -131,6 +131,35 @@ async def approval_check_node(state: TikTokAgentState) -> dict:
         logger.error("tiktok_agent_approval_failed", error=str(e))
         errors.append(f"Approval check failed: {e}")
         return {"phase": "content_planning", "auto_approved_count": 0, "pending_count": 0, "errors": errors}
+
+
+async def reference_discovery_node(state: TikTokAgentState) -> dict:
+    """Node 3.5: Auto-discover reference videos from successful sellers for approved products."""
+    logger.info("tiktok_agent_reference_discovery_start")
+    errors = list(state.get("errors", []))
+
+    try:
+        from app.services.reference_video_service import get_reference_video_service
+        from app.services.tiktok_shop_service import get_tiktok_shop_service
+        ref_service = get_reference_video_service()
+        shop_service = get_tiktok_shop_service()
+
+        # Find approved products without reference videos
+        approved = await shop_service.list_products(status="approved", limit=10)
+        discovered = 0
+        for product in approved[:5]:
+            try:
+                refs = await ref_service.auto_discover_references(product.id, max_refs=3)
+                discovered += len(refs)
+            except Exception as e:
+                errors.append(f"Reference discovery failed for {product.name}: {e}")
+
+        logger.info("tiktok_agent_reference_discovery_complete", discovered=discovered)
+    except Exception as e:
+        logger.error("tiktok_agent_reference_discovery_failed", error=str(e))
+        errors.append(f"Reference discovery failed: {e}")
+
+    return {"phase": "content_planning", "errors": errors}
 
 
 async def content_planning_node(state: TikTokAgentState) -> dict:
@@ -185,14 +214,27 @@ async def script_generation_node(state: TikTokAgentState) -> dict:
     scripts_generated = []
     try:
         from app.services.tiktok_video_service import get_tiktok_video_service
+        from app.services.tiktok_shop_service import get_tiktok_shop_service
         from app.models.tiktok_content import VideoTemplateType
         video_service = get_tiktok_video_service()
+        shop_service = get_tiktok_shop_service()
 
-        # Select template based on product (rotate through templates)
+        # Data-driven template selection: best_template_type > niche analytics > round-robin
         templates = list(VideoTemplateType)
         for i, product_id in enumerate(approved_ids[:5]):
             try:
-                template = templates[i % len(templates)]
+                product = await shop_service.get_product(product_id)
+                if product and product.best_template_type:
+                    try:
+                        template = VideoTemplateType(product.best_template_type)
+                    except ValueError:
+                        template = templates[i % len(templates)]
+                elif product and product.niche:
+                    best = await shop_service.get_best_template_for_niche(product.niche)
+                    template = VideoTemplateType(best) if best else templates[i % len(templates)]
+                else:
+                    template = templates[i % len(templates)]
+
                 script = await video_service.generate_video_script(product_id, template)
                 if script:
                     scripts_generated.append(script.id)
@@ -342,6 +384,7 @@ def build_tiktok_agent_graph(checkpointer=None) -> StateGraph:
     graph.add_node("research", research_node)
     graph.add_node("scoring", scoring_node)
     graph.add_node("approval_check", approval_check_node)
+    graph.add_node("reference_discovery", reference_discovery_node)
     graph.add_node("content_planning", content_planning_node)
     graph.add_node("script_generation", script_generation_node)
     graph.add_node("content_generation", content_generation_node)
@@ -357,7 +400,8 @@ def build_tiktok_agent_graph(checkpointer=None) -> StateGraph:
     # Linear flow for full pipeline
     graph.add_edge("research", "scoring")
     graph.add_edge("scoring", "approval_check")
-    graph.add_edge("approval_check", "content_planning")
+    graph.add_edge("approval_check", "reference_discovery")
+    graph.add_edge("reference_discovery", "content_planning")
     graph.add_edge("content_planning", "script_generation")
     graph.add_edge("script_generation", "content_generation")
     graph.add_edge("content_generation", "performance_tracking")

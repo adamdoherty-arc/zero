@@ -113,10 +113,6 @@ export function CalendarPage() {
   if (!connected) {
     return (
       <div className="p-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Calendar</h1>
-          <p className="text-zinc-400">Connect your Google account to access Google Calendar</p>
-        </div>
         <GoogleOAuthButton />
       </div>
     )
@@ -127,11 +123,7 @@ export function CalendarPage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Calendar</h1>
-          <p className="text-zinc-400">View and manage your Google Calendar events</p>
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <div className="flex gap-2">
           <Button
             onClick={syncCalendar}

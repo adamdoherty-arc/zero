@@ -340,9 +340,10 @@ class LLMHandler(StepHandler):
         logger.info("llm_handler_execute", model=model or "router:workflow", prompt_len=len(prompt))
 
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            result = await get_ollama_client().chat(
-                prompt, model=model, task_type="workflow", temperature=temperature, timeout=300,
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            result = await get_unified_llm_client().chat(
+                messages=[{"role": "user", "content": prompt}],
+                model=model, task_type="workflow", temperature=temperature,
             )
             return {
                 "output": result,

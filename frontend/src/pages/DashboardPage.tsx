@@ -49,11 +49,6 @@ export function DashboardPage() {
 
   return (
     <div className="page-content">
-      <div className="flex items-center gap-3 mb-8">
-        <Zap className="w-8 h-8 text-primary" />
-        <h1 className="page-title">Welcome to Zero</h1>
-      </div>
-
       {/* Agent Controls — front and center */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <AgentStatusCard />

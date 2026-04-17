@@ -16,6 +16,7 @@ from sqlalchemy import select, func as sql_func
 
 from app.infrastructure.database import get_session
 from app.infrastructure.langchain_adapter import get_zero_chat_model
+from app.infrastructure.unified_llm_client import get_unified_llm_client
 from app.db.models import VideoScriptModel, ContentQueueModel, TikTokProductModel
 from app.models.tiktok_content import (
     VideoScript, VideoScriptCreate, VideoScriptUpdate,
@@ -155,6 +156,36 @@ FACELESS_TEMPLATES: Dict[str, Dict[str, Any]] = {
             "Return as JSON."
         ),
     },
+    "photo_carousel": {
+        "name": "Photo Carousel",
+        "description": "2-10 product images with text overlays and trending audio. No video editing needed.",
+        "duration": 0,
+        "sections": ["hook_slide", "feature_1", "feature_2", "feature_3", "price_cta"],
+        "prompt_template": (
+            "Create a TikTok photo carousel (slideshow) for a product.\n"
+            "Product: {product_name}\n"
+            "Niche: {niche}\n"
+            "Description: {description}\n\n"
+            "Photo carousels are 2-10 image slides with text overlays + trending audio.\n"
+            "They're the EASIEST content to create and great for product discovery.\n\n"
+            "Create 5 slides:\n"
+            "1. HOOK_SLIDE: Bold attention-grabbing text. Example: 'This $15 product changed my life'\n"
+            "2. FEATURE_1: First key selling point with short text overlay\n"
+            "3. FEATURE_2: Second selling point or before/after\n"
+            "4. FEATURE_3: Social proof, ratings, or 'why it's viral'\n"
+            "5. PRICE_CTA: Price reveal + 'Link in bio' or 'Comment LINK'\n\n"
+            "For each slide provide:\n"
+            "- text_overlay: The text shown on the image (MAX 10 words)\n"
+            "- image_description: What the background image should show\n"
+            "- font_style: bold, handwritten, minimal, or neon\n\n"
+            "Also provide:\n"
+            "- caption: TikTok caption with emojis and hooks (max 150 chars)\n"
+            "- hashtags: 5-8 relevant hashtags\n"
+            "- music_mood: Suggested trending audio mood (chill, upbeat, dramatic, aesthetic)\n"
+            "- slide_count: number of slides\n\n"
+            "Return as JSON with keys: slides (array), caption, hashtags (array), music_mood, slide_count"
+        ),
+    },
 }
 
 
@@ -215,20 +246,35 @@ class TikTokVideoService:
         )
 
         try:
-            from langchain_core.messages import HumanMessage, SystemMessage
+            # Enrich prompt with brain memory
+            brain_context = ""
+            try:
+                from app.services.zero_brain_service import get_zero_brain_service
+                brain = get_zero_brain_service()
+                brain_context = await brain.enrich_task_prompt(
+                    f"TikTok video script for {product.name} in {product.niche or 'general'} niche",
+                    domain="content",
+                )
+            except Exception:
+                pass
 
-            llm = get_zero_chat_model(task_type="analysis", temperature=0.7)
-            llm_response = await llm.ainvoke([
-                SystemMessage(content=(
+            client = get_unified_llm_client()
+
+            enriched_prompt = f"{brain_context}\n\n{prompt}" if brain_context else prompt
+
+            raw_data = await client.structured_chat(
+                prompt=enriched_prompt,
+                system=(
                     "You are a TikTok content creator specializing in faceless viral videos. "
                     "You create scripts that are engaging, scroll-stopping, and optimized for "
-                    "the TikTok algorithm. Return ONLY valid JSON."
-                )),
-                HumanMessage(content=prompt),
-            ])
+                    "the TikTok algorithm."
+                ),
+                task_type="structured_output",
+                temperature=0.7,
+                max_tokens=4096,
+            )
 
-            raw = llm_response.content if llm_response else ""
-            script_data = self._parse_script_json(raw, template)
+            script_data = self._parse_structured_script(raw_data, template)
 
         except Exception as e:
             logger.error("tiktok_video_script_generation_failed", error=str(e))
@@ -321,6 +367,53 @@ class TikTokVideoService:
                 "voiceover_script": raw[:500] if raw else "",
             }
 
+    def _parse_structured_script(self, data: Any, template: Dict) -> Dict[str, Any]:
+        """Parse already-structured LLM output into script structure."""
+        if not isinstance(data, dict):
+            return {
+                "hook_text": str(data)[:100],
+                "body_sections": [],
+                "cta_text": "Link in bio!",
+                "text_overlays": [],
+                "voiceover_script": str(data)[:500],
+            }
+
+        sections = data.get("sections", [])
+        hook_text = data.get("hook_text", "")
+        body_sections = []
+        voiceover_parts = []
+
+        for section in sections:
+            if isinstance(section, dict):
+                name = section.get("section", section.get("name", ""))
+                if not hook_text and "hook" in name.lower():
+                    hook_text = section.get("voiceover", section.get("text", ""))
+                body_sections.append(section)
+                vo = section.get("voiceover", "")
+                if vo:
+                    voiceover_parts.append(vo)
+
+        if not hook_text and body_sections:
+            first = body_sections[0]
+            hook_text = first.get("voiceover", first.get("text", ""))
+
+        text_overlays = []
+        for s in sections:
+            if isinstance(s, dict):
+                overlay = s.get("text_overlay", s.get("text", ""))
+                if overlay:
+                    text_overlays.append(overlay)
+
+        return {
+            "hook_text": hook_text or data.get("hook", ""),
+            "body_sections": body_sections or data.get("body", []),
+            "cta_text": data.get("cta_text", data.get("caption", "Link in bio!")),
+            "text_overlays": text_overlays or data.get("text_overlays", []),
+            "voiceover_script": "\n".join(voiceover_parts) or data.get("voiceover_script", ""),
+            "caption": data.get("caption", ""),
+            "hashtags": data.get("hashtags", []),
+        }
+
     # ============================================
     # SCRIPT CRUD
     # ============================================
@@ -384,28 +477,40 @@ class TikTokVideoService:
         # Update script status
         await self.update_script(script_id, VideoScriptUpdate(status=VideoScriptStatus.QUEUED))
 
-        # Create queue item
         queue_id = self._generate_id("cq")
         act_job_id = None
+        error_msg = None
 
         try:
             from app.services.ai_content_tools_client import get_ai_content_tools_client
             client = get_ai_content_tools_client()
 
-            # Build the generation prompt from script
-            generation_prompt = self._build_generation_prompt(script)
+            is_healthy = await client.health_check()
+            if not is_healthy:
+                error_msg = "AIContentTools not reachable"
+            else:
+                generation_prompt = self._build_generation_prompt(script)
+                result = await client.generate_content(
+                    workflow_type="text_to_video",
+                    prompt=generation_prompt,
+                )
 
-            result = await client.generate_content(
-                workflow_type="text_to_video",
-                prompt=generation_prompt,
-                caption=script.cta_text,
-            )
-            act_job_id = result.get("job_id") if result else None
+                if result:
+                    act_job_id = (
+                        result.get("job_id")
+                        or result.get("id")
+                        or (result.get("data", {}) or {}).get("job_id")
+                    )
+
+                if not act_job_id:
+                    error_msg = f"No job_id returned: {str(result)[:200]}"
 
         except Exception as e:
             logger.warning("tiktok_video_act_queue_failed", error=str(e))
+            error_msg = str(e)
 
-        # Store queue item
+        # Store queue item with caption from script
+        caption = script.cta_text or ""
         async with get_session() as session:
             row = ContentQueueModel(
                 id=queue_id,
@@ -413,8 +518,10 @@ class TikTokVideoService:
                 product_id=script.product_id,
                 generation_type="text_to_video",
                 act_job_id=act_job_id,
-                status="queued" if act_job_id else "failed",
-                error_message=None if act_job_id else "AIContentTools unavailable",
+                status="queued" if act_job_id else "script_ready",
+                error_message=error_msg,
+                publish_status="pending_review",
+                caption=caption,
             )
             session.add(row)
 
@@ -475,12 +582,14 @@ class TikTokVideoService:
             return self._queue_to_pydantic(row) if row else None
 
     async def list_content_queue(
-        self, status: Optional[str] = None, limit: int = 50
+        self, status: Optional[str] = None, product_id: Optional[str] = None, limit: int = 50
     ) -> List[ContentQueueItem]:
         async with get_session() as session:
             query = select(ContentQueueModel).order_by(ContentQueueModel.created_at.desc())
             if status:
                 query = query.where(ContentQueueModel.status == status)
+            if product_id:
+                query = query.where(ContentQueueModel.product_id == product_id)
             query = query.limit(limit)
             result = await session.execute(query)
             return [self._queue_to_pydantic(r) for r in result.scalars().all()]
@@ -560,7 +669,7 @@ class TikTokVideoService:
             voiceover_script=row.voiceover_script or "",
             duration_seconds=row.duration_seconds or 30,
             status=row.status or "draft",
-            created_at=row.created_at or datetime.utcnow(),
+            created_at=row.created_at or datetime.now(timezone.utc),
             generated_at=row.generated_at,
         )
 
@@ -574,7 +683,14 @@ class TikTokVideoService:
             act_generation_id=row.act_generation_id,
             status=row.status or "queued",
             error_message=row.error_message,
-            created_at=row.created_at or datetime.utcnow(),
+            publish_status=row.publish_status,
+            publish_platform=row.publish_platform,
+            publish_url=row.publish_url,
+            published_at=row.published_at,
+            publish_error=row.publish_error,
+            caption=row.caption,
+            hashtags=row.hashtags or [],
+            created_at=row.created_at or datetime.now(timezone.utc),
             completed_at=row.completed_at,
         )
 

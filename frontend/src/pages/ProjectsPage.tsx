@@ -6,11 +6,6 @@ import { ProjectList } from '@/components/ProjectList'
 export function ProjectsPage() {
   return (
     <div className="page-content">
-      <div className="flex items-center gap-3 mb-6">
-        <FolderGit2 className="w-8 h-8 text-primary" />
-        <h1 className="page-title">Projects</h1>
-      </div>
-
       <Tabs defaultValue="legion" className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="legion" className="flex items-center gap-1.5">

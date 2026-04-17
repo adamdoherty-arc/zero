@@ -22,8 +22,8 @@ class Settings(BaseSettings):
 
     # LLM Settings (Ollama) — fallback only; LLM router is source of truth
     ollama_base_url: str = "http://localhost:11434/v1"
-    ollama_model: str = "qwen3-coder-next:latest"
-    ollama_timeout: int = 300
+    ollama_model: str = "qwen3.6:35b-a3b-q8_0"
+    ollama_timeout: int = 900
 
     # Legion Sprint Manager
     # Use host.docker.internal for Docker environments, localhost for local development
@@ -59,11 +59,14 @@ class Settings(BaseSettings):
     email_question_timeout_hours: int = 24
 
     # Embedding Settings (for RAG / semantic search)
-    embedding_model: str = "nomic-embed-text"
+    embedding_model: str = "nomic-embed-text-v2-moe"
     embedding_dimension: int = 768
 
     # AIContentTools Integration
     ai_content_tools_url: str = "http://host.docker.internal:8085"
+
+    # Firecrawl (Web Scraping) — runs in ADA stack, shared via ada-bridge network
+    firecrawl_url: str = "http://ada-firecrawl:3002"
 
     # Notion Integration
     notion_api_key: Optional[str] = None
@@ -87,9 +90,47 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     huggingface_api_key: Optional[str] = None
     kimi_api_key: Optional[str] = None
+    kimi_base_url: str = "https://api.moonshot.ai/v1"
+    minimax_api_key: Optional[str] = None
+    minimax_base_url: str = "https://api.minimax.io/v1"
+
+    # TMDB (The Movie Database) - free API for movie/TV images
+    tmdp_api_key: Optional[str] = None
+    tmdp_read_access_token: Optional[str] = None
+
+    # Free image APIs (Pexels, Unsplash, Pixabay)
+    pexels_api_key: Optional[str] = None
+    unsplash_access_key: Optional[str] = None
+    pixabay_api_key: Optional[str] = None
+
+    # TikTok Content Posting API
+    tiktok_client_key: Optional[str] = None
+    tiktok_client_secret: Optional[str] = None
+    tiktok_redirect_uri: str = "http://localhost:18792/api/tiktok-shop/auth/callback"
 
     # LLM Cost Control
     llm_daily_budget_usd: float = 5.0
+
+    # Character Content Autopilot
+    character_autopilot_enabled: bool = True
+    character_minimax_daily_cap_usd: float = 2.0
+    character_minimax_min_stage2_score: float = 80.0
+    character_auto_approve_threshold: float = 85.0
+    character_discovery_enabled: bool = True
+    character_discovery_daily_cap: int = 10
+
+    # Meeting Intelligence (DailyMemory)
+    whisper_model_size: str = "large-v3"
+    whisper_device: str = "cuda"
+    whisper_compute_type: str = "float16"
+    whisper_language: str = "en"
+    hf_token: Optional[str] = None  # HuggingFace token for pyannote diarization
+    diarization_model: str = "pyannote/speaker-diarization-3.1"
+    max_speakers: int = 10
+    recordings_dir: str = "../workspace/recordings"
+    audio_source: str = "mixed"  # system|mic|mixed
+    sample_rate: int = 16000
+    auto_record_meetings: bool = False
 
     class Config:
         env_file = ".env"
@@ -129,3 +170,9 @@ def get_money_maker_path() -> Path:
 def get_ecosystem_path() -> Path:
     """Get path to ecosystem data directory."""
     return get_workspace_path("ecosystem")
+
+
+def get_recordings_path() -> Path:
+    """Get path to meeting recordings directory."""
+    settings = get_settings()
+    return Path(settings.recordings_dir).resolve()

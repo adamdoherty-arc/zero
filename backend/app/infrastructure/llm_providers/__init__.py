@@ -14,6 +14,7 @@ from app.infrastructure.llm_providers.base import BaseLLMProvider
 from app.infrastructure.llm_providers.gemini_provider import GeminiProvider
 from app.infrastructure.llm_providers.huggingface_provider import HuggingFaceProvider
 from app.infrastructure.llm_providers.kimi_provider import KimiProvider
+from app.infrastructure.llm_providers.minimax_provider import MinimaxProvider
 from app.infrastructure.llm_providers.ollama_provider import OllamaProvider
 from app.infrastructure.llm_providers.openrouter_provider import OpenRouterProvider
 
@@ -33,6 +34,7 @@ def get_provider_registry() -> Dict[str, BaseLLMProvider]:
         "openrouter": OpenRouterProvider(),
         "huggingface": HuggingFaceProvider(),
         "kimi": KimiProvider(),
+        "minimax": MinimaxProvider(),
     }
     configured = [name for name, p in providers.items() if p.is_configured]
     logger.info("llm_provider_registry_initialized", configured=configured)

@@ -595,35 +595,27 @@ class ProjectService:
 
         context_str = "\n\n".join(context_parts)
 
-        # Call Ollama
+        # Call LLM via structured_chat
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            client = get_ollama_client()
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            client = get_unified_llm_client()
 
-            system_prompt = (
-                "You are a project analyzer. Given information about a software project, "
-                "return ONLY a JSON object with these fields:\n"
-                '- "name": short project name (2-4 words max)\n'
-                '- "description": one-sentence description of what the project does\n'
-                '- "project_type": one of "local", "git", "github", "gitlab"\n'
-                '- "tech_stack": array of technologies/frameworks used (e.g. ["Python", "FastAPI", "React"])\n'
-                '- "tags": array of 2-5 descriptive tags (e.g. ["web-app", "api", "fullstack"])\n'
-                "No markdown, no explanation, ONLY the JSON object."
-            )
-
-            response = await client.chat_safe(
-                f"Analyze this project:\n\n{context_str}",
-                system=system_prompt,
-                task_type="analysis",
+            data = await client.structured_chat(
+                prompt=f"Analyze this project:\n\n{context_str}",
+                system=(
+                    "You are a project analyzer. Given information about a software project, "
+                    "return a JSON object with: name (short, 2-4 words), description (one sentence), "
+                    'project_type (one of "local", "git", "github", "gitlab"), '
+                    "tech_stack (array of technologies), tags (array of 2-5 descriptive tags)."
+                ),
+                task_type="extraction",
                 temperature=0.0,
-                num_predict=500,
+                max_tokens=1024,
                 max_retries=1,
+                output_schema={"name": "str", "description": "str", "project_type": "local", "tech_stack": [], "tags": []},
             )
 
-            if response and "{" in response:
-                json_str = response[response.index("{"):response.rindex("}") + 1]
-                data = json.loads(json_str)
-
+            if isinstance(data, dict):
                 # Auto-detect project type from git info
                 if git_info:
                     remote = git_info.get("remote", "")

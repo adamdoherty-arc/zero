@@ -33,8 +33,6 @@ export function SprintsPage() {
 
   return (
     <div className="page-content">
-      <h1 className="page-title mb-6">Sprints</h1>
-
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
         {/* Status tabs */}

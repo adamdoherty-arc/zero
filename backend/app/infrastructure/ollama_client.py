@@ -51,7 +51,7 @@ class OllamaClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self._default_timeout, connect=10.0),
-                limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=4),
             )
         return self._client
 

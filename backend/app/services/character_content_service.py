@@ -1859,13 +1859,14 @@ class CharacterContentService:
         _fr_error_message = None
         parsed = None
         try:
-            # Use structured_chat so the router handles provider fallback from Minimax -> Kimi -> Ollama
+            # Use chat with json_mode so providers return structured JSON reliably
             _fr_raw = await client.chat(
                 prompt=prompt,
                 system=_fr_system,
                 task_type="character_content_review_final",
                 temperature=0.3,
                 max_tokens=2048,
+                json_mode=True,
             )
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as exc:
             _fr_success = False
@@ -2073,6 +2074,7 @@ class CharacterContentService:
                 task_type="character_content_review_escalated",
                 temperature=0.3,
                 max_tokens=2048,
+                json_mode=True,
             )
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as exc:
             logger.warning("minimax_escalation_failed", carousel_id=carousel_id, error=str(exc))

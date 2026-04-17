@@ -61,10 +61,6 @@ export function EcosystemPage() {
   if (isLoading) {
     return (
       <div className="page-content">
-        <div className="flex items-center gap-3 mb-8">
-          <Globe className="w-8 h-8 text-primary" />
-          <h1 className="page-title">Ecosystem</h1>
-        </div>
         <LoadingSkeleton variant="page" message="Loading ecosystem data..." />
       </div>
     )
@@ -74,19 +70,7 @@ export function EcosystemPage() {
 
   return (
     <div className="page-content">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <Globe className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="page-title">Ecosystem</h1>
-            {status?.last_full_sync && (
-              <p className="text-xs text-muted-foreground">
-                Last sync: {new Date(status.last_full_sync).toLocaleString()}
-              </p>
-            )}
-          </div>
-        </div>
+      <div className="flex justify-end mb-6">
         <div className="flex gap-2">
           <button
             onClick={() => handleSync(false)}

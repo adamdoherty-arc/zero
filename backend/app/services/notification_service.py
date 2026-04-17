@@ -18,10 +18,6 @@ from app.db.models import NotificationModel
 
 logger = structlog.get_logger()
 
-# Gateway notification endpoint (internal Docker network or localhost)
-_GATEWAY_URL = os.getenv("ZERO_GATEWAY_URL", "http://localhost:18789")
-
-
 class NotificationService:
     """Service for managing notifications."""
 
@@ -85,56 +81,22 @@ class NotificationService:
             created_at=now,
         )
 
-        logger.info("notification_created", id=notification.id, channel=channel.value)
+        channel_str = channel.value if hasattr(channel, 'value') else channel
+        logger.info("notification_created", id=notification.id, channel=channel_str)
 
         # Attempt to deliver to external channels
-        if channel != NotificationChannel.UI:
+        if channel_str != NotificationChannel.UI.value:
             await self._deliver_to_channel(notification)
 
         return notification
 
     async def _deliver_to_channel(self, notification: Notification):
-        """Deliver notification to external channel via the Zero gateway."""
-        token = os.getenv("ZERO_GATEWAY_TOKEN")
-        if not token:
-            logger.warning("notification_delivery_skipped", reason="no ZERO_GATEWAY_TOKEN")
-            return
-
-        try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.post(
-                    f"{_GATEWAY_URL}/notifications",
-                    json={
-                        "channel": notification.channel.value,
-                        "title": notification.title,
-                        "message": notification.message,
-                        "source": notification.source,
-                    },
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-
-                if resp.status_code < 400:
-                    logger.info(
-                        "notification_delivered",
-                        id=notification.id,
-                        channel=notification.channel.value,
-                    )
-                else:
-                    logger.warning(
-                        "notification_delivery_failed",
-                        id=notification.id,
-                        channel=notification.channel.value,
-                        status=resp.status_code,
-                        body=resp.text[:200],
-                    )
-        except Exception as e:
-            logger.error(
-                "notification_delivery_error",
-                id=notification.id,
-                channel=notification.channel.value,
-                error=str(e),
-            )
+        """Deliver notification to external channel (Discord via messaging bridge)."""
+        logger.info(
+            "notification_delivery_pending",
+            id=notification.id,
+            channel=notification.channel.value if hasattr(notification.channel, 'value') else notification.channel,
+        )
 
     async def get_notification(self, notification_id: str) -> Optional[Notification]:
         """Get a notification by ID."""

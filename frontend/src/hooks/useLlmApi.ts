@@ -15,6 +15,16 @@ async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json()
 }
 
+export interface StructuredStats {
+  total_calls: number
+  successes: number
+  failures: number
+  retries: number
+  success_rate: number
+  retry_rate: number
+  by_task_type: Record<string, { calls: number; successes: number; failures: number; retries: number }>
+}
+
 const llmKeys = {
   all: ['llm'] as const,
   config: () => [...llmKeys.all, 'config'] as const,
@@ -22,6 +32,7 @@ const llmKeys = {
   providers: () => [...llmKeys.all, 'providers'] as const,
   usageToday: () => [...llmKeys.all, 'usage', 'today'] as const,
   availableModels: () => [...llmKeys.all, 'available-models'] as const,
+  structuredStats: () => [...llmKeys.all, 'structured-stats'] as const,
 }
 
 export function useLlmConfig() {
@@ -93,5 +104,23 @@ export function useLlmAvailableModels() {
     queryKey: llmKeys.availableModels(),
     queryFn: () => fetchApi('/llm/available-models'),
     staleTime: 5 * 60_000,
+  })
+}
+
+export function useStructuredStats() {
+  return useQuery<StructuredStats>({
+    queryKey: llmKeys.structuredStats(),
+    queryFn: () => fetchApi('/llm/structured-stats'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useTestStructured() {
+  return useMutation({
+    mutationFn: (params?: { prompt?: string; task_type?: string }) =>
+      fetchApi<{ status: string; parsed_json?: unknown; error?: string; raw_response?: string }>(
+        `/llm/test-structured?prompt=${encodeURIComponent(params?.prompt || 'List 3 programming languages with name and year_created')}&task_type=${params?.task_type || 'structured_output'}`,
+        { method: 'POST' },
+      ),
   })
 }

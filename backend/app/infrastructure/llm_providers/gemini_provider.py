@@ -1,11 +1,10 @@
 """
-Google Gemini provider via google-generativeai SDK.
+Google Gemini provider via google-genai SDK.
 
 Primary model: gemini-3.1-pro-preview ($2.00/1M input, $12.00/1M output).
 Circuit breaker protected. Only active if ZERO_GEMINI_API_KEY is set.
 """
 
-import asyncio
 from typing import AsyncIterator, Dict, List
 
 import structlog
@@ -28,7 +27,7 @@ DEFAULT_PRICING = {"input": 2.00, "output": 12.00}
 
 
 class GeminiProvider(BaseLLMProvider):
-    """Google Gemini API provider."""
+    """Google Gemini API provider using the unified google-genai SDK."""
 
     def __init__(self):
         settings = get_settings()
@@ -38,21 +37,20 @@ class GeminiProvider(BaseLLMProvider):
             failure_threshold=5,
             recovery_timeout=120.0,
         )
-        self._genai = None
+        self._client = None
 
-    def _get_genai(self):
-        """Lazy-init the google.generativeai module."""
-        if self._genai is None:
-            import google.generativeai as genai
-            genai.configure(api_key=self._api_key)
-            self._genai = genai
-        return self._genai
+    def _get_client(self):
+        """Lazy-init the google-genai client."""
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self._api_key)
+        return self._client
 
     def _convert_messages(self, messages: List[Dict[str, str]]):
         """Convert standard messages to Gemini format.
 
-        Gemini uses a 'contents' list with 'user' and 'model' roles.
-        System messages become a system_instruction parameter.
+        Returns (system_instruction, contents) where contents is a list
+        of dicts with 'role' and 'parts' for the google-genai SDK.
         """
         system_parts = []
         contents = []
@@ -64,9 +62,9 @@ class GeminiProvider(BaseLLMProvider):
             if role == "system":
                 system_parts.append(content)
             elif role == "assistant":
-                contents.append({"role": "model", "parts": [content]})
+                contents.append({"role": "model", "parts": [{"text": content}]})
             else:
-                contents.append({"role": "user", "parts": [content]})
+                contents.append({"role": "user", "parts": [{"text": content}]})
 
         return system_parts, contents
 
@@ -78,24 +76,30 @@ class GeminiProvider(BaseLLMProvider):
         max_tokens: int = 2048,
         **kwargs,
     ) -> str:
-        genai = self._get_genai()
+        from google.genai import types
+
+        client = self._get_client()
         system_parts, contents = self._convert_messages(messages)
 
-        gen_config = genai.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        )
+        config_kwargs = {
+            "temperature": temperature,
+            "max_output_tokens": max_tokens,
+        }
 
-        model_kwargs = {}
+        # Native JSON mode
+        if kwargs.get("json_mode"):
+            config_kwargs["response_mime_type"] = "application/json"
+
         if system_parts:
-            model_kwargs["system_instruction"] = "\n\n".join(system_parts)
+            config_kwargs["system_instruction"] = "\n\n".join(system_parts)
 
-        gen_model = genai.GenerativeModel(model, **model_kwargs)
+        config = types.GenerateContentConfig(**config_kwargs)
 
         async def _call():
-            response = await gen_model.generate_content_async(
-                contents,
-                generation_config=gen_config,
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
             )
             return response.text
 
@@ -109,26 +113,26 @@ class GeminiProvider(BaseLLMProvider):
         max_tokens: int = 2048,
         **kwargs,
     ) -> AsyncIterator[str]:
-        genai = self._get_genai()
+        from google.genai import types
+
+        client = self._get_client()
         system_parts, contents = self._convert_messages(messages)
 
-        gen_config = genai.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        )
+        config_kwargs = {
+            "temperature": temperature,
+            "max_output_tokens": max_tokens,
+        }
 
-        model_kwargs = {}
         if system_parts:
-            model_kwargs["system_instruction"] = "\n\n".join(system_parts)
+            config_kwargs["system_instruction"] = "\n\n".join(system_parts)
 
-        gen_model = genai.GenerativeModel(model, **model_kwargs)
+        config = types.GenerateContentConfig(**config_kwargs)
 
-        response = await gen_model.generate_content_async(
-            contents,
-            generation_config=gen_config,
-            stream=True,
-        )
-        async for chunk in response:
+        async for chunk in client.aio.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=config,
+        ):
             if chunk.text:
                 yield chunk.text
 
@@ -136,10 +140,15 @@ class GeminiProvider(BaseLLMProvider):
         if not self._api_key:
             return False
         try:
-            genai = self._get_genai()
-            # List models as a lightweight health check
-            models = await asyncio.to_thread(lambda: list(genai.list_models()))
-            return len(models) > 0
+            import asyncio
+
+            async def _check():
+                client = self._get_client()
+                result = await client.aio.models.list()
+                # result is a Pager; check if it has any models
+                return bool(result and hasattr(result, 'page') and result.page)
+
+            return await asyncio.wait_for(_check(), timeout=5.0)
         except Exception as e:
             logger.warning("gemini_health_check_failed", error=str(e))
             return False

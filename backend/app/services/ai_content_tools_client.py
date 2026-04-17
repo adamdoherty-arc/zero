@@ -134,21 +134,53 @@ class AIContentToolsClient:
             hashtags: Optional hashtags list
         """
         payload = {
-            "workflow_type": workflow_type,
             "prompt": prompt,
+            "video_type": workflow_type,
         }
         if persona_id:
             payload["persona_id"] = persona_id
-        if caption:
-            payload["caption"] = caption
-        if hashtags:
-            payload["hashtags"] = hashtags
 
-        return await self._post("/api/generate", json=payload)
+        return await self._post("/api/video/generate", json=payload)
+
+    async def generate_from_template(
+        self,
+        template_id: str,
+        subject: str,
+        action: Optional[str] = None,
+        environment: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Generate video from a predefined template.
+
+        Templates: social_reel_fashion, social_reel_fitness, product_showcase,
+                   portrait_motion, cinematic_scene, lifestyle_beach
+        """
+        payload = {"template_id": template_id, "subject": subject}
+        if action:
+            payload["action"] = action
+        if environment:
+            payload["environment"] = environment
+        return await self._post("/api/video/generate-from-template", json=payload)
 
     async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Check status of a generation job."""
-        return await self._get(f"/api/batch/status/{job_id}")
+        """Check status of a video generation job."""
+        return await self._get(f"/api/video/jobs/{job_id}")
+
+    async def get_video_download_url(self, job_id: str) -> Optional[str]:
+        """Get download URL for a completed video."""
+        return f"{self.base_url}/api/video/jobs/{job_id}/download"
+
+    async def list_video_templates(self) -> Optional[Dict[str, Any]]:
+        """List available video generation templates."""
+        return await self._get("/api/video/templates")
+
+    async def list_video_jobs(self) -> Optional[List[Dict[str, Any]]]:
+        """List all video generation jobs."""
+        result = await self._get("/api/video/jobs")
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict) and "jobs" in result:
+            return result["jobs"]
+        return []
 
     # ============================================
     # BATCH QUEUE
@@ -219,6 +251,32 @@ class AIContentToolsClient:
         return await self._get("/api/performance/summary", params={"days": days})
 
     # ============================================
+    # CAROUSEL
+    # ============================================
+
+    async def create_carousel(
+        self,
+        image_ids: List[str],
+        platform: str = "tiktok",
+        caption: Optional[str] = None,
+        hashtags: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create a carousel/slideshow from images for a platform."""
+        payload = {
+            "image_ids": image_ids,
+            "platform": platform,
+        }
+        if caption:
+            payload["caption"] = caption
+        if hashtags:
+            payload["hashtags"] = hashtags
+        return await self._post("/api/repurpose/carousel", json=payload)
+
+    async def list_repurpose_platforms(self) -> Optional[Dict[str, Any]]:
+        """List supported repurpose platforms and their specs."""
+        return await self._get("/api/repurpose/platforms")
+
+    # ============================================
     # STRATEGY
     # ============================================
 
@@ -231,7 +289,7 @@ class AIContentToolsClient:
         payload = {"days_ahead": days_ahead}
         if personas:
             payload["personas"] = personas
-        return await self._post("/api/strategy/recommend", json=payload)
+        return await self._post("/api/strategy/generate", json=payload)
 
 
 @lru_cache()

@@ -17,6 +17,8 @@ import {
   useLlmProviders,
   useLlmUsageToday,
   useLlmAvailableModels,
+  useStructuredStats,
+  useTestStructured,
 } from '@/hooks/useLlmApi'
 import type { ModelAssignment } from '@/types'
 
@@ -29,6 +31,8 @@ const TASK_LABELS: Record<string, string> = {
   workflow: 'Workflow Steps',
   planning: 'Planning & Scheduling',
   summarization: 'Summarization',
+  structured_output: 'Structured Output (JSON)',
+  extraction: 'Data Extraction (JSON)',
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -170,10 +174,13 @@ export function LlmTab() {
   const { data: providersData } = useLlmProviders()
   const { data: usageData } = useLlmUsageToday()
   const { data: modelsData } = useLlmAvailableModels()
+  const { data: structuredData } = useStructuredStats()
+  const testStructured = useTestStructured()
   const setDefault = useSetDefaultModel()
   const setTask = useSetTaskModel()
   const [editingDefault, setEditingDefault] = useState(false)
   const [newDefault, setNewDefault] = useState('')
+  const [testResult, setTestResult] = useState<{ status: string; parsed_json?: unknown; error?: string } | null>(null)
 
   if (isLoading) {
     return (
@@ -400,6 +407,77 @@ export function LlmTab() {
             Set all tasks to use default model
           </button>
         </div>
+      </div>
+
+      {/* Structured Output Stats */}
+      <div className="glass-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-indigo-400" />
+            <h3 className="text-sm font-medium text-foreground">Structured Output (JSON)</h3>
+          </div>
+          <button
+            onClick={() => {
+              testStructured.mutate({}, {
+                onSuccess: (data) => setTestResult(data),
+              })
+            }}
+            disabled={testStructured.isPending}
+            className="text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
+          >
+            {testStructured.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin inline" />
+            ) : (
+              'Test JSON Output'
+            )}
+          </button>
+        </div>
+        {structuredData && structuredData.total_calls > 0 ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-3 text-center">
+              <div>
+                <p className="text-lg font-semibold text-foreground">{structuredData.total_calls}</p>
+                <p className="text-[10px] text-muted-foreground">total calls</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-green-400">{structuredData.success_rate}%</p>
+                <p className="text-[10px] text-muted-foreground">success rate</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-yellow-400">{structuredData.retries}</p>
+                <p className="text-[10px] text-muted-foreground">retries</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-red-400">{structuredData.failures}</p>
+                <p className="text-[10px] text-muted-foreground">failures</p>
+              </div>
+            </div>
+            {Object.keys(structuredData.by_task_type).length > 0 && (
+              <div className="border-t border-border/50 pt-2 space-y-1">
+                {Object.entries(structuredData.by_task_type).map(([tt, s]) => (
+                  <div key={tt} className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{TASK_LABELS[tt] || tt}</span>
+                    <span className="text-muted-foreground">
+                      {s.calls} calls · {s.successes} ok · {s.retries} retries
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No structured output calls yet. Stats populate after first use.</p>
+        )}
+        {testResult && (
+          <div className={`mt-3 p-2 rounded text-xs ${testResult.status === 'success' ? 'bg-green-900/30 border border-green-800' : 'bg-red-900/30 border border-red-800'}`}>
+            <p className="font-medium mb-1">{testResult.status === 'success' ? 'Valid JSON returned' : `Failed: ${testResult.error}`}</p>
+            {testResult.parsed_json != null && (
+              <pre className="text-[10px] text-muted-foreground overflow-x-auto max-h-24">
+                {JSON.stringify(testResult.parsed_json, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Task Assignments */}

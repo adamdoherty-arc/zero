@@ -17,6 +17,14 @@
       "env": {
         "MEMORY_DB_PATH": "C:\\code\\zero\\workspace\\memory\\claude-memory.db"
       }
+    },
+    "zero-api": {
+      "command": "python",
+      "args": ["C:\\code\\zero\\mcp_servers\\zero_api_mcp.py"]
+    },
+    "kimi-llm": {
+      "command": "python",
+      "args": ["C:\\code\\zero\\mcp_servers\\kimi_mcp.py"]
     }
   }
 }

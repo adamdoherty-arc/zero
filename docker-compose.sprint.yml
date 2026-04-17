@@ -24,7 +24,7 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          memory: 1G
     logging:
       driver: "json-file"
       options:
@@ -46,6 +46,7 @@ services:
       - ./workspace:/app/workspace
       - ./config:/app/config
       - ./backups:/app/backups
+      - ./mcp_servers:/app/mcp_servers:ro
       # Cross-project codebase access
       - C:/code/ADA:/projects/ada:ro
       - C:/code/fortressOS:/projects/fortressos:ro
@@ -56,16 +57,16 @@ services:
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
       - ZERO_OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-      - ZERO_OLLAMA_TIMEOUT=300
+      - ZERO_OLLAMA_TIMEOUT=900
       - ZERO_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
-      - ZERO_GATEWAY_URL=http://zero-gateway:18789
+      # OpenClaw gateway removed — messaging via Claude Agent SDK
       - ZERO_POSTGRES_URL=postgresql://zero:${ZERO_POSTGRES_PASSWORD:-zero_dev}@zero-postgres:5432/zero
       # Google OAuth Configuration
       - ZERO_GOOGLE_CLIENT_ID=${ZERO_GOOGLE_CLIENT_ID}
       - ZERO_GOOGLE_CLIENT_SECRET=${ZERO_GOOGLE_CLIENT_SECRET}
       - ZERO_GOOGLE_REDIRECT_URI=${ZERO_GOOGLE_REDIRECT_URI}
       - ZERO_FRONTEND_URL=${ZERO_FRONTEND_URL}
-      # Discord notifications (direct API for proactive alerts)
+      # Discord notifications (bot runs standalone on host, not in Docker)
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID:-}
       # Hugging Face
@@ -75,10 +76,23 @@ services:
       - ZERO_OPENROUTER_API_KEY=${ZERO_OPENROUTER_API_KEY:-}
       - ZERO_HUGGINGFACE_API_KEY=${ZERO_HUGGINGFACE_API_KEY:-}
       - ZERO_KIMI_API_KEY=${ZERO_KIMI_API_KEY:-}
+      - ZERO_KIMI_BASE_URL=${ZERO_KIMI_BASE_URL:-https://api.moonshot.ai/v1}
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
       # ADA Bridge
       - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-}
       - ZERO_ADA_API_TOKEN=${ZERO_ADA_API_TOKEN:-}
+      # TikTok Content Posting API
+      - ZERO_TIKTOK_CLIENT_KEY=${ZERO_TIKTOK_CLIENT_KEY:-}
+      - ZERO_TIKTOK_CLIENT_SECRET=${ZERO_TIKTOK_CLIENT_SECRET:-}
+      # TMDB (The Movie Database) - character content images
+      - ZERO_TMDP_API_KEY=${ZERO_TMDP_API_KEY:-}
+      - ZERO_TMDP_READ_ACCESS_TOKEN=${ZERO_TMDP_READ_ACCESS_TOKEN:-}
+      # Meeting Intelligence (DailyMemory)
+      - ZERO_WHISPER_MODEL_SIZE=${ZERO_WHISPER_MODEL_SIZE:-large-v3}
+      - ZERO_WHISPER_DEVICE=${ZERO_WHISPER_DEVICE:-cpu}
+      - ZERO_WHISPER_COMPUTE_TYPE=${ZERO_WHISPER_COMPUTE_TYPE:-int8}
+      - ZERO_WHISPER_LANGUAGE=${ZERO_WHISPER_LANGUAGE:-en}
+      - ZERO_RECORDINGS_DIR=/app/workspace/recordings
     depends_on:
       zero-postgres:
         condition: service_healthy
@@ -88,7 +102,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 40s
     deploy:
       resources:
         limits:
@@ -102,9 +116,12 @@ services:
 
   # React Frontend (production build served by nginx)
   zero-ui:
+    container_name: zero-ui
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        VITE_API_TOKEN: ${ZERO_GATEWAY_TOKEN}
     ports:
       - "5173:80"
     depends_on:

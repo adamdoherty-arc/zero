@@ -195,9 +195,9 @@ Email:
 Reply with ONLY the category name, nothing else."""
 
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            result = await get_ollama_client().chat_safe(
-                prompt, task_type="classification", num_predict=20, temperature=0.1, timeout=60,
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            result = await get_unified_llm_client().chat(
+                prompt, task_type="classification", max_tokens=20, temperature=0.1,
             )
             if result:
                 result_upper = result.strip().upper()
@@ -444,6 +444,8 @@ Reply with ONLY the category name, nothing else."""
         except Exception as e:
             logger.error("gmail_sync_failed", error=str(e))
             status.sync_errors.append(str(e))
+            # Keep only last 20 errors to prevent unbounded growth
+            status.sync_errors = status.sync_errors[-20:]
             await self._save_sync_status(status)
             raise
 

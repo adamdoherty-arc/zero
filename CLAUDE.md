@@ -36,7 +36,7 @@
 docker compose -f docker-compose.sprint.yml build --no-cache zero-api && docker compose -f docker-compose.sprint.yml up -d zero-api
 ```
 
-**Frontend** (`zero-ui`): Source files (`src/`, config files) ARE volume-mounted — code changes are live. But `node_modules` is NOT mounted, so **new npm packages require rebuild**:
+**Frontend** (`zero-ui`): Source files (`src/`, config files) ARE volume-mounted, so code changes are live. But `node_modules` is NOT mounted, so **new npm packages require rebuild**:
 ```bash
 # After npm install (new packages):
 docker compose -f docker-compose.sprint.yml build --no-cache zero-ui && docker compose -f docker-compose.sprint.yml up -d zero-ui
@@ -51,6 +51,13 @@ docker ps --format "table {{.Names}}\t{{.Status}}" | grep zero
 ```
 
 **Never leave changes undeployed.** Always rebuild affected containers as final step.
+
+## Project Structure
+
+- **Backend** (`backend/`): FastAPI on `:18792`, container `zero-api`. Code is COPY'd; rebuild required on changes.
+- **Frontend** (`frontend/`): React 19 + Vite on `:5173`, container `zero-ui`. `src/` is volume-mounted.
+- **Mobile PWA**: Installable surface at `/m/*` for Android/iOS. Routes in [frontend/src/App.tsx](frontend/src/App.tsx), layout in [frontend/src/layouts/MobileLayout.tsx](frontend/src/layouts/MobileLayout.tsx), service worker in [frontend/src/sw.ts](frontend/src/sw.ts) (hand-authored `injectManifest`). Full guide: [docs/mobile-pwa.md](docs/mobile-pwa.md).
+- **Share Target**: `/share` consumes POSTs from the Android share sheet via the SW, forwards to `reference-videos/ingest-simple`.
 
 ## Common Commands
 

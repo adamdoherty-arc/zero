@@ -9,7 +9,6 @@ import {
   Calendar,
   Brain,
   Workflow,
-  Settings,
   Search,
   BarChart3,
   Zap,
@@ -23,6 +22,19 @@ import {
   ShoppingBag,
   Sparkles,
   TrendingUp,
+  Building2,
+  Radio,
+  Timer,
+  GitBranch,
+  Target,
+  Activity,
+  Mic,
+  AudioLines,
+  FlaskConical,
+  Scale,
+  BookOpen,
+  Clapperboard,
+  BrainCircuit,
 } from 'lucide-react'
 
 import {
@@ -44,6 +56,7 @@ const navSections = [
     items: [
       { label: 'Ask Zero', href: '/ask-zero', icon: MessageCircle },
       { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { label: 'Operations', href: '/operations', icon: Activity },
       { label: 'Ecosystem', href: '/ecosystem', icon: Globe },
       { label: 'Board', href: '/board', icon: Kanban },
     ],
@@ -65,21 +78,44 @@ const navSections = [
     ],
   },
   {
+    label: 'Meetings',
+    items: [
+      { label: 'Meetings', href: '/meetings', icon: Mic },
+      { label: 'Meeting Search', href: '/meeting-search', icon: AudioLines },
+    ],
+  },
+  {
+    label: 'AI Company',
+    items: [
+      { label: 'Company', href: '/ai-company', icon: Building2 },
+      { label: 'Deep Research', href: '/deep-research', icon: BookOpen },
+      { label: 'Experiment Lab', href: '/experiments', icon: FlaskConical },
+      { label: 'Council Room', href: '/council', icon: Scale },
+      { label: 'Brain', href: '/brain', icon: BrainCircuit },
+    ],
+  },
+  {
     label: 'Automation',
     items: [
       { label: 'Agent Tasks', href: '/agent', icon: Cpu },
       { label: 'Workflows', href: '/workflows', icon: Workflow },
-      { label: 'Orchestrator', href: '/orchestrator', icon: Settings },
+      { label: 'Gateway', href: '/orchestrator', icon: Radio },
       { label: 'Money Maker', href: '/money-maker', icon: Zap },
       { label: 'Research', href: '/research', icon: Search },
       { label: 'TikTok Shop', href: '/tiktok-shop', icon: ShoppingBag },
+      { label: 'Characters', href: '/characters', icon: Clapperboard },
+      { label: 'Character Autopilot', href: '/characters/autopilot', icon: Sparkles },
       { label: 'Content Agent', href: '/content-agent', icon: Sparkles },
       { label: 'Predictions', href: '/prediction-markets', icon: TrendingUp },
+      { label: 'LLC Guide', href: '/llc-guidance', icon: Building2 },
+      { label: 'Visual Workflows', href: '/visual-workflows', icon: GitBranch },
     ],
   },
   {
     label: 'System',
     items: [
+      { label: 'Exec Dashboard', href: '/execution-dashboard', icon: Timer },
+      { label: 'Outcomes', href: '/outcomes', icon: Target },
       { label: 'System Health', href: '/system-health', icon: HeartPulse },
       { label: 'Architecture', href: '/architecture', icon: Network },
       { label: 'QA', href: '/qa', icon: ShieldCheck },

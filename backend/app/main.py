@@ -6,6 +6,7 @@ knowledge management, and agent orchestration.
 """
 
 import asyncio
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,9 @@ from app.routers import (
     vision, focus,
     email_drafts, routine,
     habits, journal,
+    agent_company, deep_research, experiments, council,
+    character_content, brain,
+    character_reference_videos,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -86,6 +90,17 @@ async def lifespan(app: FastAPI):
             rules_created = await get_research_rules_service().seed_default_rules()
             if rules_created:
                 logger.info("Seeded research rules", count=rules_created)
+
+            # Seed baseline character-content prompt variants so Thompson
+            # Sampling has a starting point and every instrumented LLM call
+            # can be tagged with a variant_id.
+            try:
+                from app.services.character_prompt_seeds import seed_character_prompt_variants
+                seed_summary = await seed_character_prompt_variants()
+                if seed_summary.get("inserted"):
+                    logger.info("Seeded character prompt variants", **seed_summary)
+            except Exception as e:
+                logger.warning("Failed to seed character prompt variants", error=str(e))
         except Exception as e:
             logger.warning("Failed to seed defaults", error=str(e))
     except Exception as e:
@@ -97,6 +112,12 @@ async def lifespan(app: FastAPI):
     recordings_path.mkdir(parents=True, exist_ok=True)
     logger.info("Recordings directory ready", path=str(recordings_path))
 
+    # Ensure character reference videos directory exists
+    from pathlib import Path as _Path
+    cref_dir = _Path("workspace") / "character_content" / "reference_videos"
+    cref_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Character reference videos directory ready", path=str(cref_dir))
+
     # Initialize centralized LLM router (must happen before startup checks)
     from app.infrastructure.llm_router import get_llm_router
     await get_llm_router().initialize()
@@ -107,13 +128,44 @@ async def lifespan(app: FastAPI):
     if not checks_passed:
         logger.error("CRITICAL: Startup checks failed — some features may not work correctly")
 
-    # Start the daily automation scheduler
+    # Start the daily automation scheduler (skip in research mode to prevent conflicts)
+    research_mode = os.environ.get("ZERO_RESEARCH_MODE", "").lower() in ("1", "true", "yes")
+    if research_mode:
+        logger.info("scheduler_skipped_research_mode")
+    else:
+        try:
+            from app.services.scheduler_service import start_scheduler, stop_scheduler
+            await start_scheduler()
+            logger.info("Daily automation scheduler started")
+        except Exception as e:
+            logger.warning("Failed to start scheduler", error=str(e))
+
+    # Auto-resume character research queue if there are pending/stuck characters
     try:
-        from app.services.scheduler_service import start_scheduler, stop_scheduler
-        await start_scheduler()
-        logger.info("Daily automation scheduler started")
+        from app.services.character_content_service import get_character_content_service
+        svc = get_character_content_service()
+        from app.infrastructure.database import get_session
+        from app.db.models import CharacterModel
+        from sqlalchemy import select, func
+        async with get_session() as session:
+            # Reset any stuck "researching" characters back to pending
+            from sqlalchemy import update
+            await session.execute(
+                update(CharacterModel)
+                .where(CharacterModel.research_status == "researching")
+                .values(research_status="pending")
+            )
+            await session.commit()
+            # Count pending characters
+            result = await session.execute(
+                select(func.count()).where(CharacterModel.research_status == "pending")
+            )
+            pending_count = result.scalar() or 0
+        if pending_count > 0:
+            logger.info("auto_resume_research_queue", pending=pending_count)
+            await svc.start_batch_research_async(limit=pending_count)
     except Exception as e:
-        logger.warning("Failed to start scheduler", error=str(e))
+        logger.warning("auto_resume_research_failed", error=str(e))
 
     # Start Discord bot (Claude Agent SDK messaging bridge)
     # NOTE: The bot uses claude-agent-sdk which requires the `claude` CLI binary.
@@ -290,6 +342,19 @@ app.include_router(routine.router, prefix="/api/routine", tags=["Daily Routine"]
 # Habit Tracking & Daily Journal
 app.include_router(habits.router, prefix="/api/habits", tags=["Habits"])
 app.include_router(journal.router, prefix="/api/journal", tags=["Journal"])
+
+# AI Company
+app.include_router(character_content.router, prefix="/api/characters", tags=["Character Content"])
+app.include_router(
+    character_reference_videos.router,
+    prefix="/api/character-content/reference-videos",
+    tags=["Character Reference Videos"],
+)
+app.include_router(agent_company.router)  # prefix in router
+app.include_router(deep_research.router)  # prefix in router
+app.include_router(experiments.router)  # prefix in router
+app.include_router(council.router)  # prefix in router
+app.include_router(brain.router)  # prefix in router
 
 
 @app.get("/")

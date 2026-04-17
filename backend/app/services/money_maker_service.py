@@ -264,29 +264,18 @@ Output as a JSON array of ideas. Be realistic and specific."""
 
         ideas = []
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            content = await get_ollama_client().chat_safe(
-                prompt,
-                task_type="analysis",
-                system="You are a creative business consultant. Generate practical, actionable money-making ideas. Always respond with valid JSON array.",
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+            client = get_unified_llm_client()
+            ideas_data = await client.structured_chat(
+                prompt=prompt,
+                system="You are a creative business consultant. Generate practical, actionable money-making ideas.",
+                task_type="structured_output",
                 temperature=0.8,
-                num_predict=2500,
-                timeout=300,
+                max_tokens=4096,
             )
 
-            if content:
-                # Parse JSON from response
-                try:
-                    ideas_data = json.loads(content)
-                except json.JSONDecodeError:
-                    # Extract JSON array from markdown
-                    json_match = re.search(r'\[[\s\S]*\]', content)
-                    if json_match:
-                        ideas_data = json.loads(json_match.group())
-                    else:
-                        ideas_data = []
-
-                # Store generated ideas
+            if isinstance(ideas_data, list):
                 for idea_raw in ideas_data:
                     idea = await self._store_generated_idea(idea_raw)
                     if idea:
@@ -439,23 +428,17 @@ Based on this research, provide a JSON analysis with:
 Be realistic and data-driven in your analysis."""
 
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            content = await get_ollama_client().chat_safe(
-                prompt,
-                task_type="research",
-                system="You are a business analyst. Analyze market research and provide realistic assessments. Always respond with valid JSON.",
-                temperature=0.3,
-                num_predict=1000,
-                timeout=300,
-            )
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-            if content:
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    json_match = re.search(r'\{[\s\S]*\}', content)
-                    if json_match:
-                        return json.loads(json_match.group())
+            client = get_unified_llm_client()
+            return await client.structured_chat(
+                prompt=prompt,
+                system="You are a business analyst. Analyze market research and provide realistic assessments.",
+                task_type="extraction",
+                temperature=0.3,
+                max_tokens=2048,
+                output_schema={"market_validation": 50, "competition_score": 50, "revenue_potential": 0, "market_size": "str", "competitors": ["str"], "research_notes": "str"},
+            )
 
         except Exception as e:
             logger.warning("research_analysis_failed", error=str(e))

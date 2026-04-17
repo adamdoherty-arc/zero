@@ -470,33 +470,19 @@ Rules:
 Return ONLY valid JSON array, no markdown fences, no explanation.
 Example: [{{"action":"create_file","file_path":"src/hello.py","description":"Create hello module","instructions":"Create a Python module with a hello() function that returns 'Hello World'"}}]"""
 
-        response = await self._call_ollama(prompt)
-        if not response:
-            return []
-
-        steps = self._parse_plan_response(response)
-        return steps
-
-    def _parse_plan_response(self, response: str) -> List[ExecutionStep]:
-        """Parse LLM response into execution steps."""
-        # Strip markdown fences if present
-        text = response.strip()
-        if text.startswith("```"):
-            lines = text.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            text = "\n".join(lines)
-
-        # Try to extract JSON array
         try:
-            # Find the JSON array in the response
-            start = text.find("[")
-            end = text.rfind("]") + 1
-            if start >= 0 and end > start:
-                data = json.loads(text[start:end])
-            else:
-                data = json.loads(text)
-        except json.JSONDecodeError:
-            logger.error("plan_parse_failed", response=text[:500])
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            client = get_unified_llm_client()
+            data = await client.structured_chat(
+                prompt=prompt,
+                task_type="structured_output",
+                temperature=0.2,
+                max_tokens=4096,
+                max_retries=2,
+                output_schema=[{"action": "create_file", "file_path": "str", "description": "str", "instructions": "str"}],
+            )
+        except Exception as e:
+            logger.error("plan_structured_chat_failed", error=str(e))
             return []
 
         if not isinstance(data, list):
@@ -648,22 +634,18 @@ Rules:
     # ========================================
 
     async def _call_ollama(self, prompt: str) -> str:
-        """Call Ollama for code generation using shared client."""
-        from app.infrastructure.ollama_client import get_ollama_client
+        """Call LLM for code generation using unified client."""
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         model = self._settings.get("coding_model")  # explicit override or None
-        timeout = self._settings.get("ollama_timeout", 300)
-        retries = self._settings.get("max_ollama_retries", 2)
 
         return await client.chat(
-            prompt,
+            messages=[{"role": "user", "content": prompt}],
             model=model,
             task_type="coding",
             temperature=0.2,
-            num_predict=4096,
-            timeout=timeout,
-            max_retries=retries,
+            max_tokens=4096,
         )
 
     # ========================================

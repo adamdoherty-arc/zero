@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, DollarSign, Activity } from 'lucide-react'
+import { Plus, Activity } from 'lucide-react'
 import {
     useMoneyMakerIdeas,
     useGenerateIdeas,
@@ -24,14 +24,7 @@ export function MoneyMakerPage() {
 
     return (
         <div className="page-content space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="page-title flex items-center gap-2">
-                        <DollarSign className="w-8 h-8 text-green-400" />
-                        Money Maker
-                    </h1>
-                    <p className="text-muted-foreground">AI-powered business idea generator & validator</p>
-                </div>
+            <div className="flex items-center justify-end">
                 <button
                     onClick={handleGenerate}
                     disabled={generateMutation.isPending}

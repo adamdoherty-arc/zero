@@ -106,10 +106,6 @@ export function EmailPage() {
   if (!connected) {
     return (
       <div className="p-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-white mb-2">Email</h1>
-          <p className="text-zinc-400">Connect your Google account to access Gmail</p>
-        </div>
         <GoogleOAuthButton />
       </div>
     )
@@ -117,11 +113,7 @@ export function EmailPage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Email</h1>
-          <p className="text-zinc-400">Manage your inbox and convert emails to tasks</p>
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <Button
           onClick={syncInbox}
           disabled={syncing}

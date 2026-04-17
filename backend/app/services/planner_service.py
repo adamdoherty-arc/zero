@@ -1,14 +1,14 @@
 """
-Gemini-powered Planner Service.
+Kimi-powered Planner Service.
 
-Uses Gemini 3.1 Pro as the "brain" to decompose complex tasks into
+Uses Kimi 2.5 as the "brain" to decompose complex tasks into
 subtasks, delegates simple subtasks to local Ollama (free), and
 synthesizes the final result.
 
 Three-phase pattern:
-1. PLAN (Gemini): Break task into steps, tag complexity
-2. EXECUTE (mixed): Simple → Ollama, moderate → OpenRouter, complex → Gemini
-3. SYNTHESIZE (Gemini): Combine step results into final answer
+1. PLAN (Kimi): Break task into steps, tag complexity
+2. EXECUTE (mixed): Simple → Ollama, moderate → Ollama, complex → Kimi
+3. SYNTHESIZE (Kimi): Combine step results into final answer
 """
 
 import json
@@ -16,23 +16,14 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 
+from app.infrastructure.llm_router import get_llm_router
 from app.infrastructure.unified_llm_client import get_unified_llm_client
 
 logger = structlog.get_logger(__name__)
 
-# Model routing by complexity tier
-COMPLEXITY_MODELS = {
-    "simple": "ollama/qwen3:8b",
-    "moderate": "ollama/qwen3:8b",  # Use Ollama for moderate too (conservative budget)
-    "complex": "gemini/gemini-3.1-pro-preview",
-}
-
-PLAN_MODEL = "gemini/gemini-3.1-pro-preview"
-SYNTHESIS_MODEL = "gemini/gemini-3.1-pro-preview"
-
 
 class PlannerService:
-    """Gemini-powered task decomposition and delegation."""
+    """Kimi-powered task decomposition and delegation."""
 
     async def plan_and_execute(
         self,
@@ -60,7 +51,6 @@ class PlannerService:
             logger.info("planner_single_step_fallback")
             result = await client.chat(
                 prompt=task_description,
-                model=PLAN_MODEL,
                 task_type="planning",
                 temperature=0.3,
                 max_tokens=2048,
@@ -68,7 +58,7 @@ class PlannerService:
             return {
                 "task": task_description,
                 "plan": {"steps": [{"description": task_description, "complexity": "complex"}]},
-                "step_results": [{"step": 1, "result": result, "model_used": PLAN_MODEL}],
+                "step_results": [{"step": 1, "result": result, "model_used": get_llm_router().resolve("planning")}],
                 "final_response": result,
             }
 
@@ -95,7 +85,7 @@ class PlannerService:
         task_description: str,
         context: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Phase 1: Use Gemini to decompose task into steps."""
+        """Phase 1: Use Kimi to decompose task into steps."""
         # Truncate context to avoid huge prompts
         context_str = json.dumps(context, default=str)
         if len(context_str) > 3000:
@@ -116,23 +106,14 @@ Respond ONLY with valid JSON, no markdown:
 {{"steps": [{{"description": "...", "complexity": "simple|moderate|complex"}}]}}"""
 
         try:
-            response = await client.chat(
+            return await client.structured_chat(
                 prompt=plan_prompt,
-                model=PLAN_MODEL,
                 task_type="planning",
                 temperature=0.2,
                 max_tokens=1024,
+                output_schema={"steps": [{"description": "str", "complexity": "str"}]},
             )
-            # Extract JSON from response
-            response = response.strip()
-            if response.startswith("```"):
-                # Strip markdown code fences
-                lines = response.split("\n")
-                response = "\n".join(
-                    l for l in lines if not l.strip().startswith("```")
-                )
-            return json.loads(response)
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             logger.warning("planner_json_parse_failed", error=str(e))
             return {"steps": []}
 
@@ -147,13 +128,15 @@ Respond ONLY with valid JSON, no markdown:
 
         for idx, step in enumerate(steps):
             complexity = step.get("complexity", "simple")
-            model = COMPLEXITY_MODELS.get(complexity, "ollama/qwen3:8b")
+            task_type = f"complexity_{complexity}"
+            resolved_model = get_llm_router().resolve(task_type)
 
             logger.info(
                 "planner_step_execute",
                 step=idx + 1,
                 complexity=complexity,
-                model=model,
+                task_type=task_type,
+                model=resolved_model,
             )
 
             step_prompt = f"""Execute this task step:
@@ -168,10 +151,10 @@ Provide a concise, actionable result."""
             try:
                 step_result = await client.chat(
                     prompt=step_prompt,
-                    model=model,
-                    task_type="analysis",
+                    task_type=task_type,
                     temperature=0.2,
                     max_tokens=1024,
+                    thinking_mode=(complexity == "complex"),
                 )
             except Exception as e:
                 logger.error("planner_step_failed", step=idx + 1, error=str(e))
@@ -182,7 +165,7 @@ Provide a concise, actionable result."""
                 "description": step["description"],
                 "complexity": complexity,
                 "result": step_result,
-                "model_used": model,
+                "model_used": resolved_model,
             })
 
         return results
@@ -193,7 +176,7 @@ Provide a concise, actionable result."""
         task_description: str,
         step_results: List[Dict[str, Any]],
     ) -> str:
-        """Phase 3: Use Gemini to combine step results into final answer."""
+        """Phase 3: Use Kimi to combine step results into final answer."""
         results_text = "\n\n".join(
             f"Step {r['step']} ({r['complexity']}): {r['description']}\nResult: {r['result']}"
             for r in step_results
@@ -211,7 +194,6 @@ Be conversational and helpful. Format for Discord (use markdown sparingly)."""
 
         return await client.chat(
             prompt=synthesis_prompt,
-            model=SYNTHESIS_MODEL,
             task_type="summarization",
             temperature=0.3,
             max_tokens=2048,

@@ -94,5 +94,11 @@ mcp>=1.26.0
 # Text-to-Speech
 edge-tts>=6.1.0
 
+# Image Compositing (carousel rendering)
+Pillow>=10.0.0
+
+# Video download for TikTok reference videos (character content)
+yt-dlp>=2025.1.1
+
 # Reachy Mini Robot Integration
 # reachy-mini>=1.0.0  # Install when robot arrives

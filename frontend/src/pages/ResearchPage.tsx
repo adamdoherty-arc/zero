@@ -76,11 +76,7 @@ export function ResearchPage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Research Agent</h1>
-          <p className="text-zinc-400">Automated research cycles, findings, and self-improvement</p>
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <div className="flex gap-2">
           <Button
             onClick={() => runCycle.mutate()}

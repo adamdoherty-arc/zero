@@ -298,50 +298,45 @@ class ContentAgentService:
         )
 
         try:
-            from langchain_core.messages import HumanMessage, SystemMessage
-            from app.infrastructure.langchain_adapter import get_zero_chat_model
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-            llm = get_zero_chat_model(task_type="analysis", temperature=0.3)
-            llm_response = await llm.ainvoke([
-                SystemMessage(content=RULE_GENERATION_SYSTEM_PROMPT),
-                HumanMessage(content=prompt),
-            ])
-            result = llm_response.content if llm_response else None
+            client = get_unified_llm_client()
+            new_rules = await client.structured_chat(
+                prompt=prompt,
+                system=RULE_GENERATION_SYSTEM_PROMPT,
+                task_type="structured_output",
+                temperature=0.3,
+                max_tokens=4096,
+            )
 
-            if result:
-                try:
-                    new_rules = json.loads(result)
-                    if isinstance(new_rules, list):
-                        # Ensure each rule has required fields
-                        for rule in new_rules:
-                            if "id" not in rule:
-                                rule["id"] = self._generate_id("rule")
-                            if "source" not in rule:
-                                rule["source"] = "llm"
-                            if "effectiveness_score" not in rule:
-                                rule["effectiveness_score"] = 50.0
-                            if "times_applied" not in rule:
-                                rule["times_applied"] = 0
+            if new_rules and isinstance(new_rules, list):
+                # Ensure each rule has required fields
+                for rule in new_rules:
+                    if "id" not in rule:
+                        rule["id"] = self._generate_id("rule")
+                    if "source" not in rule:
+                        rule["source"] = "llm"
+                    if "effectiveness_score" not in rule:
+                        rule["effectiveness_score"] = 50.0
+                    if "times_applied" not in rule:
+                        rule["times_applied"] = 0
 
-                        # Merge: keep user rules, replace LLM rules
-                        merged = list(user_rules) + new_rules
+                # Merge: keep user rules, replace LLM rules
+                merged = list(user_rules) + new_rules
 
-                        # Store back
-                        async with get_session() as session:
-                            db_result = await session.execute(
-                                select(ContentTopicModel).where(
-                                    ContentTopicModel.id == topic_id
-                                )
-                            )
-                            row = db_result.scalar_one_or_none()
-                            if row:
-                                row.rules = merged
+                # Store back
+                async with get_session() as session:
+                    db_result = await session.execute(
+                        select(ContentTopicModel).where(
+                            ContentTopicModel.id == topic_id
+                        )
+                    )
+                    row = db_result.scalar_one_or_none()
+                    if row:
+                        row.rules = merged
 
-                        logger.info("rules_generated", topic_id=topic_id, count=len(new_rules))
-                        return merged
-
-                except json.JSONDecodeError:
-                    logger.warning("rules_json_parse_fail", topic_id=topic_id)
+                logger.info("rules_generated", topic_id=topic_id, count=len(new_rules))
+                return merged
 
         except Exception as e:
             logger.error("rules_generation_failed", topic_id=topic_id, error=str(e))
@@ -512,6 +507,21 @@ class ContentAgentService:
                 except Exception as e:
                     logger.debug("perf_sync_skip", gen_id=record.act_generation_id, error=str(e))
 
+        # Feed performance data back to product scoring
+        if updated > 0:
+            try:
+                product_ids = set()
+                for record in records:
+                    if record.tiktok_product_id:
+                        product_ids.add(record.tiktok_product_id)
+                if product_ids:
+                    from app.services.tiktok_shop_service import get_tiktok_shop_service
+                    shop_svc = get_tiktok_shop_service()
+                    for pid in product_ids:
+                        await shop_svc.update_score_from_performance(pid)
+            except Exception as e:
+                logger.warning("performance_feedback_failed", error=str(e))
+
         logger.info("content_perf_synced", updated=updated)
         return updated
 
@@ -542,41 +552,50 @@ class ContentAgentService:
                 synced = await self.sync_performance_metrics(topic.id)
                 results["performance_synced"] += synced
 
-                # 2. Load unprocessed performance records
+                # 2. Load unprocessed performance records with row-level lock
                 async with get_session() as session:
                     perf_result = await session.execute(
                         select(ContentPerformanceModel)
                         .where(ContentPerformanceModel.topic_id == topic.id)
                         .where(ContentPerformanceModel.feedback_processed == False)  # noqa: E712
                         .where(ContentPerformanceModel.views > 0)
+                        .with_for_update(skip_locked=True)
                     )
                     perf_records = perf_result.scalars().all()
 
-                if not perf_records:
-                    continue
+                    if not perf_records:
+                        continue
 
-                # 3. Update rule effectiveness
-                topic_obj = await self.get_topic(topic.id)
-                if not topic_obj:
-                    continue
+                    # 3. Update rule effectiveness
+                    topic_obj = await self.get_topic(topic.id)
+                    if not topic_obj:
+                        continue
 
-                rules = list(topic_obj.rules or [])
-                for rule in rules:
-                    rule_id = rule.get("id", "")
-                    scores_for_rule = []
-                    for pr in perf_records:
-                        if rule_id in (pr.rules_applied or []):
-                            scores_for_rule.append(pr.performance_score)
+                    rules = list(topic_obj.rules or [])
+                    for rule in rules:
+                        rule_id = rule.get("id", "")
+                        scores_for_rule = []
+                        for pr in perf_records:
+                            if rule_id in (pr.rules_applied or []):
+                                scores_for_rule.append(pr.performance_score)
 
-                    if scores_for_rule:
-                        avg_perf = sum(scores_for_rule) / len(scores_for_rule)
-                        # Exponential moving average
-                        old_eff = rule.get("effectiveness_score", 50.0)
-                        rule["effectiveness_score"] = round(old_eff * 0.6 + avg_perf * 0.4, 1)
-                        rule["times_applied"] = rule.get("times_applied", 0) + len(scores_for_rule)
-                        results["rules_updated"] += 1
+                        if scores_for_rule:
+                            avg_perf = sum(scores_for_rule) / len(scores_for_rule)
+                            # Exponential moving average
+                            old_eff = rule.get("effectiveness_score", 50.0)
+                            rule["effectiveness_score"] = round(old_eff * 0.6 + avg_perf * 0.4, 1)
+                            rule["times_applied"] = rule.get("times_applied", 0) + len(scores_for_rule)
+                            results["rules_updated"] += 1
 
-                # 4. Regenerate rules if any are underperforming
+                    # 4. Mark feedback processed (within same locked transaction)
+                    record_ids = [pr.id for pr in perf_records]
+                    await session.execute(
+                        update(ContentPerformanceModel)
+                        .where(ContentPerformanceModel.id.in_(record_ids))
+                        .values(feedback_processed=True)
+                    )
+
+                # 5. Regenerate rules if any are underperforming
                 weak_rules = [r for r in rules if r.get("effectiveness_score", 50) < 30]
                 if weak_rules:
                     await self.generate_rules(topic.id, focus="replace underperforming rules")
@@ -592,15 +611,6 @@ class ContentAgentService:
                         row = db_result.scalar_one_or_none()
                         if row:
                             row.rules = rules
-
-                # 5. Mark feedback processed
-                async with get_session() as session:
-                    await session.execute(
-                        update(ContentPerformanceModel)
-                        .where(ContentPerformanceModel.topic_id == topic.id)
-                        .where(ContentPerformanceModel.feedback_processed == False)  # noqa: E712
-                        .values(feedback_processed=True)
-                    )
 
                 # 6. Update avg performance score
                 async with get_session() as session:
@@ -623,6 +633,21 @@ class ContentAgentService:
                 logger.error("improvement_cycle_failed", topic_id=topic.id, error=str(e))
 
         logger.info("content_improvement_cycle_complete", **results)
+
+        # Record to brain for learning
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            brain = get_zero_brain_service()
+            await brain.record_interaction_outcome(
+                domain="content", action_type="improvement_cycle",
+                strategy_used="rule_refinement",
+                actual_score=float(results.get("topics_processed", 0)) * 10,
+                metrics=results,
+                text_for_memory=f"Content improvement cycle: processed {results.get('topics_processed', 0)} topics, updated {results.get('rules_updated', 0)} rules",
+            )
+        except Exception:
+            pass
+
         return results
 
     async def research_content_trends(self, topic_id: str) -> Dict[str, Any]:
@@ -862,7 +887,7 @@ class ContentAgentService:
             examples_count=row.examples_count or 0,
             avg_performance_score=row.avg_performance_score or 0.0,
             content_generated_count=row.content_generated_count or 0,
-            created_at=row.created_at or datetime.utcnow(),
+            created_at=row.created_at or datetime.now(timezone.utc),
             updated_at=row.updated_at,
         )
 
@@ -882,7 +907,7 @@ class ContentAgentService:
             performance_score=row.performance_score or 50.0,
             source=row.source or "manual",
             rule_contributions=row.rule_contributions or [],
-            added_at=row.added_at or datetime.utcnow(),
+            added_at=row.added_at or datetime.now(timezone.utc),
         )
 
     # ============================================

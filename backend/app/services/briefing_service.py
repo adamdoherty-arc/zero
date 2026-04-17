@@ -268,9 +268,9 @@ class BriefingService:
         task_summary: Optional[str],
         email_summary: Optional[str],
     ) -> List[str]:
-        """Use Ollama to generate prioritized, actionable suggestions for the day."""
+        """Use Kimi to generate prioritized, actionable suggestions for the day."""
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
 
             # Build context from all gathered data
             context_parts = []
@@ -296,12 +296,12 @@ class BriefingService:
                 f"Current situation:\n{context}"
             )
 
-            client = get_ollama_client()
-            response = await client.chat_safe(
+            client = get_unified_llm_client()
+            response = await client.chat(
                 prompt,
                 task_type="summarization",
                 temperature=0.3,
-                num_predict=200,
+                max_tokens=200,
             )
 
             if response:

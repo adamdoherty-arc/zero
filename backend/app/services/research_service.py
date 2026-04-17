@@ -1078,13 +1078,11 @@ class ResearchService:
         return scored
 
     async def _llm_score_finding(self, client, finding: Dict) -> Optional[Dict]:
-        """Use Ollama to generate a better summary and refine scores for a finding.
+        """Use LLM to generate a better summary and refine scores for a finding.
 
         Only called for findings that pass the heuristic threshold (>=50 composite).
         Returns updated fields or None on failure.
         """
-        import json as json_module
-
         title = finding.get("title", "")
         snippet = finding.get("snippet", "")
         url = finding.get("url", "")
@@ -1094,51 +1092,45 @@ class ResearchService:
             f"Title: {title}\n"
             f"URL: {url}\n"
             f"Snippet: {snippet[:300]}\n\n"
-            f"Return ONLY a JSON object with:\n"
-            f'- "summary": 2-sentence summary of why this is useful\n'
-            f'- "relevance_adj": score adjustment -10 to +10\n'
-            f'- "actionability_adj": score adjustment -10 to +10\n'
-            f"No markdown, no explanation."
+            f"Provide: summary (2-sentence why useful), relevance_adj (-10 to +10), actionability_adj (-10 to +10)"
         )
 
         try:
-            response = await client.chat_safe(
-                prompt,
-                task_type="analysis",
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            unified = get_unified_llm_client()
+            data = await unified.structured_chat(
+                prompt=prompt,
+                task_type="extraction",
                 temperature=0.1,
-                num_predict=200,
+                max_tokens=512,
                 max_retries=1,
+                output_schema={"summary": "str", "relevance_adj": 0, "actionability_adj": 0},
             )
-            if not response:
+
+            if not isinstance(data, dict):
                 return None
 
-            response = response.strip()
-            # Extract JSON from response
-            if "{" in response:
-                json_str = response[response.index("{"):response.rindex("}") + 1]
-                data = json_module.loads(json_str)
+            result = {}
+            if data.get("summary"):
+                result["llmSummary"] = data["summary"]
 
-                result = {}
-                if data.get("summary"):
-                    result["llmSummary"] = data["summary"]
+            rel_adj = data.get("relevance_adj", 0)
+            act_adj = data.get("actionability_adj", 0)
+            if rel_adj:
+                result["relevanceScore"] = min(95, max(10, finding.get("relevanceScore", 50) + rel_adj))
+            if act_adj:
+                result["actionabilityScore"] = min(95, max(10, finding.get("actionabilityScore", 50) + act_adj))
 
-                rel_adj = data.get("relevance_adj", 0)
-                act_adj = data.get("actionability_adj", 0)
-                if rel_adj:
-                    result["relevanceScore"] = min(95, max(10, finding.get("relevanceScore", 50) + rel_adj))
-                if act_adj:
-                    result["actionabilityScore"] = min(95, max(10, finding.get("actionabilityScore", 50) + act_adj))
+            # Recompute composite if adjustments were made
+            if rel_adj or act_adj:
+                result["compositeScore"] = round(
+                    result.get("relevanceScore", finding.get("relevanceScore", 50)) * 0.35
+                    + finding.get("noveltyScore", 50) * 0.25
+                    + result.get("actionabilityScore", finding.get("actionabilityScore", 50)) * 0.40,
+                    1,
+                )
 
-                # Recompute composite if adjustments were made
-                if rel_adj or act_adj:
-                    result["compositeScore"] = round(
-                        result.get("relevanceScore", finding.get("relevanceScore", 50)) * 0.35
-                        + finding.get("noveltyScore", 50) * 0.25
-                        + result.get("actionabilityScore", finding.get("actionabilityScore", 50)) * 0.40,
-                        1,
-                    )
-
-                return result if result else None
+            return result if result else None
         except Exception as e:
             logger.debug("llm_score_finding_failed", error=str(e), title=title[:50])
             return None

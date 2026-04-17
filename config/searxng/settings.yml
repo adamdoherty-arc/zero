@@ -7,11 +7,16 @@ use_default_settings:
       - bing
       - bing images
       - brave
+      - duckduckgo
+      - startpage
+      - yahoo
       - wikipedia
       - wikidata
       - github
       - stackoverflow
       - currency convert
+      - mojeek
+      - qwant
 
 general:
   instance_name: "Zero Research"
@@ -26,8 +31,9 @@ search:
     - html
     - json
   suspended_times:
-    SearxEngineCaptchaException: 86400
-    SearxEngineAccessDeniedException: 3600
+    SearxEngineCaptchaException: 600
+    SearxEngineAccessDeniedException: 300
+    SearxEngineTooManyRequestsException: 600
 
 server:
   secret_key: "zero-research-agent-secret-key"
@@ -36,9 +42,14 @@ server:
   port: 8080
   bind_address: "0.0.0.0"
 
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+
 ui:
   static_use_hash: true
   default_theme: simple
   theme_args:
     simple_style: dark
-

@@ -327,18 +327,56 @@ async def report_frontend_error(body: Dict[str, Any]) -> Dict[str, str]:
 
 
 # ============================================
-# GATEWAY AUTO-UPDATE
+# SCHEDULER DASHBOARD
 # ============================================
 
-@router.get("/gateway-version")
-async def get_gateway_version() -> Dict[str, Any]:
-    """Get current gateway version, latest available, and update status."""
-    from app.services.gateway_updater_service import get_gateway_updater_service
-    return await get_gateway_updater_service().get_update_status()
+@router.get("/scheduler/dashboard")
+async def scheduler_dashboard() -> Dict[str, Any]:
+    """Aggregated job dashboard: cards, health, success rates."""
+    from app.services.scheduler_dashboard_service import get_scheduler_dashboard_service
+    return await get_scheduler_dashboard_service().get_dashboard_data()
 
 
-@router.post("/gateway-update/check")
-async def check_gateway_update() -> Dict[str, Any]:
-    """Manually trigger a gateway update check against GitHub releases."""
-    from app.services.gateway_updater_service import get_gateway_updater_service
-    return await get_gateway_updater_service().check_for_updates()
+@router.get("/scheduler/timeline")
+async def scheduler_timeline(hours: int = 24) -> Dict[str, Any]:
+    """Timeline of all job executions for Gantt view."""
+    from app.services.scheduler_dashboard_service import get_scheduler_dashboard_service
+    events = await get_scheduler_dashboard_service().get_job_timeline(hours=hours)
+    return {"hours": hours, "events": events}
+
+
+@router.get("/scheduler/jobs/{job_name}/history")
+async def scheduler_job_history(job_name: str, limit: int = 50) -> Dict[str, Any]:
+    """Detailed execution history for a single job."""
+    from app.services.scheduler_dashboard_service import get_scheduler_dashboard_service
+    history = await get_scheduler_dashboard_service().get_job_history(job_name, limit=limit)
+    return {"job_name": job_name, "history": history}
+
+
+@router.get("/daily-report")
+async def get_daily_report() -> Dict[str, Any]:
+    """Generate and return the daily autonomous activity report on demand."""
+    from app.services.daily_report_service import get_daily_report_service
+    service = get_daily_report_service()
+    report = await service.generate_daily_report()
+    return report
+
+
+@router.get("/daily-report/history")
+async def get_daily_report_history(days: int = 7) -> Dict[str, Any]:
+    """Get daily report history for the last N days."""
+    from app.services.daily_report_service import get_daily_report_service
+    service = get_daily_report_service()
+    history = await service.get_report_history(days=days)
+    return {"reports": history, "days": days}
+
+
+@router.get("/operations-dashboard")
+async def get_operations_dashboard() -> Dict[str, Any]:
+    """Unified operations dashboard snapshot.
+
+    Aggregates scheduler stats, LLM usage, provider health, active alerts,
+    recent failures, and live activity into a single response.
+    """
+    from app.services.operations_dashboard_service import get_operations_dashboard_service
+    return await get_operations_dashboard_service().get_snapshot()

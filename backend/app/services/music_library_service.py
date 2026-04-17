@@ -301,6 +301,7 @@ class MusicLibraryService:
             genre=row.genre,
             tiktok_sound_id=row.tiktok_sound_id,
             tiktok_sound_url=row.tiktok_sound_url,
+            preview_url=getattr(row, "preview_url", None),
             is_trending=row.is_trending if row.is_trending is not None else False,
             trending_score=row.trending_score or 0.0,
             use_count=row.use_count or 0,

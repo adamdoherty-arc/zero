@@ -38,7 +38,8 @@ class GmailOAuthService:
         self.credentials_file = self.email_path / "gmail_credentials.json"
         self.tokens_file = self.email_path / "gmail_tokens.json"
         self._credentials = None
-        
+        self._refresh_failed = False  # Prevents retrying a known-dead token
+
         # Auto-create credentials from environment if not exists
         self._ensure_client_config()
 
@@ -223,6 +224,9 @@ class GmailOAuthService:
         profile = service.users().getProfile(userId="me").execute()
         email_address = profile.get("emailAddress", "unknown")
 
+        # Reset failure flag on successful re-auth
+        self._refresh_failed = False
+
         logger.info("gmail_oauth_complete", email=email_address)
 
         return {
@@ -235,8 +239,11 @@ class GmailOAuthService:
         Get valid OAuth credentials.
 
         Returns credentials object for use with Gmail API.
-        Refreshes if expired.
+        Refreshes if expired. Stops retrying after invalid_grant.
         """
+        if self._refresh_failed:
+            return None
+
         self._load_google_modules()
         creds = self._load_credentials()
 
@@ -249,7 +256,15 @@ class GmailOAuthService:
                 creds.refresh(Request())
                 self._save_credentials(creds)
             except Exception as e:
-                logger.error("gmail_token_refresh_failed", error=str(e))
+                error_str = str(e)
+                if "invalid_grant" in error_str:
+                    self._refresh_failed = True
+                    logger.error(
+                        "gmail_token_revoked",
+                        hint="Re-authenticate at /api/google/auth/start",
+                    )
+                else:
+                    logger.error("gmail_token_refresh_failed", error=error_str)
                 return None
 
         return creds if creds.valid else None

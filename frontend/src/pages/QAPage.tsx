@@ -109,10 +109,6 @@ export function QAPage() {
   if (isLoading) {
     return (
       <div className="page-content">
-        <div className="flex items-center gap-3 mb-8">
-          <ShieldCheck className="w-8 h-8 text-primary" />
-          <h1 className="page-title">QA Verification</h1>
-        </div>
         <LoadingSkeleton variant="page" message="Loading QA report..." />
       </div>
     )
@@ -122,10 +118,6 @@ export function QAPage() {
   if (!report) {
     return (
       <div className="page-content">
-        <div className="flex items-center gap-3 mb-8">
-          <ShieldCheck className="w-8 h-8 text-primary" />
-          <h1 className="page-title">QA Verification</h1>
-        </div>
         <div className="glass-card p-12 text-center">
           <ShieldCheck className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-lg font-semibold text-foreground mb-2">No QA Reports</h2>
@@ -156,17 +148,7 @@ export function QAPage() {
 
   return (
     <div className="page-content">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="page-title">QA Verification</h1>
-            <p className="text-xs text-muted-foreground">
-              {report.report_id} &middot; {new Date(report.completed_at).toLocaleString()}
-            </p>
-          </div>
-        </div>
+      <div className="flex justify-end mb-6">
         <button
           onClick={() => triggerQA.mutate()}
           disabled={triggerQA.isPending}

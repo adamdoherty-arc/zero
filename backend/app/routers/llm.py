@@ -181,6 +181,45 @@ async def usage_today():
     }
 
 
+@router.post("/test-structured")
+async def test_structured(prompt: str = "List 3 programming languages with name and year_created", task_type: str = "structured_output"):
+    """Test the structured_chat() method. Returns parsed JSON or error details."""
+    from app.infrastructure.unified_llm_client import get_unified_llm_client, StructuredOutputError
+
+    client = get_unified_llm_client()
+    try:
+        result = await client.structured_chat(
+            prompt=prompt,
+            task_type=task_type,
+            temperature=0.1,
+            max_tokens=2048,
+            output_schema=[{"name": "str", "year_created": 0}],
+        )
+        return {
+            "status": "success",
+            "parsed_json": result,
+            "type": type(result).__name__,
+        }
+    except StructuredOutputError as e:
+        return {
+            "status": "failed",
+            "error": str(e),
+            "raw_response": e.raw_response[:1000],
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+        }
+
+
+@router.get("/structured-stats")
+async def structured_stats():
+    """Get structured output success/retry metrics."""
+    from app.infrastructure.unified_llm_client import UnifiedLLMClient
+    return UnifiedLLMClient.get_structured_stats()
+
+
 @router.get("/available-models")
 async def available_models():
     """List all available models grouped by provider."""
@@ -221,6 +260,7 @@ async def available_models():
         "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     ]
     result["kimi"] = [
+        "kimi-k2.5",
         "moonshot-v1-8k",
         "moonshot-v1-32k",
         "moonshot-v1-128k",

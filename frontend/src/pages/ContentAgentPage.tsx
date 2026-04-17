@@ -201,14 +201,7 @@ export function ContentAgentPage() {
     return (
         <div className="page-content space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="page-title flex items-center gap-2">
-                        <Sparkles className="w-8 h-8 text-purple-400" />
-                        Content Agent
-                    </h1>
-                    <p className="text-muted-foreground">Topics, rules, examples & self-improving content generation</p>
-                </div>
+            <div className="flex items-center justify-end">
                 <div className="flex gap-2">
                     <button
                         onClick={() => improvementCycle.mutate(undefined)}

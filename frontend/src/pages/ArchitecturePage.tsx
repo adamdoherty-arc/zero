@@ -1,6 +1,5 @@
 import { MermaidDiagram } from '@/components/MermaidDiagram'
 import {
-  Network,
   Workflow,
   Brain,
   Shield,
@@ -113,17 +112,6 @@ const flowCards = [
 export function ArchitecturePage() {
   return (
     <div className="page-content">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-8">
-        <Network className="w-8 h-8 text-primary" />
-        <div>
-          <h1 className="page-title">Architecture</h1>
-          <p className="text-xs text-muted-foreground">
-            Zero + Legion ecosystem overview
-          </p>
-        </div>
-      </div>
-
       {/* Intro Card */}
       <div className="glass-card p-5 mb-6">
         <h2 className="text-sm font-semibold text-foreground mb-1">

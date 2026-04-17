@@ -3,9 +3,11 @@ import { useState } from 'react'
 import {
   ArrowLeft, Search, Loader2, ChevronLeft, ChevronRight,
   Sparkles, Zap, Star, Film, BookOpen, Users, Swords,
-  AlertTriangle, Clock, CheckCircle,
+  AlertTriangle, Clock, CheckCircle, ThumbsDown, Trash2,
   Plus, RefreshCw, Eye, ThumbsUp, Image as ImageIcon,
 } from 'lucide-react'
+import { ReferenceVideosTab } from '@/components/character-content/ReferenceVideosTab'
+import { CarouselCard } from '@/components/character-content/CarouselCard'
 import {
   useCharacter,
   useCharacterImages,
@@ -15,6 +17,14 @@ import {
   useSourceImages,
   useAiReviewCarousel,
   useApproveCarousel,
+  useApproveImage,
+  useRejectImage,
+  useDeleteImage,
+  useValidateAllImages,
+  useReimageCarousel,
+  useReimageSlide,
+  useReimageWithFreshSources,
+  useEnhanceCharacter,
   type CharacterImage as CharacterImageType,
   type CharacterCarousel,
   type CharacterFact,
@@ -51,24 +61,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   behind_scenes: 'bg-green-500/20 text-green-400',
   character_evolution: 'bg-indigo-500/20 text-indigo-400',
   dark_facts: 'bg-red-500/20 text-red-400',
-}
-
-const CAROUSEL_STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-500/20 text-gray-400',
-  ai_reviewed: 'bg-yellow-500/20 text-yellow-400',
-  pending_review: 'bg-orange-500/20 text-orange-400',
-  approved: 'bg-green-500/20 text-green-400',
-  rejected: 'bg-red-500/20 text-red-400',
-  published: 'bg-blue-500/20 text-blue-400',
-}
-
-function ScoreBar({ value, maxWidth = 100 }: { value: number; maxWidth?: number }) {
-  const color = value >= 7 ? 'bg-green-500' : value >= 4 ? 'bg-yellow-500' : 'bg-red-500'
-  return (
-    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
-      <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.min(value * 10, maxWidth)}%` }} />
-    </div>
-  )
 }
 
 function ImageGallery({ images, characterName, onSourceMore, isSourcing }: {
@@ -237,12 +229,32 @@ function FactBankSection({ facts, categoryFilter, onCategoryChange }: {
   )
 }
 
-function CarouselsSection({ carousels, onGenerateCarousel, isGenerating, onReview, onApprove }: {
+function CarouselsSection({
+  carousels,
+  characterName,
+  onGenerateCarousel,
+  isGenerating,
+  onReview,
+  onApprove,
+  onReimageAll,
+  onReimageFresh,
+  onReimageSlide,
+  reimagingCarouselId,
+  reimagingFreshCarouselId,
+  reimagingSlideKey,
+}: {
   carousels: CharacterCarousel[]
+  characterName: string
   onGenerateCarousel: (angle: ContentAngle) => void
   isGenerating: boolean
   onReview: (id: string) => void
   onApprove: (id: string) => void
+  onReimageAll: (id: string) => void
+  onReimageFresh: (id: string) => void
+  onReimageSlide: (carouselId: string, slideIndex: number) => void
+  reimagingCarouselId: string | null
+  reimagingFreshCarouselId: string | null
+  reimagingSlideKey: string | null
 }) {
   return (
     <div className="space-y-4">
@@ -265,100 +277,66 @@ function CarouselsSection({ carousels, onGenerateCarousel, isGenerating, onRevie
       {carousels.length === 0 ? (
         <p className="text-sm text-gray-500 text-center py-8">No carousels generated yet. Click Generate to create one.</p>
       ) : (
-        <div className="space-y-3">
-          {carousels.map(carousel => (
-            <div key={carousel.id} className="bg-white/5 rounded-lg p-4 hover:bg-white/8 transition-colors space-y-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-xs ${CAROUSEL_STATUS_COLORS[carousel.status] || 'bg-gray-500/20 text-gray-400'}`}>
-                    {carousel.status.replace('_', ' ')}
-                  </span>
-                  <span className="text-xs text-gray-500">{carousel.angle.replace('_', ' ')}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {carousel.ai_review && (
-                    <span className={`text-sm font-bold ${(carousel.ai_review.overall_score as number) >= 7 ? 'text-green-400' : 'text-yellow-400'}`}>
-                      {carousel.ai_review.overall_score}/10
-                    </span>
+        <div className="space-y-4">
+          {carousels.map(carousel => {
+            // Page-specific action buttons slotted into the shared card's
+            // header. Shared layout (phone preview, hook box, caption,
+            // hashtags, AI review, generation details) comes from
+            // CarouselCard so this page matches the review page exactly.
+            const extraActions = (
+              <>
+                <button
+                  onClick={() => onReimageAll(carousel.id)}
+                  disabled={reimagingCarouselId === carousel.id}
+                  className="px-2 py-1 bg-cyan-600/20 text-cyan-400 text-xs rounded hover:bg-cyan-600/30 disabled:opacity-50 flex items-center gap-1"
+                  aria-label="Refresh images using existing character pool"
+                  title="Refresh images using existing pool"
+                >
+                  {reimagingCarouselId === carousel.id ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3 h-3" />
                   )}
-                  {carousel.status === 'draft' && (
-                    <button
-                      onClick={() => onReview(carousel.id)}
-                      className="px-2 py-1 bg-yellow-600/20 text-yellow-400 text-xs rounded hover:bg-yellow-600/30"
-                      aria-label="Request AI review for this carousel"
-                    >
-                      AI Review
-                    </button>
+                  Refresh Images
+                </button>
+                <button
+                  onClick={() => onReimageFresh(carousel.id)}
+                  disabled={reimagingFreshCarouselId === carousel.id}
+                  className="px-2 py-1 bg-indigo-600/20 text-indigo-400 text-xs rounded hover:bg-indigo-600/30 disabled:opacity-50 flex items-center gap-1"
+                  aria-label="Source new images from the web, then reimage"
+                  title="Fetch new source images, then reimage"
+                >
+                  {reimagingFreshCarouselId === carousel.id ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Search className="w-3 h-3" />
                   )}
-                  {(carousel.status === 'pending_review' || carousel.status === 'ai_reviewed') && (
-                    <button
-                      onClick={() => onApprove(carousel.id)}
-                      className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded hover:bg-green-600/30"
-                      aria-label="Approve this carousel for publishing"
-                    >
-                      Approve
-                    </button>
-                  )}
-                </div>
-              </div>
+                  New Sources
+                </button>
+                {(carousel.status === 'pending_review' || carousel.status === 'ai_reviewed') && (
+                  <button
+                    onClick={() => onApprove(carousel.id)}
+                    className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded hover:bg-green-600/30"
+                    aria-label="Approve this carousel for publishing"
+                  >
+                    Approve
+                  </button>
+                )}
+              </>
+            )
 
-              {carousel.hook_text && (
-                <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-lg px-3 py-2">
-                  <p className="text-sm font-bold text-white">{carousel.hook_text}</p>
-                </div>
-              )}
-
-              {carousel.slides?.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {carousel.slides.map((slide, i) => (
-                    <div key={i} className="relative flex-shrink-0 w-24 h-32 rounded-lg overflow-hidden bg-gray-800 border border-gray-700">
-                      {slide.image_url ? (
-                        <img src={slide.image_url} alt={`Slide ${slide.slide_num || i + 1} image`} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-2xl font-bold text-gray-600">{slide.slide_num || i + 1}</span>
-                        </div>
-                      )}
-                      <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded">
-                        {slide.slide_num || i + 1}
-                      </div>
-                      {slide.text && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 pt-4">
-                          <p className="text-[10px] text-white leading-tight line-clamp-2">{slide.text}</p>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {carousel.caption && (
-                <p className="text-xs text-gray-400 italic">"{carousel.caption}"</p>
-              )}
-
-              {carousel.hashtags?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {carousel.hashtags.map((tag) => (
-                    <span key={tag} className="text-[10px] text-indigo-400">#{tag}</span>
-                  ))}
-                </div>
-              )}
-
-              {carousel.ai_review && (
-                <div className="grid grid-cols-4 gap-3">
-                  {(['hook_strength', 'fact_quality', 'engagement_potential', 'caption_quality'] as const).map(key => (
-                    <div key={key} className="space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-[10px] text-gray-500">{key.replace('_', ' ')}</span>
-                        <span className="text-[10px] text-gray-400">{carousel.ai_review?.[key]}</span>
-                      </div>
-                      <ScoreBar value={carousel.ai_review?.[key] as number || 0} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+            return (
+              <CarouselCard
+                key={carousel.id}
+                carousel={carousel}
+                characterName={characterName}
+                extraActions={extraActions}
+                onAiReview={() => onReview(carousel.id)}
+                onReimageSlide={onReimageSlide}
+                reimagingSlideKey={reimagingSlideKey}
+              />
+            )
+          })}
         </div>
       )}
     </div>
@@ -368,7 +346,7 @@ function CarouselsSection({ carousels, onGenerateCarousel, isGenerating, onRevie
 export function CharacterDetailPage() {
   const { characterId } = useParams<{ characterId: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'facts' | 'carousels' | 'media'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'facts' | 'carousels' | 'media' | 'references'>('overview')
   const [categoryFilter, setCategoryFilter] = useState('')
 
   const { data: character, isLoading, error } = useCharacter(characterId || '')
@@ -380,6 +358,14 @@ export function CharacterDetailPage() {
   const sourceImagesMut = useSourceImages()
   const reviewMut = useAiReviewCarousel()
   const approveMut = useApproveCarousel()
+  const reimageMut = useReimageCarousel()
+  const reimageFreshMut = useReimageWithFreshSources()
+  const reimageSlideMut = useReimageSlide()
+  const enhanceMut = useEnhanceCharacter()
+  const approveImgMut = useApproveImage()
+  const rejectImgMut = useRejectImage()
+  const deleteImgMut = useDeleteImage()
+  const validateAllMut = useValidateAllImages()
 
   if (isLoading) {
     return <LoadingSkeleton variant="page" message="Loading character..." />
@@ -414,6 +400,7 @@ export function CharacterDetailPage() {
     { key: 'facts' as const, label: `Facts (${character.fact_bank.length})`, icon: Star },
     { key: 'carousels' as const, label: `Carousels (${carousels.length})`, icon: Sparkles },
     { key: 'media' as const, label: `Media (${images.length})`, icon: ImageIcon },
+    { key: 'references' as const, label: 'References', icon: Film },
   ]
 
   return (
@@ -514,7 +501,34 @@ export function CharacterDetailPage() {
               {sourceImagesMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
               Source Images
             </button>
+            <button
+              onClick={() => {
+                if (window.confirm(`Enhance ${character.name}?\n\nThis will:\n- Refresh research\n- Add more images\n- Regenerate weak carousels (score < 7) and archive the old ones`)) {
+                  enhanceMut.mutate({ characterId: character.id })
+                }
+              }}
+              disabled={enhanceMut.isPending}
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
+              aria-label={`Deep-enhance ${character.name}`}
+              title="Refresh research, top up images, and regenerate weak carousels"
+            >
+              {enhanceMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              Enhance
+            </button>
           </div>
+          {enhanceMut.isSuccess && enhanceMut.data && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200 space-y-1">
+              <p className="font-semibold">Enhancement complete.</p>
+              <p>
+                Facts +{enhanceMut.data.facts_added} (now {enhanceMut.data.facts_after}) · Images +
+                {enhanceMut.data.images_added} (now {enhanceMut.data.images_after}) ·
+                Carousels regenerated {enhanceMut.data.carousels_regenerated}, archived {enhanceMut.data.carousels_archived}.
+              </p>
+              {enhanceMut.data.errors.length > 0 && (
+                <p className="text-[10px] text-amber-400">{enhanceMut.data.errors.length} warning(s) logged.</p>
+              )}
+            </div>
+          )}
 
           {/* Meta info */}
           <div className="flex gap-4 text-xs text-gray-500 flex-wrap">
@@ -717,10 +731,25 @@ export function CharacterDetailPage() {
       {activeTab === 'carousels' && (
         <CarouselsSection
           carousels={carousels}
+          characterName={character.name}
           onGenerateCarousel={(angle) => generateMut.mutate({ character_id: character.id, angle })}
           isGenerating={generateMut.isPending}
           onReview={(id) => reviewMut.mutate(id)}
           onApprove={(id) => approveMut.mutate({ id })}
+          onReimageAll={(id) => reimageMut.mutate(id)}
+          onReimageFresh={(id) => reimageFreshMut.mutate(id)}
+          onReimageSlide={(carouselId, slideIndex) =>
+            reimageSlideMut.mutate({ carouselId, slideIndex })
+          }
+          reimagingCarouselId={reimageMut.isPending ? (reimageMut.variables as string | null) : null}
+          reimagingFreshCarouselId={
+            reimageFreshMut.isPending ? (reimageFreshMut.variables as string | null) : null
+          }
+          reimagingSlideKey={
+            reimageSlideMut.isPending && reimageSlideMut.variables
+              ? `${reimageSlideMut.variables.carouselId}:${reimageSlideMut.variables.slideIndex}`
+              : null
+          }
         />
       )}
 
@@ -730,17 +759,37 @@ export function CharacterDetailPage() {
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-cyan-400" />
               Image Library ({images.length})
+              {(character.blocked_image_urls?.length ?? 0) > 0 && (
+                <span className="text-xs text-gray-500 font-normal">({character.blocked_image_urls.length} blocked)</span>
+              )}
             </h3>
-            <button
-              onClick={() => sourceImagesMut.mutate(character.id)}
-              disabled={sourceImagesMut.isPending}
-              className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
-              aria-label="Source more images for this character"
-            >
-              {sourceImagesMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              Source More
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => validateAllMut.mutate(200)}
+                disabled={validateAllMut.isPending}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
+                aria-label="Validate all unvalidated images"
+              >
+                {validateAllMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                Validate All
+              </button>
+              <button
+                onClick={() => sourceImagesMut.mutate(character.id)}
+                disabled={sourceImagesMut.isPending}
+                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
+                aria-label="Source more images for this character"
+              >
+                {sourceImagesMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                Source More
+              </button>
+            </div>
           </div>
+
+          {validateAllMut.data && (
+            <div className="text-sm text-gray-400 bg-gray-800/50 rounded-lg px-3 py-2">
+              Validation complete: {validateAllMut.data.validated} valid, {validateAllMut.data.invalidated} removed, {validateAllMut.data.total_checked} checked
+            </div>
+          )}
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {images.map(img => (
@@ -748,12 +797,63 @@ export function CharacterDetailPage() {
                 <img
                   src={img.url}
                   alt={`${character.name} image from ${img.source}`}
-                  className="w-full h-40 object-cover rounded-lg bg-gray-900"
+                  className={`w-full h-40 object-cover rounded-lg bg-gray-900 border-2 ${
+                    img.is_approved === true ? 'border-green-600' :
+                    img.is_approved === false ? 'border-red-600 opacity-50' :
+                    'border-transparent'
+                  }`}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                 />
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                  <span className="text-xs text-gray-300">{img.source}</span>
-                  {img.is_primary && <span className="text-xs text-yellow-400 ml-2">Primary</span>}
+                {/* Quality badge */}
+                <div className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                  img.quality_score > 0.7 ? 'bg-green-600/80 text-white' :
+                  img.quality_score > 0.4 ? 'bg-yellow-600/80 text-white' :
+                  'bg-red-600/80 text-white'
+                }`}>
+                  {img.quality_score > 0 ? `${Math.round(img.quality_score * 100)}%` : '?'}
+                </div>
+                {/* Source badge */}
+                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-black/60 text-gray-300">
+                  {img.source}
+                </div>
+                {/* Hover overlay with info and actions */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-2 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs text-gray-300">{img.width && img.height ? `${img.width}x${img.height}` : 'No dims'}</span>
+                      {img.is_primary && <span className="text-xs text-yellow-400 ml-2">Primary</span>}
+                    </div>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => approveImgMut.mutate({ characterId: character.id, imageId: img.id })}
+                        className="p-1 bg-green-600/80 hover:bg-green-500 rounded"
+                        aria-label="Approve image"
+                        title="Approve"
+                      >
+                        <ThumbsUp className="w-3 h-3 text-white" />
+                      </button>
+                      <button
+                        onClick={() => rejectImgMut.mutate({ characterId: character.id, imageId: img.id, reason: 'Low quality' })}
+                        className="p-1 bg-red-600/80 hover:bg-red-500 rounded"
+                        aria-label="Reject image"
+                        title="Reject"
+                      >
+                        <ThumbsDown className="w-3 h-3 text-white" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Delete this image? It will be blocked from re-import.')) {
+                            deleteImgMut.mutate({ characterId: character.id, imageId: img.id })
+                          }
+                        }}
+                        className="p-1 bg-red-800/80 hover:bg-red-700 rounded"
+                        aria-label="Delete and block image"
+                        title="Delete & block from re-import"
+                      >
+                        <Trash2 className="w-3 h-3 text-white" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}
@@ -766,6 +866,10 @@ export function CharacterDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'references' && characterId && (
+        <ReferenceVideosTab characterId={characterId} hideCharacterFilter />
       )}
     </div>
   )

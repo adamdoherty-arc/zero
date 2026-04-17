@@ -72,11 +72,7 @@ export function KnowledgePage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2">Knowledge Base</h1>
-          <p className="text-zinc-400">Your second brain - notes, ideas, facts, and semantic recall</p>
-        </div>
+      <div className="flex items-center justify-end mb-6">
         <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
           <Plus className="w-4 h-4" />
           New Note

@@ -1,8 +1,10 @@
 """
-Kimi (Moonshot AI) provider — long-context specialist (128k-1M tokens).
+Kimi (Moonshot AI) provider — primary paid LLM provider.
 
-Uses OpenAI-compatible API at https://api.moonshot.cn/v1.
-Ideal for research and document analysis tasks.
+Uses OpenAI-compatible API at configurable base URL (default: api.moonshot.ai/v1).
+Primary model: kimi-k2.5 ($0.60/1M input, $2.50/1M output, 256K context).
+Budget model: moonshot-v1-32k ($0.024/1M tokens, 32K context).
+Handles research, planning, structured output, classification, and extraction tasks.
 Only active if ZERO_KIMI_API_KEY is set.
 """
 
@@ -12,20 +14,19 @@ from typing import AsyncIterator, Dict, List
 import httpx
 import structlog
 
-from app.infrastructure.circuit_breaker import get_circuit_breaker
+from app.infrastructure.circuit_breaker import CircuitState, get_circuit_breaker
 from app.infrastructure.config import get_settings
 from app.infrastructure.llm_providers.base import BaseLLMProvider
 
 logger = structlog.get_logger(__name__)
 
-BASE_URL = "https://api.moonshot.cn/v1"
-
 KIMI_PRICING = {
+    "kimi-k2.5": {"input": 0.60, "output": 2.50},
     "moonshot-v1-8k": {"input": 0.012, "output": 0.012},
     "moonshot-v1-32k": {"input": 0.024, "output": 0.024},
     "moonshot-v1-128k": {"input": 0.06, "output": 0.06},
 }
-DEFAULT_PRICING = {"input": 0.06, "output": 0.06}
+DEFAULT_PRICING = {"input": 0.60, "output": 2.50}
 
 
 class KimiProvider(BaseLLMProvider):
@@ -34,6 +35,7 @@ class KimiProvider(BaseLLMProvider):
     def __init__(self):
         settings = get_settings()
         self._api_key = settings.kimi_api_key
+        self._base_url = settings.kimi_base_url
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(180.0, connect=10.0),
             limits=httpx.Limits(max_connections=3, max_keepalive_connections=1),
@@ -58,20 +60,50 @@ class KimiProvider(BaseLLMProvider):
         max_tokens: int = 2048,
         **kwargs,
     ) -> str:
+        thinking_mode = kwargs.get("thinking_mode", False)
+
         async def _call():
+            # kimi-k2.5 ONLY accepts temperature=1 (API enforced since ~March 2026)
+            # Other moonshot models accept variable temperature
+            if model == "kimi-k2.5":
+                temp = 1.0
+            elif thinking_mode:
+                temp = max(temperature, 0.6)
+            else:
+                temp = temperature
+
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temp,
+                "max_tokens": max_tokens,
+            }
+
+            if kwargs.get("json_mode"):
+                payload["response_format"] = {"type": "json_object"}
+
+            # Note: thinking is disabled by default; only enable when requested
+            if thinking_mode:
+                payload["thinking"] = {"type": "enabled"}
+
             response = await self._client.post(
-                f"{BASE_URL}/chat/completions",
+                f"{self._base_url}/chat/completions",
                 headers=self._headers(),
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                },
+                json=payload,
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+
+            content = data["choices"][0]["message"].get("content", "")
+
+            # Kimi K2.5 sometimes puts response in reasoning_content even without
+            # explicit thinking mode. Always check this field when content is empty.
+            if not content:
+                reasoning = data["choices"][0]["message"].get("reasoning_content", "")
+                if reasoning:
+                    content = reasoning
+
+            return content
 
         return await self._breaker.call(_call)
 
@@ -85,7 +117,7 @@ class KimiProvider(BaseLLMProvider):
     ) -> AsyncIterator[str]:
         async with self._client.stream(
             "POST",
-            f"{BASE_URL}/chat/completions",
+            f"{self._base_url}/chat/completions",
             headers=self._headers(),
             json={
                 "model": model,
@@ -114,16 +146,9 @@ class KimiProvider(BaseLLMProvider):
     async def is_healthy(self) -> bool:
         if not self._api_key:
             return False
-        try:
-            response = await self._client.get(
-                f"{BASE_URL}/models",
-                headers=self._headers(),
-                timeout=10,
-            )
-            return response.status_code == 200
-        except Exception as e:
-            logger.warning("kimi_health_check_failed", error=str(e))
-            return False
+        # Kimi /models endpoint is unreliable for health checks.
+        # Trust the circuit breaker for real failure detection.
+        return self._breaker.state != CircuitState.OPEN
 
     def estimate_cost(
         self,

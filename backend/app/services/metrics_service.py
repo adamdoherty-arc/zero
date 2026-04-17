@@ -5,6 +5,7 @@ Tracks operational metrics in-memory (24h ring buffer) with hourly PostgreSQL sn
 Provides aggregated data for the system health dashboard.
 """
 
+import json
 import time
 from collections import deque
 from datetime import datetime, timedelta
@@ -117,11 +118,11 @@ class MetricsService:
                 await session.execute(
                     text(
                         "INSERT INTO metrics_snapshots (timestamp, metrics_data, period) "
-                        "VALUES (:ts, :data::jsonb, :period)"
+                        "VALUES (:ts, CAST(:data AS jsonb), :period)"
                     ),
                     {
                         "ts": datetime.utcnow(),
-                        "data": str(summary).replace("'", '"'),
+                        "data": json.dumps(summary),
                         "period": "hourly",
                     },
                 )

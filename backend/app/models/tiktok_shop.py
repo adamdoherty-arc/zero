@@ -3,10 +3,11 @@ TikTok Shop Research Agent data models.
 Models for product discovery, market opportunity scoring, and content idea generation.
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TikTokProductStatus(str, Enum):
@@ -50,6 +51,10 @@ class TikTokProductCreate(BaseModel):
     image_url: Optional[str] = None
     supplier_url: Optional[str] = None
     sourcing_method: Optional[str] = None
+    affiliate_link: Optional[str] = None
+    tiktok_shop_url: Optional[str] = None
+    import_url: Optional[str] = None
+    import_source: Optional[str] = None
 
 
 class TikTokProductUpdate(BaseModel):
@@ -62,11 +67,25 @@ class TikTokProductUpdate(BaseModel):
     tags: Optional[List[str]] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
+    marketplace_url: Optional[str] = None
+    estimated_price_range: Optional[str] = None
+    why_trending: Optional[str] = None
     supplier_url: Optional[str] = None
     supplier_name: Optional[str] = None
     sourcing_method: Optional[str] = None
     sourcing_notes: Optional[str] = None
     success_rating: Optional[float] = None
+    affiliate_link: Optional[str] = None
+    tiktok_shop_url: Optional[str] = None
+
+    @field_validator("affiliate_link", "tiktok_shop_url", mode="before")
+    @classmethod
+    def validate_urls(cls, v):
+        if v is None or v == "":
+            return v
+        if not re.match(r"^https?://", v):
+            raise ValueError("Must be a valid URL starting with http:// or https://")
+        return v
 
 
 class TikTokProduct(BaseModel):
@@ -117,6 +136,7 @@ class TikTokProduct(BaseModel):
     # Images
     image_url: Optional[str] = None
     image_urls: List[str] = Field(default_factory=list)
+    image_validated: bool = False
 
     # Success rating
     success_rating: Optional[float] = Field(None, ge=0, le=100)
@@ -129,6 +149,17 @@ class TikTokProduct(BaseModel):
     sourcing_notes: Optional[str] = None
     sourcing_links: List[dict] = Field(default_factory=list)
     listing_steps: List[str] = Field(default_factory=list)
+
+    # Affiliate & import tracking
+    affiliate_link: Optional[str] = None
+    tiktok_shop_url: Optional[str] = None
+    import_url: Optional[str] = None
+    import_source: Optional[str] = None
+
+    # Content performance feedback
+    content_performance_score: Optional[float] = None
+    best_template_type: Optional[str] = None
+    last_performance_update_at: Optional[datetime] = None
 
     # Timestamps
     discovered_at: datetime = Field(default_factory=datetime.utcnow)

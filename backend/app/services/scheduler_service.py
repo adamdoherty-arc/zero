@@ -424,8 +424,8 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "character_content_generation": {
-        "cron": "0 */12 * * *",  # Every 12 hours
-        "description": "Auto-generate carousels for researched characters with no recent content",
+        "cron": "0 */4 * * *",  # Every 4 hours - aggressive 24/7 content production
+        "description": "Auto-generate carousels for researched characters, priority-tier ordered",
         "enabled": True
     },
     "character_performance_sync": {
@@ -441,6 +441,62 @@ DAILY_SCHEDULE = {
     "character_content_learning": {
         "cron": "0 */4 * * *",  # Every 4 hours
         "description": "Character content learning & template scoring",
+        "enabled": True
+    },
+    "carousel_banned_hook_backfill": {
+        "cron": "0 4 * * *",  # 4:00 AM daily
+        "description": "Scan non-published carousels for banned hook patterns (e.g. 'The Hammer Lie') and rewrite them",
+        "enabled": True,
+    },
+    "character_reference_video_processor": {
+        "cron": "* * * * *",  # Every 1 minute
+        "description": "Download / transcribe / analyze newly ingested TikTok reference videos",
+        "enabled": True
+    },
+    "character_reference_video_cleanup": {
+        "cron": "0 4 * * *",  # 4:00 AM daily
+        "description": "Purge video/audio files for reference videos older than 30 days (keep metadata + thumbnail)",
+        "enabled": True
+    },
+    "character_image_cleanup": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Auto-delete broken character image URLs and blocklist them",
+        "enabled": True
+    },
+    # Phase 024: Character Autopilot (6 new jobs)
+    "character_auto_approval": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Auto-approve carousels with final_review_score >= threshold",
+        "enabled": True
+    },
+    "character_publish_backlog": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Keep approved+queued backlog above target (generates + approves as needed)",
+        "enabled": True
+    },
+    "character_discovery": {
+        "cron": "0 1 * * *",  # 1:00 AM daily
+        "description": "Autonomous character discovery (Wikipedia + TMDB + Reddit + SearXNG)",
+        "enabled": True
+    },
+    "character_gap_audit": {
+        "cron": "0 2 * * *",  # 2:00 AM daily
+        "description": "Audit characters for image/angle/fact/hook gaps, enqueue fill work",
+        "enabled": True
+    },
+    "character_hook_audit": {
+        "cron": "0 */6 * * *",  # Every 6 hours
+        "description": "Score and regenerate weak hooks (hook_strength < 6)",
+        "enabled": True
+    },
+    "character_discovery_refvideos": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Promote proposed characters from analyzed TikTok reference videos",
+        "enabled": True
+    },
+    "character_final_review_backfill": {
+        "cron": "*/20 * * * *",  # Every 20 minutes
+        "description": "Run Stage 2 final review on carousels with ai_review_score >= 7 AND final_review_score IS NULL",
         "enabled": True
     },
     # Zero Brain Intelligence
@@ -467,6 +523,11 @@ DAILY_SCHEDULE = {
     "brain_prompt_evolve": {
         "cron": "0 */12 * * *",  # Every 12 hours
         "description": "Evolve prompt variants from outcome data",
+        "enabled": True
+    },
+    "brain_prompt_grade": {
+        "cron": "*/10 * * * *",  # Every 10 minutes
+        "description": "Kimi-as-judge grades ungraded prompt runs",
         "enabled": True
     },
     "brain_episodic_extract": {
@@ -764,12 +825,25 @@ class SchedulerService:
             "character_performance_sync": self._run_character_performance_sync,
             "character_auto_publish": self._run_character_auto_publish,
             "character_content_learning": self._run_character_content_learning,
+            "carousel_banned_hook_backfill": self._run_carousel_banned_hook_backfill,
+            "character_reference_video_processor": self._run_character_reference_video_processor,
+            "character_reference_video_cleanup": self._run_character_reference_video_cleanup,
+            "character_image_cleanup": self._run_character_image_cleanup,
+            # Phase 024: Character Autopilot
+            "character_auto_approval": self._run_character_auto_approval,
+            "character_publish_backlog": self._run_character_publish_backlog,
+            "character_discovery": self._run_character_discovery,
+            "character_gap_audit": self._run_character_gap_audit,
+            "character_hook_audit": self._run_character_hook_audit,
+            "character_discovery_refvideos": self._run_character_discovery_refvideos,
+            "character_final_review_backfill": self._run_character_final_review_backfill,
             # Zero Brain
             "brain_benchmark": self._run_brain_benchmark,
             "brain_learning_cycle": self._run_brain_learning_cycle,
             "brain_content_learn": self._run_brain_content_learn,
             "brain_experiment_monitor": self._run_brain_experiment_monitor,
             "brain_prompt_evolve": self._run_brain_prompt_evolve,
+            "brain_prompt_grade": self._run_brain_prompt_grade,
             "brain_episodic_extract": self._run_brain_episodic_extract,
             "brain_improvement": self._run_brain_improvement,
             "brain_reflection": self._run_brain_reflection,
@@ -2388,7 +2462,11 @@ Have a great evening!"""
             logger.error("character_research_refresh_failed", error=str(e))
 
     async def _run_character_content_generation(self):
-        """Auto-generate carousels for researched characters."""
+        """Auto-generate carousels for researched characters.
+
+        Prioritizes by priority_tier (priority > standard > probation),
+        rotates angles for variety, and generates up to 10 per run.
+        """
         logger.info("running_character_content_generation")
         try:
             from app.services.character_content_service import get_character_content_service
@@ -2396,24 +2474,42 @@ Have a great evening!"""
             import random
             svc = get_character_content_service()
 
-            characters = await svc.list_characters(research_status="completed", limit=50)
+            characters = await svc.list_characters(research_status="completed", limit=100)
             angles = list(ContentAngle)
+            # Sort by priority_tier: priority first, then standard, then probation
+            tier_order = {"priority": 0, "standard": 1, "probation": 2}
+            characters.sort(key=lambda c: (tier_order.get(getattr(c, "priority_tier", "standard"), 1), c.posts_created))
+
             generated = 0
+            failed = 0
+            max_per_run = 10
             for char in characters:
-                if char.posts_created < 3:
-                    angle = random.choice(angles)
-                    try:
-                        await svc.generate_carousel(CarouselCreate(
-                            character_id=char.id, angle=angle
-                        ))
-                        generated += 1
-                    except Exception:
-                        continue
-                    if generated >= 3:
-                        break
-            logger.info("character_content_generation_done", generated=generated)
+                if generated >= max_per_run:
+                    break
+                # Rotate angle based on character index for variety
+                angle = angles[(generated + hash(char.id)) % len(angles)]
+                try:
+                    await svc.generate_carousel(CarouselCreate(
+                        character_id=char.id, angle=angle
+                    ))
+                    generated += 1
+                    logger.info(
+                        "character_carousel_generated",
+                        character=char.name,
+                        angle=angle.value if hasattr(angle, "value") else str(angle),
+                    )
+                except Exception as e:
+                    failed += 1
+                    logger.warning(
+                        "character_carousel_generation_item_failed",
+                        character=char.name,
+                        error=str(e)[:200],
+                    )
+                    continue
+            logger.info("character_content_generation_done", generated=generated, failed=failed)
         except Exception as e:
             logger.error("character_content_generation_failed", error=str(e))
+            await self._alert_pipeline_failure("character_content_generation", e)
 
     async def _run_character_performance_sync(self):
         """Sync performance metrics from published character carousels."""
@@ -2460,6 +2556,243 @@ Have a great evening!"""
             logger.info("character_content_learning_complete")
         except Exception as e:
             logger.error("character_content_learning_failed", error=str(e))
+
+    async def _run_carousel_banned_hook_backfill(self):
+        """Rewrite banned hook patterns on existing non-published carousels."""
+        logger.info("running_carousel_banned_hook_backfill")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            from app.models.character_content import BackfillBannedHooksRequest
+            svc = get_character_content_service()
+            result = await svc.backfill_banned_hooks(
+                BackfillBannedHooksRequest(limit=50, dry_run=False),
+                created_by="scheduler",
+            )
+            logger.info(
+                "carousel_banned_hook_backfill_done",
+                scanned=result.scanned,
+                flagged=result.flagged,
+                rewritten=result.rewritten,
+                errors=len(result.errors),
+            )
+        except Exception as e:
+            logger.error("carousel_banned_hook_backfill_failed", error=str(e))
+
+    async def _run_character_reference_video_processor(self):
+        """Advance the reference-video state machine: download / transcribe / analyze."""
+        try:
+            from app.services.character_reference_video_service import (
+                get_character_reference_video_service,
+            )
+            service = get_character_reference_video_service()
+            processed = await service.process_pending(batch_size=5)
+            if processed:
+                logger.info("character_reference_video_processor_tick", processed=processed)
+        except Exception as e:
+            logger.error("character_reference_video_processor_failed", error=str(e))
+
+    async def _run_character_reference_video_cleanup(self):
+        """Purge stale reference video files (30+ days old)."""
+        logger.info("running_character_reference_video_cleanup")
+        try:
+            from app.services.character_reference_video_service import (
+                get_character_reference_video_service,
+            )
+            service = get_character_reference_video_service()
+            removed = await service.cleanup_old_files(age_days=30)
+            logger.info("character_reference_video_cleanup_complete", removed=removed)
+        except Exception as e:
+            logger.error("character_reference_video_cleanup_failed", error=str(e))
+
+    async def _run_character_image_cleanup(self):
+        """Auto-delete broken character image URLs and add them to per-character blocklist."""
+        logger.info("running_character_image_cleanup")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            service = get_character_content_service()
+            result = await service.purge_broken_images(limit=200)
+            logger.info("character_image_cleanup_complete",
+                         checked=result.get("total_checked", 0),
+                         purged=result.get("purged", 0),
+                         kept=result.get("kept", 0))
+        except Exception as e:
+            logger.error("character_image_cleanup_failed", error=str(e))
+
+    # ============================================
+    # PHASE 024: CHARACTER AUTOPILOT
+    # ============================================
+
+    def _autopilot_disabled(self, job_name: str) -> bool:
+        """Check global autopilot kill-switch. Logs a skip when disabled."""
+        try:
+            from app.infrastructure.config import get_settings
+            if not getattr(get_settings(), "character_autopilot_enabled", True):
+                logger.warning("autopilot_disabled_skip", job=job_name)
+                return True
+        except Exception:
+            return False
+        return False
+
+    async def _alert_pipeline_failure(self, job_name: str, error: Exception) -> None:
+        """Send UI notification when a critical content pipeline job fails."""
+        try:
+            from app.services.notification_service import get_notification_service
+            svc = get_notification_service()
+            await svc.create_notification(
+                title="Content Pipeline Alert",
+                message=f"{job_name} failed: {str(error)[:200]}",
+                source="scheduler",
+                source_id=job_name,
+            )
+        except Exception:
+            pass
+
+    async def _run_character_auto_approval(self):
+        """Auto-approve carousels with final_review_score >= threshold."""
+        if self._autopilot_disabled("character_auto_approval"):
+            return
+        logger.info("running_character_auto_approval")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            result = await svc.auto_approve_eligible(limit=20)
+            logger.info("character_auto_approval_complete", **result)
+        except Exception as e:
+            logger.error("character_auto_approval_failed", error=str(e))
+            await self._alert_pipeline_failure("character_auto_approval", e)
+
+    async def _run_character_publish_backlog(self):
+        """Ensure approved+queued backlog stays above target."""
+        if self._autopilot_disabled("character_publish_backlog"):
+            return
+        logger.info("running_character_publish_backlog")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            result = await svc.ensure_publish_backlog(target=6)
+            logger.info("character_publish_backlog_complete", **result)
+        except Exception as e:
+            logger.error("character_publish_backlog_failed", error=str(e))
+            await self._alert_pipeline_failure("character_publish_backlog", e)
+
+    async def _run_character_final_review_backfill(self):
+        """Backfill Stage 2 final review on high-score carousels that missed it.
+
+        Finds carousels where ai_review.overall_score >= 7 AND final_review_score
+        IS NULL, then runs `_final_review_carousel` on each. Batches to 10 per
+        run to respect LLM budgets. Any single-carousel failure is logged but
+        does not stop the batch.
+        """
+        if self._autopilot_disabled("character_final_review_backfill"):
+            return
+        logger.info("running_character_final_review_backfill")
+        try:
+            import asyncio
+            import aiohttp
+            from sqlalchemy import select, Float
+            from sqlalchemy.exc import SQLAlchemyError
+            from app.db.models import CharacterCarouselModel
+            from app.infrastructure.database import get_session
+            from app.services.character_content_service import get_character_content_service
+
+            svc = get_character_content_service()
+            batch_limit = 10
+            async with get_session() as session:
+                # ai_review is JSONB; use the ->> text operator then cast for numeric compare.
+                result = await session.execute(
+                    select(
+                        CharacterCarouselModel.id,
+                        CharacterCarouselModel.ai_review,
+                    )
+                    .where(CharacterCarouselModel.final_review_score.is_(None))
+                    .where(CharacterCarouselModel.ai_review.isnot(None))
+                    .where(
+                        CharacterCarouselModel.ai_review["overall_score"].astext.cast(Float) >= 7.0
+                    )
+                    .order_by(CharacterCarouselModel.created_at.desc())
+                    .limit(batch_limit)
+                )
+                rows = result.all()
+
+            processed = 0
+            failed = 0
+            for carousel_id, ai_review in rows:
+                try:
+                    await svc._final_review_carousel(carousel_id, ai_review or {})
+                    processed += 1
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as e:
+                    failed += 1
+                    logger.warning(
+                        "character_final_review_backfill_item_failed",
+                        carousel_id=carousel_id,
+                        error=str(e),
+                    )
+
+            logger.info(
+                "character_final_review_backfill_complete",
+                candidates=len(rows),
+                processed=processed,
+                failed=failed,
+            )
+        except Exception as e:
+            logger.error("character_final_review_backfill_failed", error=str(e))
+            await self._alert_pipeline_failure("character_final_review_backfill", e)
+
+    async def _run_character_discovery(self):
+        """Autonomous character discovery from 4 free sources."""
+        if self._autopilot_disabled("character_discovery"):
+            return
+        logger.info("running_character_discovery")
+        try:
+            from app.infrastructure.config import get_settings
+            if not getattr(get_settings(), "character_discovery_enabled", True):
+                logger.info("character_discovery_skipped_flag")
+                return
+            from app.services.character_discovery_service import get_character_discovery_service
+            svc = get_character_discovery_service()
+            result = await svc.run_all_sources()
+            logger.info("character_discovery_complete", **result)
+        except Exception as e:
+            logger.error("character_discovery_failed", error=str(e))
+
+    async def _run_character_gap_audit(self):
+        """Audit characters for image/angle/fact/hook gaps, enqueue fill work."""
+        if self._autopilot_disabled("character_gap_audit"):
+            return
+        logger.info("running_character_gap_audit")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            result = await svc.run_gap_audit_cycle(max_characters=20)
+            logger.info("character_gap_audit_complete", **result)
+        except Exception as e:
+            logger.error("character_gap_audit_failed", error=str(e))
+
+    async def _run_character_hook_audit(self):
+        """Score + regenerate weak hooks across draft/review carousels."""
+        if self._autopilot_disabled("character_hook_audit"):
+            return
+        logger.info("running_character_hook_audit")
+        try:
+            from app.services.character_hook_service import get_character_hook_service
+            svc = get_character_hook_service()
+            result = await svc.audit_weak_hooks(threshold=6.0, limit=20)
+            logger.info("character_hook_audit_complete", **result)
+        except Exception as e:
+            logger.error("character_hook_audit_failed", error=str(e))
+
+    async def _run_character_discovery_refvideos(self):
+        """Promote proposed characters from analyzed TikTok reference videos."""
+        if self._autopilot_disabled("character_discovery_refvideos"):
+            return
+        try:
+            from app.services.character_discovery_service import get_character_discovery_service
+            svc = get_character_discovery_service()
+            result = await svc.discover_from_reference_videos(limit=5)
+            if result.get("created", 0) > 0:
+                logger.info("character_discovery_refvideos_tick", **result)
+        except Exception as e:
+            logger.error("character_discovery_refvideos_failed", error=str(e))
 
     # ============================================
     # ZERO BRAIN HANDLERS
@@ -2514,6 +2847,20 @@ Have a great evening!"""
             logger.info("brain_prompt_evolve_complete", evolved=len(result.get("evolved", [])))
         except Exception as e:
             logger.error("brain_prompt_evolve_failed", error=str(e))
+
+    async def _run_brain_prompt_grade(self):
+        logger.info("running_brain_prompt_grade")
+        try:
+            from app.services.prompt_grader_service import get_prompt_grader_service
+            svc = get_prompt_grader_service()
+            result = await svc.grade_pending(limit=20)
+            logger.info(
+                "brain_prompt_grade_complete",
+                graded=result.get("graded", 0),
+                failed=result.get("failed", 0),
+            )
+        except Exception as e:
+            logger.error("brain_prompt_grade_failed", error=str(e))
 
     async def _run_brain_episodic_extract(self):
         logger.info("running_brain_episodic_extract")

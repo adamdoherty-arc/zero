@@ -545,18 +545,16 @@ Please:
         return {"prompt_generated": True, "prompt": prompt}
 
     async def _call_ollama(self, prompt: str, model: str = None) -> str:
-        """Call Ollama for code generation using shared client."""
-        from app.infrastructure.ollama_client import get_ollama_client
+        """Call LLM for code generation using unified client."""
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         return await client.chat(
-            prompt,
+            messages=[{"role": "user", "content": prompt}],
             model=model,
             task_type="coding",
             temperature=0.1,
-            num_predict=500,
-            timeout=300,
-            max_retries=2,
+            max_tokens=2048,
         )
 
     def _extract_code_from_response(self, response: str) -> Optional[List[str]]:

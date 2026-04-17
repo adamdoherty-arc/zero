@@ -394,22 +394,23 @@ Rules:
         return None
 
     async def _call_ollama(self, prompt: str) -> str:
-        """Call Ollama for analysis using shared client."""
-        from app.infrastructure.ollama_client import get_ollama_client
+        """Call LLM for analysis via unified multi-provider client."""
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
 
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         model = self._config.get("analysis_model")  # explicit override or None
-        timeout = self._config.get("ollama_timeout", 300)
 
-        return await client.chat_safe(
-            prompt,
-            model=model,
-            task_type="analysis",
-            temperature=0.1,
-            num_predict=500,
-            timeout=timeout,
-            max_retries=2,
-        )
+        try:
+            return await client.chat(
+                prompt,
+                model=model,
+                task_type="analysis",
+                temperature=0.1,
+                max_tokens=500,
+            )
+        except Exception as e:
+            logger.error("enhancement_llm_failed", error=str(e))
+            return ""
 
     # ========================================
     # PHASE 3: QUEUE
@@ -499,6 +500,20 @@ Rules:
                              signal_id=item.get("id"), error=str(e))
 
         logger.info("engine_queue_complete", queued=queued)
+
+        # Record to brain
+        try:
+            from app.services.zero_brain_service import get_zero_brain_service
+            brain = get_zero_brain_service()
+            await brain.record_interaction_outcome(
+                domain="system", action_type="enhancement_queue",
+                strategy_used="signal_analysis",
+                actual_score=min(100, queued * 20),
+                metrics={"queued": queued},
+            )
+        except Exception:
+            pass
+
         return queued
 
     async def _mark_signal_converted(

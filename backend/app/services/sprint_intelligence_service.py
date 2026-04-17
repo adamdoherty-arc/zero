@@ -143,44 +143,33 @@ Format as JSON with keys: goal, recommended_tasks, estimated_hours, reasoning
 """
 
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            content = await get_ollama_client().chat_safe(
-                context,
-                task_type="planning",
-                system="You are a helpful sprint planning assistant. Always respond with valid JSON.",
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+            client = get_unified_llm_client()
+            proposal_data = await client.structured_chat(
+                prompt=context,
+                system="You are a helpful sprint planning assistant.",
+                task_type="structured_output",
                 temperature=0.7,
-                num_predict=1000,
-                timeout=300,
+                max_tokens=2048,
+                output_schema={"goal": "str", "recommended_tasks": ["str"], "estimated_hours": 40, "reasoning": "str"},
             )
 
-            if content:
-                # Try to parse JSON from response
-                import json
-                try:
-                    proposal_data = json.loads(content)
-                except json.JSONDecodeError:
-                    # Extract JSON from response if wrapped in markdown
-                    import re
-                    json_match = re.search(r'\{[\s\S]*\}', content)
-                    if json_match:
-                        proposal_data = json.loads(json_match.group())
-                    else:
-                        proposal_data = {"goal": "Continue current work", "reasoning": content}
-
+            if isinstance(proposal_data, dict):
                 return {
                     "status": "generated",
                     "proposal": {
                         "goal": proposal_data.get("goal", "Focus on high-priority tasks"),
                         "recommended_tasks": proposal_data.get("recommended_tasks", []),
                         "estimated_hours": proposal_data.get("estimated_hours", 40),
-                            "reasoning": proposal_data.get("reasoning", "Based on pending signals and tasks"),
-                            "generated_at": datetime.utcnow().isoformat()
-                        },
-                        "context": {
-                            "pending_tasks": len(pending_tasks),
-                            "pending_signals": signal_stats.get("pending", 0)
-                        }
+                        "reasoning": proposal_data.get("reasoning", "Based on pending signals and tasks"),
+                        "generated_at": datetime.utcnow().isoformat()
+                    },
+                    "context": {
+                        "pending_tasks": len(pending_tasks),
+                        "pending_signals": signal_stats.get("pending", 0)
                     }
+                }
 
         except Exception as e:
             logger.warning("LLM proposal generation failed", error=str(e))

@@ -26,11 +26,6 @@ export function SystemHealthPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">System Health</h1>
-        <p className="text-sm text-gray-400 mt-1">Real-time monitoring of all Zero subsystems</p>
-      </div>
-
       {/* Service Health Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {Object.entries(healthChecks).map(([name, status]) => (

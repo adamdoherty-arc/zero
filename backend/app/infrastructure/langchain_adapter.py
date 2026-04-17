@@ -11,7 +11,8 @@ Usage in LangGraph nodes that need tool-calling:
     result = await llm.ainvoke([HumanMessage(content="hello")])
 """
 
-from typing import Any, List, Optional
+import json
+from typing import Any, Dict, List, Optional, Union
 from functools import lru_cache
 
 from langchain_core.language_models import BaseChatModel
@@ -73,7 +74,71 @@ class ZeroChatModel(BaseChatModel):
         )
 
 
+class StructuredZeroChatModel(ZeroChatModel):
+    """ZeroChatModel that enforces JSON output via structured_chat().
+
+    Drop-in replacement for ZeroChatModel when callers need valid JSON.
+    Uses UnifiedLLMClient.structured_chat() instead of .chat().
+    """
+
+    json_schema: Optional[Dict[str, Any]] = None
+
+    async def _agenerate(self, messages: List[BaseMessage], **kwargs: Any) -> ChatResult:
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+        client = get_unified_llm_client()
+
+        # Extract system and user content from messages
+        system_parts = []
+        user_parts = []
+        for msg in messages:
+            if isinstance(msg, SystemMessage):
+                system_parts.append(msg.content)
+            elif isinstance(msg, HumanMessage):
+                user_parts.append(msg.content)
+            elif isinstance(msg, AIMessage):
+                user_parts.append(f"Previous assistant response: {msg.content}")
+
+        system = "\n".join(system_parts) if system_parts else None
+        prompt = "\n\n".join(user_parts) if user_parts else ""
+
+        try:
+            result = await client.structured_chat(
+                prompt=prompt,
+                output_schema=self.json_schema,
+                system=system,
+                task_type=self.task_type,
+                temperature=kwargs.get("temperature", self.temperature),
+                max_tokens=kwargs.get("num_predict", self.num_predict),
+            )
+            content = json.dumps(result)
+        except Exception as e:
+            logger.error("structured_chat_model_failed", error=str(e))
+            content = json.dumps({"error": str(e)})
+
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content=content))]
+        )
+
+
 @lru_cache()
 def get_zero_chat_model(task_type: str = "chat", temperature: float = 0.3) -> ZeroChatModel:
     """Get a cached ZeroChatModel instance for the given task type."""
     return ZeroChatModel(task_type=task_type, temperature=temperature)
+
+
+def get_structured_chat_model(
+    task_type: str = "structured_output",
+    temperature: float = 0.1,
+    json_schema: Optional[Dict[str, Any]] = None,
+) -> StructuredZeroChatModel:
+    """Get a StructuredZeroChatModel that enforces JSON output.
+
+    Not cached because json_schema may vary per caller.
+    """
+    return StructuredZeroChatModel(
+        task_type=task_type,
+        temperature=temperature,
+        num_predict=4096,
+        json_schema=json_schema,
+    )

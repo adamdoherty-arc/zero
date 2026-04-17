@@ -48,22 +48,43 @@ async def get_auth_status():
     }
 
 
-@router.get("/auth/url")
-async def get_auth_url():
+@router.get("/auth/start")
+async def auth_start():
     """
-    Get Google OAuth authorization URL.
-    
-    User should visit this URL to authorize ZERO to access
-    their Gmail and Google Calendar.
+    Start Google OAuth flow — redirects browser directly to Google consent screen.
     """
     oauth_service = get_gmail_oauth_service()
-    
+
     if not oauth_service.has_client_config():
         raise HTTPException(
             status_code=500,
             detail="Google OAuth not configured. Check server environment variables."
         )
-    
+
+    try:
+        result = oauth_service.get_auth_url()
+        return RedirectResponse(url=result["auth_url"])
+    except Exception as e:
+        logger.error("failed_to_generate_auth_url", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate auth URL: {str(e)}"
+        )
+
+
+@router.get("/auth/url")
+async def get_auth_url():
+    """
+    Get Google OAuth authorization URL as JSON (for programmatic use).
+    """
+    oauth_service = get_gmail_oauth_service()
+
+    if not oauth_service.has_client_config():
+        raise HTTPException(
+            status_code=500,
+            detail="Google OAuth not configured. Check server environment variables."
+        )
+
     try:
         result = oauth_service.get_auth_url()
         return result
@@ -92,9 +113,30 @@ async def auth_callback(
     try:
         result = oauth_service.handle_callback(code, state)
         email = result.get("email_address", "unknown")
-        
+
         logger.info("google_oauth_complete", email=email)
-        
+
+        # Reset Gmail circuit breaker and clear sync errors after successful re-auth
+        try:
+            from app.infrastructure.circuit_breaker import get_circuit_breaker
+            from app.infrastructure.database import get_session
+            from app.db.models import SyncStatusModel
+
+            breaker = get_circuit_breaker("gmail", failure_threshold=3, recovery_timeout=60.0)
+            await breaker.reset()
+
+            async with get_session() as session:
+                for svc in ["gmail", "calendar"]:
+                    row = await session.get(SyncStatusModel, svc)
+                    if row:
+                        row.errors = []
+                        row.connected = True
+                        await session.merge(row)
+
+            logger.info("gmail_circuit_breaker_reset_after_reauth")
+        except Exception as reset_err:
+            logger.warning("post_reauth_reset_failed", error=str(reset_err))
+
         # Redirect to frontend with success status
         return RedirectResponse(
             url=f"{settings.frontend_url}/settings?tab=integrations&status=connected&email={email}"

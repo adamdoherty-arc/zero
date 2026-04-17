@@ -1253,3 +1253,312 @@ export interface ChatSession {
   created_at: string
   last_active: string
 }
+
+// ============================================================================
+// Orchestrator / Gateway Types
+// ============================================================================
+
+export interface OrchestratorConversation {
+  id: string
+  thread_id: string
+  channel: string
+  direction: 'inbound' | 'outbound'
+  message: string
+  route?: string
+  route_method?: string
+  route_confidence?: number
+  latency_ms?: number
+  tokens_used: number
+  cost_usd: number
+  error?: string
+  created_at: string
+}
+
+export interface OrchestratorTrace {
+  id: string
+  conversation_id: string
+  node_name: string
+  node_order: number
+  input_preview?: string
+  output_preview?: string
+  started_at: string
+  completed_at?: string
+  duration_ms?: number
+  llm_calls: number
+  tokens_used: number
+  cost_usd: number
+  status: string
+  error?: string
+}
+
+export interface ConversationDetail {
+  conversation: OrchestratorConversation
+  traces: OrchestratorTrace[]
+}
+
+export interface PaginatedConversations {
+  items: OrchestratorConversation[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface ThreadSummary {
+  thread_id: string
+  channel: string
+  message_count: number
+  last_message: string
+  last_route?: string
+  last_active: string
+}
+
+export interface RouteStatEntry {
+  route: string
+  invocation_count: number
+  avg_latency_ms: number
+  error_count: number
+  error_rate: number
+  total_tokens: number
+  total_cost_usd: number
+}
+
+export interface OrchestratorActivityEvent {
+  id: string
+  event_type: string
+  timestamp: string
+  summary: string
+  route?: string
+  channel?: string
+  latency_ms?: number
+  status: string
+}
+
+// ============================================================================
+// Scheduler Dashboard Types (Sprint 2)
+// ============================================================================
+
+export interface SchedulerDashboardJob {
+  name: string
+  category: string
+  schedule: string
+  next_run: string | null
+  enabled: boolean
+  health: 'green' | 'yellow' | 'red' | 'gray'
+  total_runs: number
+  success_count: number
+  failure_count: number
+  avg_duration_s: number
+  last_run: string | null
+}
+
+export interface SchedulerDashboard {
+  jobs: SchedulerDashboardJob[]
+  total_jobs: number
+  total_runs_24h: number
+  success_rate_24h: number
+  errors_today: number
+}
+
+export interface SchedulerTimelineEvent {
+  job_name: string
+  category: string
+  started_at: string
+  completed_at: string | null
+  duration_s: number | null
+  status: string
+  error: string | null
+}
+
+export interface SchedulerJobHistoryEntry {
+  id: string
+  started_at: string
+  completed_at: string | null
+  duration_s: number | null
+  status: string
+  error: string | null
+}
+
+// ============================================================================
+// Gateway Types (Sprint 2)
+// ============================================================================
+
+export interface GatewayHealth {
+  healthy: boolean
+  status: string
+  latency_ms: number
+  url: string
+  version?: string
+  uptime?: string
+}
+
+export interface GatewayChannel {
+  name: string
+  status: string
+  connected: boolean
+}
+
+export interface GatewayAgentConfig {
+  id: string
+  name: string
+  description?: string
+  role: string
+  enabled: boolean
+  routes: string[]
+  channels: string[]
+  model_override?: string
+  system_prompt_override?: string
+  temperature: number
+  proactive_enabled: boolean
+  proactive_triggers?: Record<string, unknown>
+  created_at: string
+  updated_at?: string
+}
+
+// ============================================================================
+// Observability / Span Types (Sprint 3)
+// ============================================================================
+
+export interface ObservabilitySpan {
+  id: string
+  trace_id: string
+  parent_span_id?: string
+  name: string
+  span_type: string
+  duration_ms?: number
+  tokens_in: number
+  tokens_out: number
+  cost_usd: number
+  status: string
+  quality_score?: number
+  started_at: string
+  completed_at?: string
+}
+
+export interface LatencyPercentiles {
+  p50: number
+  p75: number
+  p90: number
+  p95: number
+  p99: number
+}
+
+export interface CostBreakdown {
+  route: string
+  total_cost_usd: number
+  total_tokens: number
+  span_count: number
+}
+
+// ============================================================================
+// Approval Types (Sprint 3)
+// ============================================================================
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired'
+
+export interface ApprovalRequest {
+  id: string
+  request_type: string
+  title: string
+  description?: string
+  context_data?: Record<string, unknown>
+  initiated_by: string
+  route?: string
+  status: ApprovalStatus
+  decision_by?: string
+  decision_reason?: string
+  decided_at?: string
+  expires_at?: string
+  auto_action_on_expiry: string
+  created_at: string
+}
+
+export interface ApprovalDecision {
+  decision: 'approved' | 'rejected'
+  reason?: string
+  decided_by?: string
+}
+
+export interface ApprovalStats {
+  total: number
+  pending: number
+  approved: number
+  rejected: number
+  expired: number
+  avg_decision_time_hours: number
+}
+
+// ============================================================================
+// Visual Workflow Types (Sprint 4)
+// ============================================================================
+
+export interface WorkflowNode {
+  id: string
+  type: string
+  label: string
+  config: Record<string, unknown>
+  position: { x: number; y: number }
+}
+
+export interface WorkflowEdge {
+  id: string
+  source: string
+  target: string
+  label?: string
+  condition?: string
+}
+
+export interface VisualWorkflowDefinition {
+  id: string
+  name: string
+  description?: string
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  version: number
+  status: 'draft' | 'active' | 'archived'
+  trigger_type?: string
+  trigger_config?: Record<string, unknown>
+  created_at: string
+  updated_at?: string
+}
+
+export interface VisualWorkflowExecution {
+  id: string
+  workflow_id: string
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  current_node_id?: string
+  execution_log?: Record<string, unknown>[]
+  output?: Record<string, unknown>
+  error?: string
+  started_at: string
+  completed_at?: string
+}
+
+// ============================================================================
+// Outcome Tracking Types (Sprint 4)
+// ============================================================================
+
+export type KpiType = 'revenue' | 'engagement' | 'time_saved' | 'tasks_automated' | 'cost_savings' | 'other'
+
+export interface OutcomeRecord {
+  id: string
+  action_source: string
+  action_id?: string
+  kpi_type: KpiType
+  kpi_value: number
+  kpi_unit: string
+  metadata?: Record<string, unknown>
+  recorded_at: string
+}
+
+export interface OutcomeSummary {
+  kpi_type: string
+  total_value: number
+  count: number
+  unit: string
+}
+
+export interface OutcomeDashboard {
+  summaries: OutcomeSummary[]
+  recent: OutcomeRecord[]
+  by_source: Record<string, number>
+}

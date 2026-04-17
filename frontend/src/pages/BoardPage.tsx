@@ -18,10 +18,6 @@ export function BoardPage() {
 
   return (
     <div className="page-content">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="page-title">Sprint Board</h1>
-      </div>
-
       {isLoadingSprint ? (
         <LoadingSkeleton variant="inline" message="Loading sprint..." />
       ) : currentSprint ? (

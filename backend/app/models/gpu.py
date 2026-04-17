@@ -79,7 +79,10 @@ class GpuManagerConfig(BaseModel):
     refresh_interval_seconds: int = 60
     default_keep_alive: str = "30m"
     vram_safety_margin_mb: int = 1024
-    preferred_model: str = "qwen3-coder-next:latest"
+    # Preferred model is resolved lazily from get_settings().ollama_model at
+    # call sites that need it (startup probes). No hardcoded default here so
+    # model swaps propagate via config/router without code edits.
+    preferred_model: Optional[str] = None
     project_priorities: Dict[str, int] = Field(
         default_factory=lambda: {"zero": 3, "legion": 2, "ada": 1}
     )

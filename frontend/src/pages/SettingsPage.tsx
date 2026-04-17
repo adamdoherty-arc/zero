@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Settings, Cpu, Clock, Activity, Monitor, Route } from 'lucide-react'
+import { Cpu, Clock, Activity, Monitor, Route, Smartphone } from 'lucide-react'
 import { AgentSettingsTab } from '@/components/settings/AgentSettingsTab'
 import { SchedulerTab } from '@/components/settings/SchedulerTab'
 import { HealthTab } from '@/components/settings/HealthTab'
 import { GpuTab } from '@/components/settings/GpuTab'
 import { LlmTab } from '@/components/settings/LlmTab'
+import { MobileAccessCard } from '@/components/settings/MobileAccessCard'
 
 const tabs = [
   { id: 'agent', label: 'Agent', icon: Cpu },
@@ -12,6 +13,7 @@ const tabs = [
   { id: 'gpu', label: 'GPU / Ollama', icon: Monitor },
   { id: 'scheduler', label: 'Scheduler', icon: Clock },
   { id: 'health', label: 'Health', icon: Activity },
+  { id: 'mobile', label: 'Mobile', icon: Smartphone },
 ] as const
 
 type TabId = (typeof tabs)[number]['id']
@@ -21,11 +23,6 @@ export function SettingsPage() {
 
   return (
     <div className="page-content">
-      <div className="flex items-center gap-3 mb-8">
-        <Settings className="w-8 h-8 text-primary" />
-        <h1 className="page-title">Settings</h1>
-      </div>
-
       {/* Tab bar */}
       <div className="flex gap-1 mb-6 border-b border-border">
         {tabs.map((tab) => (
@@ -50,6 +47,7 @@ export function SettingsPage() {
       {activeTab === 'gpu' && <GpuTab />}
       {activeTab === 'scheduler' && <SchedulerTab />}
       {activeTab === 'health' && <HealthTab />}
+      {activeTab === 'mobile' && <MobileAccessCard />}
     </div>
   )
 }

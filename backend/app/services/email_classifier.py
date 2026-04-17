@@ -38,37 +38,34 @@ class EmailClassifier:
         Returns:
             Tuple of (category, confidence_score)
         """
-        # Try Ollama classification first
+        # Try LLM classification first
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            client = get_ollama_client()
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
 
+            client = get_unified_llm_client()
             text = f"From: {from_addr}\nSubject: {subject}\n{body_preview[:300]}"
 
-            response = await client.chat_safe(
-                f"Classify this email:\n{text}",
+            data = await client.structured_chat(
+                prompt=f"Classify this email:\n{text}",
                 system=CLASSIFY_SYSTEM_PROMPT,
                 task_type="classification",
                 temperature=0.0,
-                num_predict=50,
+                max_tokens=100,
                 max_retries=1,
+                output_schema={"category": "str", "confidence": 0.9},
             )
 
-            if response:
-                response = response.strip()
-                if "{" in response:
-                    json_str = response[response.index("{"):response.rindex("}") + 1]
-                    data = json.loads(json_str)
-                    category = data.get("category", "normal").lower()
-                    confidence = float(data.get("confidence", 0.8))
+            if isinstance(data, dict):
+                category = data.get("category", "normal").lower()
+                confidence = float(data.get("confidence", 0.8))
 
-                    valid_categories = {"urgent", "important", "normal", "low_priority", "newsletter", "spam"}
-                    if category in valid_categories:
-                        logger.debug("email_classified_llm", category=category, confidence=confidence, subject=subject[:50])
-                        return category, confidence
+                valid_categories = {"urgent", "important", "normal", "low_priority", "newsletter", "spam"}
+                if category in valid_categories:
+                    logger.debug("email_classified_llm", category=category, confidence=confidence, subject=subject[:50])
+                    return category, confidence
 
         except Exception as e:
-            logger.debug("email_classifier_ollama_failed", error=str(e))
+            logger.debug("email_classifier_llm_failed", error=str(e))
 
         # Fallback: keyword heuristics
         return self._keyword_classify(subject, from_addr, body_preview)

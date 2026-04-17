@@ -10,9 +10,10 @@ Routes: sprint, email, calendar, enhancement, briefing, research, notion,
 """
 
 from typing import TypedDict, Annotated, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 import re
+import time as _time
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -21,6 +22,65 @@ from langchain_core.messages import HumanMessage, AIMessage
 import structlog
 
 logger = structlog.get_logger()
+
+
+# =============================================================================
+# Tracing helpers (used by invoke_orchestration)
+# =============================================================================
+
+async def _trace_node(node_func, state, node_name: str, node_order: int):
+    """Execute a node function with trace recording."""
+    conv_id = state.get("context", {}).get("_trace_conversation_id")
+    if not conv_id:
+        return await node_func(state)
+
+    from app.services.orchestrator_trace_service import record_trace_node, complete_trace_node
+
+    # Prepare input preview
+    messages = state.get("messages", [])
+    input_preview = {}
+    if messages:
+        last = messages[-1]
+        input_preview["message"] = (last.content if hasattr(last, "content") else str(last))[:300]
+    input_preview["route"] = state.get("route")
+
+    trace_id = await record_trace_node(
+        conversation_id=conv_id,
+        thread_id=state.get("context", {}).get("_trace_thread_id", "default"),
+        node_name=node_name,
+        node_order=node_order,
+        input_data=input_preview,
+    )
+
+    start = _time.time()
+    try:
+        result = await node_func(state)
+        duration_ms = (_time.time() - start) * 1000
+
+        # Extract output preview
+        output_preview = {}
+        if isinstance(result, dict):
+            if "result" in result:
+                output_preview["result"] = str(result["result"])[:500]
+            if "route" in result:
+                output_preview["route"] = result["route"]
+
+        await complete_trace_node(
+            trace_id=trace_id,
+            output_data=output_preview,
+            duration_ms=round(duration_ms, 1),
+            status="completed",
+        )
+        return result
+    except Exception as e:
+        duration_ms = (_time.time() - start) * 1000
+        await complete_trace_node(
+            trace_id=trace_id,
+            duration_ms=round(duration_ms, 1),
+            status="failed",
+            error=str(e),
+        )
+        raise
 
 
 # =============================================================================
@@ -44,7 +104,8 @@ VALID_ROUTES = {
     "sprint", "email", "calendar", "enhancement", "briefing",
     "research", "notion", "money_maker", "knowledge", "task",
     "workflow", "system", "tiktok", "content", "prediction_market",
-    "planner", "general",
+    "planner", "ai_company", "deep_research", "experiment", "council",
+    "character_content", "brain", "general",
 }
 
 ROUTE_KEYWORDS = {
@@ -75,6 +136,22 @@ ROUTE_KEYWORDS = {
     "planner": ["plan", "break down", "step by step", "strategy for",
                 "create a plan", "make a plan", "how should i approach",
                 "deep analysis", "think through"],
+    "ai_company": ["agent company", "ai company", "agent role", "agent task",
+                   "ceo agent", "researcher agent", "analyst agent",
+                   "delegate to", "company task", "role execution"],
+    "deep_research": ["deep research", "comprehensive research", "research report",
+                      "investigate thoroughly", "in-depth research", "storm research"],
+    "experiment": ["experiment", "hypothesis", "run experiment", "test hypothesis",
+                   "ab test", "benchmark", "prototype", "experiment lab"],
+    "council": ["council", "council vote", "council decision", "agent debate",
+                "multi-agent vote", "propose decision", "council review"],
+    "character_content": ["character", "carousel", "character content", "tiktok character",
+                          "character facts", "character research", "character carousel",
+                          "marvel character", "dc character", "character post"],
+    "brain": ["brain", "benchmark", "brain status", "self-improve", "employee score",
+              "calibration", "prompt evolution", "episodic memory", "how am i doing",
+              "improvement cycle", "learning velocity", "brain benchmark",
+              "what have you learned", "zero brain", "brain dashboard"],
 }
 
 CLASSIFICATION_SYSTEM_PROMPT = """You are an intent classifier for a personal AI assistant called Zero.
@@ -95,6 +172,11 @@ Classify the user message into exactly one of these categories:
 - content: Content topics, rules, examples, content generation, captions, scripts, performance, improvement
 - prediction_market: Prediction markets, Kalshi, Polymarket, bettors, odds, market movers, Legion sprint progress for prediction work
 - planner: Complex multi-step planning requests, "create a plan for...", "break down...", strategy, deep analysis requiring step-by-step reasoning
+- ai_company: Agent company tasks, role execution, delegation, CEO planning, agent role status
+- deep_research: Deep comprehensive research reports, multi-perspective investigation, in-depth analysis
+- experiment: Designing, running, viewing experiments, hypothesis testing, benchmarks, A/B tests
+- council: Council of agents debate and voting, multi-agent decisions, consensus building
+- brain: Brain status, benchmarks, self-improvement, learning velocity, calibration, episodic memory, prompt evolution, what has Zero learned
 - general: Anything else, greetings, meta-questions
 
 Respond with ONLY the category name, nothing else."""
@@ -119,7 +201,11 @@ _HELP_MENU = (
     "- **tiktok shop** — product research, approval queue, faceless video pipeline, catalog\n"
     "- **content agent** — content topics, rules, examples, generation, performance\n"
     "- **prediction markets** — Kalshi/Polymarket data, bettor leaderboard, odds, Legion progress\n"
-    "- **planner** — complex multi-step planning (uses Gemini 3.1 Pro for deep reasoning)\n\n"
+    "- **planner** — complex multi-step planning (uses Kimi for deep reasoning)\n"
+    "- **ai company** — agent roles (CEO, Researcher, Analyst, Engineer, Validator), task delegation\n"
+    "- **deep research** — comprehensive multi-perspective research reports\n"
+    "- **experiment lab** — design and run experiments, hypothesis testing\n"
+    "- **council** — multi-agent debate and voting on decisions\n\n"
     "just ask naturally and I'll figure out the rest"
 )
 
@@ -142,17 +228,16 @@ def classify_route_keywords(message: str) -> tuple[str, int]:
 
 
 async def classify_route_llm(message: str) -> str:
-    """Tier 2: LLM-based intent classification for ambiguous queries."""
+    """Tier 2: LLM-based intent classification for ambiguous queries (via Kimi)."""
     try:
-        from app.infrastructure.ollama_client import get_ollama_client
-        client = get_ollama_client()
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        client = get_unified_llm_client()
         result = await client.chat(
             f"Classify this message: {message}",
             system=CLASSIFICATION_SYSTEM_PROMPT,
             task_type="classification",
             temperature=0.0,
-            num_predict=20,
-            timeout=10,
+            max_tokens=20,
         )
         route = result.strip().lower().split()[0] if result else "general"
         return route if route in VALID_ROUTES else "general"
@@ -736,14 +821,14 @@ async def system_node(state: OrchestratorState) -> dict:
 
 
 async def general_node(state: OrchestratorState) -> dict:
-    """Handle general queries using LLM for conversational response."""
+    """Handle general queries using Kimi for conversational response."""
     messages = state.get("messages", [])
     content = messages[-1].content if messages else ""
 
     try:
-        from app.infrastructure.ollama_client import get_ollama_client
-        client = get_ollama_client()
-        result = await client.chat_safe(
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        client = get_unified_llm_client()
+        result = await client.chat(
             content,
             system=(
                 "You are Zero, a personal AI assistant. Be concise, conversational, "
@@ -784,8 +869,8 @@ async def synthesizer_node(state: OrchestratorState) -> dict:
             memory_context = f"\n\nRelevant memories:\n" + "\n".join(memory_lines)
 
     try:
-        from app.infrastructure.ollama_client import get_ollama_client
-        client = get_ollama_client()
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        client = get_unified_llm_client()
         response = await client.chat(
             f"User asked: {original_message}\n\nData retrieved:\n{raw_result[:3000]}{memory_context}",
             system=(
@@ -798,10 +883,9 @@ async def synthesizer_node(state: OrchestratorState) -> dict:
                 "- Be direct, skip filler like 'I'd be happy to help'\n"
                 "- Do not add information not in the data"
             ),
-            task_type="chat",
+            task_type="summarization",
             temperature=0.3,
-            num_predict=1024,
-            timeout=30,
+            max_tokens=1024,
         )
         if response and len(response.strip()) > 10:
             return {"result": response, "messages": [AIMessage(content=response)]}
@@ -864,6 +948,33 @@ async def tiktok_node(state: OrchestratorState) -> dict:
             from app.services.tiktok_agent_graph import invoke_tiktok_pipeline
             pipeline_result = await invoke_tiktok_pipeline(mode="performance_only")
             result = f"Performance Tracking: {pipeline_result.get('summary', 'Completed')}"
+
+        # Pipeline status
+        elif any(kw in msg_lower for kw in ["pipeline status", "last pipeline", "last run", "job status", "scheduler status"]):
+            from app.db.models import SchedulerAuditLogModel
+            from app.infrastructure.database import get_session as _get_session
+            async with _get_session() as session:
+                tiktok_jobs = [
+                    "tiktok_continuous_research", "tiktok_auto_content_pipeline",
+                    "tiktok_performance_sync", "tiktok_pipeline_health",
+                ]
+                lines = ["TikTok Pipeline Status:"]
+                for job_name in tiktok_jobs:
+                    log_result = await session.execute(
+                        select(SchedulerAuditLogModel).where(
+                            SchedulerAuditLogModel.job_name == job_name
+                        ).order_by(SchedulerAuditLogModel.started_at.desc()).limit(1)
+                    )
+                    row = log_result.scalar_one_or_none()
+                    if row:
+                        ago = (datetime.now(timezone.utc) - row.started_at).total_seconds() / 3600
+                        lines.append(
+                            f"- {job_name}: {row.status} ({ago:.1f}h ago)"
+                            + (f" — {row.error[:80]}" if row.error else "")
+                        )
+                    else:
+                        lines.append(f"- {job_name}: never run")
+                result = "\n".join(lines)
 
         # Stats
         elif any(kw in msg_lower for kw in ["stat", "overview", "how many"]):
@@ -1111,6 +1222,305 @@ async def planner_node(state: OrchestratorState) -> dict:
     return {"result": response, "messages": [AIMessage(content=response)]}
 
 
+async def ai_company_node(state: OrchestratorState) -> dict:
+    """Handle AI Company queries — roles, tasks, delegation."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.agent_company_service import get_agent_company_service
+        svc = get_agent_company_service()
+
+        if any(kw in msg_lower for kw in ["create task", "new task", "delegate"]):
+            # CEO plans and delegates
+            result_data = await svc.ceo_plan_and_delegate(content)
+            lines = [f"CEO planned {len(result_data.get('subtasks', []))} subtasks:"]
+            for st in result_data.get("subtasks", []):
+                lines.append(f"- [{st.get('assigned_role', '?')}] {st.get('title', 'Untitled')}")
+            text = "\n".join(lines)
+        elif any(kw in msg_lower for kw in ["role", "roles", "who"]):
+            roles = await svc.list_roles()
+            lines = ["Agent Roles:"]
+            for r in roles:
+                lines.append(f"- **{r.name}** ({r.id}) — {r.llm_provider}/{r.llm_model}")
+            text = "\n".join(lines)
+        elif any(kw in msg_lower for kw in ["stats", "status", "dashboard"]):
+            stats = await svc.get_stats()
+            text = (f"AI Company Stats:\n"
+                    f"- Roles: {stats.total_roles}\n"
+                    f"- Tasks: {stats.total_tasks} ({stats.tasks_completed} completed)\n"
+                    f"- Total cost: ${stats.total_cost_usd:.4f}")
+        else:
+            tasks = await svc.list_tasks(limit=10)
+            if tasks:
+                lines = ["Recent Agent Tasks:"]
+                for t in tasks:
+                    lines.append(f"- [{t.status}] {t.title} → {t.assigned_role}")
+                text = "\n".join(lines)
+            else:
+                text = "No agent tasks yet. Ask the CEO to plan a task!"
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"AI Company query failed: {e}"
+        logger.error("ai_company_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
+async def deep_research_node(state: OrchestratorState) -> dict:
+    """Handle deep research queries — start research, view reports."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.deep_research_service import get_deep_research_service
+        from app.models.agent_company import DeepResearchRequest
+        svc = get_deep_research_service()
+
+        if any(kw in msg_lower for kw in ["start", "research", "investigate", "report on"]):
+            # Extract query — strip command prefixes
+            query = content
+            for prefix in ["deep research ", "research ", "investigate ", "report on "]:
+                if msg_lower.startswith(prefix):
+                    query = content[len(prefix):].strip()
+                    break
+            report = await svc.start_research(DeepResearchRequest(query=query))
+            text = f"Deep research started: **{report.query}**\nID: {report.id}\nStatus: {report.status}"
+        else:
+            reports = await svc.list_reports(limit=10)
+            if reports:
+                lines = ["Deep Research Reports:"]
+                for r in reports:
+                    lines.append(f"- [{r.status}] {r.query[:80]} (ID: {r.id})")
+                text = "\n".join(lines)
+            else:
+                text = "No deep research reports yet. Say 'deep research <topic>' to start one!"
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"Deep research query failed: {e}"
+        logger.error("deep_research_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
+async def experiment_node(state: OrchestratorState) -> dict:
+    """Handle experiment queries — design, run, list experiments."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.experiment_service import get_experiment_service
+        from app.models.agent_company import ExperimentCreate
+        svc = get_experiment_service()
+
+        if any(kw in msg_lower for kw in ["design", "create", "new experiment", "hypothesis"]):
+            hypothesis = content
+            for prefix in ["design experiment ", "new experiment ", "test hypothesis "]:
+                if msg_lower.startswith(prefix):
+                    hypothesis = content[len(prefix):].strip()
+                    break
+            exp = await svc.design_experiment(ExperimentCreate(hypothesis=hypothesis))
+            text = f"Experiment designed: **{exp.title}**\nHypothesis: {exp.hypothesis}\nID: {exp.id}"
+        elif any(kw in msg_lower for kw in ["run", "execute"]):
+            exps = await svc.list_experiments(status="designed", limit=1)
+            if exps:
+                result = await svc.run_experiment(exps[0].id)
+                text = f"Experiment running: **{result.title}** — Status: {result.status}"
+            else:
+                text = "No designed experiments to run. Design one first!"
+        else:
+            exps = await svc.list_experiments(limit=10)
+            if exps:
+                lines = ["Experiments:"]
+                for e in exps:
+                    lines.append(f"- [{e.status}] {e.title} ({e.experiment_type})")
+                text = "\n".join(lines)
+            else:
+                text = "No experiments yet. Say 'design experiment <hypothesis>' to start!"
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"Experiment query failed: {e}"
+        logger.error("experiment_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
+async def council_node(state: OrchestratorState) -> dict:
+    """Handle council queries — propose decisions, run votes, view results."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.council_service import get_council_service
+        from app.models.agent_company import CouncilProposal
+        svc = get_council_service()
+
+        if any(kw in msg_lower for kw in ["propose", "council vote", "decide", "should we"]):
+            topic = content
+            for prefix in ["propose ", "council vote on ", "should we "]:
+                if msg_lower.startswith(prefix):
+                    topic = content[len(prefix):].strip()
+                    break
+            decision = await svc.propose(CouncilProposal(topic=topic))
+            text = f"Council decision proposed: **{decision.topic}**\nID: {decision.id}\nRun vote with: council vote {decision.id}"
+        elif any(kw in msg_lower for kw in ["vote", "run vote"]):
+            decisions = await svc.list_decisions(status="proposed", limit=1)
+            if decisions:
+                result = await svc.conduct_vote(decisions[0].id)
+                text = (f"Council voted on: **{result.topic}**\n"
+                        f"Decision: {result.decision}\n"
+                        f"Confidence: {result.confidence_score:.0f}%")
+            else:
+                text = "No pending council decisions. Propose one first!"
+        else:
+            decisions = await svc.list_decisions(limit=10)
+            if decisions:
+                lines = ["Council Decisions:"]
+                for d in decisions:
+                    status = d.decision or "pending"
+                    lines.append(f"- [{status}] {d.topic} (confidence: {d.confidence_score:.0f}%)")
+                text = "\n".join(lines)
+            else:
+                text = "No council decisions yet. Say 'propose <topic>' to start a council vote!"
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"Council query failed: {e}"
+        logger.error("council_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
+async def character_content_node(state: OrchestratorState) -> dict:
+    """Handle character content queries — research, generate carousels, review."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.character_content_service import get_character_content_service
+        svc = get_character_content_service()
+
+        if any(kw in msg_lower for kw in ["seed", "populate", "add characters"]):
+            chars = await svc.seed_characters()
+            text = f"Seeded {len(chars)} characters: {', '.join(c.name for c in chars[:10])}"
+        elif any(kw in msg_lower for kw in ["research", "investigate"]):
+            chars = await svc.list_characters(research_status="pending", limit=3)
+            if chars:
+                char = chars[0]
+                await svc.research_character(char.id)
+                text = f"Started research pipeline for **{char.name}** ({char.universe}). Check back in a minute."
+            else:
+                text = "All characters already researched or none found. Seed characters first."
+        elif any(kw in msg_lower for kw in ["generate", "carousel", "create post"]):
+            chars = await svc.list_characters(research_status="completed", limit=5)
+            if chars:
+                from app.models.character_content import CarouselCreate
+                carousel = await svc.generate_carousel(CarouselCreate(character_id=chars[0].id))
+                text = (f"Generated carousel for **{carousel.character_name}**: {carousel.title}\n"
+                        f"Hook: {carousel.hook_text}\n"
+                        f"Slides: {len(carousel.slides)} | Status: {carousel.status}")
+            else:
+                text = "No researched characters available. Run research first."
+        elif any(kw in msg_lower for kw in ["review", "pending", "queue"]):
+            queue = await svc.list_review_queue(limit=5)
+            if queue:
+                lines = [f"Review Queue ({len(queue)} items):"]
+                for c in queue:
+                    score = c.ai_review.get("overall_score", "?") if c.ai_review else "?"
+                    lines.append(f"- {c.character_name}: {c.title} (AI: {score}/10)")
+                text = "\n".join(lines)
+            else:
+                text = "Review queue is empty."
+        else:
+            stats = await svc.get_stats()
+            text = (f"Character Content Stats:\n"
+                    f"- {stats.total_characters} characters ({stats.characters_researched} researched)\n"
+                    f"- {stats.total_carousels} carousels ({stats.total_published} published)\n"
+                    f"- {stats.total_views:,} views, {stats.total_likes:,} likes")
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"Character content query failed: {e}"
+        logger.error("character_content_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
+async def brain_node(state: OrchestratorState) -> dict:
+    """Handle Zero Brain queries — status, benchmarks, learnings, memory."""
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    msg_lower = content.lower()
+
+    try:
+        from app.services.zero_brain_service import get_zero_brain_service
+        svc = get_zero_brain_service()
+
+        if any(kw in msg_lower for kw in ["benchmark", "score", "how am i doing"]):
+            status = await svc.get_status()
+            dims = status.dimension_scores
+            top3 = sorted(dims.items(), key=lambda x: x[1].score, reverse=True)[:3]
+            bot3 = sorted(dims.items(), key=lambda x: x[1].score)[:3]
+            text = (
+                f"Brain Score: **{status.overall_score:.1f}/100**\n"
+                f"Weakest: {status.weakest_dimension}\n"
+                f"Top: {', '.join(f'{d}={s.score:.0f}' for d, s in top3)}\n"
+                f"Bottom: {', '.join(f'{d}={s.score:.0f}' for d, s in bot3)}\n"
+                f"Memories: {status.total_memories} | Outcomes: {status.total_outcomes} | "
+                f"Experiments: {status.active_experiments}"
+            )
+        elif any(kw in msg_lower for kw in ["learn", "what have you learned"]):
+            learnings = await svc.get_learnings(days=7, limit=5)
+            if learnings:
+                text = "Recent Learnings:\n" + "\n".join(f"- {l}" for l in learnings)
+            else:
+                text = "No learnings recorded in the last 7 days."
+        elif any(kw in msg_lower for kw in ["memory", "remember", "episodic"]):
+            # Search memories with the query
+            query = content.replace("memory", "").replace("search", "").strip()
+            results = await svc.search_memory(query or "recent activity", limit=5)
+            if results:
+                text = "Matching Memories:\n" + "\n".join(
+                    f"- [{r.memory.namespace}] {r.memory.content} ({r.similarity:.0%})"
+                    for r in results
+                )
+            else:
+                text = "No matching memories found."
+        elif any(kw in msg_lower for kw in ["improve", "self-improve"]):
+            result = await svc.run_improvement()
+            text = (f"Improvement target: **{result['target_dimension']}** "
+                    f"(score: {result['current_score']:.1f})\n"
+                    f"Action: {result.get('improvement_action', 'None')}")
+        elif "calibration" in msg_lower:
+            cal = await svc.get_calibration()
+            buckets = cal.get("buckets", [])
+            if buckets:
+                lines = ["Calibration Report:"]
+                for b in buckets:
+                    lines.append(f"- {b['range_label']}: {b['count']} records, "
+                                f"MAE={b['mae']:.1f}")
+                text = "\n".join(lines)
+            else:
+                text = "No calibration data yet."
+        else:
+            status = await svc.get_status()
+            text = (
+                f"Zero Brain: **{status.overall_score:.1f}/100**\n"
+                f"Memories: {status.total_memories} | Outcomes: {status.total_outcomes} | "
+                f"Prompts: {status.total_prompt_variants} | Experiments: {status.active_experiments}\n"
+                f"Weakest: {status.weakest_dimension}"
+            )
+
+        return {"result": text, "messages": [AIMessage(content=text)]}
+    except Exception as e:
+        error_msg = f"Brain query failed: {e}"
+        logger.error("brain_node_error", error=str(e))
+        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+
+
 def route_by_classification(state: OrchestratorState) -> str:
     """Route to the appropriate node based on classification."""
     route = state.get("route", "general")
@@ -1121,30 +1531,50 @@ def route_by_classification(state: OrchestratorState) -> str:
 # Graph Builder
 # =============================================================================
 
+def _make_traced(name: str, func, order: int):
+    """Create a traced wrapper for a node function."""
+    async def traced(state):
+        return await _trace_node(func, state, name, order)
+    traced.__name__ = f"traced_{name}"
+    return traced
+
+
 def build_orchestration_graph(checkpointer=None) -> Any:
     """Build and compile the orchestration supervisor StateGraph."""
     graph = StateGraph(OrchestratorState)
 
-    # Add nodes
-    graph.add_node("router", router_node)
-    graph.add_node("sprint", sprint_node)
-    graph.add_node("email", email_node)
-    graph.add_node("calendar", calendar_node)
-    graph.add_node("enhancement", enhancement_node)
-    graph.add_node("briefing", briefing_node)
-    graph.add_node("research", research_node)
-    graph.add_node("notion", notion_node)
-    graph.add_node("money_maker", money_maker_node)
-    graph.add_node("knowledge", knowledge_node)
-    graph.add_node("task", task_node)
-    graph.add_node("workflow", workflow_node)
-    graph.add_node("system", system_node)
-    graph.add_node("tiktok", tiktok_node)
-    graph.add_node("content", content_node)
-    graph.add_node("prediction_market", prediction_market_node)
-    graph.add_node("planner", planner_node)
-    graph.add_node("general", general_node)
-    graph.add_node("synthesizer", synthesizer_node)
+    # Add nodes with tracing wrappers
+    graph.add_node("router", _make_traced("router", router_node, 0))
+
+    _domain_nodes = {
+        "sprint": sprint_node,
+        "email": email_node,
+        "calendar": calendar_node,
+        "enhancement": enhancement_node,
+        "briefing": briefing_node,
+        "research": research_node,
+        "notion": notion_node,
+        "money_maker": money_maker_node,
+        "knowledge": knowledge_node,
+        "task": task_node,
+        "workflow": workflow_node,
+        "system": system_node,
+        "tiktok": tiktok_node,
+        "content": content_node,
+        "prediction_market": prediction_market_node,
+        "planner": planner_node,
+        "ai_company": ai_company_node,
+        "deep_research": deep_research_node,
+        "experiment": experiment_node,
+        "council": council_node,
+        "character_content": character_content_node,
+        "brain": brain_node,
+        "general": general_node,
+    }
+    for i, (name, func) in enumerate(_domain_nodes.items(), start=1):
+        graph.add_node(name, _make_traced(name, func, i))
+
+    graph.add_node("synthesizer", _make_traced("synthesizer", synthesizer_node, 99))
 
     # Entry: always start at router
     graph.add_edge(START, "router")
@@ -1170,6 +1600,11 @@ def build_orchestration_graph(checkpointer=None) -> Any:
             "content": "content",
             "prediction_market": "prediction_market",
             "planner": "planner",
+            "ai_company": "ai_company",
+            "deep_research": "deep_research",
+            "experiment": "experiment",
+            "council": "council",
+            "character_content": "character_content",
             "general": "general",
         },
     )
@@ -1178,7 +1613,9 @@ def build_orchestration_graph(checkpointer=None) -> Any:
     for node in ["sprint", "email", "calendar", "enhancement",
                  "briefing", "research", "notion", "money_maker",
                  "knowledge", "task", "workflow", "system",
-                 "tiktok", "content", "prediction_market"]:
+                 "tiktok", "content", "prediction_market",
+                 "ai_company", "deep_research", "experiment", "council",
+                 "character_content"]:
         graph.add_edge(node, "synthesizer")
     graph.add_edge("synthesizer", END)
 
@@ -1220,22 +1657,89 @@ async def get_orchestration_graph():
     return _compiled_graph
 
 
-async def invoke_orchestration(message: str, thread_id: str = "default") -> dict:
-    """Invoke the orchestration graph with a user message."""
+async def invoke_orchestration(
+    message: str,
+    thread_id: str = "default",
+    channel: str = "api",
+) -> dict:
+    """Invoke the orchestration graph with a user message.
+
+    Records conversation + per-node traces for full observability.
+    """
+    from app.services.orchestrator_trace_service import record_conversation, update_conversation_route
+
+    # Record inbound conversation
+    conv_id = await record_conversation(
+        thread_id=thread_id,
+        channel=channel,
+        message=message,
+        direction="inbound",
+    )
+
     graph = await get_orchestration_graph()
+    start = _time.time()
 
     config = {"configurable": {"thread_id": thread_id}}
     input_state = {
         "messages": [HumanMessage(content=message)],
         "route": None,
-        "context": {},
+        "context": {
+            "_trace_conversation_id": conv_id,
+            "_trace_thread_id": thread_id,
+        },
         "result": None,
     }
 
-    result = await graph.ainvoke(input_state, config=config)
+    try:
+        result = await graph.ainvoke(input_state, config=config)
+        latency_ms = round((_time.time() - start) * 1000, 1)
 
-    return {
-        "result": result.get("result", "No result generated."),
-        "route": result.get("route", "unknown"),
-        "thread_id": thread_id,
-    }
+        route = result.get("route", "unknown")
+        response_text = result.get("result", "No result generated.")
+        ctx = result.get("context", {})
+
+        # Record outbound response
+        await record_conversation(
+            thread_id=thread_id,
+            channel=channel,
+            message=response_text[:10000],
+            direction="outbound",
+            route=route,
+            route_method=ctx.get("method"),
+            route_confidence=ctx.get("keyword_confidence"),
+            latency_ms=latency_ms,
+        )
+
+        # Backfill inbound record with route info (for stats/filtering)
+        await update_conversation_route(
+            conversation_id=conv_id,
+            route=route,
+            route_method=ctx.get("method"),
+            route_confidence=ctx.get("keyword_confidence"),
+            latency_ms=latency_ms,
+        )
+
+        return {
+            "result": response_text,
+            "route": route,
+            "thread_id": thread_id,
+            "conversation_id": conv_id,
+            "latency_ms": latency_ms,
+        }
+    except Exception as e:
+        latency_ms = round((_time.time() - start) * 1000, 1)
+        await record_conversation(
+            thread_id=thread_id,
+            channel=channel,
+            message=str(e),
+            direction="outbound",
+            error=str(e),
+            latency_ms=latency_ms,
+        )
+        # Backfill inbound record with error info
+        await update_conversation_route(
+            conversation_id=conv_id,
+            latency_ms=latency_ms,
+            error=str(e),
+        )
+        raise
