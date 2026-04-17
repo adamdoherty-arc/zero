@@ -138,6 +138,7 @@ class CarouselRendererService:
                 font_weight=spec.get("font_weight", "bold"),
                 bg_overlay=spec.get("background_overlay"),
                 text_color=spec.get("text_color", "#FFFFFF"),
+                accent_color=spec.get("accent_color", "#FFD700"),
                 text_shadow=spec.get("text_shadow", True),
                 no_break_terms=no_break_set,
                 warnings_out=slide_warnings,
@@ -182,6 +183,7 @@ class CarouselRendererService:
         font_weight: str = "bold",
         bg_overlay: Optional[float] = None,
         text_color: str = "#FFFFFF",
+        accent_color: str = "#FFD700",
         text_shadow: bool = True,
         no_break_terms: Optional[Set[str]] = None,
         warnings_out: Optional[List[Dict[str, Any]]] = None,
@@ -237,7 +239,7 @@ class CarouselRendererService:
             num_text = str(slide_num)
             if text_shadow:
                 draw.text((margin_x + 2, y + 2), num_text, fill="#00000080", font=number_font)
-            draw.text((margin_x, y), num_text, fill="#FFD700", font=number_font)
+            draw.text((margin_x, y), num_text, fill=accent_color, font=number_font)
             y += 80
 
         # Title text (if present)
@@ -252,6 +254,10 @@ class CarouselRendererService:
                 draw.text((margin_x, y), line, fill=text_color, font=title_font)
                 y += 62
             y += 20
+
+        # Strip **bold** markers for PIL rendering (frontend handles visual emphasis)
+        if body_text:
+            body_text = body_text.replace("**", "")
 
         # Body text
         if body_text:

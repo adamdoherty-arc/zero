@@ -182,6 +182,29 @@ _step_stats_cache: Dict[str, Any] = {
 _STEP_STATS_TTL_SEC = 60.0
 
 # ---------------------------------------------------------------------------
+# Universe accent colors for carousel visual variety
+# ---------------------------------------------------------------------------
+UNIVERSE_ACCENT_COLORS: dict[str, str] = {
+    "dc": "#A78BFA",           # violet
+    "dc comics": "#A78BFA",
+    "marvel": "#F87171",       # rose
+    "mcu": "#F87171",
+    "star_wars": "#FBBF24",    # amber
+    "star wars": "#FBBF24",
+    "anime": "#34D399",        # emerald
+    "nintendo": "#38BDF8",     # sky
+    "gaming": "#38BDF8",       # sky
+    "video games": "#38BDF8",
+    "harry_potter": "#FBBF24", # amber
+    "lotr": "#34D399",         # emerald
+    "tv": "#FB923C",           # orange
+    "film": "#FB923C",         # orange
+    "hbo": "#FB923C",
+    "euphoria": "#FB923C",
+    "the boys": "#F87171",
+}
+
+# ---------------------------------------------------------------------------
 # Prompt Templates
 # ---------------------------------------------------------------------------
 
@@ -235,16 +258,17 @@ DEDUPLICATION (strict):
 
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
-- NEVER use markdown asterisks (*text* or **text**). Write plain text only.
-- NEVER use parenthetical asides with dashes. Use separate sentences."""
+- Use **word** for emphasis on 1-2 key words per slide. Do NOT overuse. Single *italic* is banned.
+- NEVER use parenthetical asides with dashes. Use separate sentences.
+- Each slide should have 1-3 SHORT lines separated by newlines. Never cram multiple facts into one slide."""
 
 CAROUSEL_SYSTEM_PROMPT = """You are a viral TikTok content creator specializing in character development carousels.
 Your posts get 100K+ likes using this formula:
 - Slide 1: A scroll-stopping hook that is UNIQUE to THIS character and THIS angle. It must reference a specific fact, name, object, or secret from their story. Never reuse the same hook template across different characters.
-- Slides 2-6: Numbered facts with bold, engaging text
+- Slides 2-6: 1-3 short punchy lines per slide. Each slide covers ONE idea. No numbered lists.
 - Final slide: Engagement CTA
 - Caption: Emotional, debate-sparking, with emojis
-- Hashtags: character + franchise + niche tags
+- Hashtags: 15 tags covering character, franchise, topic, community, and reach
 
 HOOK DIVERSITY RULES (strict):
 - Every hook must be tailored to the character. If a reader could swap in a different character and the hook still works, it is too generic. Rewrite it.
@@ -252,7 +276,7 @@ HOOK DIVERSITY RULES (strict):
 - Pick a hook style that matches the facts: a pointed question, a stat drop, a named secret, a contradiction, a "wait until you see slide X" tease, or a rewritten origin line. Vary the style between carousels.
 - The first line must contain at least one proper noun or concrete reference drawn from the character facts (a name, a weapon, a planet, a relationship, a line of dialogue, etc.).
 
-CRITICAL: Never use em dashes, markdown asterisks, or any formatting markup. Plain text only.
+CRITICAL: Never use em dashes. Use **word** sparingly for emphasis (max 2 per slide). No other markup.
 
 Return ONLY valid JSON."""
 
@@ -273,12 +297,12 @@ Generate a {slide_count}-slide carousel. Return JSON:
     }},
     {{
       "slide_num": 2,
-      "text": "1. First numbered fact - engaging, dramatic text with '...' pauses",
+      "text": "A surprising **fact** in punchy language.\nA second dramatic detail that hooks the viewer.",
       "image_query": "search query for relevant character image"
     }}
   ],
   "caption": "TikTok caption with emojis, debate-sparking question, 2-3 sentences max",
-  "hashtags": ["character", "franchise", "niche", "facts", "development"],
+  "hashtags": ["charactername", "franchise", "topicangle", "communitytag", "fyp", "viral", "didyouknow", "comicbooktok", "movietok", "learnontiktok", "geekculture", "nerdtok", "characteranalysis", "mindblown", "edutok"],
   "music_mood": "epic|dark|emotional|mysterious|dramatic"
 }}
 
@@ -289,21 +313,24 @@ Hook construction checklist (every item must be true):
 - The hook is 4-14 words on slide 1. Short and sharp beats long and vague.
 
 Style rules:
-- Text overlays: Bold white text on dark images, short punchy lines
-- Use numbered facts (1. 2. 3. etc.)
+- Text overlays: Short punchy lines, 1-3 lines per slide. NO numbered lists within a slide.
+- Use **word** to highlight 1-2 key words per slide (sparingly, max 2 per slide)
 - Include dramatic pauses with "..."
-- End text with impact words or emojis ( mind-blown, lightning, skull, etc.)
+- End text with impact words or emojis (mind-blown, lightning, skull, etc.)
 - Caption should provoke comments ("Comment which fact surprised you most")
 
-Hashtag strategy (include exactly 9 hashtags in this mix):
-- 3 broad hashtags (e.g., marvel, dc, anime, moviefacts, characterfacts)
-- 3 niche hashtags specific to the character (e.g., lokilore, marveltheory, batmanfacts)
-- 3 trending/topical hashtags (e.g., fyp, viral, didyouknow, mindblown)
+Hashtag strategy (include exactly 15 hashtags in this priority order):
+- 3 character-specific (e.g., #batmanfacts, #darthvaderlore, #lokitheory)
+- 3 franchise/universe (e.g., #marvel, #starwars, #dccomics, #anime)
+- 3 topic/angle (e.g., #darkorigin, #hiddendetails, #fantheory, #behindthescenes, #moviefacts)
+- 3 discovery/community (e.g., #comicbooktok, #movietok, #animefans, #geekculture, #nerdtok, #characteranalysis)
+- 3 reach/trending (e.g., #fyp, #viral, #didyouknow, #mindblown, #learnontiktok, #edutok)
 
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
-- NEVER use markdown asterisks (*text* or **text**). Write plain text only.
-- NEVER use parenthetical asides with dashes. Use separate sentences."""
+- Use **word** for emphasis on 1-2 key words per slide. Do NOT overuse. Single *italic* is banned.
+- NEVER use parenthetical asides with dashes. Use separate sentences.
+- Each slide should have 1-3 SHORT lines separated by newlines. Never cram multiple facts into one slide."""
 
 AI_REVIEW_SYSTEM_PROMPT = """You are a TikTok content strategist reviewing carousel posts for viral potential.
 Score each dimension 1-10 using this calibration rubric:
@@ -1409,6 +1436,7 @@ class CharacterContentService:
         await self._assign_slide_images(data.character_id, slides)
 
         # Generate text overlay specs
+        accent = UNIVERSE_ACCENT_COLORS.get(universe.lower() if universe else "", "#FB923C")
         text_overlay_specs = [
             {
                 "slide_num": s.get("slide_num", i + 1),
@@ -1417,6 +1445,7 @@ class CharacterContentService:
                 "max_chars_per_line": 30,
                 "background_overlay": 0.5,
                 "text_color": "#FFFFFF",
+                "accent_color": accent,
                 "text_shadow": True,
             }
             for i, s in enumerate(slides)
@@ -2493,6 +2522,128 @@ class CharacterContentService:
             char = await session.get(CharacterModel, row.character_id)
             char_name = char.name if char else None
             return carousel_to_pydantic(row, char_name)
+
+    # ==================================================================
+    # FORMATTING MIGRATION
+    # ==================================================================
+
+    async def fix_carousel_formatting(self) -> Dict[str, Any]:
+        """One-time migration: fix formatting on all existing carousels.
+
+        - Cleans inline numbered lists (e.g. "1. fact 2. fact") into newline-separated lines
+        - Adds accent_color to text_overlay_specs based on character universe
+        """
+        import re
+        from sqlalchemy.orm.attributes import flag_modified
+
+        updated = 0
+        details = []
+
+        async with get_session() as session:
+            result = await session.execute(
+                select(CharacterCarouselModel).order_by(CharacterCarouselModel.created_at.desc()).limit(200)
+            )
+            carousels = result.scalars().all()
+
+            for row in carousels:
+                changes = []
+                char = await session.get(CharacterModel, row.character_id)
+                universe = (char.universe or "").lower() if char else ""
+                accent = UNIVERSE_ACCENT_COLORS.get(universe, "#FB923C")
+
+                # Fix slides text: clean inline numbered lists
+                new_slides = []
+                slides_changed = False
+                for slide in (row.slides or []):
+                    new_slide = dict(slide)
+                    text = new_slide.get("text", "")
+                    original = text
+
+                    # Clean inline numbered lists: "1. fact 2. fact 3. fact" -> newline-separated
+                    if re.search(r'\d+\.\s+.+\d+\.\s+', text):
+                        parts = re.split(r'\s*\d+\.\s+', text)
+                        parts = [p.strip() for p in parts if p.strip()]
+                        text = "\n".join(parts)
+                        new_slide["text"] = text
+
+                    if text != original:
+                        slides_changed = True
+                    new_slides.append(new_slide)
+
+                if slides_changed:
+                    row.slides = new_slides
+                    flag_modified(row, "slides")
+                    changes.append("cleaned_numbered_lists")
+
+                # Fix text_overlay_specs: add/update accent_color
+                new_specs = []
+                specs_changed = False
+                for spec in (row.text_overlay_specs or []):
+                    new_spec = dict(spec)
+                    if new_spec.get("accent_color") != accent:
+                        new_spec["accent_color"] = accent
+                        specs_changed = True
+                    new_specs.append(new_spec)
+
+                if specs_changed:
+                    row.text_overlay_specs = new_specs
+                    flag_modified(row, "text_overlay_specs")
+                    changes.append(f"added_accent_color={accent}")
+
+                # Expand hashtags for discoverability
+                existing_tags = list(row.hashtags or [])
+                if len(existing_tags) < 15:
+                    char_name_tag = (char.name or "").replace(" ", "").replace("'", "")
+                    # Community/discovery tags to add if missing
+                    discovery_tags = [
+                        "fyp", "viral", "didyouknow", "mindblown",
+                        "learnontiktok", "edutok",
+                    ]
+                    # Universe-specific community tags
+                    universe_community = {
+                        "marvel": ["comicbooktok", "marveltok", "marvelfans"],
+                        "dc": ["comicbooktok", "dctok", "dcfans"],
+                        "star_wars": ["movietok", "starwarstok", "starwarsfans"],
+                        "anime": ["animetok", "animefans", "otaku"],
+                        "gaming": ["gamingtok", "gamingfacts", "gamerfans"],
+                        "tv": ["tvtok", "tvshowfacts", "seriesfans"],
+                        "film": ["movietok", "moviefacts", "cinematok"],
+                    }
+                    community = universe_community.get(universe, ["movietok", "geekculture", "nerdtok"])
+
+                    existing_lower = {t.lower().lstrip("#") for t in existing_tags}
+                    new_tags = list(existing_tags)
+                    for tag in community + discovery_tags:
+                        if tag.lower() not in existing_lower and len(new_tags) < 15:
+                            new_tags.append(tag)
+                            existing_lower.add(tag.lower())
+
+                    if len(new_tags) > len(existing_tags):
+                        row.hashtags = new_tags
+                        flag_modified(row, "hashtags")
+                        changes.append(f"expanded_hashtags={len(existing_tags)}->{len(new_tags)}")
+
+                if changes:
+                    await self._snapshot_carousel(
+                        session, row,
+                        source="formatting_fix",
+                        source_metadata={"changes": changes},
+                        created_by="system",
+                    )
+                    await session.commit()
+                    await session.refresh(row)
+                    updated += 1
+                    details.append({
+                        "carousel_id": row.id,
+                        "character": char.name if char else "unknown",
+                        "changes": changes,
+                    })
+
+        return {
+            "total_carousels": len(carousels),
+            "updated": updated,
+            "details": details,
+        }
 
     # ==================================================================
     # ON-DEMAND IMAGE SOURCING
@@ -4358,6 +4509,7 @@ Return JSON:
                         slide["image_url"] = images[0] if isinstance(images[0], str) else images[0]
                     break
 
+        ranking_accent = UNIVERSE_ACCENT_COLORS.get((universe or "").lower(), "#FB923C")
         text_overlay_specs = [
             {
                 "slide_num": s.get("slide_num", i + 1),
@@ -4366,6 +4518,7 @@ Return JSON:
                 "max_chars_per_line": 30,
                 "background_overlay": 0.5,
                 "text_color": "#FFFFFF",
+                "accent_color": ranking_accent,
                 "text_shadow": True,
             }
             for i, s in enumerate(slides)

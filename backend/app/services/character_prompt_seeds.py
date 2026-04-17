@@ -92,21 +92,22 @@ Generate a {slide_count}-slide carousel. Return JSON:
     }}
   ],
   "caption": "TikTok caption with emojis, debate-sparking question",
-  "hashtags": ["character", "franchise", "niche", "facts", "development"],
+  "hashtags": ["charactername", "franchise", "topicangle", "communitytag", "fyp", "viral", "didyouknow", "comicbooktok", "movietok", "learnontiktok", "geekculture", "nerdtok", "characteranalysis", "mindblown", "edutok"],
   "music_mood": "epic|dark|emotional|mysterious|dramatic"
 }}
 
 Style rules:
-- Text overlays: Bold white text on dark images, short punchy lines
-- Use numbered facts
+- Text overlays: Short punchy lines, 1-3 lines per slide. NO numbered lists.
+- Use **word** to highlight 1-2 key words per slide (sparingly)
 - Include dramatic pauses with "..."
 - End text with impact words or emojis
 - Caption should provoke comments
 
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
-- NEVER use markdown asterisks. Write plain text only.
-- NEVER use parenthetical asides with dashes."""
+- Use **word** for emphasis on 1-2 key words per slide. Do NOT overuse.
+- NEVER use parenthetical asides with dashes.
+- Each slide: 1-3 SHORT lines. Never cram multiple facts into one slide."""
 
 
 AI_REVIEW_SYSTEM = (

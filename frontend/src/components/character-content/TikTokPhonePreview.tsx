@@ -35,6 +35,33 @@ export interface TikTokPhonePreviewProps {
 
 const SWIPE_THRESHOLD = 50
 
+// Accent color palettes for visual variety across carousels.
+// Each carousel gets a consistent palette based on its ID hash.
+const ACCENT_PALETTES = [
+    { pill: 'bg-yellow-300 text-black', label: 'bg-yellow-300 text-black' },
+    { pill: 'bg-rose-400 text-black', label: 'bg-rose-400 text-black' },
+    { pill: 'bg-emerald-400 text-black', label: 'bg-emerald-400 text-black' },
+    { pill: 'bg-violet-400 text-white', label: 'bg-violet-400 text-white' },
+    { pill: 'bg-orange-400 text-black', label: 'bg-orange-400 text-black' },
+    { pill: 'bg-sky-400 text-black', label: 'bg-sky-400 text-black' },
+] as const
+
+function accentForCarousel(carouselId: string): (typeof ACCENT_PALETTES)[number] {
+    let hash = 0
+    for (let i = 0; i < carouselId.length; i++) {
+        hash = ((hash << 5) - hash + carouselId.charCodeAt(i)) | 0
+    }
+    return ACCENT_PALETTES[Math.abs(hash) % ACCENT_PALETTES.length]
+}
+
+// Words that look like section headers or common content labels.
+// These should NOT be highlighted as "shout" emphasis even though they're uppercase.
+const SHOUT_SKIPLIST = new Set([
+    'SCENE', 'ORIGIN', 'SHIFT', 'CHANGE', 'POLL', 'TIME', 'COMICS', 'SCREEN',
+    'BIGGEST', 'DELETED', 'NOTE', 'FACT', 'WINNER', 'THEORY', 'SOURCE',
+    'SEASON', 'EPISODE', 'PART', 'CHAPTER', 'STEP', 'RULE', 'TYPE',
+])
+
 // Static plausible engagement counts so the preview looks like a real feed.
 const RIGHT_RAIL = [
     { icon: Heart, label: '12.4K' },
@@ -66,19 +93,22 @@ type TextVariant = 'hook' | 'slide' | 'chunk'
 type RenderMode = 'clean' | 'stroked'
 
 /**
- * Parses copy and breaks it into tokens, highlighting anything wrapped in
- * **double asterisks**, tokens in UPPERCASE, or numeric/percent/multiplier
- * punches (e.g. 100%, 3X, $5). Everything else renders as plain impact text
- * with a strong shadow so it stays readable on any frame.
+ * Parses copy and breaks it into tokens. Only highlights:
+ *   - **double asterisks** -> accent pill (explicitly marked emphasis)
+ *   - UPPERCASE words -> accent pill (hooks only, disabled for slide text)
+ *   - $numbers / percentages -> cyan stat pill
+ * Everything else renders as plain white impact text with shadow.
  */
 function CaptivatingText({
     text,
     variant,
     renderMode = 'clean',
+    accent,
 }: {
     text: string | undefined
     variant: TextVariant
     renderMode?: RenderMode
+    accent?: (typeof ACCENT_PALETTES)[number]
 }) {
     if (!text) return null
 
@@ -89,10 +119,8 @@ function CaptivatingText({
               ? 'text-[18px] leading-[1.15] tracking-tight'
               : 'text-[15px] leading-[1.2]'
 
-    // Auto-captivate: if the copy leads with "<Label>: rest", promote the
-    // label to a yellow pill so flat hooks like "The Hammer Lie: Why Batman..."
-    // still feel like TikTok copy.
-    const { label, body } = splitLeadLabel(text)
+    // Only extract labels for hooks, not body slides (avoids over-pilling)
+    const { label, body } = variant === 'hook' ? splitLeadLabel(text) : { label: null, body: text }
     const lines = body.split(/\r?\n/)
 
     const containerStyle: React.CSSProperties =
@@ -103,17 +131,18 @@ function CaptivatingText({
               }
             : {
                   textShadow: TEXT_SHADOW_CLEAN,
-                  // Use drop-shadow as a subtle secondary layer, which avoids
-                  // the "second outline" effect text-stroke produces.
                   filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.55))',
               }
+
+    // For slide text, disable shout detection (only highlight **bold** markers)
+    const enableShouts = variant === 'hook'
 
     return (
         <div className={`font-black text-white ${sizeClasses}`} style={containerStyle}>
             {label && (
                 <div className="mb-1.5">
                     <span
-                        className={`inline-block rounded-md bg-yellow-300 px-1.5 py-0.5 text-black text-[13px] font-black uppercase tracking-wide ${
+                        className={`inline-block rounded-md ${accent?.label ?? 'bg-yellow-300 text-black'} px-1.5 py-0.5 text-[13px] font-black uppercase tracking-wide ${
                             variant === 'hook' ? '-skew-x-3' : ''
                         }`}
                         style={{ textShadow: 'none', WebkitTextStroke: '0', filter: 'none' }}
@@ -124,8 +153,8 @@ function CaptivatingText({
             )}
             {lines.map((line, li) => (
                 <div key={li} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-                    {coalesce(tokenize(line)).map((tok, ti) =>
-                        renderToken(tok, `${li}-${ti}`, variant),
+                    {coalesce(tokenize(line, enableShouts)).map((tok, ti) =>
+                        renderToken(tok, `${li}-${ti}`, variant, accent),
                     )}
                 </div>
             ))}
@@ -133,17 +162,21 @@ function CaptivatingText({
     )
 }
 
-// If copy starts with "Something: rest", treat "Something" (max ~32 chars,
-// no other colon) as a label and return the body separately so the renderer
-// can style it as a pill. Falls back to plain text for everything else.
+// If copy starts with a short category-style label followed by a colon,
+// extract it as a pill. Only matches labels that are 2-4 words and under
+// 24 chars (e.g. "Hot Take:", "Dark Origin:", "Fan Theory Deep Dive:").
+// Longer or sentence-like prefixes are left as plain text.
 function splitLeadLabel(text: string): { label: string | null; body: string } {
     const idx = text.indexOf(':')
-    if (idx <= 0 || idx > 40) return { label: null, body: text }
+    if (idx <= 0 || idx > 24) return { label: null, body: text }
     const prefix = text.slice(0, idx).trim()
     const rest = text.slice(idx + 1).trim()
-    if (!rest || prefix.length > 32 || /[\n]/.test(prefix)) {
+    if (!rest || /[\n]/.test(prefix)) {
         return { label: null, body: text }
     }
+    // Only allow 1-4 words as labels
+    const wordCount = prefix.split(/\s+/).length
+    if (wordCount > 4) return { label: null, body: text }
     // Avoid splitting on times, ratios, URLs etc. ("1:1", "https:...")
     if (/^[0-9]+$/.test(prefix) || /^https?$/i.test(prefix)) {
         return { label: null, body: text }
@@ -173,11 +206,11 @@ type Token =
     | { kind: 'shout'; value: string }
     | { kind: 'stat'; value: string }
 
-// Basic markup tokenizer:
-//   **word** / **a phrase** -> yellow pill highlight
-//   UPPERCASE (>=3 letters)  -> yellow pill highlight
-//   number / percent / $amt  -> cyan-accented stat
-function tokenize(line: string): Token[] {
+// Markup tokenizer:
+//   **word** / **a phrase** -> accent pill highlight (always active)
+//   UPPERCASE (>=4 letters)  -> accent pill highlight (only when enableShouts=true, i.e. hooks)
+//   number / percent / $amt  -> cyan stat pill
+function tokenize(line: string, enableShouts = true): Token[] {
     if (!line) return [{ kind: 'plain', value: '' }]
 
     const tokens: Token[] = []
@@ -189,13 +222,17 @@ function tokenize(line: string): Token[] {
             tokens.push({ kind: 'bold', value: chunk.slice(2, -2) })
             continue
         }
-        // Split on whitespace but keep trailing punctuation glued.
         const words = chunk.split(/\s+/)
         for (const w of words) {
             if (!w) continue
             if (/^\$?\d[\d,.]*%?x?$/i.test(w) || /^\d+[kmb]\+?$/i.test(w)) {
                 tokens.push({ kind: 'stat', value: w })
-            } else if (/^[A-Z0-9!?.,'-]{3,}$/.test(w) && /[A-Z]/.test(w)) {
+            } else if (
+                enableShouts &&
+                /^[A-Z0-9!?.,'-]{4,}$/.test(w) &&
+                /[A-Z]{2,}/.test(w) &&
+                !SHOUT_SKIPLIST.has(w.replace(/[^A-Z]/g, ''))
+            ) {
                 tokens.push({ kind: 'shout', value: w })
             } else {
                 tokens.push({ kind: 'plain', value: w })
@@ -205,12 +242,18 @@ function tokenize(line: string): Token[] {
     return tokens
 }
 
-function renderToken(tok: Token, key: string, variant: TextVariant) {
+function renderToken(
+    tok: Token,
+    key: string,
+    variant: TextVariant,
+    accent?: (typeof ACCENT_PALETTES)[number],
+) {
     if (tok.kind === 'bold' || tok.kind === 'shout') {
+        const pillClasses = accent?.pill ?? 'bg-yellow-300 text-black'
         return (
             <span
                 key={key}
-                className={`inline-block rounded-md bg-yellow-300 px-1.5 text-black ${
+                className={`inline-block rounded-md ${pillClasses} px-1.5 ${
                     variant === 'hook' ? 'py-0.5 -skew-x-3' : 'py-0.5'
                 }`}
                 style={{ textShadow: 'none', WebkitTextStroke: '0', letterSpacing: '-0.01em' }}
@@ -344,6 +387,7 @@ export default function TikTokPhonePreview({
         return parts.join(' - ')
     }, [carousel.music_track])
 
+    const accent = useMemo(() => accentForCarousel(carousel.id || ''), [carousel.id])
     const offsetPct = -(activeSlide * 100) + (dragging ? (dragX / 320) * 100 : 0)
 
     return (
@@ -432,6 +476,7 @@ export default function TikTokPhonePreview({
                                     onEditQuery={() => startQueryEdit(idx)}
                                     isReimaging={reimagingSlideIdx === idx}
                                     renderMode={renderMode}
+                                    accent={accent}
                                 />
                             ))
                         )}
@@ -722,6 +767,7 @@ interface SlideViewProps {
     onEditQuery: () => void
     isReimaging: boolean
     renderMode?: RenderMode
+    accent?: (typeof ACCENT_PALETTES)[number]
 }
 
 function SlideView({
@@ -736,6 +782,7 @@ function SlideView({
     onEditQuery,
     isReimaging,
     renderMode = 'clean',
+    accent,
 }: SlideViewProps) {
     const hasImage = Boolean(slide.image_url)
     const initial = initialFallback(characterName)
@@ -804,7 +851,7 @@ function SlideView({
                             placeholder="Hook..."
                         />
                     ) : hook ? (
-                        <CaptivatingText text={hook} variant="hook" renderMode={renderMode} />
+                        <CaptivatingText text={hook} variant="hook" renderMode={renderMode} accent={accent} />
                     ) : null}
                 </div>
             )}
@@ -824,7 +871,7 @@ function SlideView({
                         placeholder="Slide text..."
                     />
                 ) : (
-                    <CaptivatingText text={slide.text} variant="slide" renderMode={renderMode} />
+                    <CaptivatingText text={slide.text} variant="slide" renderMode={renderMode} accent={accent} />
                 )}
             </div>
         </div>

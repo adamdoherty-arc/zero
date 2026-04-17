@@ -274,6 +274,13 @@ async def get_smart_review_queue(limit: int = Query(50, ge=1, le=200)):
     return await service.list_review_queue_smart(limit=limit)
 
 
+@router.post("/fix-formatting")
+async def fix_carousel_formatting():
+    """One-time migration: fix text formatting on all existing carousels."""
+    service = get_character_content_service()
+    return await service.fix_carousel_formatting()
+
+
 # ============================================
 # SERIES & MULTI-CHARACTER
 # ============================================
