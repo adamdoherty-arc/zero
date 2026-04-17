@@ -118,6 +118,7 @@ class Settings(BaseSettings):
     character_auto_approve_threshold: float = 85.0
     character_discovery_enabled: bool = True
     character_discovery_daily_cap: int = 20
+    ollama_concurrency: int = 2
 
     # Meeting Intelligence (DailyMemory)
     whisper_model_size: str = "large-v3"

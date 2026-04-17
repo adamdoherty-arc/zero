@@ -321,6 +321,52 @@ export function CarouselCard({
         )}
 
         {carousel.ai_review && <AIReviewScores review={carousel.ai_review} />}
+
+        {carousel.final_review && (
+          <details className="mt-2">
+            <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-300">
+              Stage 2 Review {carousel.final_review_score ? `(${carousel.final_review_score}/10)` : ''} {carousel.final_review_model ? `- ${carousel.final_review_model}` : ''}
+            </summary>
+            <div className="bg-gray-900/50 rounded-lg p-3 mt-1 space-y-2">
+              <div className="flex items-center gap-4 flex-wrap">
+                {[
+                  { label: 'Hook Tension', value: (carousel.final_review as Record<string, unknown>).hook_tension as number },
+                  { label: 'Sequencing', value: (carousel.final_review as Record<string, unknown>).fact_sequencing as number },
+                  { label: 'Emotion', value: (carousel.final_review as Record<string, unknown>).emotional_arc as number },
+                  { label: 'CTA', value: (carousel.final_review as Record<string, unknown>).caption_cta as number },
+                ].map((s) => (
+                  <div key={s.label} className="text-center">
+                    <div className={`text-lg font-bold ${(s.value || 0) >= 7 ? 'text-green-400' : (s.value || 0) >= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {s.value ?? '-'}
+                    </div>
+                    <div className="text-xs text-gray-500">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              {(carousel.final_review as Record<string, unknown>).verdict && (
+                <div className="mt-1">
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    (carousel.final_review as Record<string, unknown>).verdict === 'approve' ? 'bg-green-900/50 text-green-400' :
+                    (carousel.final_review as Record<string, unknown>).verdict === 'revise' ? 'bg-yellow-900/50 text-yellow-400' :
+                    'bg-red-900/50 text-red-400'
+                  }`}>
+                    {String((carousel.final_review as Record<string, unknown>).verdict).toUpperCase()}
+                  </span>
+                </div>
+              )}
+              {((carousel.final_review as Record<string, unknown>).polish_suggestions as string[])?.length > 0 && (
+                <div className="mt-1">
+                  <div className="text-xs text-gray-400">Polish suggestions:</div>
+                  <ul className="text-xs text-gray-300 list-disc list-inside">
+                    {((carousel.final_review as Record<string, unknown>).polish_suggestions as string[]).map((s, i) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </details>
+        )}
       </CardContent>
     </Card>
   )
@@ -362,6 +408,16 @@ function AIReviewScores({ review }: { review: AIReview }) {
           <ul className="text-xs text-gray-300 list-disc list-inside">
             {(review.suggestions as string[]).map((s, i) => (
               <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {(review.fact_check_flags as string[])?.length > 0 && (
+        <div className="mt-2">
+          <div className="text-xs text-amber-400">Fact Check Flags:</div>
+          <ul className="text-xs text-amber-300 list-disc list-inside">
+            {(review.fact_check_flags as string[]).map((f, i) => (
+              <li key={i}>{f}</li>
             ))}
           </ul>
         </div>

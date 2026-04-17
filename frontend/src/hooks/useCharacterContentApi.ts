@@ -69,8 +69,12 @@ export interface AIReview {
 
 export interface CharacterCarousel {
     id: string
-    character_id: string
+    character_id?: string
     character_name?: string
+    // Phase 028: media content support
+    content_type?: string  // 'character' | 'media'
+    media_title_id?: string
+    media_title_name?: string
     angle: string
     title?: string
     hook_text?: string
@@ -1088,7 +1092,7 @@ export function useResearchQueue(enabled = false) {
     return useQuery({
         queryKey: characterKeys.researchQueue,
         queryFn: () => fetchApi<ResearchQueueStatus>('/api/characters/research-queue'),
-        refetchInterval: enabled ? 2000 : false,
+        refetchInterval: enabled ? 5000 : false,
         enabled,
     })
 }

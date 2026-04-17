@@ -61,6 +61,8 @@ from app.services.character_content_utils import (
     carousel_to_pydantic,
     image_to_pydantic,
     version_to_pydantic,
+    get_hook_examples_for_angle,
+    get_tone_instruction_for_angle,
 )
 
 logger = structlog.get_logger()
@@ -142,11 +144,20 @@ _research_queue: Dict[str, Any] = {
     "cancel_requested": False,
 }
 
-# Serialize all heavy Ollama calls across parallel characters so the GPU
-# doesn't thrash. Multiple characters can race through the cheap I/O steps
+# Serialize heavy Ollama calls across parallel characters so the GPU
+# doesn't thrash. Multiple characters can race through cheap I/O steps
 # (searxng, wiki, deep_research, image_sourcing) concurrently, then queue
 # here for synthesis and fact_extraction.
-_OLLAMA_SEMAPHORE = asyncio.Semaphore(1)
+# Concurrency is configurable via settings.ollama_concurrency (default 2).
+_OLLAMA_SEMAPHORE: Optional[asyncio.Semaphore] = None
+
+
+def _get_ollama_semaphore() -> asyncio.Semaphore:
+    global _OLLAMA_SEMAPHORE
+    if _OLLAMA_SEMAPHORE is None:
+        concurrency = getattr(get_settings(), "ollama_concurrency", 2)
+        _OLLAMA_SEMAPHORE = asyncio.Semaphore(concurrency)
+    return _OLLAMA_SEMAPHORE
 
 # Fallback per-step duration priors used when we don't yet have enough history
 # to compute averages (n < 3). Values in milliseconds, rough defaults based on
@@ -172,18 +183,35 @@ _STEP_STATS_TTL_SEC = 60.0
 # Prompt Templates
 # ---------------------------------------------------------------------------
 
-RESEARCH_SYSTEM_PROMPT = """You are a character research expert specializing in pop culture, comics, movies, and TV shows.
-Analyze the provided search results and compile a comprehensive character profile.
-Return ONLY valid JSON."""
+RESEARCH_SYSTEM_PROMPT = """You are a character research expert specializing in pop culture, comics, movies, TV shows, and gaming.
+Analyze the provided search results and compile a comprehensive, detailed character profile.
+
+Quality standards:
+- Prioritize lesser-known facts over Wikipedia-level common knowledge. A casual fan already knows the basics.
+- Cross-reference conflicting sources. Flag disputed claims as unconfirmed rather than stating them as fact.
+- Distinguish between confirmed canon (official media), extended canon (tie-in novels, comics), and fan speculation.
+- Include specific issue numbers, episode names, or timestamps for verifiable facts.
+- For relationships, capture the dynamic (ally who betrayed them, rival who became mentor) not just the label.
+- For filmography, include both live-action and animated appearances with year and role type.
+
+Return ONLY valid JSON. No markdown, no explanation text."""
 
 FACT_EXTRACTION_PROMPT = """Based on the research data below, compile a fact bank of 20-30 interesting facts about {name}.
 
-Focus on facts that are:
-- Surprising or lesser-known (not common knowledge)
-- Debate-sparking or controversial
-- Related to hidden details, behind-the-scenes, or deep lore
-- About their powers, abilities, or character development arcs
-- Notable storylines: specific comic arcs, episodes, or movie plots where something dramatic happened (use category "storylines")
+Quality tiers (use these to assign surprise_score):
+- Tier 1 (score 8-10): Would make a TikTok viewer stop scrolling. Not findable in a 30-second Google search. Behind-the-scenes secrets, scrapped plotlines, creator confessions, obscure canon details.
+- Tier 2 (score 5-7): Interesting to dedicated fans but findable by someone who digs. Specific arc details, lesser-known powers, niche relationships.
+- Tier 3 (score 1-4): Common knowledge to casual fans. Include ONLY if needed for context in a carousel (e.g., to set up a Tier 1 fact). Do NOT pad the list with these.
+
+Do NOT include facts that a casual fan would already know (e.g., "Batman's parents were murdered", "Spider-Man was bitten by a radioactive spider"). These waste carousel slides.
+
+Focus on:
+- Behind-the-scenes production secrets (scrapped ideas, casting changes, improvised moments)
+- Deep lore contradictions or retcons
+- Specific storyline details with issue/episode references
+- Character relationship dynamics that changed (betrayals, alliances, rivalries)
+- Powers or abilities that were used once and forgotten
+- Fan theories with actual evidence from creators
 
 Research data:
 {research_text}
@@ -192,12 +220,12 @@ Return JSON array. Each fact:
 {{
   "text": "The actual fact written in engaging, direct language",
   "category": "origin|powers|relationships|hidden_details|fan_theories|behind_scenes|character_evolution|dark_facts|storylines",
-  "surprise_score": 1-10 (how surprising/unknown this fact is),
+  "surprise_score": 1-10 (calibrated per tiers above),
   "source": "brief source reference",
   "verified": true/false
 }}
 
-Sort by surprise_score descending. Write facts in the style of TikTok carousel text: direct, punchy, with dramatic pauses using "..." and bold claims.
+Sort by surprise_score descending. Write facts in TikTok carousel style: direct, punchy, with "..." pauses and bold claims.
 
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
@@ -272,7 +300,13 @@ FORMATTING RULES (strict):
 - NEVER use parenthetical asides with dashes. Use separate sentences."""
 
 AI_REVIEW_SYSTEM_PROMPT = """You are a TikTok content strategist reviewing carousel posts for viral potential.
-Score each dimension 1-10 and provide actionable feedback.
+Score each dimension 1-10 using this calibration rubric:
+- 9-10: Would go viral. Hook is unique and character-specific. Facts are unknown to 95% of fans. CTA will drive comments.
+- 7-8: Strong content that would perform above average. One dimension could be sharper.
+- 5-6: Publishable but forgettable. Hook is generic or facts are well-known. Needs improvement.
+- 3-4: Below average. Multiple issues with accuracy, engagement, or hook quality.
+- 1-2: Not publishable. Fundamental problems.
+Be disciplined. A 10 is rare. Most decent content is a 6-7. Only truly exceptional work earns 8+.
 Return ONLY valid JSON."""
 
 FINAL_REVIEW_SYSTEM_PROMPT = """You are a top-tier viral TikTok editor. You already know the carousel passed a first-pass review.
@@ -292,8 +326,7 @@ Slides:
 Caption: {caption}
 Hashtags: {hashtags}
 
-Stage-1 review scores:
-{stage1_scores}
+Score independently. Do not assume this content is good because it reached this stage.
 
 Return ONLY this JSON shape:
 {{
@@ -574,21 +607,26 @@ class CharacterContentService:
         if franchise:
             queries.append(f"{name} {franchise} facts")
 
-        all_results = []
-        for query in queries:
+        async def _run_one_search(query: str) -> List[Dict]:
             try:
                 results = await searxng.search(query, num_results=8)
-                for r in results:
-                    all_results.append({
+                return [
+                    {
                         "title": getattr(r, "title", "") if not isinstance(r, dict) else r.get("title", ""),
                         "url": getattr(r, "url", "") if not isinstance(r, dict) else r.get("url", ""),
                         "snippet": (getattr(r, "content", "") or getattr(r, "snippet", "")
                                     if not isinstance(r, dict)
                                     else r.get("content", r.get("snippet", "")))[:500],
                         "query": query,
-                    })
+                    }
+                    for r in results
+                ]
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError) as e:
                 logger.warning("character_search_failed", query=query, error=str(e))
+                return []
+
+        batch_results = await asyncio.gather(*[_run_one_search(q) for q in queries])
+        all_results = [item for sublist in batch_results for item in sublist]
 
         logger.info("character_search_done", name=name, results=len(all_results))
         return all_results
@@ -613,28 +651,22 @@ class CharacterContentService:
         wiki_data = {}
         headers = {"User-Agent": "ZeroBot/1.0 (character-research)"}
 
-        for url in wiki_urls[:2]:
-            try:
-                # Use Wikipedia REST API for clean text extraction
-                wiki_name = url.split("/wiki/")[-1]
-                api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_name}"
-                async with aiohttp.ClientSession() as session:
-                    # First get the summary
-                    async with session.get(api_url, headers=headers,
-                                           timeout=aiohttp.ClientTimeout(total=15)) as resp:
+        async with aiohttp.ClientSession(headers=headers) as http:
+            for url in wiki_urls[:2]:
+                try:
+                    wiki_name = url.split("/wiki/")[-1]
+                    api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{wiki_name}"
+                    async with http.get(api_url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             summary = data.get("extract", "")
                             if summary:
                                 wiki_data[url] = summary
 
-                    # Then get the full HTML content and extract text
                     html_api = f"https://en.wikipedia.org/api/rest_v1/page/html/{wiki_name}"
-                    async with session.get(html_api, headers=headers,
-                                           timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    async with http.get(html_api, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                         if resp.status == 200:
                             html = await resp.text()
-                            # Extract text from HTML by stripping tags
                             text = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL)
                             text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
                             text = re.sub(r'<[^>]+>', ' ', text)
@@ -642,8 +674,8 @@ class CharacterContentService:
                             if len(text) > 500:
                                 wiki_data[url + "#full"] = text[:8000]
                                 logger.info("wiki_scrape_success", url=url, chars=len(text))
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError) as e:
-                logger.warning("wiki_scrape_failed", url=url, error=str(e))
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError) as e:
+                    logger.warning("wiki_scrape_failed", url=url, error=str(e))
 
         return wiki_data
 
@@ -682,11 +714,11 @@ class CharacterContentService:
             "\n\n/no_think"
         )
         try:
-            async with _OLLAMA_SEMAPHORE:
+            async with _get_ollama_semaphore():
                 raw = await self._ollama.chat(
                     prompt=prompt,
                     system=RESEARCH_SYSTEM_PROMPT,
-                    task_type="character_research",
+                    task_type="character_synthesis",
                     temperature=0.3,
                     num_predict=16384,
                     timeout=900,
@@ -790,12 +822,12 @@ class CharacterContentService:
         _run_error_type = None
         _run_error_message = None
         try:
-            async with _OLLAMA_SEMAPHORE:
+            async with _get_ollama_semaphore():
                 raw = await self._ollama.chat(
                     prompt=prompt,
                     system=_fact_system,
-                    task_type="character_research",
-                    temperature=0.4,
+                    task_type="character_fact_extraction",
+                    temperature=0.2,
                     num_predict=16384,
                     timeout=900,
                     max_retries=1,
@@ -1099,6 +1131,31 @@ class CharacterContentService:
 
         angle = data.angle.value if hasattr(data.angle, "value") else data.angle
 
+        # Deduplication: skip if a carousel for same character + angle exists within 7 days
+        async with get_session() as session:
+            from datetime import timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            existing = await session.execute(
+                select(CharacterCarouselModel.id).where(
+                    CharacterCarouselModel.character_id == data.character_id,
+                    CharacterCarouselModel.angle == angle,
+                    CharacterCarouselModel.created_at >= cutoff,
+                ).limit(1)
+            )
+            if existing.scalar_one_or_none():
+                logger.info("carousel_dedup_skip", character_id=data.character_id, angle=angle)
+                # Return the existing carousel instead of generating a duplicate
+                dup_row = await session.execute(
+                    select(CharacterCarouselModel).where(
+                        CharacterCarouselModel.character_id == data.character_id,
+                        CharacterCarouselModel.angle == angle,
+                        CharacterCarouselModel.created_at >= cutoff,
+                    ).order_by(CharacterCarouselModel.created_at.desc()).limit(1)
+                )
+                dup = dup_row.scalar_one_or_none()
+                if dup:
+                    return carousel_to_pydantic(dup, name)
+
         # Filter facts by angle category mapping
         angle_categories = {
             "hidden_truths": ["hidden_details", "behind_scenes", "dark_facts"],
@@ -1210,6 +1267,17 @@ class CharacterContentService:
             if instruction:
                 prompt += f"\n\n{instruction.format(name=name, universe=universe)}"
 
+        # Inject per-angle hook examples (rotated, not hardcoded)
+        hook_examples = get_hook_examples_for_angle(angle)
+        if hook_examples:
+            examples_str = "\n".join(f'  - "{ex}"' for ex in hook_examples)
+            prompt += f"\n\nHook examples for this angle (use as inspiration, do NOT copy):\n{examples_str}"
+
+        # Inject angle-specific tone instruction
+        tone_instruction = get_tone_instruction_for_angle(angle)
+        if tone_instruction:
+            prompt += f"\n\n{tone_instruction}"
+
         # Add brain context to prompt if available
         if brain_context:
             brain_hint = ""
@@ -1220,23 +1288,33 @@ class CharacterContentService:
             if brain_hint:
                 prompt += f"\n\nOptimization hints:{brain_hint}"
 
+        # Route carousel generation through the unified LLM client so it uses
+        # the task-specific model (MiniMax/Kimi for creative writing) with
+        # automatic fallback chain and budget controls.
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
         _carousel_raw = None
         _c_t_start = time.monotonic()
         _c_success = True
         _c_error_type = None
         _c_error_message = None
+        _c_provider = "unknown"
+        _c_model_name = "unknown"
         try:
-            async with _OLLAMA_SEMAPHORE:
-                _carousel_raw = await self._ollama.chat(
-                    prompt=prompt,
-                    system=_carousel_system,
-                    task_type="character_research",
-                    temperature=0.8,
-                    num_predict=4096,
-                    timeout=600,
-                    max_retries=1,
-                )
-        except (TimeoutError, ConnectionError, ValueError) as e:
+            _c_provider, _c_model_name, _ = get_llm_router().resolve_provider_model(
+                "character_carousel_generation"
+            )
+        except (ValueError, KeyError, AttributeError, RuntimeError):
+            _c_provider = "minimax"
+            _c_model_name = "MiniMax-M2.7"
+        try:
+            _carousel_raw = await get_unified_llm_client().chat(
+                prompt=prompt,
+                system=_carousel_system,
+                task_type="character_carousel_generation",
+                temperature=0.8,
+                max_tokens=4096,
+            )
+        except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, ConnectionError, ValueError) as e:
             _c_success = False
             _c_error_type = type(e).__name__
             _c_error_message = str(e)
@@ -1246,7 +1324,8 @@ class CharacterContentService:
                 task_type="character_carousel_generation",
                 source="character_content",
                 source_id=data.character_id,
-                provider="ollama",
+                provider=_c_provider,
+                model=_c_model_name,
                 system_prompt=_carousel_system,
                 user_prompt=prompt,
                 rendered_variables={
@@ -1264,6 +1343,7 @@ class CharacterContentService:
                 context={"character_id": data.character_id, "has_template": bool(template_prompt)},
             )
 
+        result = None
         try:
             if not _c_success or _carousel_raw is None:
                 raise ValueError(_c_error_message or "carousel_generation_failed")
@@ -1272,15 +1352,48 @@ class CharacterContentService:
             if not isinstance(result, dict) or "slides" not in result:
                 raise ValueError("Invalid carousel JSON structure")
         except (ValueError, json.JSONDecodeError, TimeoutError, ConnectionError) as e:
-            logger.debug("carousel_generation_fallback", name=name, error=str(e))
+            logger.info("carousel_generation_retry_simpler", name=name, error=str(e))
+            # Retry with a simpler prompt: fewer slides, explicit JSON instruction, Ollama fallback
+            simple_facts = "\n".join(f"- {f.get('text', '')}" for f in filtered_facts[:4])
+            simple_prompt = (
+                f"Create a 4-slide TikTok carousel about {name} ({universe}), angle: {angle}.\n\n"
+                f"Facts:\n{simple_facts}\n\n"
+                f"OUTPUT ONLY THIS JSON, nothing else:\n"
+                f'{{"title": "short title", "hook_text": "scroll-stopping first line about {name}", '
+                f'"slides": [{{"slide_num": 1, "text": "hook text"}}, {{"slide_num": 2, "text": "fact 1"}}, '
+                f'{{"slide_num": 3, "text": "fact 2"}}, {{"slide_num": 4, "text": "CTA"}}], '
+                f'"caption": "caption with emojis", "hashtags": ["tag1", "tag2"], "music_mood": "epic"}}'
+            )
+            try:
+                retry_raw = await self._ollama.chat(
+                    prompt=simple_prompt,
+                    system="You are a TikTok content creator. Return ONLY valid JSON.",
+                    task_type="character_carousel_generation",
+                    temperature=0.7,
+                    num_predict=2048,
+                    timeout=300,
+                    max_retries=0,
+                )
+                result = parse_json_response(retry_raw, f"carousel_retry_{name}")
+                result = sanitize_carousel(result, character_name=name)
+                if not isinstance(result, dict) or "slides" not in result:
+                    result = None
+                else:
+                    logger.info("carousel_generation_retry_success", name=name)
+            except (TimeoutError, ConnectionError, ValueError, aiohttp.ClientError, asyncio.TimeoutError):
+                result = None
+
+        if result is None:
+            logger.debug("carousel_generation_static_fallback", name=name)
+            fallback_hook = f"{name}: {filtered_facts[0].get('text', '')[:80]}" if filtered_facts else f"{name}: the detail everyone misses."
             result = {
                 "title": f"{name} - {angle.replace('_', ' ').title()}",
-                "hook_text": f"What they don't tell you about {name}...",
+                "hook_text": fallback_hook,
                 "slides": [
                     {"slide_num": i + 1, "text": f.get("text", ""), "image_query": f"{name} cinematic"}
                     for i, f in enumerate(filtered_facts[:slide_count])
                 ],
-                "caption": f"Which fact surprised you most? 👇 #{name.replace(' ', '')}",
+                "caption": f"Which fact surprised you most? #{name.replace(' ', '')}",
                 "hashtags": [name.lower().replace(" ", ""), universe, "characterfacts", "fyp"],
                 "music_mood": "epic",
             }
@@ -1381,22 +1494,25 @@ class CharacterContentService:
 
             carousel_id_for_review = row.id
 
-        # Auto-invoke two-stage AI review (Stage 1 Ollama + Stage 2 Minimax/Kimi
-        # for scores >= 7.0). Best-effort: review failures must not fail generation.
-        # This closes the gap where generate_carousel never triggered the review
-        # chain, leaving final_review_score at NULL for every carousel.
-        try:
-            return await self.ai_review_carousel(carousel_id_for_review)
-        except (ValueError, KeyError, RuntimeError, TimeoutError) as exc:
-            logger.warning(
-                "carousel_auto_review_failed",
-                carousel_id=carousel_id_for_review,
-                error=str(exc),
-                error_type=type(exc).__name__,
-            )
-            async with get_session() as session:
-                row = await session.get(CharacterCarouselModel, carousel_id_for_review)
-                return carousel_to_pydantic(row, char_name)
+        # Fire-and-forget AI review as background task so generation returns
+        # immediately. The review acquires the same LLM resources; decoupling
+        # prevents doubling the caller's wait time.
+        async def _background_review(cid: str):
+            try:
+                await self.ai_review_carousel(cid)
+            except (ValueError, KeyError, RuntimeError, TimeoutError, aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                logger.warning(
+                    "carousel_auto_review_failed",
+                    carousel_id=cid,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+
+        asyncio.create_task(_background_review(carousel_id_for_review))
+
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id_for_review)
+            return carousel_to_pydantic(row, char_name)
 
     def _match_image_to_query(
         self, query: str, images: list, used_ids: set
@@ -1679,7 +1795,7 @@ class CharacterContentService:
         _rv_error_type = None
         _rv_error_message = None
         try:
-            async with _OLLAMA_SEMAPHORE:
+            async with _get_ollama_semaphore():
                 _rv_raw = await self._ollama.chat(
                     prompt=prompt,
                     system=_rv_system,
@@ -1814,11 +1930,6 @@ class CharacterContentService:
             for i, s in enumerate(slides)
         )
 
-        stage1_scores = json.dumps({
-            k: stage1_review.get(k)
-            for k in ("hook_strength", "fact_quality", "engagement_potential", "caption_quality", "overall_score")
-        })
-
         _fr_variant, _fr_template, _fr_system = await _select_prompt_variant(
             "character_content_review_final",
             default_template=FINAL_REVIEW_PROMPT,
@@ -1832,7 +1943,6 @@ class CharacterContentService:
             "slides_text": slides_text,
             "caption": caption,
             "hashtags": ", ".join(hashtags),
-            "stage1_scores": stage1_scores,
         }
         try:
             prompt = _fr_template.format(**_fr_vars)
@@ -2093,23 +2203,43 @@ class CharacterContentService:
     # HUMAN REVIEW
     # ==================================================================
 
-    async def list_review_queue(self, limit: int = 50) -> List[CharacterCarousel]:
-        """Get carousels pending human review."""
+    async def list_review_queue(self, limit: int = 50, content_type: Optional[str] = None) -> List[CharacterCarousel]:
+        """Get carousels pending human review. Includes both character and media carousels."""
+        from app.db.models import MediaTitleModel
+
         async with get_session() as session:
-            result = await session.execute(
+            query = (
                 select(CharacterCarouselModel)
                 .where(CharacterCarouselModel.status.in_(["pending_review", "ai_reviewed"]))
                 .order_by(CharacterCarouselModel.created_at.desc())
                 .limit(limit)
             )
+            if content_type:
+                query = query.where(CharacterCarouselModel.content_type == content_type)
+
+            result = await session.execute(query)
             carousels = []
             for row in result.scalars().all():
-                char = await session.get(CharacterModel, row.character_id)
-                char_name = char.name if char else None
-                carousels.append(carousel_to_pydantic(row, char_name))
+                char_name = None
+                if row.character_id:
+                    char = await session.get(CharacterModel, row.character_id)
+                    char_name = char.name if char else None
+
+                carousel = carousel_to_pydantic(row, char_name)
+
+                # Populate media title name for media carousels
+                row_content_type = getattr(row, "content_type", None) or "character"
+                if row_content_type == "media" and getattr(row, "media_title_id", None):
+                    media = await session.get(MediaTitleModel, row.media_title_id)
+                    if media:
+                        carousel.media_title_name = media.title
+
+                carousels.append(carousel)
             return carousels
 
     async def approve_carousel(self, carousel_id: str, approval: CarouselApproval) -> CharacterCarousel:
+        from app.db.models import MediaTitleModel
+
         async with get_session() as session:
             row = await session.get(CharacterCarouselModel, carousel_id)
             if not row:
@@ -2123,9 +2253,18 @@ class CharacterContentService:
             if approval.human_notes:
                 row.human_notes = approval.human_notes
 
-            char = await session.get(CharacterModel, row.character_id)
-            if char:
-                char.posts_created = (char.posts_created or 0) + 1
+            char = None
+            if row.character_id:
+                char = await session.get(CharacterModel, row.character_id)
+                if char:
+                    char.posts_created = (char.posts_created or 0) + 1
+
+            # Increment media title carousel count if applicable
+            row_content_type = getattr(row, "content_type", None) or "character"
+            if row_content_type == "media" and getattr(row, "media_title_id", None):
+                media = await session.get(MediaTitleModel, row.media_title_id)
+                if media:
+                    media.carousels_created = (media.carousels_created or 0) + 1
 
             await session.commit()
             await session.refresh(row)
@@ -2152,8 +2291,10 @@ class CharacterContentService:
 
             await session.commit()
             await session.refresh(row)
-            char = await session.get(CharacterModel, row.character_id)
-            char_name = char.name if char else None
+            char_name = None
+            if row.character_id:
+                char = await session.get(CharacterModel, row.character_id)
+                char_name = char.name if char else None
 
             # Record outcome for brain learning
             await self._record_carousel_outcome(
@@ -4059,7 +4200,7 @@ Return JSON:
         gen_start = time.monotonic()
         raw_response = None
         try:
-            async with _OLLAMA_SEMAPHORE:
+            async with _get_ollama_semaphore():
                 raw_response = await self._ollama.chat(
                     prompt=prompt,
                     system=system,
@@ -4746,7 +4887,7 @@ Return JSON:
                 f"Return ONLY the caption text, no explanation.\n\n/no_think"
             )
             try:
-                async with _OLLAMA_SEMAPHORE:
+                async with _get_ollama_semaphore():
                     response = await self._ollama.chat(
                         prompt=prompt,
                         system="You are a viral TikTok caption writer. Return only the caption.",

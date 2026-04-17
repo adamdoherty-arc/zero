@@ -15,11 +15,12 @@ import structlog
 
 from app.db.models import (
     CharacterModel, CharacterCarouselModel, CharacterImageModel,
-    CharacterCarouselVersionModel,
+    CharacterCarouselVersionModel, MediaTitleModel, MediaImageModel,
 )
 from app.models.character_content import (
     Character, CharacterCarousel, CharacterImage, CarouselVersion,
 )
+from app.models.media_content import MediaTitle, MediaImage
 
 logger = structlog.get_logger(__name__)
 
@@ -159,6 +160,97 @@ def repair_truncated_json(json_str: str) -> Any:
 # Hook diversity
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Per-angle hook examples and tone instructions
+# ---------------------------------------------------------------------------
+
+ANGLE_HOOK_EXAMPLES: Dict[str, List[str]] = {
+    "hidden_truths": [
+        "Wolverine's skeleton wasn't always adamantium. The original was worse.",
+        "Thanos snapped because of a lie Gamora told him in 2014.",
+        "The real reason Dumbledore ignored Harry for a year.",
+    ],
+    "dark_facts": [
+        "Spider-Man once let someone die on purpose. Here's the panel.",
+        "Walter White's body count is 201. Most weren't on screen.",
+        "The Joker origin DC tried to erase from existence.",
+    ],
+    "origin_story": [
+        "Before the suit, Tony Stark built weapons that killed thousands.",
+        "Naruto failed the academy exam 3 times. The third time changed everything.",
+        "Batman's first year had nothing to do with justice.",
+    ],
+    "power_secrets": [
+        "Superman has one power nobody talks about. It's not heat vision.",
+        "Goku's weakest form is stronger than 99% of the multiverse.",
+        "Scarlet Witch rewrote reality with three words.",
+    ],
+    "character_evolution": [
+        "Vegeta went from genocidal prince to father of the year. Here's how.",
+        "Zuko's redemption arc took 61 episodes and one cup of tea.",
+        "Harley Quinn's evolution from sidekick to anti-hero in 5 key moments.",
+    ],
+    "fan_theories": [
+        "This theory about Jar Jar Binks was confirmed by George Lucas.",
+        "The Matrix was supposed to use human brains, not batteries.",
+        "Fans predicted Endgame's ending 4 years before it happened.",
+    ],
+    "behind_scenes": [
+        "Heath Ledger locked himself in a hotel room for 6 weeks. This is what he wrote.",
+        "The Mandalorian's set was an LED wall. Every background was real-time.",
+        "Robert Downey Jr. improvised the most iconic line in MCU history.",
+    ],
+    "controversial_takes": [
+        "Thanos was right. The math actually checks out.",
+        "Batman is the weakest member of the Justice League. Fight me.",
+        "Sakura is more useful than Naruto in 3 out of 5 arcs.",
+    ],
+    "vs_comparison": [
+        "Goku vs Superman: the answer depends on one rule.",
+        "Magneto vs Professor X: only one of them was ever right.",
+        "Vader vs Maul: the fight George Lucas almost greenlit.",
+    ],
+    "storyline_recap": [
+        "The Clone Saga was 2 years of chaos. Here's the 6-slide version.",
+        "Breaking Bad in 6 facts you forgot happened.",
+        "One Piece's Marineford arc changed everything. Here's why.",
+    ],
+    "power_ranking": [
+        "The 5 strongest Avengers are not who you think.",
+        "Ranking every Spider-Man villain by actual threat level.",
+        "One Piece's top 5 most dangerous Devil Fruits, ranked by destructive power.",
+    ],
+}
+
+ANGLE_TONE_INSTRUCTIONS: Dict[str, str] = {
+    "hidden_truths": "Tone: investigative, revelatory. Build each slide as an uncovered secret. Use phrases like 'here is what actually happened' and 'nobody mentions this part'.",
+    "dark_facts": "Tone: provocative, unsettling. Lean into the disturbing details. Use short, punchy sentences. Create tension with '...' pauses before reveals.",
+    "origin_story": "Tone: dramatic, cinematic. Tell the origin like a movie trailer. Build from humble beginnings to the defining moment. Use vivid imagery.",
+    "power_secrets": "Tone: authoritative, analytical. Present powers like a technical breakdown. Use specific numbers, comparisons, and scaling references.",
+    "character_evolution": "Tone: reflective, narrative. Frame the arc as a journey. Contrast who they were vs who they became. Highlight the turning point.",
+    "fan_theories": "Tone: conspiratorial, exciting. Present evidence like a case being built. Use 'what if' and 'here is the proof' framing.",
+    "behind_scenes": "Tone: insider knowledge, documentary-style. Share production details like exclusive behind-the-curtain access.",
+    "controversial_takes": "Tone: bold, debate-sparking. State the take as fact, then back it up. End with a challenge to the audience.",
+    "vs_comparison": "Tone: competitive, analytical. Frame as a genuine matchup with specific criteria. Build tension toward the verdict.",
+    "storyline_recap": "Tone: epic, sweeping. Condense the story into its most dramatic beats. Each slide should feel like a chapter break.",
+    "power_ranking": "Tone: definitive, data-driven. Present rankings with clear criteria. Each entry should have a specific justification.",
+}
+
+
+def get_hook_examples_for_angle(angle: str, count: int = 3) -> List[str]:
+    """Return hook examples matching the given angle."""
+    examples = ANGLE_HOOK_EXAMPLES.get(angle, [])
+    if not examples:
+        # Fallback: pick from hidden_truths (most versatile)
+        examples = ANGLE_HOOK_EXAMPLES.get("hidden_truths", [])
+    return examples[:count]
+
+
+def get_tone_instruction_for_angle(angle: str) -> Optional[str]:
+    """Return tone instruction for the given angle."""
+    return ANGLE_TONE_INSTRUCTIONS.get(angle)
+
+
 _BANNED_HOOK_PATTERNS = (
     r"^the hammer lie\b",
     r"^nobody talks about\b",
@@ -289,6 +381,9 @@ def carousel_to_pydantic(row: CharacterCarouselModel, character_name: Optional[s
         id=row.id,
         character_id=row.character_id,
         character_name=character_name,
+        content_type=getattr(row, "content_type", None) or "character",
+        media_title_id=getattr(row, "media_title_id", None),
+        media_title_name=None,  # populated by caller when content_type == "media"
         angle=row.angle,
         title=sanitize_text(row.title) if row.title else row.title,
         hook_text=raw_hook,
@@ -338,6 +433,71 @@ def image_to_pydantic(row: CharacterImageModel) -> CharacterImage:
     return CharacterImage(
         id=row.id,
         character_id=row.character_id,
+        url=row.url,
+        source=row.source or "manual",
+        query_used=row.query_used,
+        width=row.width,
+        height=row.height,
+        is_valid=row.is_valid if row.is_valid is not None else True,
+        is_primary=row.is_primary or False,
+        usage_count=row.usage_count or 0,
+        quality_score=getattr(row, "quality_score", None) or 0.0,
+        content_type=getattr(row, "content_type", None),
+        file_size=getattr(row, "file_size", None),
+        is_approved=getattr(row, "is_approved", None),
+        feedback_reason=getattr(row, "feedback_reason", None),
+        validated_at=getattr(row, "validated_at", None),
+        created_at=row.created_at,
+    )
+
+
+def media_title_to_pydantic(row: MediaTitleModel, character_count: int = 0) -> MediaTitle:
+    return MediaTitle(
+        id=row.id,
+        media_type=row.media_type,
+        title=row.title,
+        year=row.year,
+        end_year=row.end_year,
+        genre=row.genre or [],
+        franchise=row.franchise,
+        universe=row.universe or "other",
+        poster_url=row.poster_url,
+        backdrop_url=row.backdrop_url,
+        synopsis=row.synopsis,
+        tagline=row.tagline,
+        season_count=row.season_count,
+        episode_count=row.episode_count,
+        network=row.network,
+        show_status=row.show_status,
+        runtime_minutes=row.runtime_minutes,
+        budget_usd=row.budget_usd,
+        box_office_usd=row.box_office_usd,
+        mpaa_rating=row.mpaa_rating,
+        research_data=row.research_data or {},
+        research_status=row.research_status or "pending",
+        fact_bank=row.fact_bank or [],
+        research_sources=row.research_sources or [],
+        research_depth_score=row.research_depth_score or 0.0,
+        content_themes=row.content_themes or [],
+        tmdb_id=row.tmdb_id,
+        imdb_id=row.imdb_id,
+        carousels_created=row.carousels_created or 0,
+        total_views=row.total_views or 0,
+        total_likes=row.total_likes or 0,
+        avg_engagement=row.avg_engagement or 0.0,
+        status=row.status or "active",
+        tags=row.tags or [],
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        last_researched=row.last_researched,
+        character_count=character_count,
+    )
+
+
+def media_image_to_pydantic(row: MediaImageModel) -> MediaImage:
+    return MediaImage(
+        id=row.id,
+        media_title_id=row.media_title_id,
         url=row.url,
         source=row.source or "manual",
         query_used=row.query_used,

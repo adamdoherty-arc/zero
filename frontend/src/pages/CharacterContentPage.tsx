@@ -172,6 +172,8 @@ const MOOD_LABELS: Record<string, string> = {
   mysterious: 'Mysterious', dramatic: 'Dramatic', hype: 'Hype', chill: 'Chill',
 }
 
+import { MediaContentTab } from '@/pages/MediaContentPage'
+
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-600', ai_reviewed: 'bg-blue-600', pending_review: 'bg-yellow-600',
   approved: 'bg-green-600', rejected: 'bg-red-600', published: 'bg-purple-600',
@@ -186,6 +188,8 @@ export function CharacterContentPage() {
   return (
     <CharacterContentErrorBoundary>
       {tab === 'characters' && <CharactersTab />}
+      {tab === 'tv-shows' && <MediaContentTab mediaTypeFilter="tv_show" />}
+      {tab === 'movies' && <MediaContentTab mediaTypeFilter="movie" />}
       {tab === 'reference-videos' && <ReferenceVideosTab />}
       {tab === 'research' && <ResearchQueueTab />}
       {tab === 'studio' && <ContentStudioTab />}
@@ -750,13 +754,13 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
                 </span>
               )}
 
-              {/* ETA badge for queued + running jobs */}
+              {/* ETA badge for queued + running jobs with range estimate */}
               {(job.status === 'queued' || job.status === 'researching') && typeof job.eta_seconds === 'number' && job.eta_seconds > 0 && (
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 bg-gray-800 text-gray-300 border border-gray-600"
-                  title="Estimated time to finish based on historical averages"
+                  title="Estimated time range: optimistic to pessimistic based on historical data"
                 >
-                  ETA {formatSeconds(job.eta_seconds)}
+                  ETA {formatSeconds(Math.round(job.eta_seconds * 0.6))}-{formatSeconds(Math.round(job.eta_seconds * 1.5))}
                 </span>
               )}
 
