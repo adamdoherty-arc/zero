@@ -95,7 +95,7 @@ async def _record_prompt_run_safe(
     source,
     source_id,
     provider,
-    model,
+    model="unknown",
     system_prompt,
     user_prompt,
     rendered_variables,
