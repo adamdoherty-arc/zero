@@ -2,12 +2,14 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import {
   ArrowLeft, Search, Loader2, ChevronLeft, ChevronRight,
-  Sparkles, Zap, Star, Film, BookOpen, Users, Swords,
+  Sparkles, Zap, Star, Film, Tv, BookOpen, Users, Swords,
   AlertTriangle, Clock, CheckCircle, ThumbsDown, Trash2,
   Plus, RefreshCw, Eye, ThumbsUp, Image as ImageIcon,
+  Lightbulb, X,
 } from 'lucide-react'
 import { ReferenceVideosTab } from '@/components/character-content/ReferenceVideosTab'
 import { CarouselCard } from '@/components/character-content/CarouselCard'
+import { useCharacterMedia } from '@/hooks/useMediaContentApi'
 import {
   useCharacter,
   useCharacterImages,
@@ -25,10 +27,16 @@ import {
   useReimageSlide,
   useReimageWithFreshSources,
   useEnhanceCharacter,
+  useCharacterIdeas,
+  useGenerateIdeas,
+  useUpdateIdea,
+  useDeleteIdea,
+  useSeedIdeas,
   type CharacterImage as CharacterImageType,
   type CharacterCarousel,
   type CharacterFact,
   type ContentAngle,
+  type ContentIdea,
 } from '@/hooks/useCharacterContentApi'
 import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 
@@ -343,15 +351,216 @@ function CarouselsSection({
   )
 }
 
+const ANGLE_COLORS: Record<string, string> = {
+  hidden_truths: 'bg-amber-500/20 text-amber-400',
+  power_secrets: 'bg-purple-500/20 text-purple-400',
+  underrated_moments: 'bg-teal-500/20 text-teal-400',
+  origin_story: 'bg-blue-500/20 text-blue-400',
+  character_evolution: 'bg-indigo-500/20 text-indigo-400',
+  controversial_takes: 'bg-orange-500/20 text-orange-400',
+  vs_comparison: 'bg-red-500/20 text-red-400',
+  behind_scenes: 'bg-green-500/20 text-green-400',
+  fan_theories: 'bg-cyan-500/20 text-cyan-400',
+  dark_facts: 'bg-red-500/20 text-red-400',
+  actor_secrets: 'bg-pink-500/20 text-pink-400',
+  easter_eggs: 'bg-lime-500/20 text-lime-400',
+  crossover_connections: 'bg-violet-500/20 text-violet-400',
+  what_if: 'bg-sky-500/20 text-sky-400',
+  timeline_deep_dive: 'bg-emerald-500/20 text-emerald-400',
+  storyline_recap: 'bg-yellow-500/20 text-yellow-400',
+  power_ranking: 'bg-fuchsia-500/20 text-fuchsia-400',
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  fresh: 'bg-green-500/20 text-green-400',
+  in_progress: 'bg-yellow-500/20 text-yellow-400',
+  used: 'bg-blue-500/20 text-blue-400',
+  dismissed: 'bg-gray-500/20 text-gray-400',
+}
+
+const SOURCE_STYLES: Record<string, string> = {
+  seeded: 'bg-gray-500/20 text-gray-400',
+  ai: 'bg-purple-500/20 text-purple-400',
+  manual: 'bg-blue-500/20 text-blue-400',
+}
+
+function IdeasSection({
+  ideas,
+  isLoading,
+  onGenerate,
+  isGenerating,
+  onSeed,
+  isSeeding,
+  onCreateContent,
+  isCreatingContent,
+  onDismiss,
+  onDelete,
+}: {
+  ideas: ContentIdea[]
+  isLoading: boolean
+  onGenerate: () => void
+  isGenerating: boolean
+  onSeed: () => void
+  isSeeding: boolean
+  onCreateContent: (idea: ContentIdea) => void
+  isCreatingContent: boolean
+  onDismiss: (ideaId: string) => void
+  onDelete: (ideaId: string) => void
+}) {
+  const [statusFilter, setStatusFilter] = useState('')
+
+  const filtered = statusFilter
+    ? ideas.filter(i => i.status === statusFilter)
+    : ideas.filter(i => i.status !== 'dismissed')
+
+  const sorted = [...filtered].sort((a, b) => b.priority - a.priority)
+
+  const statusCounts = ideas.reduce<Record<string, number>>((acc, i) => {
+    acc[i.status] = (acc[i.status] || 0) + 1
+    return acc
+  }, {})
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <span className="ml-2 text-gray-400">Loading ideas...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-yellow-400" />
+          Content Ideas ({ideas.length})
+        </h3>
+        <div className="flex gap-2">
+          <button
+            onClick={onSeed}
+            disabled={isSeeding}
+            className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
+            aria-label="Re-seed ideas from existing content"
+          >
+            {isSeeding ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Re-seed
+          </button>
+          <button
+            onClick={onGenerate}
+            disabled={isGenerating}
+            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
+            aria-label="AI generate new content ideas"
+          >
+            {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            AI Generate Ideas
+          </button>
+        </div>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => setStatusFilter('')}
+          className={`px-3 py-1 rounded-full text-xs transition-colors ${!statusFilter ? 'bg-indigo-600 text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}
+        >
+          All ({ideas.filter(i => i.status !== 'dismissed').length})
+        </button>
+        {['fresh', 'in_progress', 'used', 'dismissed'].map(s => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1 rounded-full text-xs transition-colors ${statusFilter === s ? 'bg-indigo-600 text-white' : (STATUS_STYLES[s] || 'bg-white/5 text-gray-400') + ' hover:opacity-80'}`}
+          >
+            {s.replace('_', ' ')} ({statusCounts[s] || 0})
+          </button>
+        ))}
+      </div>
+
+      {/* Ideas grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {sorted.map(idea => (
+          <div
+            key={idea.id}
+            className={`bg-white/5 rounded-xl p-4 hover:bg-white/8 transition-colors border border-white/5 ${idea.status === 'dismissed' ? 'opacity-50' : ''}`}
+          >
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <h4 className="text-sm font-semibold text-gray-100 leading-tight">{idea.title}</h4>
+              <button
+                onClick={() => idea.status === 'dismissed' ? onDelete(idea.id) : onDismiss(idea.id)}
+                className="p-1 rounded hover:bg-white/10 text-gray-500 hover:text-gray-300 flex-shrink-0"
+                aria-label={idea.status === 'dismissed' ? 'Delete idea' : 'Dismiss idea'}
+                title={idea.status === 'dismissed' ? 'Delete permanently' : 'Dismiss'}
+              >
+                {idea.status === 'dismissed' ? <Trash2 className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mb-3 line-clamp-2">{idea.description}</p>
+
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${ANGLE_COLORS[idea.angle] || 'bg-white/10 text-gray-400'}`}>
+                {idea.angle.replace(/_/g, ' ')}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] ${STATUS_STYLES[idea.status] || 'bg-white/10 text-gray-400'}`}>
+                {idea.status.replace('_', ' ')}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] ${SOURCE_STYLES[idea.source] || 'bg-white/10 text-gray-400'}`}>
+                {idea.source}
+              </span>
+              {idea.priority > 0 && (
+                <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
+                  <Zap className="w-3 h-3" /> {idea.priority}
+                </span>
+              )}
+            </div>
+
+            {idea.carousel_ids.length > 0 && (
+              <p className="text-[10px] text-gray-500 mb-2">
+                {idea.carousel_ids.length} carousel{idea.carousel_ids.length !== 1 ? 's' : ''} created
+              </p>
+            )}
+
+            {idea.status !== 'dismissed' && idea.status !== 'used' && (
+              <button
+                onClick={() => onCreateContent(idea)}
+                disabled={isCreatingContent}
+                className="w-full px-3 py-1.5 bg-indigo-600/80 hover:bg-indigo-500 text-xs rounded-lg disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
+                aria-label={`Create carousel from: ${idea.title}`}
+              >
+                {isCreatingContent ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                Create Content
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {sorted.length === 0 && (
+        <div className="text-center py-12 text-gray-500">
+          <Lightbulb className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">
+            {statusFilter
+              ? `No ${statusFilter.replace('_', ' ')} ideas`
+              : 'No ideas yet. Click "AI Generate Ideas" to get started.'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CharacterDetailPage() {
   const { characterId } = useParams<{ characterId: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<'overview' | 'facts' | 'carousels' | 'media' | 'references'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'ideas' | 'facts' | 'carousels' | 'media' | 'references'>('overview')
   const [categoryFilter, setCategoryFilter] = useState('')
 
   const { data: character, isLoading, error } = useCharacter(characterId || '')
   const { data: images = [] } = useCharacterImages(characterId || '')
   const { data: carousels = [] } = useCharacterCarousels(characterId || '')
+
+  const { data: linkedMedia } = useCharacterMedia(characterId || '')
 
   const researchMut = useResearchCharacter()
   const generateMut = useGenerateCarousel()
@@ -366,6 +575,13 @@ export function CharacterDetailPage() {
   const rejectImgMut = useRejectImage()
   const deleteImgMut = useDeleteImage()
   const validateAllMut = useValidateAllImages()
+
+  // Ideas hooks
+  const { data: ideas = [], isLoading: ideasLoading } = useCharacterIdeas(characterId || '')
+  const generateIdeasMut = useGenerateIdeas()
+  const updateIdeaMut = useUpdateIdea()
+  const deleteIdeaMut = useDeleteIdea()
+  const seedIdeasMut = useSeedIdeas()
 
   if (isLoading) {
     return <LoadingSkeleton variant="page" message="Loading character..." />
@@ -395,8 +611,10 @@ export function CharacterDetailPage() {
   const createdBy = (rd.created_by as string) || ''
   const alternateVersions = (rd.alternate_versions as string[]) || []
 
+  const freshIdeasCount = ideas.filter(i => i.status === 'fresh').length
   const tabs = [
     { key: 'overview' as const, label: 'Overview', icon: BookOpen },
+    { key: 'ideas' as const, label: `Ideas${freshIdeasCount > 0 ? ` (${freshIdeasCount})` : ''}`, icon: Lightbulb },
     { key: 'facts' as const, label: `Facts (${character.fact_bank.length})`, icon: Star },
     { key: 'carousels' as const, label: `Carousels (${carousels.length})`, icon: Sparkles },
     { key: 'media' as const, label: `Media (${images.length})`, icon: ImageIcon },
@@ -640,6 +858,34 @@ export function CharacterDetailPage() {
             </div>
           )}
 
+          {/* Linked Media Titles */}
+          {linkedMedia && linkedMedia.length > 0 && (
+            <div className="bg-white/5 rounded-xl p-6 lg:col-span-2">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+                <Tv className="w-5 h-5 text-indigo-400" /> Appears In
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {linkedMedia.map((link) => (
+                  <a
+                    key={link.id}
+                    href={`/characters/media/${link.media_title_id}`}
+                    className="bg-white/5 rounded-lg p-3 flex items-center gap-3 hover:bg-white/10 transition-colors"
+                  >
+                    <Film className="w-5 h-5 text-cyan-400 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-200">{link.media_title_name}</p>
+                      <div className="flex gap-2 mt-1">
+                        {link.role_name && <span className="text-xs text-gray-500">as {link.role_name}</span>}
+                        <span className="text-xs px-1.5 rounded bg-indigo-500/20 text-indigo-400">{link.role_type}</span>
+                        {link.actor_name && <span className="text-xs text-gray-500">({link.actor_name})</span>}
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Notable Arcs */}
           {notableArcs.length > 0 && (
             <div className="bg-white/5 rounded-xl p-6">
@@ -718,6 +964,35 @@ export function CharacterDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'ideas' && (
+        <IdeasSection
+          ideas={ideas}
+          isLoading={ideasLoading}
+          onGenerate={() => generateIdeasMut.mutate({ characterId: character.id })}
+          isGenerating={generateIdeasMut.isPending}
+          onSeed={() => seedIdeasMut.mutate(character.id)}
+          isSeeding={seedIdeasMut.isPending}
+          onCreateContent={(idea) => {
+            generateMut.mutate(
+              { character_id: character.id, angle: idea.angle as ContentAngle },
+              {
+                onSuccess: (carousel) => {
+                  updateIdeaMut.mutate({
+                    characterId: character.id,
+                    ideaId: idea.id,
+                    status: 'used',
+                    carousel_ids: [...idea.carousel_ids, carousel.id],
+                  })
+                },
+              },
+            )
+          }}
+          isCreatingContent={generateMut.isPending}
+          onDismiss={(ideaId) => updateIdeaMut.mutate({ characterId: character.id, ideaId, status: 'dismissed' })}
+          onDelete={(ideaId) => deleteIdeaMut.mutate({ characterId: character.id, ideaId })}
+        />
       )}
 
       {activeTab === 'facts' && (

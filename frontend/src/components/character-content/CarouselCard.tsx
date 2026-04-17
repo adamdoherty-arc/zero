@@ -343,7 +343,7 @@ export function CarouselCard({
                   </div>
                 ))}
               </div>
-              {(carousel.final_review as Record<string, unknown>).verdict && (
+              {!!(carousel.final_review as Record<string, unknown>)?.verdict && (
                 <div className="mt-1">
                   <span className={`text-xs px-2 py-0.5 rounded ${
                     (carousel.final_review as Record<string, unknown>).verdict === 'approve' ? 'bg-green-900/50 text-green-400' :

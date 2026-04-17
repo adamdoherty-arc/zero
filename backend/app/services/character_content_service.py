@@ -39,6 +39,7 @@ from app.models.character_content import (
     CarouselApproval, CarouselRejection,
     BatchGenerateRequest, CharacterStats,
     ContentAngle,
+    ContentIdea, GenerateIdeasRequest, UpdateIdeaRequest,
     ResearchJob, ResearchJobStep, ResearchQueueStatus, ResearchJobStatus,
     CarouselVersion,
     EnhanceCarouselRequest, EnhanceCarouselVariant, EnhanceCarouselResponse,
@@ -5635,6 +5636,252 @@ Return JSON:
                     logger.warning("carousel_backfill_failed", carousel_id=row.id, error=str(exc)[:200])
 
         return result
+
+
+    # ================================================================
+    # CONTENT IDEAS (Phase 030)
+    # ================================================================
+
+    # Default theme descriptions per angle
+    IDEA_THEMES: Dict[str, Dict[str, str]] = {
+        "hidden_truths": {"theme": "Trivia & Hidden Details", "desc": "Little-known facts most fans have never heard about {name}"},
+        "power_secrets": {"theme": "Secret Powers", "desc": "Hidden abilities and power details about {name} the audience does not know"},
+        "underrated_moments": {"theme": "Underrated Moments", "desc": "Overlooked scenes and character moments for {name} that deserve more attention"},
+        "origin_story": {"theme": "Origin Story", "desc": "The untold story of how {name} began"},
+        "character_evolution": {"theme": "Character Evolution", "desc": "How {name} transformed across eras, actors, or storylines"},
+        "controversial_takes": {"theme": "Controversial Takes", "desc": "Hot takes about {name} that will spark debate"},
+        "vs_comparison": {"theme": "Vs Battle", "desc": "Head-to-head matchups and comparisons featuring {name}"},
+        "behind_scenes": {"theme": "Behind the Scenes", "desc": "Production secrets and BTS stories about {name}"},
+        "fan_theories": {"theme": "Fan Theories", "desc": "The wildest fan theories about {name} and which ones might be true"},
+        "dark_facts": {"theme": "Dark Facts", "desc": "Disturbing or unsettling revelations about {name}"},
+        "actor_secrets": {"theme": "Actor Secrets", "desc": "Behind-the-scenes actor stories, casting changes, and multiple portrayals of {name}"},
+        "easter_eggs": {"theme": "Easter Eggs", "desc": "Hidden references and details you missed about {name}"},
+        "crossover_connections": {"theme": "Crossover Connections", "desc": "Links between {name} and other characters or universes"},
+        "what_if": {"theme": "What If", "desc": "Alternate timelines and hypothetical scenarios for {name}"},
+        "timeline_deep_dive": {"theme": "Timeline Deep Dive", "desc": "Chronological journey through {name}'s key events"},
+        "storyline_recap": {"theme": "Storyline Recap", "desc": "Story condensation and arc summaries for {name}"},
+        "power_ranking": {"theme": "Power Ranking", "desc": "Comparative power level analysis featuring {name}"},
+    }
+
+    async def seed_character_ideas(self, character_id: str) -> List[ContentIdea]:
+        """Seed ideas from existing content angles. Maps existing carousels to ideas."""
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+
+            # Get existing carousels to link
+            carousel_rows = (await session.execute(
+                select(CharacterCarouselModel.id, CharacterCarouselModel.angle)
+                .where(CharacterCarouselModel.character_id == character_id)
+            )).all()
+
+            # Group carousels by angle
+            carousels_by_angle: Dict[str, List[str]] = {}
+            for cid, angle in carousel_rows:
+                carousels_by_angle.setdefault(angle, []).append(cid)
+
+            now = datetime.now(timezone.utc)
+            ideas: List[Dict[str, Any]] = []
+
+            for angle_val, meta in self.IDEA_THEMES.items():
+                carousel_ids = carousels_by_angle.get(angle_val, [])
+                status = "used" if carousel_ids else "fresh"
+                ideas.append({
+                    "id": f"idea-{generate_id()[:12]}",
+                    "title": meta["theme"],
+                    "description": meta["desc"].format(name=row.name),
+                    "angle": angle_val,
+                    "source": "seeded",
+                    "status": status,
+                    "carousel_ids": carousel_ids,
+                    "priority": len(carousel_ids),
+                    "created_at": now.isoformat(),
+                    "used_at": now.isoformat() if carousel_ids else None,
+                })
+
+            row.content_ideas = ideas
+            await session.commit()
+            await session.refresh(row)
+
+            return [ContentIdea(**idea) for idea in ideas]
+
+    async def get_character_ideas(self, character_id: str) -> List[ContentIdea]:
+        """Get ideas for a character, auto-seeding if empty."""
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+
+        ideas = row.content_ideas or []
+        if not ideas:
+            return await self.seed_character_ideas(character_id)
+
+        return [ContentIdea(**idea) for idea in ideas]
+
+    async def generate_character_ideas(
+        self, character_id: str, request: GenerateIdeasRequest
+    ) -> List[ContentIdea]:
+        """AI-generate specific content pitches for a character."""
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+
+        existing_ideas = row.content_ideas or []
+        existing_angles = [i.get("angle") for i in existing_ideas if i.get("status") != "dismissed"]
+
+        # Build context from research data
+        rd = row.research_data or {}
+        bio_snippet = (rd.get("bio") or row.description or "")[:300]
+        powers = rd.get("powers", [])[:5]
+        filmography = rd.get("filmography", [])[:5]
+        film_str = ", ".join(f.get("title", "") for f in filmography if isinstance(f, dict))
+
+        # Available angles (prefer unused)
+        available_angles = [a.value for a in ContentAngle]
+        if request.avoid_used:
+            unused = [a for a in available_angles if a not in existing_angles]
+            angle_hint = f"Focus on these underexplored angles: {', '.join(unused[:8])}" if unused else "All angles have been used. Generate creative new twists on existing angles."
+        else:
+            angle_hint = f"Choose from any angle: {', '.join(available_angles[:10])}"
+
+        prompt = f"""Generate {request.count} specific, viral-worthy content ideas for the character "{row.name}" ({row.universe}).
+
+Character context:
+- Bio: {bio_snippet}
+- Powers/abilities: {', '.join(powers) if powers else 'N/A'}
+- Appearances: {film_str if film_str else 'N/A'}
+
+{angle_hint}
+
+For each idea, provide:
+1. title: A specific, attention-grabbing content title (not generic)
+2. description: 1-2 sentence pitch explaining the content
+3. angle: Which ContentAngle this maps to (one of: {', '.join(available_angles)})
+4. priority: 1-10 engagement potential score
+
+Think about:
+- What would make fans stop scrolling
+- Contrarian or surprising takes
+- Multi-actor evolution (if applicable)
+- Cross-character connections
+- Dark or hidden details that feel revelatory
+- "I bet you did not know" moments
+
+Return a JSON array of objects with keys: title, description, angle, priority"""
+
+        system = "You are a viral content strategist specializing in character-based entertainment content. Generate specific, engaging content ideas. Return valid JSON only."
+
+        try:
+            raw = await get_unified_llm_client().chat(
+                prompt=prompt,
+                system=system,
+                task_type="character_idea_generation",
+                temperature=0.9,
+                max_tokens=2048,
+            )
+            parsed = parse_json_response(raw, context="idea_generation")
+        except Exception as e:
+            logger.warning("idea_generation_failed", character_id=character_id, error=str(e))
+            raise ValueError(f"Failed to generate ideas: {e}")
+
+        if not isinstance(parsed, list):
+            parsed = [parsed] if isinstance(parsed, dict) else []
+
+        now = datetime.now(timezone.utc)
+        new_ideas: List[Dict[str, Any]] = []
+        for item in parsed[:request.count]:
+            if not isinstance(item, dict) or not item.get("title"):
+                continue
+            angle = item.get("angle", "hidden_truths")
+            if angle not in [a.value for a in ContentAngle]:
+                angle = "hidden_truths"
+            new_ideas.append({
+                "id": f"idea-{generate_id()[:12]}",
+                "title": item["title"],
+                "description": item.get("description", ""),
+                "angle": angle,
+                "source": "ai",
+                "status": "fresh",
+                "carousel_ids": [],
+                "priority": int(item.get("priority", 5)),
+                "created_at": now.isoformat(),
+                "used_at": None,
+            })
+
+        if not new_ideas:
+            raise ValueError("AI returned no valid ideas")
+
+        # Append to existing ideas
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+            all_ideas = (row.content_ideas or []) + new_ideas
+            row.content_ideas = all_ideas
+            await session.commit()
+            await session.refresh(row)
+
+        return [ContentIdea(**idea) for idea in new_ideas]
+
+    async def update_character_idea(
+        self, character_id: str, idea_id: str, update: UpdateIdeaRequest
+    ) -> ContentIdea:
+        """Update an idea's status, linked carousels, or other fields."""
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+
+            ideas = list(row.content_ideas or [])
+            target = None
+            target_idx = -1
+            for i, idea in enumerate(ideas):
+                if idea.get("id") == idea_id:
+                    target = idea
+                    target_idx = i
+                    break
+
+            if target is None:
+                raise ValueError(f"Idea {idea_id} not found")
+
+            if update.status is not None:
+                target["status"] = update.status
+                if update.status == "used":
+                    target["used_at"] = datetime.now(timezone.utc).isoformat()
+            if update.carousel_ids is not None:
+                target["carousel_ids"] = update.carousel_ids
+            if update.title is not None:
+                target["title"] = update.title
+            if update.description is not None:
+                target["description"] = update.description
+            if update.priority is not None:
+                target["priority"] = update.priority
+
+            ideas[target_idx] = target
+            row.content_ideas = ideas
+            await session.commit()
+            await session.refresh(row)
+
+            return ContentIdea(**target)
+
+    async def delete_character_idea(self, character_id: str, idea_id: str) -> bool:
+        """Remove an idea from a character."""
+        async with get_session() as session:
+            row = await session.get(CharacterModel, character_id)
+            if not row:
+                raise ValueError(f"Character {character_id} not found")
+
+            ideas = [i for i in (row.content_ideas or []) if i.get("id") != idea_id]
+            if len(ideas) == len(row.content_ideas or []):
+                raise ValueError(f"Idea {idea_id} not found")
+
+            row.content_ideas = ideas
+            await session.commit()
+            return True
 
 
 @lru_cache()

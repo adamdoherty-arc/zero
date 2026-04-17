@@ -30,6 +30,7 @@ from app.models.character_content import (
     ApplyCouncilWinnerRequest,
     RestoreVersionResponse,
     BackfillBannedHooksRequest, BackfillBannedHooksResult,
+    ContentIdea, GenerateIdeasRequest, UpdateIdeaRequest,
 )
 from app.services.character_content_service import get_character_content_service
 from app.services.content_inspiration_service import get_content_inspiration_service
@@ -996,6 +997,64 @@ async def update_fact(character_id: str, fact_index: int, data: AddFactRequest):
         return await service.update_fact(character_id, fact_index, fact)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================
+# CONTENT IDEAS (Phase 030)
+# ============================================
+
+@router.get("/{character_id}/ideas", response_model=List[ContentIdea])
+async def get_character_ideas(character_id: str):
+    """Get content ideas for a character. Auto-seeds from angles if empty."""
+    service = get_character_content_service()
+    try:
+        return await service.get_character_ideas(character_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{character_id}/ideas/seed", response_model=List[ContentIdea])
+async def seed_character_ideas(character_id: str):
+    """Re-seed ideas from existing content angles and carousels."""
+    service = get_character_content_service()
+    try:
+        return await service.seed_character_ideas(character_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{character_id}/ideas/generate", response_model=List[ContentIdea])
+async def generate_character_ideas(
+    character_id: str,
+    data: GenerateIdeasRequest = Body(default_factory=GenerateIdeasRequest),
+):
+    """AI-generate specific content pitches for a character."""
+    service = get_character_content_service()
+    try:
+        return await service.generate_character_ideas(character_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/{character_id}/ideas/{idea_id}", response_model=ContentIdea)
+async def update_character_idea(character_id: str, idea_id: str, data: UpdateIdeaRequest):
+    """Update an idea's status, linked carousels, or fields."""
+    service = get_character_content_service()
+    try:
+        return await service.update_character_idea(character_id, idea_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/{character_id}/ideas/{idea_id}")
+async def delete_character_idea(character_id: str, idea_id: str):
+    """Remove an idea."""
+    service = get_character_content_service()
+    try:
+        await service.delete_character_idea(character_id, idea_id)
+        return {"status": "deleted", "id": idea_id}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # ============================================

@@ -1601,6 +1601,9 @@ class CharacterModel(Base):
     # Phase 029: Research queue persistence
     research_completed_steps: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
 
+    # Phase 030: Content Ideas
+    content_ideas: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
     # Phase 024: Character Autopilot
     autonomous_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     priority_tier: Mapped[str] = mapped_column(String(20), default="standard", index=True)

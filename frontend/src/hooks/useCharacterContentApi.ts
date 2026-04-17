@@ -105,6 +105,7 @@ export interface CharacterCarousel {
     generation_metadata: Record<string, unknown>
     hook_style?: string
     content_format?: string
+    final_review?: Record<string, unknown>
     final_review_score?: number
     final_review_model?: string
     auto_approved?: boolean
@@ -281,6 +282,19 @@ export interface ResearchQueueStatus {
     estimated_completion: string | null
 }
 
+export interface ContentIdea {
+    id: string
+    title: string
+    description: string
+    angle: string
+    source: string
+    status: string
+    carousel_ids: string[]
+    priority: number
+    created_at?: string
+    used_at?: string
+}
+
 // Query keys
 const characterKeys = {
     all: ['characters'] as const,
@@ -300,6 +314,7 @@ const characterKeys = {
     sourceAnalytics: ['characters', 'analytics', 'sources'] as const,
     templateAnalytics: ['characters', 'analytics', 'templates'] as const,
     researchQueue: ['characters', 'research-queue'] as const,
+    ideas: (id: string) => [...characterKeys.all, 'ideas', id] as const,
 }
 
 // Fetch helpers
@@ -1133,6 +1148,74 @@ export function useRetryResearch() {
             }),
         onSuccess: () => {
             qc.invalidateQueries({ queryKey: characterKeys.researchQueue })
+        },
+    })
+}
+
+// ============================================
+// CONTENT IDEAS
+// ============================================
+
+export function useCharacterIdeas(characterId: string) {
+    return useQuery({
+        queryKey: characterKeys.ideas(characterId),
+        queryFn: () => fetchApi<ContentIdea[]>(`/api/characters/${characterId}/ideas`),
+        enabled: !!characterId,
+    })
+}
+
+export function useSeedIdeas() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: (characterId: string) =>
+            fetchApi<ContentIdea[]>(`/api/characters/${characterId}/ideas/seed`, { method: 'POST' }),
+        onSuccess: (_data, characterId) => {
+            qc.invalidateQueries({ queryKey: characterKeys.ideas(characterId) })
+            qc.invalidateQueries({ queryKey: characterKeys.detail(characterId) })
+        },
+    })
+}
+
+export function useGenerateIdeas() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: ({ characterId, count, avoid_used }: { characterId: string; count?: number; avoid_used?: boolean }) =>
+            fetchApi<ContentIdea[]>(`/api/characters/${characterId}/ideas/generate`, {
+                method: 'POST',
+                body: JSON.stringify({ count: count || 5, avoid_used: avoid_used ?? true }),
+            }),
+        onSuccess: (_data, { characterId }) => {
+            qc.invalidateQueries({ queryKey: characterKeys.ideas(characterId) })
+            qc.invalidateQueries({ queryKey: characterKeys.detail(characterId) })
+        },
+    })
+}
+
+export function useUpdateIdea() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: ({ characterId, ideaId, ...data }: { characterId: string; ideaId: string; status?: string; carousel_ids?: string[]; title?: string; description?: string; priority?: number }) =>
+            fetchApi<ContentIdea>(`/api/characters/${characterId}/ideas/${ideaId}`, {
+                method: 'PATCH',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: (_data, { characterId }) => {
+            qc.invalidateQueries({ queryKey: characterKeys.ideas(characterId) })
+            qc.invalidateQueries({ queryKey: characterKeys.detail(characterId) })
+        },
+    })
+}
+
+export function useDeleteIdea() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: ({ characterId, ideaId }: { characterId: string; ideaId: string }) =>
+            fetchApi<{ status: string; id: string }>(`/api/characters/${characterId}/ideas/${ideaId}`, {
+                method: 'DELETE',
+            }),
+        onSuccess: (_data, { characterId }) => {
+            qc.invalidateQueries({ queryKey: characterKeys.ideas(characterId) })
+            qc.invalidateQueries({ queryKey: characterKeys.detail(characterId) })
         },
     })
 }

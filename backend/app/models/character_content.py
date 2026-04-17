@@ -136,6 +136,33 @@ class CharacterUpdate(BaseModel):
     status: Optional[CharacterStatus] = None
 
 
+class ContentIdea(BaseModel):
+    """A specific content pitch within a thematic angle."""
+    id: str
+    title: str
+    description: str
+    angle: str
+    source: str = "seeded"       # seeded | ai | manual
+    status: str = "fresh"        # fresh | in_progress | used | dismissed
+    carousel_ids: List[str] = Field(default_factory=list)
+    priority: int = 0
+    created_at: Optional[datetime] = None
+    used_at: Optional[datetime] = None
+
+
+class GenerateIdeasRequest(BaseModel):
+    count: int = Field(5, ge=1, le=20)
+    avoid_used: bool = True
+
+
+class UpdateIdeaRequest(BaseModel):
+    status: Optional[str] = None
+    carousel_ids: Optional[List[str]] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[int] = None
+
+
 class Character(BaseModel):
     id: str
     name: str
@@ -163,6 +190,7 @@ class Character(BaseModel):
     research_depth_score: float = 0.0
     content_themes: List[str] = Field(default_factory=list)
     blocked_image_urls: List[str] = Field(default_factory=list)
+    content_ideas: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -209,8 +237,12 @@ class AIReviewResult(BaseModel):
 
 class CharacterCarousel(BaseModel):
     id: str
-    character_id: str
+    character_id: Optional[str] = None
     character_name: Optional[str] = None
+    # Phase 028: media content support
+    content_type: str = "character"  # character | media
+    media_title_id: Optional[str] = None
+    media_title_name: Optional[str] = None
     angle: str
     title: Optional[str] = None
     hook_text: Optional[str] = None

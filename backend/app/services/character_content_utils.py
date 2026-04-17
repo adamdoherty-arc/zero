@@ -362,6 +362,7 @@ def character_to_pydantic(row: CharacterModel, carousels_created: int = 0) -> Ch
         research_depth_score=row.research_depth_score or 0.0,
         content_themes=row.content_themes or [],
         blocked_image_urls=row.blocked_image_urls or [],
+        content_ideas=row.content_ideas or [],
     )
 
 
