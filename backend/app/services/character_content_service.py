@@ -227,6 +227,10 @@ Return JSON array. Each fact:
 
 Sort by surprise_score descending. Write facts in TikTok carousel style: direct, punchy, with "..." pauses and bold claims.
 
+DEDUPLICATION (strict):
+- Each fact must be distinct. Do not include two facts that convey the same information with different wording.
+- If two sources say the same thing, merge into one fact and cite the stronger source.
+
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
 - NEVER use markdown asterisks (*text* or **text**). Write plain text only.
