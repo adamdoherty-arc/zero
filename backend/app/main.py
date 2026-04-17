@@ -33,6 +33,7 @@ from app.routers import (
     character_content, brain,
     character_reference_videos,
     media_content,
+    trend_intelligence,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -97,10 +98,18 @@ async def lifespan(app: FastAPI):
             # Sampling has a starting point and every instrumented LLM call
             # can be tagged with a variant_id.
             try:
-                from app.services.character_prompt_seeds import seed_character_prompt_variants
+                from app.services.character_prompt_seeds import (
+                    seed_character_prompt_variants,
+                    seed_carousel_v2_rhythm_variant,
+                )
                 seed_summary = await seed_character_prompt_variants()
                 if seed_summary.get("inserted"):
                     logger.info("Seeded character prompt variants", **seed_summary)
+                # Idempotently install the rhythm-spec carousel prompt and
+                # retire any older arms for the same task type.
+                v2_summary = await seed_carousel_v2_rhythm_variant()
+                if v2_summary.get("action") == "registered":
+                    logger.info("Registered carousel_v2_rhythm variant", **v2_summary)
             except Exception as e:
                 logger.warning("Failed to seed character prompt variants", error=str(e))
         except Exception as e:
@@ -422,6 +431,7 @@ app.include_router(deep_research.router)  # prefix in router
 app.include_router(experiments.router)  # prefix in router
 app.include_router(council.router)  # prefix in router
 app.include_router(brain.router)  # prefix in router
+app.include_router(trend_intelligence.router)  # prefix in router
 
 
 @app.get("/")

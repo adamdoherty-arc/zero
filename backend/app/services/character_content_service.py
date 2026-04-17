@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.infrastructure.database import get_session
 from app.infrastructure.config import get_settings
-from app.infrastructure.ollama_client import OllamaClient
+from app.infrastructure.ollama_client import get_ollama_client
 from app.infrastructure.llm_router import get_llm_router
 from app.db.models import (
     CharacterModel, CharacterCarouselModel, CharacterImageModel,
@@ -265,7 +265,7 @@ FORMATTING RULES (strict):
 CAROUSEL_SYSTEM_PROMPT = """You are a viral TikTok content creator specializing in character development carousels.
 Your posts get 100K+ likes using this formula:
 - Slide 1: A scroll-stopping hook that is UNIQUE to THIS character and THIS angle. It must reference a specific fact, name, object, or secret from their story. Never reuse the same hook template across different characters.
-- Slides 2-6: 1-3 short punchy lines per slide. Each slide covers ONE idea. No numbered lists.
+- Slides 2-N: A 3-line rhythm — setup, twist, payoff. NEVER one long sentence. Always broken across lines with hard newlines.
 - Final slide: Engagement CTA
 - Caption: Emotional, debate-sparking, with emojis
 - Hashtags: 15 tags covering character, franchise, topic, community, and reach
@@ -276,7 +276,9 @@ HOOK DIVERSITY RULES (strict):
 - Pick a hook style that matches the facts: a pointed question, a stat drop, a named secret, a contradiction, a "wait until you see slide X" tease, or a rewritten origin line. Vary the style between carousels.
 - The first line must contain at least one proper noun or concrete reference drawn from the character facts (a name, a weapon, a planet, a relationship, a line of dialogue, etc.).
 
-CRITICAL: Never use em dashes. Use **word** sparingly for emphasis (max 2 per slide). No other markup.
+EMPHASIS IS REQUIRED, NOT OPTIONAL:
+- Every body slide MUST wrap exactly ONE key word or short phrase in **double asterisks**. Pick a proper noun, a number, or the payoff word.
+- Single *italic* is banned. Em dashes are banned. No other markup.
 
 Return ONLY valid JSON."""
 
@@ -297,7 +299,7 @@ Generate a {slide_count}-slide carousel. Return JSON:
     }},
     {{
       "slide_num": 2,
-      "text": "A surprising **fact** in punchy language.\nA second dramatic detail that hooks the viewer.",
+      "text": "He ruled Asgard for **7 years**.\nDisguised as Odin.\nNobody noticed. \U0001F441\uFE0F",
       "image_query": "search query for relevant character image"
     }}
   ],
@@ -312,12 +314,40 @@ Hook construction checklist (every item must be true):
 - The hook passes the swap test: if you replaced {name} with another character, the hook would stop making sense.
 - The hook is 4-14 words on slide 1. Short and sharp beats long and vague.
 
-Style rules:
-- Text overlays: Short punchy lines, 1-3 lines per slide. NO numbered lists within a slide.
-- Use **word** to highlight 1-2 key words per slide (sparingly, max 2 per slide)
-- Include dramatic pauses with "..."
-- End text with impact words or emojis (mind-blown, lightning, skull, etc.)
-- Caption should provoke comments ("Comment which fact surprised you most")
+SLIDE RHYTHM (mandatory for every body slide, slides 2 through N):
+Each slide is a 3-line rhythm with hard newlines:
+  Line 1 (setup): 5-8 words. Set the scene or pose the question.
+  Line 2 (twist):  3-6 words. The reversal, the detail, the unexpected pivot.
+  Line 3 (payoff): 2-5 words. A stat, a name, an emotional punch. Often ends with one emoji.
+
+Rhythm examples (match the SHAPE, do NOT copy the words):
+
+BEFORE (boring, do NOT do this):
+"He ruled Asgard for years disguised as Odin and nobody noticed the deception."
+
+AFTER (this is the target):
+"He ruled Asgard for **7 years**.
+Disguised as Odin.
+Nobody noticed. \U0001F441\uFE0F"
+
+BEFORE: "The Tesseract was something Loki had a strong connection to because it controlled him."
+AFTER:
+"The **Tesseract** didn't just give Loki power.
+It controlled him.
+That changes everything."
+
+BEFORE: "Cammy's leotard is actually a Shadaloo control suit with psycho conductive threads woven into it."
+AFTER:
+"Her leotard is a **Shadaloo control suit**.
+Psycho threads still woven in.
+She never cut the wires. \u26a1"
+
+Style rules (apply to every body slide):
+- ALWAYS three short lines, separated by `\n`. Never one long sentence. Never two lines.
+- ALWAYS exactly one **bold** token per slide. Pick a proper noun, a number, or the payoff word.
+- The final line is the payoff: 2-5 words, often ending with one emoji.
+- Do not number slides inside the text. The slide number badge is added by the renderer.
+- Caption should provoke comments ("Comment which fact surprised you most").
 
 Hashtag strategy (include exactly 15 hashtags in this priority order):
 - 3 character-specific (e.g., #batmanfacts, #darthvaderlore, #lokitheory)
@@ -328,9 +358,9 @@ Hashtag strategy (include exactly 15 hashtags in this priority order):
 
 FORMATTING RULES (strict):
 - NEVER use em dashes. Use periods, commas, or colons instead.
-- Use **word** for emphasis on 1-2 key words per slide. Do NOT overuse. Single *italic* is banned.
+- ALWAYS use **word** for emphasis on exactly ONE key word per body slide. Single *italic* is banned.
 - NEVER use parenthetical asides with dashes. Use separate sentences.
-- Each slide should have 1-3 SHORT lines separated by newlines. Never cram multiple facts into one slide."""
+- Body slides MUST follow the 3-line rhythm spec above. Setup, twist, payoff. Hard newlines between."""
 
 AI_REVIEW_SYSTEM_PROMPT = """You are a TikTok content strategist reviewing carousel posts for viral potential.
 Score each dimension 1-10 using this calibration rubric:
@@ -361,20 +391,52 @@ Hashtags: {hashtags}
 
 Score independently. Do not assume this content is good because it reached this stage.
 
+Rhythm check (apply to every body slide, slide_num >= 2):
+- Each body slide must be 2-3 short lines separated by hard newlines. Flag run-on sentences.
+- Each body slide must contain exactly one **bold** emphasis token. Flag zero or three+.
+- Each body slide must end on a 2-5 word payoff line (a stat, a name, or an emotional punch). Flag flat endings.
+
 Return ONLY this JSON shape:
 {{
   "hook_tension": score (1-10, does the first slide force the swipe?),
   "fact_sequencing": score (1-10, do facts escalate and pay off?),
   "emotional_arc": score (1-10, does the carousel deliver a feeling?),
   "caption_cta": score (1-10, does the caption reward engagement?),
-  "overall_score": score (1-10, composite),
+  "rhythm_score": score (1-10, do body slides follow the 3-line rhythm with one **bold** and a payoff line?),
+  "overall_score": score (1-10, composite — penalize hard if rhythm_score < 6),
   "verdict": "approve" | "revise" | "kill",
   "polish_suggestions": ["1-3 concrete fixes"],
-  "final_hook": "optional: your tightened hook (only if it clearly beats current)",
-  "final_caption": "optional: your sharper caption (only if it clearly beats current)"
+  "final_hook": "optional: your tightened hook (only if it clearly beats current). May use **word** for ONE emphasis token.",
+  "final_caption": "optional: your sharper caption (only if it clearly beats current). Plain text only.",
+  "final_slides": "optional: array of {{slide_num, text}} for any body slides that need rhythm rewrites. Each text MUST follow the 3-line setup/twist/payoff structure with hard newlines and exactly one **bold** token. Only include slides that materially improve."
 }}
 
-CRITICAL: If you provide final_hook or final_caption, plain text only. No em dashes, no asterisks, no markdown."""
+CRITICAL:
+- final_caption is plain text only. No asterisks, no em dashes.
+- final_hook and final_slides MAY contain **bold** for emphasis (exactly one per slide).
+- Never include em dashes in any field."""
+
+
+# Reusable rhythm style block. Appended to template-based generation prompts so
+# all carousels (including DB-stored story templates) inherit the rhythm rules
+# without forcing every template to be edited individually.
+RHYTHM_STYLE_SUFFIX = """
+
+SLIDE RHYTHM (mandatory for every body slide, slides 2 through N):
+Each slide is a 3-line rhythm with hard newlines:
+  Line 1 (setup): 5-8 words. Set the scene or pose the question.
+  Line 2 (twist): 3-6 words. The reversal, the detail, the unexpected pivot.
+  Line 3 (payoff): 2-5 words. A stat, a name, an emotional punch. Often ends with one emoji.
+
+Style rules:
+- ALWAYS three short lines, separated by `\\n`. Never one long sentence.
+- ALWAYS exactly one **bold** token per body slide. Pick a proper noun, a number, or the payoff word.
+- Single *italic* is banned. Em dashes are banned.
+- Do not number slides inside the text. The slide number badge is added by the renderer.
+
+Rhythm example (match the SHAPE, not the words):
+"He ruled Asgard for **7 years**.\\nDisguised as Odin.\\nNobody noticed." """
+
 
 AI_REVIEW_PROMPT = """Review this TikTok character carousel for viral potential:
 
@@ -401,7 +463,9 @@ Score each dimension 1-10:
   "rewrite_caption": "optional: a better caption if score < 7"
 }}
 
-CRITICAL: If you provide rewrite_hook or rewrite_caption, NEVER use em dashes, markdown asterisks (*text* or **text**), or formatting markup. Write plain text only."""
+CRITICAL:
+- rewrite_caption is plain text only. No asterisks, no em dashes.
+- rewrite_hook MAY contain **word** for ONE emphasis token. No em dashes."""
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +476,7 @@ class CharacterContentService:
     """Manages character content creation pipeline."""
 
     def __init__(self):
-        self._ollama = OllamaClient()  # All generation uses Ollama (free)
+        self._ollama = get_ollama_client()  # Routes through UnifiedLLMClient (multi-provider)
 
     # ==================================================================
     # CHARACTER CRUD
@@ -1260,6 +1324,9 @@ class CharacterContentService:
                 behind_scenes="\n".join(f.get("text", "") for f in fact_bank if f.get("category") == "behind_scenes")[:1000],
                 slide_count=slide_count,
             )
+            # Append rhythm spec so DB-stored templates inherit the new style
+            # without forcing every template row to be edited individually.
+            prompt = prompt + RHYTHM_STYLE_SUFFIX
         else:
             _carousel_variant, _carousel_template, _carousel_system = await _select_prompt_variant(
                 "character_carousel_generation",
@@ -1544,6 +1611,44 @@ class CharacterContentService:
                 )
 
         asyncio.create_task(_background_review(carousel_id_for_review))
+
+        # Content swarm: fire-and-forget post-generation critique (Phase 2 Content Brain v2).
+        # Opt-in per request OR via settings.character_swarm_enabled.
+        swarm_enabled = bool(
+            getattr(data, "use_swarm", False)
+            or getattr(get_settings(), "character_swarm_enabled", False)
+        )
+        if swarm_enabled:
+            async def _swarm_critique(cid: str, hook_text: str, slides_snapshot, angle_value: str):
+                try:
+                    from app.services.content_swarm_service import get_content_swarm_service
+                    svc = get_content_swarm_service()
+                    slides_preview = []
+                    for s in (slides_snapshot or [])[:6]:
+                        if isinstance(s, dict):
+                            slides_preview.append(s.get("text") or s.get("caption") or "")
+                        else:
+                            slides_preview.append(str(s))
+                    await svc.critique_generated_carousel(
+                        carousel_id=cid,
+                        content_type="character",
+                        hook=hook_text or "",
+                        slides_preview=slides_preview,
+                        angle=angle_value,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "carousel_swarm_critique_failed",
+                        carousel_id=cid,
+                        error=str(exc)[:200],
+                    )
+
+            asyncio.create_task(_swarm_critique(
+                carousel_id_for_review,
+                result.get("hook") or "",
+                result.get("slides") or [],
+                angle.value if hasattr(angle, "value") else str(angle),
+            ))
 
         async with get_session() as session:
             row = await session.get(CharacterCarouselModel, carousel_id_for_review)
@@ -1903,7 +2008,7 @@ class CharacterContentService:
                 async with get_session() as session:
                     row = await session.get(CharacterCarouselModel, carousel_id)
                     if rewrite_hook:
-                        row.hook_text = sanitize_text(rewrite_hook)
+                        row.hook_text = sanitize_text(rewrite_hook, preserve_emphasis=True)
                     if rewrite_caption:
                         row.caption = sanitize_text(rewrite_caption)
                     row.ai_review = review
@@ -2077,8 +2182,21 @@ class CharacterContentService:
                 escalated = True
                 rounds.append({"model": model_used, "provider": "minimax", "parsed": esc_parsed, "score": esc_score})
 
-        final_hook = sanitize_text(parsed.get("final_hook")) if parsed.get("final_hook") else None
+        final_hook = sanitize_text(parsed.get("final_hook"), preserve_emphasis=True) if parsed.get("final_hook") else None
         final_caption = sanitize_text(parsed.get("final_caption")) if parsed.get("final_caption") else None
+        final_slides_raw = parsed.get("final_slides") if isinstance(parsed.get("final_slides"), list) else None
+        final_slides = None
+        if final_slides_raw:
+            final_slides = []
+            for s in final_slides_raw:
+                if not isinstance(s, dict):
+                    continue
+                txt = s.get("text")
+                if txt:
+                    final_slides.append({
+                        "slide_num": s.get("slide_num"),
+                        "text": sanitize_text(txt, preserve_emphasis=True),
+                    })
 
         async with get_session() as session:
             row = await session.get(CharacterCarouselModel, carousel_id)
@@ -2096,6 +2214,26 @@ class CharacterContentService:
                 row.hook_text = final_hook
             if final_caption and not row.caption:
                 row.caption = final_caption
+            # Apply rewritten slides only when score is low enough to warrant it
+            # and reviewer actually returned final_slides. Match by slide_num.
+            if final_slides and final_score < 7:
+                slides_by_num = {}
+                for s in final_slides:
+                    sn = s.get("slide_num")
+                    if isinstance(sn, int):
+                        slides_by_num[sn] = s["text"]
+                if slides_by_num and row.slides:
+                    new_slides = []
+                    changed = False
+                    for orig in row.slides:
+                        sn = orig.get("slide_num")
+                        if sn in slides_by_num:
+                            new_slides.append({**orig, "text": slides_by_num[sn]})
+                            changed = True
+                        else:
+                            new_slides.append(orig)
+                    if changed:
+                        row.slides = new_slides
             await session.commit()
 
         logger.info(
@@ -2527,22 +2665,42 @@ class CharacterContentService:
     # FORMATTING MIGRATION
     # ==================================================================
 
-    async def fix_carousel_formatting(self) -> Dict[str, Any]:
-        """One-time migration: fix formatting on all existing carousels.
+    async def fix_carousel_formatting(
+        self,
+        *,
+        restyle: bool = False,
+        limit: int = 200,
+        character_id: Optional[str] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """Migration for existing carousels.
 
-        - Cleans inline numbered lists (e.g. "1. fact 2. fact") into newline-separated lines
-        - Adds accent_color to text_overlay_specs based on character universe
+        - Always: cleans inline numbered lists, stamps accent_color on
+          text_overlay_specs, expands hashtags to 15.
+        - When restyle=True: also rewrites each body slide into the v2 rhythm
+          (setup / twist / payoff with one **bold** token) via an LLM call.
+          Records `generation_metadata.restyled_at` so re-runs skip already
+          restyled carousels unless force=True.
         """
         import re
         from sqlalchemy.orm.attributes import flag_modified
 
         updated = 0
         details = []
+        restyled = 0
+        restyle_skipped_already = 0
+        restyle_failed = 0
+        restyle_sem = asyncio.Semaphore(4) if restyle else None
 
         async with get_session() as session:
-            result = await session.execute(
-                select(CharacterCarouselModel).order_by(CharacterCarouselModel.created_at.desc()).limit(200)
+            query = (
+                select(CharacterCarouselModel)
+                .order_by(CharacterCarouselModel.created_at.desc())
+                .limit(limit)
             )
+            if character_id:
+                query = query.where(CharacterCarouselModel.character_id == character_id)
+            result = await session.execute(query)
             carousels = result.scalars().all()
 
             for row in carousels:
@@ -2593,7 +2751,7 @@ class CharacterContentService:
                 # Expand hashtags for discoverability
                 existing_tags = list(row.hashtags or [])
                 if len(existing_tags) < 15:
-                    char_name_tag = (char.name or "").replace(" ", "").replace("'", "")
+                    char_name_tag = ((char.name if char else "") or "").replace(" ", "").replace("'", "")
                     # Community/discovery tags to add if missing
                     discovery_tags = [
                         "fyp", "viral", "didyouknow", "mindblown",
@@ -2623,6 +2781,53 @@ class CharacterContentService:
                         flag_modified(row, "hashtags")
                         changes.append(f"expanded_hashtags={len(existing_tags)}->{len(new_tags)}")
 
+                # Optional LLM restyle pass: rewrite body slides into v2 rhythm.
+                if restyle and row.slides and char:
+                    meta = dict(row.generation_metadata or {})
+                    if meta.get("restyled_at") and not force:
+                        restyle_skipped_already += 1
+                    else:
+                        body_slides = [
+                            {"slide_num": s.get("slide_num"), "text": s.get("text") or ""}
+                            for s in (row.slides or [])
+                            if s.get("text") and (s.get("slide_num") or 0) >= 2
+                        ]
+                        if body_slides:
+                            try:
+                                async with restyle_sem:
+                                    restyled_text_by_num = await self._restyle_slides_llm(
+                                        char.name, char.universe, body_slides
+                                    )
+                            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError) as e:
+                                logger.warning(
+                                    "carousel_restyle_failed",
+                                    carousel_id=row.id,
+                                    error=str(e)[:200],
+                                )
+                                restyle_failed += 1
+                                restyled_text_by_num = {}
+                            if restyled_text_by_num:
+                                new_body_slides = []
+                                slide_changed = False
+                                for orig in (row.slides or []):
+                                    sn = orig.get("slide_num")
+                                    if sn in restyled_text_by_num:
+                                        new_text = restyled_text_by_num[sn]
+                                        if new_text and new_text != orig.get("text"):
+                                            new_body_slides.append({**orig, "text": new_text})
+                                            slide_changed = True
+                                            continue
+                                    new_body_slides.append(orig)
+                                if slide_changed:
+                                    row.slides = new_body_slides
+                                    flag_modified(row, "slides")
+                                    meta["restyled_at"] = datetime.now(timezone.utc).isoformat()
+                                    meta["restyle_version"] = "v2_rhythm"
+                                    row.generation_metadata = meta
+                                    flag_modified(row, "generation_metadata")
+                                    changes.append("restyled_slides_v2_rhythm")
+                                    restyled += 1
+
                 if changes:
                     await self._snapshot_carousel(
                         session, row,
@@ -2642,8 +2847,73 @@ class CharacterContentService:
         return {
             "total_carousels": len(carousels),
             "updated": updated,
+            "restyled": restyled,
+            "restyle_skipped_already": restyle_skipped_already,
+            "restyle_failed": restyle_failed,
             "details": details,
         }
+
+    async def _restyle_slides_llm(
+        self,
+        character_name: str,
+        universe: Optional[str],
+        body_slides: List[Dict[str, Any]],
+    ) -> Dict[int, str]:
+        """Reformat existing slide text into the v2 rhythm.
+
+        Returns a dict mapping slide_num -> new text. The LLM is instructed
+        not to invent or remove facts, only restructure into the 3-line shape
+        with one **bold** token per slide.
+        """
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+        slides_json = json.dumps(body_slides, ensure_ascii=False)
+        system = (
+            "You reformat existing TikTok carousel slides into a 3-line rhythm. "
+            "You MUST preserve every fact in the input. Do NOT add new facts, "
+            "characters, numbers, or claims. Do NOT remove facts. Only restructure "
+            "and tighten language. Return ONLY valid JSON."
+        )
+        user = f"""Character: {character_name} ({universe or "unknown"})
+
+Reformat each input slide into this rhythm (hard newlines between lines):
+  Line 1 (setup): 5-8 words.
+  Line 2 (twist): 3-6 words.
+  Line 3 (payoff): 2-5 words. Often ends with one emoji.
+
+Wrap exactly ONE key word per slide in **double asterisks**. Pick a proper noun,
+a number, or the payoff word. Single *italic* and em dashes are banned.
+
+Preserve every proper noun exactly as spelled. Do not introduce new claims.
+
+Input slides:
+{slides_json}
+
+Return JSON of this exact shape:
+{{
+  "slides": [
+    {{"slide_num": <int>, "text": "<line1>\\n<line2>\\n<line3>"}}
+  ]
+}}"""
+        raw = await get_unified_llm_client().chat(
+            prompt=user,
+            system=system,
+            task_type="character_carousel_generation",
+            temperature=0.3,
+            max_tokens=2048,
+        )
+        parsed = parse_json_response(raw, f"restyle_{character_name}")
+        if not isinstance(parsed, dict):
+            return {}
+        out: Dict[int, str] = {}
+        for s in parsed.get("slides") or []:
+            if not isinstance(s, dict):
+                continue
+            sn = s.get("slide_num")
+            txt = s.get("text")
+            if isinstance(sn, int) and isinstance(txt, str) and txt.strip():
+                out[sn] = sanitize_text(txt, preserve_emphasis=True)
+        return out
 
     # ==================================================================
     # ON-DEMAND IMAGE SOURCING
@@ -3028,8 +3298,11 @@ class CharacterContentService:
             # Also pull DB jobs not in the live queue (previously completed/failed)
             db_jobs = await self._get_db_jobs(exclude_char_ids=live_char_ids)
 
-            # Live jobs first (active/queued), then DB jobs (completed/failed/pending)
-            jobs_list = live_jobs + db_jobs
+            # Pull media jobs (TV/movies) so all three entity types share this queue
+            media_jobs = await self._get_media_db_jobs()
+
+            # Live jobs first (active/queued), then character DB jobs, then media jobs
+            jobs_list = live_jobs + db_jobs + media_jobs
 
             # Annotate with ETA + per-step averages.
             self._annotate_jobs_with_eta(jobs_list, averages)
@@ -3063,8 +3336,10 @@ class CharacterContentService:
                 estimated_completion=self._estimated_queue_completion(jobs_list, averages),
             )
 
-        # No live queue — rebuild status from database
-        jobs_list = await self._get_db_jobs()
+        # No live queue — rebuild status from database (characters + media)
+        char_jobs = await self._get_db_jobs()
+        media_jobs = await self._get_media_db_jobs()
+        jobs_list = char_jobs + media_jobs
         self._annotate_jobs_with_eta(jobs_list, averages)
 
         queued = sum(1 for j in jobs_list if j.status == ResearchJobStatus.QUEUED)
@@ -3178,6 +3453,96 @@ class CharacterContentService:
                 images_found=image_count,
                 sources_used=char.research_sources or [],
                 depth_score=char.research_depth_score or 0.0,
+            ))
+
+        return jobs_list
+
+    async def _get_media_db_jobs(self) -> list:
+        """Build ResearchJob list for TV/movie titles so they share the unified queue."""
+        from app.db.models import MediaTitleModel, MediaImageModel
+        jobs_list = []
+
+        media_step_names = [
+            "tmdb_search", "wiki_scrape", "imdb_trivia",
+            "synthesis", "fact_extraction", "image_sourcing", "save_results",
+        ]
+
+        async with get_session() as session:
+            from sqlalchemy import text as sql_text
+            rows = await session.execute(
+                select(MediaTitleModel)
+                .order_by(
+                    sql_text("CASE research_status "
+                             "WHEN 'researching' THEN 0 "
+                             "WHEN 'failed' THEN 1 "
+                             "WHEN 'completed' THEN 2 "
+                             "ELSE 3 END"),
+                    MediaTitleModel.last_researched.desc().nulls_last(),
+                    MediaTitleModel.title,
+                )
+            )
+            titles = rows.scalars().all()
+
+            img_counts = {}
+            img_rows = await session.execute(
+                select(
+                    MediaImageModel.media_title_id,
+                    sql_func.count().label("cnt"),
+                ).group_by(MediaImageModel.media_title_id)
+            )
+            for row in img_rows.all():
+                img_counts[row[0]] = row[1]
+
+        for title in titles:
+            status = title.research_status or "pending"
+            if status == "completed":
+                job_status = "completed"
+                steps = [
+                    ResearchJobStep(
+                        name=s, status="completed",
+                        completed_at=title.last_researched,
+                    ).model_dump() for s in media_step_names
+                ]
+            elif status == "failed":
+                job_status = "failed"
+                err = ""
+                if isinstance(title.research_data, dict):
+                    err = title.research_data.get("error", "Unknown error")
+                steps = [
+                    ResearchJobStep(name=s, status="failed", error=err if s == "save_results" else None).model_dump()
+                    for s in media_step_names
+                ]
+            elif status == "researching":
+                job_status = "researching"
+                steps = [
+                    ResearchJobStep(name=s, status="pending").model_dump()
+                    for s in media_step_names
+                ]
+            else:
+                job_status = "queued"
+                steps = [
+                    ResearchJobStep(name=s, status="pending").model_dump()
+                    for s in media_step_names
+                ]
+
+            fact_count = len(title.fact_bank) if title.fact_bank else 0
+            image_count = img_counts.get(title.id, 0)
+            entity_type = "tv_show" if title.media_type == "tv_show" else "movie"
+
+            jobs_list.append(ResearchJob(
+                id=f"db-{title.id}",
+                character_id=title.id,
+                character_name=title.title,
+                universe=title.universe or entity_type,
+                status=job_status,
+                entity_type=entity_type,
+                steps=steps,
+                started_at=title.last_researched if status in ("completed", "researching") else None,
+                completed_at=title.last_researched if status == "completed" else None,
+                facts_found=fact_count,
+                images_found=image_count,
+                sources_used=title.research_sources or [],
+                depth_score=title.research_depth_score or 0.0,
             ))
 
         return jobs_list
@@ -4127,6 +4492,38 @@ class CharacterContentService:
             {"name": "Wolverine", "universe": "marvel", "franchise": "X-Men", "real_name": "Logan / James Howlett", "tags": ["xmen", "mutant", "adamantium"]},
             {"name": "Deadpool", "universe": "marvel", "franchise": "X-Men", "real_name": "Wade Wilson", "tags": ["mcu", "antihero", "comedy"]},
             {"name": "Scarlet Witch", "universe": "marvel", "franchise": "Avengers", "real_name": "Wanda Maximoff", "tags": ["mcu", "magic", "mutant"]},
+            {"name": "Doctor Doom", "universe": "marvel", "franchise": "Avengers", "real_name": "Victor Von Doom", "tags": ["mcu", "villain", "avengers-doomsday", "fantastic-four", "sorcerer", "monarch", "latveria", "robert-downey-jr"]},
+            {"name": "The Fantastic Four", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Reed Richards / Sue Storm / Johnny Storm / Ben Grimm", "tags": ["mcu", "fantastic-four", "cosmic", "team"]},
+            {"name": "Mister Fantastic", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Reed Richards", "tags": ["mcu", "fantastic-four", "genius", "elastic"]},
+            {"name": "Invisible Woman", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Sue Storm", "tags": ["mcu", "fantastic-four", "force-fields"]},
+            {"name": "Human Torch", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Johnny Storm", "tags": ["mcu", "fantastic-four", "fire"]},
+            {"name": "The Thing", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Ben Grimm", "tags": ["mcu", "fantastic-four", "strength"]},
+            {"name": "Captain America", "universe": "marvel", "franchise": "Avengers", "real_name": "Sam Wilson", "tags": ["mcu", "avengers", "falcon", "new-cap", "avengers-doomsday"]},
+            {"name": "Hulk", "universe": "marvel", "franchise": "Avengers", "real_name": "Bruce Banner", "tags": ["mcu", "avengers", "gamma"]},
+            {"name": "Black Panther", "universe": "marvel", "franchise": "Avengers", "real_name": "Shuri", "tags": ["mcu", "avengers", "wakanda"]},
+            {"name": "Shang-Chi", "universe": "marvel", "franchise": "Avengers", "real_name": "Xu Shang-Chi", "tags": ["mcu", "martial-arts", "ten-rings"]},
+            # ============================================================
+            # Dune
+            # ============================================================
+            {"name": "Paul Atreides", "universe": "film", "franchise": "Dune", "real_name": "Paul Atreides / Muad'Dib / Usul", "tags": ["dune", "messiah", "fremen", "prescience", "kwisatz-haderach"]},
+            {"name": "Chani", "universe": "film", "franchise": "Dune", "real_name": "Chani", "tags": ["dune", "fremen", "warrior", "zendaya"]},
+            {"name": "Lady Jessica", "universe": "film", "franchise": "Dune", "real_name": "Lady Jessica", "tags": ["dune", "bene-gesserit", "reverend-mother"]},
+            {"name": "Baron Harkonnen", "universe": "film", "franchise": "Dune", "real_name": "Vladimir Harkonnen", "tags": ["dune", "villain", "harkonnen"]},
+            {"name": "Feyd-Rautha", "universe": "film", "franchise": "Dune", "real_name": "Feyd-Rautha Harkonnen", "tags": ["dune", "villain", "harkonnen", "austin-butler", "gladiator"]},
+            {"name": "Stilgar", "universe": "film", "franchise": "Dune", "real_name": "Stilgar", "tags": ["dune", "fremen", "naib", "javier-bardem"]},
+            {"name": "Emperor Shaddam IV", "universe": "film", "franchise": "Dune", "real_name": "Shaddam Corrino IV", "tags": ["dune", "emperor", "corrino", "christopher-walken"]},
+            {"name": "Alia Atreides", "universe": "film", "franchise": "Dune", "real_name": "Alia Atreides", "tags": ["dune", "abomination", "bene-gesserit", "prescience"]},
+            # ============================================================
+            # Street Fighter
+            # ============================================================
+            {"name": "Ryu", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Ryu", "tags": ["streetfighter", "hadouken", "martial-arts", "capcom", "world-warrior"]},
+            {"name": "Ken Masters", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Ken Masters", "tags": ["streetfighter", "shoryuken", "rival", "capcom"]},
+            {"name": "Chun-Li", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Chun-Li", "tags": ["streetfighter", "interpol", "capcom", "iconic"]},
+            {"name": "M. Bison", "universe": "gaming", "franchise": "Street Fighter", "real_name": "M. Bison / Vega (Japan)", "tags": ["streetfighter", "villain", "shadaloo", "psycho-power", "capcom"]},
+            {"name": "Guile", "universe": "gaming", "franchise": "Street Fighter", "real_name": "William F. Guile", "tags": ["streetfighter", "air-force", "sonic-boom", "capcom"]},
+            {"name": "Cammy", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Cammy White", "tags": ["streetfighter", "mi6", "clone", "capcom"]},
+            {"name": "Akuma", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Akuma / Gouki", "tags": ["streetfighter", "demon", "raging-demon", "capcom"]},
+            {"name": "Juri Han", "universe": "gaming", "franchise": "Street Fighter", "real_name": "Juri Han", "tags": ["streetfighter", "taekwondo", "villain", "capcom"]},
             # ============================================================
             # DC
             # ============================================================
@@ -4228,6 +4625,199 @@ class CharacterContentService:
 
         logger.info("characters_seeded", count=len(created))
         return created
+
+    # ==================================================================
+    # CONTENT REQUESTS
+    # ==================================================================
+
+    async def process_content_request(
+        self, text: str, auto_research: bool = True
+    ) -> Dict[str, Any]:
+        """Parse free-text content request into characters/movies/TV shows.
+
+        Uses LLM to extract structured entities from natural language,
+        creates them with priority tier, and optionally queues research.
+        """
+        from app.services.media_content_service import get_media_content_service
+        from app.models.media_content import MediaTitleCreate, MediaType
+
+        prompt = (
+            "Extract all characters, movies, and TV shows from this content request.\n"
+            "Return ONLY valid JSON (no markdown, no explanation) with this structure:\n"
+            '{\n'
+            '  "characters": [\n'
+            '    {"name": "Character Name", "universe": "marvel|dc|star_wars|lotr|harry_potter|anime|tv|film|gaming|other", '
+            '"franchise": "Franchise Name", "real_name": "Real Name or null", '
+            '"description": "Brief description focusing on what makes them interesting", "tags": ["tag1", "tag2"]}\n'
+            '  ],\n'
+            '  "movies": [\n'
+            '    {"title": "Movie Title", "year": 2025, "genre": ["action", "sci-fi"], '
+            '"franchise": "Franchise", "universe": "marvel", "synopsis": "Brief synopsis", "tags": ["tag1"]}\n'
+            '  ],\n'
+            '  "tv_shows": [\n'
+            '    {"title": "Show Title", "year": 2025, "genre": ["drama"], '
+            '"franchise": "Franchise", "universe": "other", "synopsis": "Brief synopsis", "tags": ["tag1"]}\n'
+            '  ]\n'
+            '}\n\n'
+            "For universe, use: marvel, dc, star_wars, lotr, harry_potter, anime, tv, film, gaming, other.\n"
+            "For characters from comic books or video games, include both the comic/game version AND the movie version details.\n"
+            "Include ALL characters mentioned or implied (e.g., if someone says 'Avengers', include the key Avengers members).\n"
+            "For descriptions, focus on surprising facts, controversial angles, and what makes great content.\n\n"
+            f"Content request: {text}\n\n/no_think"
+        )
+
+        try:
+            # Use raw Ollama client to avoid multi-provider routing issues
+            from app.infrastructure.ollama_client import OllamaClient
+            _ollama_raw = OllamaClient()
+            raw = await _ollama_raw.chat(
+                prompt=prompt,
+                system="You are a content research assistant. Extract structured data from natural language requests. Return only valid JSON.",
+                temperature=0.3,
+                num_predict=4096,
+                timeout=120,
+                max_retries=1,
+            )
+            # Strip markdown fences if present
+            raw = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`")
+            parsed = json.loads(raw)
+        except Exception as e:
+            logger.error("content_request_parse_failed", error=str(e), text=text[:200])
+            parsed = {"characters": [], "movies": [], "tv_shows": []}
+
+        result = {
+            "characters_created": [],
+            "movies_created": [],
+            "tv_shows_created": [],
+            "already_existed": [],
+            "research_queued": 0,
+        }
+
+        # Create characters
+        char_ids_to_research = []
+        for char_data in parsed.get("characters", []):
+            name = char_data.get("name", "").strip()
+            if not name:
+                continue
+            # Check if already exists
+            async with get_session() as session:
+                existing = await session.execute(
+                    select(CharacterModel).where(CharacterModel.name == name)
+                )
+                row = existing.scalar_one_or_none()
+                if row:
+                    # Upgrade to priority if it exists
+                    if row.priority_tier != "priority":
+                        row.priority_tier = "priority"
+                        await session.commit()
+                    result["already_existed"].append(name)
+                    if row.research_status != "completed":
+                        char_ids_to_research.append(row.id)
+                    continue
+
+            universe = char_data.get("universe", "other")
+            char = await self.create_character(CharacterCreate(
+                name=name,
+                universe=universe,
+                franchise=char_data.get("franchise"),
+                real_name=char_data.get("real_name"),
+                description=char_data.get("description"),
+                tags=char_data.get("tags", []),
+            ))
+            # Set priority tier
+            async with get_session() as session:
+                db_char = await session.get(CharacterModel, char.id)
+                if db_char:
+                    db_char.priority_tier = "priority"
+                    await session.commit()
+
+            result["characters_created"].append({"id": char.id, "name": name})
+            char_ids_to_research.append(char.id)
+
+        # Create movies
+        media_svc = get_media_content_service()
+        for movie_data in parsed.get("movies", []):
+            title = movie_data.get("title", "").strip()
+            if not title:
+                continue
+            async with get_session() as session:
+                from app.db.models import MediaTitleModel
+                existing = await session.execute(
+                    select(MediaTitleModel).where(MediaTitleModel.title == title)
+                )
+                if existing.scalar_one_or_none():
+                    result["already_existed"].append(title)
+                    continue
+
+            try:
+                mt = await media_svc.create_media_title(MediaTitleCreate(
+                    title=title,
+                    media_type=MediaType.MOVIE,
+                    year=movie_data.get("year"),
+                    genre=movie_data.get("genre", []),
+                    franchise=movie_data.get("franchise"),
+                    universe=movie_data.get("universe", "other"),
+                    synopsis=movie_data.get("synopsis"),
+                    tags=movie_data.get("tags", []),
+                ))
+                result["movies_created"].append({"id": mt.id, "title": title})
+            except ValueError:
+                result["already_existed"].append(title)
+
+        # Create TV shows
+        for tv_data in parsed.get("tv_shows", []):
+            title = tv_data.get("title", "").strip()
+            if not title:
+                continue
+            async with get_session() as session:
+                from app.db.models import MediaTitleModel
+                existing = await session.execute(
+                    select(MediaTitleModel).where(MediaTitleModel.title == title)
+                )
+                if existing.scalar_one_or_none():
+                    result["already_existed"].append(title)
+                    continue
+
+            try:
+                mt = await media_svc.create_media_title(MediaTitleCreate(
+                    title=title,
+                    media_type=MediaType.TV_SHOW,
+                    year=tv_data.get("year"),
+                    genre=tv_data.get("genre", []),
+                    franchise=tv_data.get("franchise"),
+                    universe=tv_data.get("universe", "other"),
+                    synopsis=tv_data.get("synopsis"),
+                    tags=tv_data.get("tags", []),
+                ))
+                result["tv_shows_created"].append({"id": mt.id, "title": title})
+            except ValueError:
+                result["already_existed"].append(title)
+
+        # Queue research for new characters
+        if auto_research and char_ids_to_research:
+            result["research_queued"] = len(char_ids_to_research)
+            # Start research in background for priority characters
+            asyncio.create_task(
+                self._research_priority_characters(char_ids_to_research)
+            )
+
+        logger.info(
+            "content_request_processed",
+            characters=len(result["characters_created"]),
+            movies=len(result["movies_created"]),
+            tv_shows=len(result["tv_shows_created"]),
+            existed=len(result["already_existed"]),
+            research_queued=result["research_queued"],
+        )
+        return result
+
+    async def _research_priority_characters(self, character_ids: List[str]) -> None:
+        """Background task to research priority characters sequentially."""
+        for char_id in character_ids:
+            try:
+                await self.research_character(char_id)
+            except Exception as e:
+                logger.error("priority_research_failed", character_id=char_id, error=str(e))
 
     # ==================================================================
     # STATS
@@ -5483,7 +6073,8 @@ Return JSON:
                     temperature=temps[i],
                     max_tokens=1024,
                 )
-                clean = sanitize_text((text or "").strip().strip('"').strip("'"))
+                preserve = req.target in ("hook", "slide")
+                clean = sanitize_text((text or "").strip().strip('"').strip("'"), preserve_emphasis=preserve)
                 if not clean:
                     continue
                 variants.append(EnhanceCarouselVariant(
@@ -5532,7 +6123,7 @@ Return JSON:
             )
 
             if req.target == "hook":
-                row.hook_text = sanitize_text(req.text)
+                row.hook_text = sanitize_text(req.text, preserve_emphasis=True)
             elif req.target == "caption":
                 row.caption = sanitize_text(req.text)
             elif req.target == "hashtags":
@@ -5544,7 +6135,7 @@ Return JSON:
                 slides = list(row.slides or [])
                 for idx, s in enumerate(slides):
                     if s.get("slide_num") == req.slide_num:
-                        slides[idx] = {**s, "text": sanitize_text(req.text)}
+                        slides[idx] = {**s, "text": sanitize_text(req.text, preserve_emphasis=True)}
                         break
                 row.slides = slides
             elif req.target == "all":
@@ -5554,7 +6145,7 @@ Return JSON:
                 except json.JSONDecodeError:
                     raise ValueError("target='all' requires JSON text payload")
                 if "hook_text" in payload:
-                    row.hook_text = sanitize_text(payload["hook_text"])
+                    row.hook_text = sanitize_text(payload["hook_text"], preserve_emphasis=True)
                 if "caption" in payload:
                     row.caption = sanitize_text(payload["caption"])
                 if "hashtags" in payload:
@@ -5565,7 +6156,7 @@ Return JSON:
                     for s in payload["slides"] or []:
                         n = s.get("slide_num")
                         base = existing.get(n, {"slide_num": n})
-                        base = {**base, "text": sanitize_text(s.get("text") or "")}
+                        base = {**base, "text": sanitize_text(s.get("text") or "", preserve_emphasis=True)}
                         new_slides.append(base)
                     if new_slides:
                         row.slides = new_slides

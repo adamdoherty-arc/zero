@@ -504,6 +504,63 @@ DAILY_SCHEDULE = {
         "description": "Run Stage 2 final review on carousels with ai_review_score >= 7 AND final_review_score IS NULL",
         "enabled": True
     },
+    # Media content automation (TV shows + movies)
+    "media_auto_research": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Auto-research pending TV/movie titles (up to 3 per run, rate-limited to share Ollama with characters)",
+        "enabled": True
+    },
+    "media_content_generation": {
+        "cron": "30 */4 * * *",  # Every 4 hours at :30 past (offset from character_content_generation at :00)
+        "description": "Auto-generate carousels for researched TV/movie titles, prioritizes underserved titles",
+        "enabled": True
+    },
+    # Trend Intelligence (release-aware + viral pulse)
+    "trend_release_calendar_sync": {
+        "cron": "15 */6 * * *",  # Every 6 hours
+        "description": "Pull TMDB upcoming movies + on_the_air TV into trending_signals",
+        "enabled": True
+    },
+    "trend_tvmaze_schedule": {
+        "cron": "45 */6 * * *",  # Every 6 hours offset
+        "description": "Pull TVMaze 14-day schedule into trending_signals",
+        "enabled": True
+    },
+    "trend_reddit_pulse": {
+        "cron": "20 */2 * * *",  # Every 2 hours
+        "description": "Pull r/movies + r/television rising posts",
+        "enabled": True
+    },
+    "trend_searxng_pulse": {
+        "cron": "50 */4 * * *",  # Every 4 hours
+        "description": "SearXNG trend queries for viral / upcoming pulse",
+        "enabled": True
+    },
+    "trend_linker": {
+        "cron": "10 */2 * * *",  # Every 2 hours
+        "description": "Link unprocessed trending_signals to characters + media_titles",
+        "enabled": True
+    },
+    "trend_scorer": {
+        "cron": "40 */3 * * *",  # Every 3 hours
+        "description": "Kimi scores unscored viral/pulse signals",
+        "enabled": True
+    },
+    "trend_signal_cleanup": {
+        "cron": "15 3 * * *",  # Daily 3:15 AM
+        "description": "Remove expired trending_signals (>30 day decay)",
+        "enabled": True
+    },
+    "character_release_prep": {
+        "cron": "0 5 * * *",  # Daily 5 AM
+        "description": "Queue 3-carousel burst for characters linked to signals with release_date in next 14d",
+        "enabled": True
+    },
+    "media_release_prep": {
+        "cron": "15 5 * * *",  # Daily 5:15 AM
+        "description": "Queue carousel generation for media_titles linked to signals with release_date in next 14d",
+        "enabled": True
+    },
     # Zero Brain Intelligence
     "brain_benchmark": {
         "cron": "0 */6 * * *",  # Every 6 hours
@@ -553,6 +610,27 @@ DAILY_SCHEDULE = {
     "brain_memory_cleanup": {
         "cron": "0 4 * * *",  # Daily at 4 AM
         "description": "Cleanup expired episodic memories",
+        "enabled": True
+    },
+    # Content Brain v2 learning accelerators
+    "brain_prompt_breed": {
+        "cron": "30 2 * * *",  # Daily at 2:30 AM
+        "description": "Prompt breeder: mutate top-3 variants, retire bottom-3",
+        "enabled": True
+    },
+    "competitor_scrape": {
+        "cron": "0 */12 * * *",  # Every 12 hours
+        "description": "Scrape winning TikTok/YouTube/IG public hooks for active niches",
+        "enabled": True
+    },
+    "competitor_cleanup": {
+        "cron": "30 3 * * *",  # Daily at 3:30 AM
+        "description": "Remove expired competitor_content_samples (>30 day decay)",
+        "enabled": True
+    },
+    "character_hook_style_report": {
+        "cron": "0 4 * * 0",  # Weekly Sunday 4 AM
+        "description": "Compute per-hook-style engagement lift, store as episodic memory",
         "enabled": True
     },
 }
@@ -843,6 +921,18 @@ class SchedulerService:
             "character_discovery_refvideos": self._run_character_discovery_refvideos,
             "character_auto_research": self._run_character_auto_research,
             "character_final_review_backfill": self._run_character_final_review_backfill,
+            "media_auto_research": self._run_media_auto_research,
+            "media_content_generation": self._run_media_content_generation,
+            # Trend Intelligence
+            "trend_release_calendar_sync": self._run_trend_release_calendar_sync,
+            "trend_tvmaze_schedule": self._run_trend_tvmaze_schedule,
+            "trend_reddit_pulse": self._run_trend_reddit_pulse,
+            "trend_searxng_pulse": self._run_trend_searxng_pulse,
+            "trend_linker": self._run_trend_linker,
+            "trend_scorer": self._run_trend_scorer,
+            "trend_signal_cleanup": self._run_trend_signal_cleanup,
+            "character_release_prep": self._run_character_release_prep,
+            "media_release_prep": self._run_media_release_prep,
             # Zero Brain
             "brain_benchmark": self._run_brain_benchmark,
             "brain_learning_cycle": self._run_brain_learning_cycle,
@@ -854,6 +944,11 @@ class SchedulerService:
             "brain_improvement": self._run_brain_improvement,
             "brain_reflection": self._run_brain_reflection,
             "brain_memory_cleanup": self._run_brain_memory_cleanup,
+            # Content Brain v2 accelerators
+            "brain_prompt_breed": self._run_brain_prompt_breed,
+            "competitor_scrape": self._run_competitor_scrape,
+            "competitor_cleanup": self._run_competitor_cleanup,
+            "character_hook_style_report": self._run_character_hook_style_report,
         }
         return handlers.get(job_name)
 
@@ -2820,6 +2915,343 @@ Have a great evening!"""
             logger.error("character_auto_research_failed", error=str(e))
 
     # ============================================
+    # MEDIA CONTENT AUTOMATION (TV shows + movies)
+    # ============================================
+
+    async def _run_media_auto_research(self):
+        """Auto-research pending media titles (TV/movie), up to 3 per run."""
+        if self._autopilot_disabled("media_auto_research"):
+            return
+        logger.info("running_media_auto_research")
+        try:
+            from app.services.media_content_service import get_media_content_service
+            svc = get_media_content_service()
+            pending = await svc.list_media_titles(research_status="pending", limit=3)
+            if not pending:
+                logger.debug("media_auto_research_skipped_none_pending")
+                return
+            researched = 0
+            failed = 0
+            for title in pending:
+                try:
+                    await svc.research_media_title(title.id)
+                    researched += 1
+                    logger.info(
+                        "media_auto_research_item_done",
+                        title=title.title,
+                        media_type=title.media_type,
+                    )
+                except (ValueError, RuntimeError, KeyError, AttributeError, TypeError) as e:
+                    failed += 1
+                    logger.warning(
+                        "media_auto_research_item_failed",
+                        title=title.title,
+                        error=str(e)[:200],
+                    )
+            logger.info("media_auto_research_done", researched=researched, failed=failed)
+        except Exception as e:
+            logger.error("media_auto_research_failed", error=str(e))
+
+    async def _run_media_content_generation(self):
+        """Auto-generate carousels for researched media titles, up to 10 per run.
+
+        Prioritizes titles with the fewest carousels (underserved-first).
+        Rotates across all MediaContentAngle values for variety.
+        """
+        if self._autopilot_disabled("media_content_generation"):
+            return
+        logger.info("running_media_content_generation")
+        try:
+            from app.services.media_content_service import get_media_content_service
+            from app.models.media_content import MediaCarouselCreate, MediaContentAngle
+            svc = get_media_content_service()
+
+            titles = await svc.list_media_titles(research_status="completed", limit=100)
+            if not titles:
+                logger.debug("media_content_generation_skipped_none_ready")
+                return
+
+            angles = list(MediaContentAngle)
+            titles.sort(key=lambda t: getattr(t, "carousels_created", 0))
+
+            generated = 0
+            failed = 0
+            max_per_run = 10
+            for title in titles:
+                if generated >= max_per_run:
+                    break
+                angle = angles[(generated + hash(title.id)) % len(angles)]
+                try:
+                    await svc.generate_carousel(MediaCarouselCreate(
+                        media_title_id=title.id, angle=angle
+                    ))
+                    generated += 1
+                    logger.info(
+                        "media_carousel_generated",
+                        title=title.title,
+                        angle=angle.value if hasattr(angle, "value") else str(angle),
+                    )
+                except (ValueError, RuntimeError, KeyError, AttributeError, TypeError) as e:
+                    failed += 1
+                    logger.warning(
+                        "media_carousel_generation_item_failed",
+                        title=title.title,
+                        error=str(e)[:200],
+                    )
+                    continue
+            logger.info("media_content_generation_done", generated=generated, failed=failed)
+        except Exception as e:
+            logger.error("media_content_generation_failed", error=str(e))
+
+    # ============================================
+    # TREND INTELLIGENCE HANDLERS
+    # ============================================
+
+    async def _run_trend_release_calendar_sync(self):
+        logger.info("running_trend_release_calendar_sync")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.fetch_tmdb_upcoming()
+            logger.info("trend_release_calendar_sync_done", result=result)
+        except Exception as e:
+            logger.error("trend_release_calendar_sync_failed", error=str(e))
+
+    async def _run_trend_tvmaze_schedule(self):
+        logger.info("running_trend_tvmaze_schedule")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.fetch_tvmaze_schedule()
+            logger.info("trend_tvmaze_schedule_done", result=result)
+        except Exception as e:
+            logger.error("trend_tvmaze_schedule_failed", error=str(e))
+
+    async def _run_trend_reddit_pulse(self):
+        logger.info("running_trend_reddit_pulse")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.fetch_reddit_rising()
+            logger.info("trend_reddit_pulse_done", result=result)
+        except Exception as e:
+            logger.error("trend_reddit_pulse_failed", error=str(e))
+
+    async def _run_trend_searxng_pulse(self):
+        logger.info("running_trend_searxng_pulse")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.fetch_searxng_pulse()
+            logger.info("trend_searxng_pulse_done", result=result)
+        except Exception as e:
+            logger.error("trend_searxng_pulse_failed", error=str(e))
+
+    async def _run_trend_linker(self):
+        logger.info("running_trend_linker")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            from app.services.character_discovery_service import get_character_discovery_service
+            tsvc = get_trend_intelligence_service()
+            result = await tsvc.link_unprocessed(limit=50)
+            # For newly-linked signals, route release-type ones through character discovery
+            # to elevate priority_tier for matched characters and propose from franchise when new.
+            from app.db.models import TrendingSignalModel
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=6)
+            async with get_session() as session:
+                sres = await session.execute(
+                    select(TrendingSignalModel).where(
+                        TrendingSignalModel.processed_at.is_not(None),
+                        TrendingSignalModel.processed_at >= cutoff,
+                        TrendingSignalModel.signal_type == "release",
+                    ).limit(30)
+                )
+                recent = [row.id for row in sres.scalars().all()]
+            dsvc = get_character_discovery_service()
+            for sid in recent:
+                try:
+                    await dsvc.from_trend_signal(sid)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("trend_linker_discovery_skip", signal_id=sid, error=str(e))
+            logger.info("trend_linker_done", linker=result, discovery_passes=len(recent))
+        except Exception as e:
+            logger.error("trend_linker_failed", error=str(e))
+
+    async def _run_trend_scorer(self):
+        logger.info("running_trend_scorer")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.score_unscored_signals(limit=20)
+            logger.info("trend_scorer_done", result=result)
+        except Exception as e:
+            logger.error("trend_scorer_failed", error=str(e))
+
+    async def _run_trend_signal_cleanup(self):
+        logger.info("running_trend_signal_cleanup")
+        try:
+            from app.services.trend_intelligence_service import get_trend_intelligence_service
+            svc = get_trend_intelligence_service()
+            result = await svc.cleanup_expired()
+            logger.info("trend_signal_cleanup_done", deleted=result.get("deleted"))
+        except Exception as e:
+            logger.error("trend_signal_cleanup_failed", error=str(e))
+
+    async def _run_character_release_prep(self):
+        """For characters linked to release-bearing signals in [today+3, today+14],
+        queue a 3-carousel generation burst with angle rotation."""
+        logger.info("running_character_release_prep")
+        if self._autopilot_disabled("character_release_prep"):
+            return
+        try:
+            from app.db.models import TrendingSignalModel, CharacterModel, CharacterCarouselModel
+            from app.infrastructure.database import get_session
+            from app.services.character_content_service import get_character_content_service
+            from app.models.character_content import CarouselCreate, ContentAngle
+            from sqlalchemy import select
+            from datetime import date, datetime, timedelta, timezone
+
+            svc = get_character_content_service()
+            today = date.today()
+            window_end = today + timedelta(days=14)
+            window_start = today + timedelta(days=3)
+
+            burst_angles = [ContentAngle.BEHIND_SCENES, ContentAngle.HIDDEN_TRUTHS, ContentAngle.POWER_SECRETS]
+            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            generated = 0
+            skipped = 0
+
+            async with get_session() as session:
+                sres = await session.execute(
+                    select(TrendingSignalModel).where(
+                        TrendingSignalModel.signal_type == "release",
+                        TrendingSignalModel.release_date.is_not(None),
+                        TrendingSignalModel.release_date >= window_start,
+                        TrendingSignalModel.release_date <= window_end,
+                    )
+                )
+                signals = list(sres.scalars().all())
+
+            for signal in signals:
+                for ch_id in (signal.linked_character_ids or []):
+                    async with get_session() as session:
+                        cres = await session.execute(
+                            select(CharacterModel).where(
+                                CharacterModel.id == ch_id,
+                                CharacterModel.research_status == "completed",
+                            )
+                        )
+                        ch = cres.scalars().first()
+                        if ch is None:
+                            continue
+                        # Skip if already released-triggered content recently
+                        rec = await session.execute(
+                            select(CharacterCarouselModel).where(
+                                CharacterCarouselModel.character_id == ch_id,
+                                CharacterCarouselModel.created_at >= seven_days_ago,
+                            )
+                        )
+                        if rec.scalars().first() is not None:
+                            skipped += 1
+                            continue
+
+                    for angle in burst_angles:
+                        try:
+                            await svc.generate_carousel(CarouselCreate(
+                                character_id=ch_id,
+                                angle=angle,
+                            ))
+                            generated += 1
+                        except Exception as e:  # noqa: BLE001
+                            logger.warning(
+                                "character_release_prep_item_failed",
+                                character_id=ch_id,
+                                signal_id=signal.id,
+                                error=str(e)[:200],
+                            )
+
+                # Mark signal as having triggered content
+                if (signal.linked_character_ids or []):
+                    async with get_session() as session:
+                        sr = await session.execute(
+                            select(TrendingSignalModel).where(TrendingSignalModel.id == signal.id)
+                        )
+                        row = sr.scalars().first()
+                        if row is not None:
+                            row.triggered_content_at = datetime.now(timezone.utc)
+                            await session.commit()
+
+            logger.info("character_release_prep_done", generated=generated, skipped=skipped, signals=len(signals))
+        except Exception as e:
+            logger.error("character_release_prep_failed", error=str(e))
+
+    async def _run_media_release_prep(self):
+        """Queue carousel generation for media titles linked to near-release signals."""
+        logger.info("running_media_release_prep")
+        if self._autopilot_disabled("media_release_prep"):
+            return
+        try:
+            from app.db.models import TrendingSignalModel, MediaTitleModel
+            from app.infrastructure.database import get_session
+            from app.services.media_content_service import get_media_content_service
+            from app.models.media_content import MediaCarouselCreate, MediaContentAngle
+            from sqlalchemy import select
+            from datetime import date, timedelta
+
+            svc = get_media_content_service()
+            today = date.today()
+            window_start = today + timedelta(days=3)
+            window_end = today + timedelta(days=14)
+            generated = 0
+            failed = 0
+
+            async with get_session() as session:
+                sres = await session.execute(
+                    select(TrendingSignalModel).where(
+                        TrendingSignalModel.signal_type == "release",
+                        TrendingSignalModel.release_date.is_not(None),
+                        TrendingSignalModel.release_date >= window_start,
+                        TrendingSignalModel.release_date <= window_end,
+                    )
+                )
+                signals = list(sres.scalars().all())
+
+            for signal in signals:
+                for mt_id in (signal.linked_media_title_ids or []):
+                    async with get_session() as session:
+                        mres = await session.execute(
+                            select(MediaTitleModel).where(
+                                MediaTitleModel.id == mt_id,
+                                MediaTitleModel.research_status == "completed",
+                            )
+                        )
+                        mt = mres.scalars().first()
+                        if mt is None:
+                            continue
+
+                    try:
+                        await svc.generate_carousel(MediaCarouselCreate(
+                            media_title_id=mt_id,
+                            angle=MediaContentAngle.CULTURAL_IMPACT,
+                        ))
+                        generated += 1
+                    except Exception as e:  # noqa: BLE001
+                        failed += 1
+                        logger.warning(
+                            "media_release_prep_item_failed",
+                            media_title_id=mt_id,
+                            signal_id=signal.id,
+                            error=str(e)[:200],
+                        )
+
+            logger.info("media_release_prep_done", generated=generated, failed=failed, signals=len(signals))
+        except Exception as e:
+            logger.error("media_release_prep_failed", error=str(e))
+
+    # ============================================
     # ZERO BRAIN HANDLERS
     # ============================================
 
@@ -2956,6 +3388,105 @@ Have a great evening!"""
             logger.info("brain_memory_cleanup_complete", deleted=deleted)
         except Exception as e:
             logger.error("brain_memory_cleanup_failed", error=str(e))
+
+    # ============================================
+    # CONTENT BRAIN v2 ACCELERATORS
+    # ============================================
+
+    async def _run_brain_prompt_breed(self):
+        logger.info("running_brain_prompt_breed")
+        try:
+            from app.services.prompt_breeder_service import get_prompt_breeder_service
+            svc = get_prompt_breeder_service()
+            # Focus on carousel generation + hook rewriting prompts where breeding matters most
+            result = await svc.breed_all(task_types=[
+                "carousel_generation",
+                "character_research",
+                "hook_rewrite",
+                "fact_extraction",
+            ])
+            logger.info("brain_prompt_breed_done", result=result)
+        except Exception as e:
+            logger.error("brain_prompt_breed_failed", error=str(e))
+
+    async def _run_competitor_scrape(self):
+        logger.info("running_competitor_scrape")
+        try:
+            from app.services.competitor_content_service import get_competitor_content_service
+            svc = get_competitor_content_service()
+            result = await svc.scrape_all(per_niche=15)
+            logger.info("competitor_scrape_done", result=result)
+        except Exception as e:
+            logger.error("competitor_scrape_failed", error=str(e))
+
+    async def _run_competitor_cleanup(self):
+        logger.info("running_competitor_cleanup")
+        try:
+            from app.services.competitor_content_service import get_competitor_content_service
+            svc = get_competitor_content_service()
+            result = await svc.cleanup_expired()
+            logger.info("competitor_cleanup_done", deleted=result.get("deleted"))
+        except Exception as e:
+            logger.error("competitor_cleanup_failed", error=str(e))
+
+    async def _run_character_hook_style_report(self):
+        """Compute per-hook-style engagement and store as an episodic memory
+        (so the Strategist role can query it during swarm votes)."""
+        logger.info("running_character_hook_style_report")
+        try:
+            from app.db.models import CharacterCarouselModel, ContentPerformanceModel, EpisodicMemoryModel
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select
+            from datetime import datetime, timedelta, timezone
+            import uuid as _uuid
+
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            async with get_session() as session:
+                res = await session.execute(
+                    select(CharacterCarouselModel, ContentPerformanceModel)
+                    .join(
+                        ContentPerformanceModel,
+                        ContentPerformanceModel.carousel_id == CharacterCarouselModel.id,
+                        isouter=True,
+                    )
+                    .where(CharacterCarouselModel.created_at >= cutoff)
+                )
+                rows = list(res.all())
+
+            buckets: Dict[str, Dict[str, Any]] = {}
+            for carousel, perf in rows:
+                meta = carousel.generation_metadata or {}
+                style = (meta.get("hook_style") or carousel.hook_style or "unknown")
+                bucket = buckets.setdefault(style, {"n": 0, "engagement_sum": 0.0, "views_sum": 0})
+                bucket["n"] += 1
+                if perf is not None:
+                    eng = (perf.engagement_rate or 0.0)
+                    bucket["engagement_sum"] += float(eng or 0.0)
+                    bucket["views_sum"] += int(perf.views or 0)
+
+            report_lines: List[str] = []
+            for style, b in sorted(buckets.items(), key=lambda kv: kv[1]["engagement_sum"], reverse=True):
+                avg_eng = (b["engagement_sum"] / b["n"]) if b["n"] else 0.0
+                report_lines.append(
+                    f"{style}: n={b['n']} avg_engagement={avg_eng:.4f} views={b['views_sum']}"
+                )
+            report = "Hook style engagement report (last 30d):\n" + "\n".join(report_lines)
+
+            async with get_session() as session:
+                session.add(EpisodicMemoryModel(
+                    id=f"em-{_uuid.uuid4().hex[:12]}",
+                    namespace="content",
+                    content=report,
+                    source_type="hook_style_report",
+                    importance=70.0,
+                    tags=["hook_style", "content_brain_v2"],
+                    context={"buckets": buckets},
+                ))
+                await session.commit()
+
+            logger.info("character_hook_style_report_done", styles=len(buckets))
+        except Exception as e:
+            logger.error("character_hook_style_report_failed", error=str(e))
 
     # ============================================
     # UTILITIES

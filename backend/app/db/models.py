@@ -2258,3 +2258,85 @@ class ContentExperimentModel(Base):
     winner: Mapped[Optional[str]] = mapped_column(String(20))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Trend Intelligence: upcoming releases + viral signals for proactive content
+# ---------------------------------------------------------------------------
+
+class TrendingSignalModel(Base):
+    __tablename__ = "trending_signals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    signal_type: Mapped[str] = mapped_column(String(20), default="trending")  # release | trending | viral
+    title: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    franchise: Mapped[Optional[str]] = mapped_column(String(200))
+    universe: Mapped[Optional[str]] = mapped_column(String(50))
+    media_type: Mapped[Optional[str]] = mapped_column(String(20))  # movie | tv_show | null for viral/other
+    release_date: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    signal_strength: Mapped[float] = mapped_column(Float, default=50.0)
+    score_reasoning: Mapped[Optional[str]] = mapped_column(Text)
+    signal_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default={})
+    external_id: Mapped[Optional[str]] = mapped_column(String(100))
+    linked_character_ids: Mapped[list] = mapped_column(JSONB, default=[])
+    linked_media_title_ids: Mapped[list] = mapped_column(JSONB, default=[])
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    triggered_content_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+
+    __table_args__ = (
+        Index("idx_signals_source_discovered", "source", "discovered_at"),
+        Index("idx_signals_release_window", "release_date", "signal_strength"),
+        Index("idx_signals_external_id", "source", "external_id"),
+    )
+
+
+class AgentPredictionModel(Base):
+    __tablename__ = "agent_predictions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    carousel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    content_type: Mapped[str] = mapped_column(String(20), default="character")
+    role_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    phase: Mapped[str] = mapped_column(String(20), nullable=False)  # pre_gen | post_gen
+    predicted_engagement: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    vote: Mapped[Optional[str]] = mapped_column(String(20))
+    reasoning: Mapped[Optional[str]] = mapped_column(Text)
+    weight: Mapped[float] = mapped_column(Float, default=0.0)
+    prediction_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    outcome_engagement: Mapped[Optional[float]] = mapped_column(Float)
+    outcome_recorded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    calibration_error: Mapped[Optional[float]] = mapped_column(Float)
+
+    __table_args__ = (
+        Index("idx_agent_pred_role", "role_name", "created_at"),
+        Index("idx_agent_pred_carousel", "carousel_id"),
+    )
+
+
+class CompetitorContentSampleModel(Base):
+    __tablename__ = "competitor_content_samples"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    niche: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    hook_text: Mapped[Optional[str]] = mapped_column(Text)
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    url: Mapped[Optional[str]] = mapped_column(Text)
+    creator_handle: Mapped[Optional[str]] = mapped_column(String(100))
+    view_count: Mapped[Optional[int]] = mapped_column(BigInteger)
+    like_count: Mapped[Optional[int]] = mapped_column(BigInteger)
+    comment_count: Mapped[Optional[int]] = mapped_column(BigInteger)
+    engagement_rate: Mapped[Optional[float]] = mapped_column(Float)
+    sample_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default={})
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+
+    __table_args__ = (
+        Index("idx_competitor_niche_engagement", "niche", "engagement_rate"),
+        Index("idx_competitor_platform_retrieved", "platform", "retrieved_at"),
+    )

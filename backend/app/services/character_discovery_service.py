@@ -28,7 +28,7 @@ import structlog
 from sqlalchemy import func as sql_func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.db.models import CharacterModel, CharacterReferenceVideoModel
+from app.db.models import CharacterModel, CharacterReferenceVideoModel, TrendingSignalModel
 from app.infrastructure.config import get_settings
 from app.infrastructure.database import get_session
 
@@ -454,6 +454,85 @@ class CharacterDiscoveryService:
     # ------------------------------------------------------------------
     # Orchestration
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Trend-signal-driven discovery (Phase 1 content brain v2)
+    # ------------------------------------------------------------------
+
+    async def from_trend_signal(self, signal_id: str) -> Dict[str, Any]:
+        """Process a TrendingSignal: elevate linked characters to trending priority,
+        or propose new characters when the signal carries a franchise + release date.
+
+        Returns {promoted, created, matched, character_ids}.
+        """
+        async with get_session() as session:
+            res = await session.execute(
+                select(TrendingSignalModel).where(TrendingSignalModel.id == signal_id)
+            )
+            signal = res.scalars().first()
+            if signal is None:
+                return {"error": "signal_not_found"}
+
+            promoted: List[str] = []
+            # Elevate already-linked characters
+            for ch_id in (signal.linked_character_ids or []):
+                cres = await session.execute(
+                    select(CharacterModel).where(CharacterModel.id == ch_id)
+                )
+                ch = cres.scalars().first()
+                if ch is None:
+                    continue
+                updated = False
+                if ch.priority_tier != "trending":
+                    ch.priority_tier = "trending"
+                    updated = True
+                evidence = dict(ch.discovery_evidence or {})
+                evidence.setdefault("trend_signals", [])
+                if signal.id not in evidence["trend_signals"]:
+                    evidence["trend_signals"].append(signal.id)
+                    evidence["latest_release_date"] = (
+                        signal.release_date.isoformat() if signal.release_date else None
+                    )
+                    evidence["latest_franchise"] = signal.franchise
+                    ch.discovery_evidence = evidence
+                    updated = True
+                if updated:
+                    promoted.append(ch.id)
+            await session.commit()
+
+        created = 0
+        matched = 0
+        character_ids: List[str] = list(signal.linked_character_ids or [])
+
+        # Only propose a new character when nothing was linked and we have a franchise
+        # plus a release-bearing signal (avoid flooding from viral/Reddit titles).
+        if not character_ids and signal.franchise and signal.signal_type == "release":
+            result = await self.propose_character(
+                name=signal.franchise,
+                universe=signal.universe or "other",
+                franchise=signal.franchise,
+                source="trend_release",
+                evidence={
+                    "signal_id": signal.id,
+                    "release_date": signal.release_date.isoformat() if signal.release_date else None,
+                    "media_type": signal.media_type,
+                    "signal_strength": signal.signal_strength,
+                },
+            )
+            if result.get("created"):
+                created = 1
+                character_ids.append(result["character_id"])
+            elif result.get("matched_existing"):
+                matched = 1
+                character_ids.append(result["character_id"])
+
+        return {
+            "signal_id": signal_id,
+            "promoted": promoted,
+            "created": created,
+            "matched": matched,
+            "character_ids": character_ids,
+        }
 
     async def run_all_sources(self) -> Dict[str, Any]:
         """Run all 4 bulk discovery sources. Reference videos run on a separate 15-min job."""

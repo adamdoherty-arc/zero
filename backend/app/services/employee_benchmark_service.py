@@ -26,10 +26,12 @@ from app.models.brain import BenchmarkScore, BenchmarkSnapshot
 
 logger = structlog.get_logger(__name__)
 
-# Dimension definitions: name -> (weight, is_llm_evaluated)
+# Dimension definitions: name -> (weight, is_llm_evaluated).
+# Phase 3d (Content Brain v2): added trending_alignment, swarm_consensus_quality,
+# calibration_per_agent. Rebalanced learning_velocity 15->10 and knowledge_growth 5->0.
 DIMENSIONS = {
     "content_quality":          (0.15, False),
-    "learning_velocity":        (0.15, False),
+    "learning_velocity":        (0.10, False),
     "research_depth":           (0.12, True),
     "task_execution":           (0.12, False),
     "system_health":            (0.10, False),
@@ -37,7 +39,9 @@ DIMENSIONS = {
     "cost_efficiency":          (0.08, False),
     "communication_quality":    (0.08, True),
     "calibration_accuracy":     (0.05, False),
-    "knowledge_growth":         (0.05, False),
+    "trending_alignment":       (0.08, False),
+    "swarm_consensus_quality":  (0.07, False),
+    "calibration_per_agent":    (0.05, False),
 }
 
 
@@ -428,6 +432,80 @@ class EmployeeBenchmarkService:
             "prior_memories": prior_memories,
             "recent_notes": recent_notes,
         }
+
+    async def _score_trending_alignment(self) -> tuple[float, dict]:
+        """% of last-7d content generated in response to an active trending signal."""
+        from app.db.models import TrendingSignalModel, CharacterCarouselModel
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        async with get_session() as session:
+            total_res = await session.execute(
+                select(sql_func.count(CharacterCarouselModel.id))
+                .where(CharacterCarouselModel.created_at >= cutoff)
+            )
+            total = int(total_res.scalar() or 0)
+            triggered_res = await session.execute(
+                select(sql_func.count(TrendingSignalModel.id))
+                .where(
+                    TrendingSignalModel.triggered_content_at.is_not(None),
+                    TrendingSignalModel.triggered_content_at >= cutoff,
+                )
+            )
+            triggered = int(triggered_res.scalar() or 0)
+        if total == 0:
+            return 25.0, {"reason": "no_recent_content", "triggered": triggered}
+        pct = min(100.0, (triggered / total) * 100.0)
+        score = max(10.0, min(100.0, pct * 1.5))  # shape so 67% -> 100
+        return score, {"total_7d": total, "triggered_7d": triggered, "pct": round(pct, 2)}
+
+    async def _score_swarm_consensus_quality(self) -> tuple[float, dict]:
+        """Average consensus confidence on accepted swarm decisions in last 7d."""
+        from app.db.models import AgentPredictionModel
+        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        async with get_session() as session:
+            res = await session.execute(
+                select(sql_func.avg(AgentPredictionModel.confidence))
+                .where(AgentPredictionModel.created_at >= cutoff)
+            )
+            avg = res.scalar()
+            count_res = await session.execute(
+                select(sql_func.count(AgentPredictionModel.id))
+                .where(AgentPredictionModel.created_at >= cutoff)
+            )
+            count = int(count_res.scalar() or 0)
+        if avg is None or count == 0:
+            return 50.0, {"reason": "no_swarm_runs_yet"}
+        score = float(avg) * 100.0
+        return round(score, 2), {"avg_confidence": round(float(avg), 3), "predictions_7d": count}
+
+    async def _score_calibration_per_agent(self) -> tuple[float, dict]:
+        """Inverse MAE of predicted engagement vs actual. 100 when MAE=0, 0 when MAE>=50."""
+        from app.db.models import AgentPredictionModel
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        async with get_session() as session:
+            res = await session.execute(
+                select(
+                    AgentPredictionModel.role_name,
+                    sql_func.avg(AgentPredictionModel.calibration_error).label("avg_err"),
+                    sql_func.count(AgentPredictionModel.id).label("n"),
+                )
+                .where(
+                    AgentPredictionModel.calibration_error.is_not(None),
+                    AgentPredictionModel.created_at >= cutoff,
+                )
+                .group_by(AgentPredictionModel.role_name)
+            )
+            rows = list(res.all())
+        if not rows:
+            return 50.0, {"reason": "no_outcomes_yet"}
+        # Score per role = 100 - min(100, avg_err * 2)
+        per_role: Dict[str, Dict[str, Any]] = {}
+        scores: List[float] = []
+        for role_name, avg_err, n in rows:
+            role_score = max(0.0, 100.0 - min(100.0, float(avg_err or 0.0) * 2.0))
+            per_role[role_name] = {"avg_err": round(float(avg_err or 0.0), 2), "n": int(n), "score": round(role_score, 2)}
+            scores.append(role_score)
+        overall = sum(scores) / len(scores)
+        return round(overall, 2), {"per_role": per_role}
 
     async def _generate_improvement_action(
         self, dimension: str, score: float, details: dict

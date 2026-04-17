@@ -214,6 +214,7 @@ class CarouselCreate(BaseModel):
     slide_count: int = 6
     hook_style: Optional[str] = None
     content_format: Optional[str] = None
+    use_swarm: bool = False
 
 
 class CarouselUpdate(BaseModel):
@@ -674,12 +675,15 @@ class ResearchJobStep(BaseModel):
 
 
 class ResearchJob(BaseModel):
-    """Tracks progress of a character research job."""
+    """Tracks progress of a character/media research job."""
     id: str
     character_id: str
     character_name: str
     universe: str
     status: str = "queued"
+    # One of "character", "movie", "tv_show". Defaults to "character" so existing
+    # character jobs keep the same shape; media titles surface in the same queue.
+    entity_type: str = "character"
     steps: List[ResearchJobStep] = Field(default_factory=list)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

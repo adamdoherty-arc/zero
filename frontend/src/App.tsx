@@ -49,8 +49,10 @@ import { CharacterContentPage } from '@/pages/CharacterContentPage'
 import { CharacterDetailPage } from '@/pages/CharacterDetailPage'
 import { CharacterAutopilotPage } from '@/pages/CharacterAutopilotPage'
 import { CarouselEditorPage } from '@/pages/CarouselEditorPage'
+import { MediaDetailPage } from '@/pages/MediaDetailPage'
 import { CharacterContentLayout } from '@/layouts/CharacterContentLayout'
 import BrainDashboardPage from '@/pages/BrainDashboardPage'
+import BrainEmployeePage from '@/pages/BrainEmployeePage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 /**
@@ -127,9 +129,12 @@ function App() {
             <Route path="/experiments" element={<ExperimentLabPage />} />
             <Route path="/council" element={<CouncilRoomPage />} />
             <Route path="/brain" element={<BrainDashboardPage />} />
+            <Route path="/brain/employee" element={<BrainEmployeePage />} />
             <Route path="/characters" element={<CharacterContentLayout />}>
               <Route index element={<ErrorBoundary pageName="CharacterContent"><CharacterContentPage /></ErrorBoundary>} />
               <Route path="autopilot" element={<ErrorBoundary pageName="CharacterAutopilot"><CharacterAutopilotPage /></ErrorBoundary>} />
+              <Route path="media/:mediaId" element={<ErrorBoundary pageName="MediaDetail"><MediaDetailPage /></ErrorBoundary>} />
+              <Route path="media/:mediaId/carousels/:carouselId/edit" element={<ErrorBoundary pageName="CarouselEditor"><CarouselEditorPage /></ErrorBoundary>} />
               <Route path=":characterId" element={<ErrorBoundary pageName="CharacterDetail"><CharacterDetailPage /></ErrorBoundary>} />
               <Route path=":characterId/carousels/:carouselId/edit" element={<ErrorBoundary pageName="CarouselEditor"><CarouselEditorPage /></ErrorBoundary>} />
             </Route>
