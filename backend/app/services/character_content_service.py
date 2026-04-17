@@ -29,6 +29,7 @@ from app.db.models import (
     CharacterModel, CharacterCarouselModel, CharacterImageModel,
     CharacterCarouselVersionModel,
     CharacterResearchFragmentModel, CharacterResearchStepStatModel,
+    ResearchQueueStateModel,
     StoryTemplateModel,
 )
 from app.models.character_content import (
@@ -2654,6 +2655,24 @@ class CharacterContentService:
             logger.debug("record_step_stat_failed",
                          step=step_name, character_id=character_id, error=str(e))
 
+    async def _persist_completed_step(self, character_id: str, step_name: str) -> None:
+        """Append a completed step name to the character's research_completed_steps.
+
+        Fire-and-forget: pipeline must not block on this write.
+        """
+        try:
+            async with get_session() as session:
+                row = await session.get(CharacterModel, character_id)
+                if row:
+                    existing = row.research_completed_steps or []
+                    if step_name not in existing:
+                        existing.append(step_name)
+                        row.research_completed_steps = existing
+                        await session.commit()
+        except Exception as e:
+            logger.debug("persist_completed_step_failed",
+                         step=step_name, character_id=character_id, error=str(e))
+
     async def get_step_duration_averages(self) -> Dict[str, Dict[str, int]]:
         """Return rolling stats per step. Cached 60s.
 
@@ -3027,7 +3046,10 @@ class CharacterContentService:
             )
             for row in stuck.scalars().all():
                 row.research_status = "pending"
+                row.research_completed_steps = []
                 logger.info("reset_stuck_character", name=row.name, id=row.id)
+            # Clear stale queue state from previous runs
+            await session.execute(delete(ResearchQueueStateModel))
             await session.commit()
 
         # Get candidates: pending + failed + needs_retry (0-fact completed)
@@ -3081,6 +3103,21 @@ class CharacterContentService:
             _research_queue["jobs"][job_id] = job_data
             _research_queue["order"].append(job_id)
 
+        # Persist queue state to DB so it survives container restarts
+        try:
+            async with get_session() as session:
+                for position, job_id in enumerate(_research_queue["order"]):
+                    job = _research_queue["jobs"][job_id]
+                    session.add(ResearchQueueStateModel(
+                        character_id=job["character_id"],
+                        queue_position=position,
+                        job_id=job_id,
+                    ))
+                await session.commit()
+            logger.info("research_queue_persisted", jobs=len(_research_queue["order"]))
+        except Exception as e:
+            logger.warning("research_queue_persist_failed", error=str(e))
+
         # Launch the queue processor as a background task
         asyncio.create_task(self._run_research_queue())
 
@@ -3093,6 +3130,16 @@ class CharacterContentService:
             return {"status": "not_running", "message": "No research queue is currently running."}
 
         _research_queue["cancel_requested"] = True
+
+        # Clear persistent queue state for un-started jobs so they don't
+        # auto-resume on restart.
+        try:
+            async with get_session() as session:
+                await session.execute(delete(ResearchQueueStateModel))
+                await session.commit()
+        except Exception:
+            pass
+
         return {
             "status": "cancelling",
             "message": "Cancel requested. Current character will finish, then queue stops.",
@@ -3109,8 +3156,9 @@ class CharacterContentService:
                 raise ValueError(f"Character {character_id} not found")
             char_name = row.name
             char_universe = row.universe or ""
-            # Reset the character's research status in DB
+            # Reset the character's research status and completed steps in DB
             row.research_status = "pending"
+            row.research_completed_steps = []
             await session.commit()
 
         step_names = [
@@ -3262,6 +3310,19 @@ class CharacterContentService:
                         except (OSError, ValueError, RuntimeError):
                             pass
 
+                    # Remove completed/failed job from persistent queue state
+                    try:
+                        char_id = _research_queue["jobs"][job_id]["character_id"]
+                        async with get_session() as session:
+                            await session.execute(
+                                delete(ResearchQueueStateModel).where(
+                                    ResearchQueueStateModel.character_id == char_id
+                                )
+                            )
+                            await session.commit()
+                    except Exception:
+                        pass
+
             # Launch all queued jobs; the semaphore limits to CONCURRENCY at a time
             tasks = []
             for jid in order:
@@ -3277,6 +3338,13 @@ class CharacterContentService:
         finally:
             _research_queue["running"] = False
             _research_queue["cancel_requested"] = False
+            # Clean up any remaining queue state rows
+            try:
+                async with get_session() as session:
+                    await session.execute(delete(ResearchQueueStateModel))
+                    await session.commit()
+            except Exception:
+                pass
             logger.info("research_queue_finished")
 
     async def _research_pipeline_tracked(self, job_id: str):
@@ -3315,9 +3383,17 @@ class CharacterContentService:
                         except RuntimeError:
                             # No running event loop; ignore.
                             pass
+                    # Persist completed step name to DB for restart resilience.
+                    if status == "completed":
+                        try:
+                            asyncio.create_task(self._persist_completed_step(
+                                character_id, step_name,
+                            ))
+                        except RuntimeError:
+                            pass
                     break
 
-        # Load character info
+        # Load character info and previously completed steps
         async with get_session() as session:
             row = await session.get(CharacterModel, character_id)
             if not row:
@@ -3325,6 +3401,11 @@ class CharacterContentService:
             name = row.name
             universe = row.universe
             franchise = row.franchise or ""
+            completed_steps = set(row.research_completed_steps or [])
+
+        if completed_steps:
+            logger.info("research_resume_detected", character_id=character_id,
+                        name=name, completed_steps=list(completed_steps))
 
         logger.info("tracked_research_started", character_id=character_id, name=name)
 
@@ -3385,9 +3466,18 @@ class CharacterContentService:
                 _update_step("deep_research", "failed", error=str(e))
                 return []
 
-        search_results, wiki_data, deep_fragments = await asyncio.gather(
-            _do_searxng(), _do_wiki(), _do_deep()
-        )
+        # If synthesis already completed (from a previous interrupted run),
+        # skip steps 1-3 entirely since their output only feeds synthesis.
+        if "synthesis" in completed_steps:
+            search_results, wiki_data, deep_fragments = [], {}, []
+            _update_step("searxng_search", "completed", result_summary="Skipped (synthesis exists)")
+            _update_step("wiki_scrape", "completed", result_summary="Skipped (synthesis exists)")
+            _update_step("deep_research", "completed", result_summary="Skipped (synthesis exists)")
+            logger.info("steps_1_3_skipped", name=name, reason="synthesis_already_completed")
+        else:
+            search_results, wiki_data, deep_fragments = await asyncio.gather(
+                _do_searxng(), _do_wiki(), _do_deep()
+            )
 
         # Store fragments in DB
         if deep_fragments:
@@ -3481,6 +3571,23 @@ class CharacterContentService:
                 return []
 
         async def _do_images():
+            # Skip if images were already sourced in a previous run
+            if "image_sourcing" in completed_steps:
+                try:
+                    async with get_session() as session:
+                        img_count = (await session.execute(
+                            select(sql_func.count()).select_from(CharacterImageModel).where(
+                                CharacterImageModel.character_id == character_id
+                            )
+                        )).scalar() or 0
+                    if img_count > 0:
+                        job["images_found"] = img_count
+                        _update_step("image_sourcing", "completed",
+                                     result_summary=f"Skipped ({img_count} images exist)")
+                        logger.info("image_sourcing_skipped", name=name, images=img_count)
+                        return []
+                except Exception:
+                    pass  # Fall through to re-run
             _update_step("image_sourcing", "running")
             try:
                 imgs = await self._source_images(character_id, name, universe, franchise)

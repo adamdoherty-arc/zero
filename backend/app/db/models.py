@@ -1598,6 +1598,9 @@ class CharacterModel(Base):
     content_themes: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
     blocked_image_urls: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
 
+    # Phase 029: Research queue persistence
+    research_completed_steps: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
     # Phase 024: Character Autopilot
     autonomous_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     priority_tier: Mapped[str] = mapped_column(String(20), default="standard", index=True)
@@ -1618,8 +1621,12 @@ class CharacterCarouselModel(Base):
     __tablename__ = "character_carousels"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    character_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=True, index=True)
     angle: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    # Phase 028: TV & Movie content support
+    content_type: Mapped[str] = mapped_column(String(20), default="character", index=True)  # character | media
+    media_title_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("media_titles.id", ondelete="SET NULL"), nullable=True, index=True)
     title: Mapped[Optional[str]] = mapped_column(String(300))
     hook_text: Mapped[Optional[str]] = mapped_column(Text)
     slides: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
@@ -1840,6 +1847,18 @@ class CharacterResearchStepStatModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
+class ResearchQueueStateModel(Base):
+    """Persists research queue membership and order across container restarts."""
+
+    __tablename__ = "research_queue_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    character_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    queue_position: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 # ---------------------------------------------------------------------------
 # Character Content: Cross-Character Relationships
 # ---------------------------------------------------------------------------
@@ -1929,6 +1948,127 @@ class StoryTemplateModel(Base):
     times_used: Mapped[int] = mapped_column(Integer, default=0)
     avg_score: Mapped[float] = mapped_column(Float, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# TV & Movie Content: Media Titles (Phase 028)
+# ---------------------------------------------------------------------------
+
+class MediaTitleModel(Base):
+    __tablename__ = "media_titles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    media_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # tv_show | movie
+    title: Mapped[str] = mapped_column(String(300), nullable=False, index=True)
+    year: Mapped[Optional[int]] = mapped_column(Integer)
+    end_year: Mapped[Optional[int]] = mapped_column(Integer)
+    genre: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    franchise: Mapped[Optional[str]] = mapped_column(String(200))
+    universe: Mapped[str] = mapped_column(String(50), default="other", index=True)
+    poster_url: Mapped[Optional[str]] = mapped_column(Text)
+    backdrop_url: Mapped[Optional[str]] = mapped_column(Text)
+    synopsis: Mapped[Optional[str]] = mapped_column(Text)
+    tagline: Mapped[Optional[str]] = mapped_column(Text)
+
+    # TV-specific
+    season_count: Mapped[Optional[int]] = mapped_column(Integer)
+    episode_count: Mapped[Optional[int]] = mapped_column(Integer)
+    network: Mapped[Optional[str]] = mapped_column(String(100))
+    show_status: Mapped[Optional[str]] = mapped_column(String(30))  # airing | ended | cancelled | upcoming
+
+    # Movie-specific
+    runtime_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    budget_usd: Mapped[Optional[int]] = mapped_column(BigInteger)
+    box_office_usd: Mapped[Optional[int]] = mapped_column(BigInteger)
+    mpaa_rating: Mapped[Optional[str]] = mapped_column(String(10))
+
+    # Research
+    research_data: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    research_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    fact_bank: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    research_sources: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    research_depth_score: Mapped[float] = mapped_column(Float, default=0.0)
+    content_themes: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+
+    # External IDs
+    tmdb_id: Mapped[Optional[int]] = mapped_column(Integer, unique=True)
+    imdb_id: Mapped[Optional[str]] = mapped_column(String(20), unique=True)
+
+    # Stats
+    carousels_created: Mapped[int] = mapped_column(Integer, default=0)
+    total_views: Mapped[int] = mapped_column(Integer, default=0)
+    total_likes: Mapped[int] = mapped_column(Integer, default=0)
+    avg_engagement: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Meta
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+    last_researched: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("idx_media_type_status", "media_type", "status"),
+        Index("idx_media_universe", "universe"),
+    )
+
+
+class CharacterMediaTitleModel(Base):
+    __tablename__ = "character_media_titles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False, index=True)
+    media_title_id: Mapped[str] = mapped_column(String(64), ForeignKey("media_titles.id", ondelete="CASCADE"), nullable=False, index=True)
+    role_name: Mapped[Optional[str]] = mapped_column(String(200))
+    role_type: Mapped[str] = mapped_column(String(30), default="supporting")  # lead | supporting | recurring | guest | cameo
+    actor_name: Mapped[Optional[str]] = mapped_column(String(200))
+    seasons_appeared: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("character_id", "media_title_id", name="uq_character_media_title"),
+    )
+
+
+class MediaImageModel(Base):
+    __tablename__ = "media_images"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    media_title_id: Mapped[str] = mapped_column(String(64), ForeignKey("media_titles.id", ondelete="CASCADE"), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+    query_used: Mapped[Optional[str]] = mapped_column(Text)
+    width: Mapped[Optional[int]] = mapped_column(Integer)
+    height: Mapped[Optional[int]] = mapped_column(Integer)
+    is_valid: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0)
+    quality_score: Mapped[float] = mapped_column(Float, default=0.0)
+    content_type: Mapped[Optional[str]] = mapped_column(String(50))
+    file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    is_approved: Mapped[Optional[bool]] = mapped_column(Boolean)
+    feedback_reason: Mapped[Optional[str]] = mapped_column(Text)
+    validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("media_title_id", "url", name="uq_media_image_url"),
+    )
+
+
+class MediaResearchFragmentModel(Base):
+    __tablename__ = "media_research_fragments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    media_title_id: Mapped[str] = mapped_column(String(64), ForeignKey("media_titles.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(Text)
+    relevance_score: Mapped[float] = mapped_column(Float, default=0.5)
+    fragment_type: Mapped[str] = mapped_column(String(50), index=True)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

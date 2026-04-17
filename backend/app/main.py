@@ -7,6 +7,7 @@ knowledge management, and agent orchestration.
 
 import asyncio
 import os
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +32,7 @@ from app.routers import (
     agent_company, deep_research, experiments, council,
     character_content, brain,
     character_reference_videos,
+    media_content,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -140,30 +142,84 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to start scheduler", error=str(e))
 
-    # Auto-resume character research queue if there are pending/stuck characters
+    # Auto-resume character research queue from persisted state
     try:
-        from app.services.character_content_service import get_character_content_service
-        svc = get_character_content_service()
+        from app.services.character_content_service import (
+            get_character_content_service, _research_queue,
+        )
         from app.infrastructure.database import get_session
-        from app.db.models import CharacterModel
+        from app.db.models import CharacterModel, ResearchQueueStateModel
+        from app.models.character_content import ResearchJob, ResearchJobStep, ResearchJobStatus
         from sqlalchemy import select, func
+
+        svc = get_character_content_service()
+
+        # Check for persisted queue state (interrupted run)
         async with get_session() as session:
-            # Reset any stuck "researching" characters back to pending
-            from sqlalchemy import update
-            await session.execute(
-                update(CharacterModel)
-                .where(CharacterModel.research_status == "researching")
-                .values(research_status="pending")
-            )
-            await session.commit()
-            # Count pending characters
-            result = await session.execute(
-                select(func.count()).where(CharacterModel.research_status == "pending")
-            )
-            pending_count = result.scalar() or 0
-        if pending_count > 0:
-            logger.info("auto_resume_research_queue", pending=pending_count)
-            await svc.start_batch_research_async(limit=pending_count)
+            queue_rows = (await session.execute(
+                select(ResearchQueueStateModel)
+                .order_by(ResearchQueueStateModel.queue_position)
+            )).scalars().all()
+
+        if queue_rows:
+            # Rebuild in-memory queue from DB state
+            logger.info("research_queue_resume_detected", count=len(queue_rows))
+            step_names = [
+                "searxng_search", "wiki_scrape", "deep_research",
+                "synthesis", "fact_extraction", "image_sourcing", "save_results",
+            ]
+
+            _research_queue["jobs"] = {}
+            _research_queue["order"] = []
+            _research_queue["running"] = True
+            _research_queue["cancel_requested"] = False
+            _research_queue["started_at"] = datetime.now(timezone.utc).isoformat()
+
+            for qrow in queue_rows:
+                async with get_session() as session:
+                    char = await session.get(CharacterModel, qrow.character_id)
+                    if not char:
+                        continue
+                    char_completed = set(char.research_completed_steps or [])
+                    # Mark character as researching
+                    char.research_status = "researching"
+                    await session.commit()
+
+                steps = []
+                for s in step_names:
+                    status = "completed" if s in char_completed else "pending"
+                    step = ResearchJobStep(name=s).model_dump()
+                    step["status"] = status
+                    steps.append(step)
+
+                job_data = ResearchJob(
+                    id=qrow.job_id,
+                    character_id=qrow.character_id,
+                    character_name=char.name,
+                    universe=char.universe or "",
+                    status=ResearchJobStatus.QUEUED,
+                    steps=steps,
+                ).model_dump()
+                job_data["status"] = "queued"
+                _research_queue["jobs"][qrow.job_id] = job_data
+                _research_queue["order"].append(qrow.job_id)
+
+            if _research_queue["order"]:
+                asyncio.create_task(svc._run_research_queue())
+                logger.info("research_queue_resumed",
+                            jobs=len(_research_queue["order"]))
+            else:
+                _research_queue["running"] = False
+        else:
+            # No persisted queue; fall back to resetting stuck characters
+            async with get_session() as session:
+                from sqlalchemy import update as sa_update
+                await session.execute(
+                    sa_update(CharacterModel)
+                    .where(CharacterModel.research_status == "researching")
+                    .values(research_status="pending", research_completed_steps=[])
+                )
+                await session.commit()
     except Exception as e:
         logger.warning("auto_resume_research_failed", error=str(e))
 
@@ -350,6 +406,7 @@ app.include_router(
     prefix="/api/character-content/reference-videos",
     tags=["Character Reference Videos"],
 )
+app.include_router(media_content.router, prefix="/api/media-content", tags=["Media Content"])
 app.include_router(agent_company.router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
 app.include_router(experiments.router)  # prefix in router

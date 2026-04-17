@@ -141,10 +141,23 @@ async def create_tables() -> None:
             ("character_carousels", "auto_approved", "BOOLEAN"),
             ("character_carousels", "auto_approved_at", "TIMESTAMPTZ"),
             ("character_carousels", "auto_approve_reason", "TEXT"),
+            # Phase 029: Research queue persistence
+            ("characters", "research_completed_steps", "JSONB DEFAULT '[]'::jsonb"),
             # Content variety: hook style + content format
             ("character_carousels", "hook_style", "VARCHAR(50)"),
             ("character_carousels", "content_format", "VARCHAR(50)"),
+            # Phase 028: TV & Movie content support
+            ("character_carousels", "content_type", "VARCHAR(20) DEFAULT 'character'"),
+            ("character_carousels", "media_title_id", "VARCHAR(64)"),
         ]
+
+        # Phase 028: Make character_id nullable for media-only carousels
+        try:
+            await conn.execute(sqlalchemy.text(
+                "ALTER TABLE character_carousels ALTER COLUMN character_id DROP NOT NULL"
+            ))
+        except Exception:
+            pass  # Already nullable or doesn't exist
         for table, col, col_type in safe_columns:
             try:
                 await conn.execute(sqlalchemy.text(
