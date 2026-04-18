@@ -78,7 +78,7 @@ VOTING_ROLES: Dict[str, SwarmRole] = {
             "\"vote\": \"accept|hold|reject\", \"reasoning\": \"one sentence\"}."
         ),
         has_veto=False,
-        task_type="council_analyst",
+        task_type="council_ceo",
     ),
     "editor": SwarmRole(
         name="editor",
@@ -89,7 +89,7 @@ VOTING_ROLES: Dict[str, SwarmRole] = {
             "\"vote\": \"accept|hold|reject\", \"reasoning\": \"one sentence\"}."
         ),
         has_veto=False,
-        task_type="council_analyst",
+        task_type="council_researcher",
     ),
     "critic": SwarmRole(
         name="critic",
@@ -101,7 +101,7 @@ VOTING_ROLES: Dict[str, SwarmRole] = {
             "\"vote\": \"accept|hold|reject\", \"reasoning\": \"one sentence\"}."
         ),
         has_veto=True,
-        task_type="council_validator",
+        task_type="council_ceo",
     ),
     "value_predictor": SwarmRole(
         name="value_predictor",
@@ -122,16 +122,32 @@ MIN_CONFIDENCE = 0.2
 
 
 def _extract_json(raw: str) -> Optional[Dict[str, Any]]:
+    """Find the LAST parseable JSON object in the text.
+
+    Kimi k2-thinking returns <thinking>…</thinking> blocks that often contain
+    the JSON format *specification* (with literal 0-100 or accept|hold|reject)
+    which is not valid JSON. The actual answer appears after the thinking, so
+    we scan all `{...}` candidates and return the last one that has concrete
+    numeric/string values for predicted_engagement.
+    """
     if not raw:
         return None
-    match = re.search(r"\{.*?\}", raw, re.DOTALL)
-    if not match:
-        return None
-    try:
-        obj = json.loads(match.group(0))
-        return obj if isinstance(obj, dict) else None
-    except (json.JSONDecodeError, ValueError):
-        return None
+    candidates = re.findall(r"\{[^{}]*\}", raw, re.DOTALL)
+    for match in reversed(candidates):
+        try:
+            obj = json.loads(match)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        # Must have at least a numeric predicted_engagement to count as "real"
+        pe = obj.get("predicted_engagement")
+        if isinstance(pe, (int, float)):
+            return obj
+        # Fallback: if it's the only candidate and has some expected keys
+        if any(k in obj for k in ("confidence", "vote", "reasoning")):
+            return obj
+    return None
 
 
 class ContentSwarmService:
@@ -152,7 +168,7 @@ class ContentSwarmService:
                 system=role.system,
                 task_type=role.task_type,
                 temperature=0.3,
-                max_tokens=256,
+                max_tokens=1200,  # Kimi k2-thinking needs headroom for its reasoning + final JSON
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("swarm_role_call_failed", role=role.name, error=str(e)[:200])

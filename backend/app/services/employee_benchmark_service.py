@@ -28,7 +28,8 @@ logger = structlog.get_logger(__name__)
 
 # Dimension definitions: name -> (weight, is_llm_evaluated).
 # Phase 3d (Content Brain v2): added trending_alignment, swarm_consensus_quality,
-# calibration_per_agent. Rebalanced learning_velocity 15->10 and knowledge_growth 5->0.
+# calibration_per_agent. Rebalanced learning_velocity 15->10, removed knowledge_growth 5->0.
+# Weights sum to 1.00.
 DIMENSIONS = {
     "content_quality":          (0.15, False),
     "learning_velocity":        (0.10, False),
@@ -39,9 +40,9 @@ DIMENSIONS = {
     "cost_efficiency":          (0.08, False),
     "communication_quality":    (0.08, True),
     "calibration_accuracy":     (0.05, False),
-    "trending_alignment":       (0.08, False),
-    "swarm_consensus_quality":  (0.07, False),
-    "calibration_per_agent":    (0.05, False),
+    "trending_alignment":       (0.04, False),
+    "swarm_consensus_quality":  (0.03, False),
+    "calibration_per_agent":    (0.03, False),
 }
 
 
