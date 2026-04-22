@@ -442,14 +442,26 @@ async def synthesize_tts(request: SayRequest):
 # --- Voice loop (STT -> LLM -> TTS) ---
 
 @router.post("/voice")
-async def process_voice(audio: bytes = None):
-    """Process voice input through the full STT -> LLM -> TTS pipeline."""
+async def process_voice(audio: UploadFile = File(...)):
+    """
+    Process voice input through the full STT -> persona-wrapped LLM -> gesture
+    marker strip -> TTS pipeline.
+
+    The response includes the TTS WAV inline as ``audio_response_b64`` so
+    HTTP-only clients like the reachy_mini_zero bridge app can play it back
+    without a second round trip.
+    """
+    import base64
     voice_service = get_voice_loop_service()
-    if not audio:
+    audio_bytes = await audio.read()
+    if not audio_bytes:
         raise HTTPException(status_code=400, detail="No audio data provided")
-    result = await voice_service.process_voice_input(audio)
-    audio_response = result.pop("audio_response", None)
+    result = await voice_service.process_voice_input(audio_bytes)
+    audio_response: bytes | None = result.pop("audio_response", None)
     return {
         **result,
         "has_audio_response": audio_response is not None,
+        "audio_response_b64": (
+            base64.b64encode(audio_response).decode("ascii") if audio_response else None
+        ),
     }
