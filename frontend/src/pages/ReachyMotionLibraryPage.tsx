@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound, Mic, MicOff } from 'lucide-react'
+import { getAuthHeaders } from '@/lib/auth'
 import {
   useMotionLibrary,
   usePersonas,
@@ -27,6 +28,110 @@ function ConnectionBadge() {
     >
       {connected ? 'Reachy connected' : 'Reachy offline'}
     </span>
+  )
+}
+
+function PushToTalk() {
+  const [recording, setRecording] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [lastResult, setLastResult] = useState<{ said: string; heard: string } | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
+  const streamRef = useRef<MediaStream | null>(null)
+  const { toast } = useToast()
+
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+      const mime = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/ogg')
+          ? 'audio/ogg'
+          : ''
+      const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data)
+      }
+      recorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        streamRef.current?.getTracks().forEach((t) => t.stop())
+        streamRef.current = null
+        if (blob.size < 400) {
+          toast({ title: 'Too short', description: 'Press and hold to speak.', variant: 'destructive' })
+          return
+        }
+        setBusy(true)
+        try {
+          const form = new FormData()
+          form.append('audio', blob, 'ptt.webm')
+          const response = await fetch('/api/reachy/voice', {
+            method: 'POST',
+            headers: { ...getAuthHeaders() },
+            body: form,
+          })
+          const payload = await response.json()
+          if (!response.ok) throw new Error(payload?.detail ?? `${response.status}`)
+          const heard = payload.transcription?.text ?? ''
+          const said = payload.llm_response ?? ''
+          setLastResult({ heard, said })
+          // Play back the TTS reply if present
+          if (payload.audio_response_b64) {
+            const audioBytes = Uint8Array.from(atob(payload.audio_response_b64), (c) => c.charCodeAt(0))
+            const url = URL.createObjectURL(new Blob([audioBytes], { type: 'audio/wav' }))
+            new Audio(url).play().catch(() => undefined)
+          }
+        } catch (e) {
+          toast({ title: 'Voice failed', description: String(e), variant: 'destructive' })
+        } finally {
+          setBusy(false)
+        }
+      }
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setRecording(true)
+    } catch (e) {
+      toast({ title: 'Mic access denied', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const stop = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    setRecording(false)
+  }
+
+  return (
+    <div className="glass-card p-3 mb-4">
+      <div className="flex items-center gap-3">
+        <button
+          onMouseDown={start}
+          onMouseUp={stop}
+          onMouseLeave={() => recording && stop()}
+          onTouchStart={(e) => { e.preventDefault(); start() }}
+          onTouchEnd={(e) => { e.preventDefault(); stop() }}
+          disabled={busy}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold select-none ${
+            recording ? 'bg-red-500/30 text-red-200 ring-2 ring-red-500' :
+            busy ? 'bg-gray-700 text-gray-400' :
+            'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+          }`}
+        >
+          {recording ? <MicOff className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
+          {busy ? 'Thinking…' : recording ? 'Listening — release to send' : 'Hold to talk to Reachy'}
+        </button>
+        <div className="flex-1 min-w-0 text-xs">
+          {lastResult?.heard && (
+            <div className="text-gray-400 truncate"><span className="text-gray-500">you: </span>{lastResult.heard}</div>
+          )}
+          {lastResult?.said && (
+            <div className="text-white truncate"><span className="text-gray-500">reachy: </span>{lastResult.said}</div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -193,6 +298,7 @@ export function ReachyMotionLibraryPage() {
         </div>
       </div>
 
+      <PushToTalk />
       <PersonaPicker />
 
       <div className="flex items-center gap-3 mb-5 flex-wrap">

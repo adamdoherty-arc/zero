@@ -158,6 +158,22 @@ export function useCameraStream() {
   })
 }
 
+export interface ReachyState {
+  head_pose?: { x: number; y: number; z: number; roll: number; pitch: number; yaw: number }
+  body_yaw?: number
+  antenna_positions?: [number, number]
+  doa?: { angle: number; speech_detected: boolean }
+}
+
+export function useReachyState(pollMs = 500) {
+  return useQuery<ReachyState>({
+    queryKey: ['reachy', 'state'],
+    queryFn: () => fetchApi('/reachy/state'),
+    refetchInterval: pollMs,
+    refetchIntervalInBackground: false,
+  })
+}
+
 // ---- Personas (Wave 2) ----
 
 export interface Persona {

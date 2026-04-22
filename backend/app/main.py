@@ -162,6 +162,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to start Reachy presence scheduler", error=str(e))
 
+        # Home Assistant → Reachy gesture watcher (Wave 6). Inert when HA is
+        # not configured or the gesture map is empty.
+        try:
+            from app.services.home_assistant_watcher import get_ha_watcher
+            get_ha_watcher().start()
+        except Exception as e:
+            logger.warning("Failed to start HA gesture watcher", error=str(e))
+
     # Auto-resume character research queue from persisted state
     try:
         from app.services.character_content_service import (

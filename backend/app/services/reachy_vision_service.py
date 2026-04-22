@@ -1,0 +1,174 @@
+"""
+Reachy Mini vision service — lazy wrapper over optional vision backends.
+
+Lifted pattern from ``sdk/reachy_mini_toolbox/src/reachy_mini_toolbox/vision/
+hand_tracker.py`` (MediaPipe Hands) and the conversation app's YOLOv11n face
+detection. This module is deliberately non-strict about dependencies so Zero
+can ship without pulling mediapipe/ultralytics into the base image: callers
+get a clean ``available: False`` response when the backend is not installed,
+and can still see the endpoint exists.
+
+To enable a backend, install:
+- ``pip install mediapipe``  → hand tracking via HandTracker
+- ``pip install opencv-python`` → face detection via Haar cascade
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Optional
+
+import structlog
+
+logger = structlog.get_logger()
+
+DetectorKind = Literal["hands", "face"]
+
+
+@dataclass
+class Detection:
+    kind: str          # "hand" | "face"
+    x: float           # normalized [0, 1] center x
+    y: float           # normalized [0, 1] center y
+    width: float       # normalized bbox width
+    height: float      # normalized bbox height
+    confidence: float  # [0, 1]
+
+
+class ReachyVisionService:
+    _instance: Optional["ReachyVisionService"] = None
+
+    def __init__(self) -> None:
+        self._hand_tracker = None
+        self._face_cascade = None
+
+    @classmethod
+    def get_instance(cls) -> "ReachyVisionService":
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    # ------------------------------------------------------------------
+    # Backend availability probes
+    # ------------------------------------------------------------------
+
+    def backend_status(self) -> dict:
+        return {
+            "hands": self._try_import_mediapipe(),
+            "face": self._try_import_opencv(),
+        }
+
+    def _try_import_mediapipe(self) -> dict:
+        try:
+            import mediapipe  # type: ignore[import-not-found]
+            return {"available": True, "library": "mediapipe", "version": getattr(mediapipe, "__version__", "?")}
+        except Exception as e:
+            return {"available": False, "reason": f"mediapipe not installed: {e}"}
+
+    def _try_import_opencv(self) -> dict:
+        try:
+            import cv2  # type: ignore[import-not-found]
+            return {"available": True, "library": "opencv-python", "version": cv2.__version__}
+        except Exception as e:
+            return {"available": False, "reason": f"opencv-python not installed: {e}"}
+
+    # ------------------------------------------------------------------
+    # Detection entry points
+    # ------------------------------------------------------------------
+
+    def detect(self, image_bytes: bytes, *, kind: DetectorKind = "face") -> dict:
+        """
+        Detect objects in a JPEG / PNG frame. Returns:
+            {"available": bool, "detections": [...], "backend": "..."}
+        """
+        if not image_bytes:
+            return {"available": False, "reason": "empty image", "detections": []}
+        if kind == "hands":
+            return self._detect_hands(image_bytes)
+        if kind == "face":
+            return self._detect_faces(image_bytes)
+        return {"available": False, "reason": f"unknown kind: {kind}", "detections": []}
+
+    def _detect_hands(self, image_bytes: bytes) -> dict:
+        try:
+            import cv2  # type: ignore[import-not-found]
+            import mediapipe as mp  # type: ignore[import-not-found]
+            import numpy as np
+        except Exception as e:
+            return {"available": False, "reason": f"hands backend unavailable: {e}", "detections": []}
+
+        if self._hand_tracker is None:
+            self._hand_tracker = mp.solutions.hands.Hands(
+                static_image_mode=True,
+                max_num_hands=2,
+                min_detection_confidence=0.5,
+            )
+
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return {"available": True, "detections": [], "backend": "mediapipe", "error": "decode_failed"}
+
+        h, w = img.shape[:2]
+        results = self._hand_tracker.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        detections: list[dict] = []
+        for hand_landmarks in results.multi_hand_landmarks or []:
+            xs = [lm.x for lm in hand_landmarks.landmark]
+            ys = [lm.y for lm in hand_landmarks.landmark]
+            detections.append({
+                "kind": "hand",
+                "x": (min(xs) + max(xs)) / 2,
+                "y": (min(ys) + max(ys)) / 2,
+                "width": max(xs) - min(xs),
+                "height": max(ys) - min(ys),
+                "confidence": 1.0,  # MediaPipe doesn't expose bbox confidence directly
+            })
+        return {
+            "available": True,
+            "backend": "mediapipe",
+            "image_size": {"width": w, "height": h},
+            "detections": detections,
+        }
+
+    def _detect_faces(self, image_bytes: bytes) -> dict:
+        try:
+            import cv2  # type: ignore[import-not-found]
+            import numpy as np
+        except Exception as e:
+            return {"available": False, "reason": f"face backend unavailable: {e}", "detections": []}
+
+        if self._face_cascade is None:
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            self._face_cascade = cv2.CascadeClassifier(cascade_path)
+            if self._face_cascade.empty():
+                return {"available": False, "reason": "cascade_load_failed", "detections": []}
+
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return {"available": True, "backend": "opencv", "detections": [], "error": "decode_failed"}
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape[:2]
+        faces = self._face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(40, 40))
+        detections = [
+            {
+                "kind": "face",
+                "x": (x + fw / 2) / w,
+                "y": (y + fh / 2) / h,
+                "width": fw / w,
+                "height": fh / h,
+                "confidence": 1.0,
+            }
+            for (x, y, fw, fh) in faces
+        ]
+        return {
+            "available": True,
+            "backend": "opencv",
+            "image_size": {"width": int(w), "height": int(h)},
+            "detections": detections,
+        }
+
+
+def get_reachy_vision_service() -> ReachyVisionService:
+    return ReachyVisionService.get_instance()

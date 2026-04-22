@@ -8,6 +8,7 @@ import {
   useGoToSleep,
   useReachyStatus,
   useCameraStream,
+  useReachyState,
 } from '@/hooks/useReachyApi'
 import { useToast } from '@/hooks/use-toast'
 
@@ -147,31 +148,94 @@ export function ReachyTeleopPage() {
           </button>
         </div>
 
-        <div className="glass-card p-4 flex flex-col">
-          <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
-            <Camera className="w-4 h-4" /> Camera
-          </h2>
-          {stream.data?.url ? (
-            <div className="flex-1 min-h-[300px] flex items-center justify-center text-sm text-gray-400 border border-dashed border-gray-700 rounded-lg p-6 text-center">
-              <div>
-                <Bot className="w-12 h-12 mx-auto mb-2 text-gray-600" />
-                <p>Feed available at</p>
+        <div className="space-y-4">
+          <PuppetView />
+          <div className="glass-card p-4">
+            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+              <Camera className="w-4 h-4" /> Camera feed
+            </h2>
+            {stream.data?.url ? (
+              <div className="text-xs text-gray-400">
+                <p>Daemon serves WebRTC on:</p>
                 <a href={stream.data.url} target="_blank" rel="noreferrer" className="text-indigo-400 break-all">
                   {stream.data.url}
                 </a>
-                <p className="text-xs text-gray-500 mt-3">
-                  The Reachy daemon serves WebRTC on :8443. Embed a viewer here when the frontend grows a
-                  WebRTC client.
-                </p>
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
-              Camera URL unavailable.
-            </div>
-          )}
+            ) : (
+              <div className="text-sm text-gray-500">Camera URL unavailable.</div>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PuppetView() {
+  const { data } = useReachyState(500)
+  // SVG puppet: a head silhouette that rotates with the live pose. Cheap,
+  // zero deps, and refreshes at 2 Hz so callers don't hammer the daemon.
+  const pose = data?.head_pose
+  const ant = data?.antenna_positions ?? [0, 0]
+  const pitchDeg = pose ? (pose.pitch * 180) / Math.PI : 0
+  const yawDeg = pose ? (pose.yaw * 180) / Math.PI : 0
+  const rollDeg = pose ? (pose.roll * 180) / Math.PI : 0
+  const leftAnt = (ant[0] * 180) / Math.PI
+  const rightAnt = (ant[1] * 180) / Math.PI
+  const doaDeg = data?.doa?.speech_detected && data.doa.angle !== undefined
+    ? (data.doa.angle * 180) / Math.PI
+    : null
+
+  return (
+    <div className="glass-card p-4">
+      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <Bot className="w-4 h-4" /> Live Puppet
+      </h2>
+      <div className="flex items-center justify-center py-2">
+        <svg viewBox="-110 -110 220 220" width="220" height="220" className="text-indigo-400">
+          {/* DoA ring */}
+          <circle cx="0" cy="0" r="100" fill="none" stroke="#333" strokeWidth="1" strokeDasharray="2 4" />
+          {doaDeg !== null && (
+            <line
+              x1="0" y1="0"
+              x2={100 * Math.cos((doaDeg * Math.PI) / 180)}
+              y2={100 * Math.sin((doaDeg * Math.PI) / 180)}
+              stroke="#f59e0b" strokeWidth="2"
+            />
+          )}
+          {/* head: rotates yaw around Z, roll in-plane; pitch shown as vertical shift */}
+          <g transform={`translate(0 ${pitchDeg * 0.8}) rotate(${rollDeg})`}>
+            {/* antennas */}
+            <line
+              x1={-40} y1={-80}
+              x2={-40 - 30 * Math.sin((leftAnt * Math.PI) / 180)}
+              y2={-80 - 30 * Math.cos((leftAnt * Math.PI) / 180)}
+              stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+            />
+            <line
+              x1={40} y1={-80}
+              x2={40 + 30 * Math.sin((rightAnt * Math.PI) / 180)}
+              y2={-80 - 30 * Math.cos((rightAnt * Math.PI) / 180)}
+              stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+            />
+            {/* head circle */}
+            <circle cx="0" cy="0" r="70" fill="rgba(99, 102, 241, 0.12)" stroke="currentColor" strokeWidth="2" />
+            {/* eyes shifted by yaw to simulate 3D gaze */}
+            <circle cx={-20 + yawDeg * 0.35} cy="-10" r="8" fill="currentColor" />
+            <circle cx={20 + yawDeg * 0.35} cy="-10" r="8" fill="currentColor" />
+            {/* mouth */}
+            <path d="M -20 25 Q 0 40 20 25" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </g>
+        </svg>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center text-xs text-gray-400">
+        <div><div className="text-white font-mono">{pitchDeg.toFixed(0)}°</div>pitch</div>
+        <div><div className="text-white font-mono">{yawDeg.toFixed(0)}°</div>yaw</div>
+        <div><div className="text-white font-mono">{rollDeg.toFixed(0)}°</div>roll</div>
+      </div>
+      {doaDeg !== null && (
+        <p className="text-xs text-amber-400 text-center mt-2">Speech at {doaDeg.toFixed(0)}°</p>
+      )}
     </div>
   )
 }

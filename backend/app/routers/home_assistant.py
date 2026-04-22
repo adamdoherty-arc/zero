@@ -51,3 +51,15 @@ async def call_service(request: HaServiceCall):
     if not svc.configured:
         raise HTTPException(503, {"error": "home_assistant_not_configured"})
     return await svc.call_service(request.domain, request.service, request.data)
+
+
+@router.get("/gesture-map")
+async def gesture_map():
+    """
+    Report the HA entity → Reachy gesture mapping the watcher is currently
+    firing on. Configured via ``ZERO_HA_GESTURE_MAP`` env var (JSON) or
+    ``workspace/home_assistant/gesture_map.json``.
+    """
+    from app.services.home_assistant_watcher import get_ha_watcher
+    watcher = get_ha_watcher()
+    return {"started": watcher._started, "map": watcher.get_map()}

@@ -420,6 +420,36 @@ async def camera_stream(fmt: str = "webrtc"):
     return {"url": url, "format": fmt}
 
 
+# ---- Vision (Wave 3) ----
+
+@router.get("/vision/backends")
+async def vision_backends():
+    """Report which vision backends are available on this deployment."""
+    from app.services.reachy_vision_service import get_reachy_vision_service
+    return get_reachy_vision_service().backend_status()
+
+
+@router.post("/vision/detect")
+async def vision_detect(
+    kind: Literal["face", "hands"] = "face",
+    image: UploadFile = File(...),
+):
+    """
+    Detect faces or hands in a POSTed JPEG/PNG frame. Backend selects:
+    - ``face`` uses OpenCV Haar cascades (ships with opencv-python).
+    - ``hands`` uses MediaPipe Hands (requires ``pip install mediapipe``).
+
+    Returns normalized [0, 1] bounding boxes so callers can scale to any
+    target resolution without knowing the input size.
+    """
+    from app.services.reachy_vision_service import get_reachy_vision_service
+    body = await image.read()
+    result = get_reachy_vision_service().detect(body, kind=kind)
+    if not result.get("available"):
+        raise HTTPException(503, result)
+    return result
+
+
 @router.get("/camera")
 async def capture_image():
     """
