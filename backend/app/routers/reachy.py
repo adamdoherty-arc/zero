@@ -26,6 +26,7 @@ from app.services.reachy_personas import (
     persona_to_dict,
 )
 from app.services.reachy_emotion_parser import parse_and_strip
+from app.services.reachy_presence_service import get_reachy_presence_service
 from app.services.voice_loop_service import get_voice_loop_service
 
 router = APIRouter()
@@ -256,6 +257,31 @@ async def gesture_parse(request: GestureParseRequest):
         "clean_text": clean,
         "actions": [{"kind": a.kind, "payload": a.payload, "offset": a.offset} for a in actions],
     }
+
+
+# ---- Presence / pomodoro (Wave 5) ----
+
+class PomodoroStartRequest(BaseModel):
+    focus_minutes: int = Field(25, ge=5, le=90)
+    break_minutes: int = Field(5, ge=1, le=30)
+
+
+@router.get("/presence/pomodoro")
+async def pomodoro_state():
+    return get_reachy_presence_service().pomodoro_state()
+
+
+@router.post("/presence/pomodoro/start")
+async def pomodoro_start(request: PomodoroStartRequest):
+    return await get_reachy_presence_service().pomodoro_start(
+        focus_minutes=request.focus_minutes,
+        break_minutes=request.break_minutes,
+    )
+
+
+@router.post("/presence/pomodoro/stop")
+async def pomodoro_stop():
+    return await get_reachy_presence_service().pomodoro_stop()
 
 
 @router.post("/wake-up")

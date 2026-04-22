@@ -24,6 +24,7 @@ from app.services.reachy_emotion_parser import (
     action_to_motion_request,
     parse_and_strip,
 )
+from app.services.reachy_presence_service import get_reachy_presence_service
 
 logger = structlog.get_logger()
 
@@ -100,6 +101,12 @@ class VoiceLoopService:
         if not user_text or not user_text.strip():
             result["error"] = "No speech detected"
             return result
+
+        # Mark activity so the presence watcher does not trigger boredom gestures.
+        try:
+            get_reachy_presence_service().mark_voice_activity()
+        except Exception:
+            pass
 
         logger.info("voice_transcribed", text=user_text[:100])
 

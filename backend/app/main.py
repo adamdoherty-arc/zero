@@ -24,16 +24,18 @@ from app.routers import (
     meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
     meeting_chat, meeting_search, meeting_speakers, meeting_ws,
     ecosystem_health,
-    tts, reachy,
+    tts, reachy, reachy_intent,
     feedback, goals, memory,
     vision, focus,
     email_drafts, routine,
     habits, journal,
     agent_company, deep_research, experiments, council,
+    autonomous_research, vault, agent_approvals, voice_bridge,
     character_content, brain,
     character_reference_videos,
     media_content,
     trend_intelligence,
+    employee,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -150,6 +152,15 @@ async def lifespan(app: FastAPI):
             logger.info("Daily automation scheduler started")
         except Exception as e:
             logger.warning("Failed to start scheduler", error=str(e))
+
+        # Reachy Mini ambient-behaviour scheduler (Wave 5). Attaches its own
+        # jobs to the main AsyncIOScheduler so there is no extra event loop.
+        try:
+            from app.services.reachy_presence_service import get_reachy_presence_service
+            get_reachy_presence_service().start()
+            logger.info("Reachy presence scheduler started")
+        except Exception as e:
+            logger.warning("Failed to start Reachy presence scheduler", error=str(e))
 
     # Auto-resume character research queue from persisted state
     try:
@@ -390,6 +401,7 @@ app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags
 # Text-to-Speech & Reachy Mini Robot
 app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
 app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
+app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Reachy Voice Intents"])
 
 # Meeting Intelligence (DailyMemory)
 app.include_router(meetings.router, prefix="/api/meetings", tags=["Meetings"])
@@ -425,13 +437,23 @@ app.include_router(
     prefix="/api/character-content/reference-videos",
     tags=["Character Reference Videos"],
 )
+app.include_router(
+    character_reference_videos.file_router,
+    prefix="/api/character-content/reference-videos",
+    tags=["Character Reference Videos"],
+)
 app.include_router(media_content.router, prefix="/api/media-content", tags=["Media Content"])
 app.include_router(agent_company.router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
+app.include_router(autonomous_research.router)  # prefix in router
+app.include_router(vault.router)  # prefix in router
+app.include_router(agent_approvals.router)  # prefix in router
+app.include_router(voice_bridge.router)  # prefix in router
 app.include_router(experiments.router)  # prefix in router
 app.include_router(council.router)  # prefix in router
 app.include_router(brain.router)  # prefix in router
 app.include_router(trend_intelligence.router)  # prefix in router
+app.include_router(employee.router, prefix="/api/employee", tags=["Employee Check-in"])
 
 
 @app.get("/")
