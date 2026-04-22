@@ -20,6 +20,12 @@ from app.services.reachy_motion_library import (
     get_clip,
     resolve_motion,
 )
+from app.services.reachy_personas import (
+    PERSONAS,
+    get_persona,
+    persona_to_dict,
+)
+from app.services.reachy_emotion_parser import parse_and_strip
 from app.services.voice_loop_service import get_voice_loop_service
 
 router = APIRouter()
@@ -201,6 +207,55 @@ async def motion_resolve(query: str, kind: Optional[Literal["emotion", "dance"]]
     if not clip:
         raise HTTPException(404, {"error": f"no clip matches {query!r}", "kind": kind})
     return clip_to_dict(clip)
+
+
+# ---- Personas (Wave 2) ----
+
+class PersonaSelectRequest(BaseModel):
+    persona_id: str = Field(..., description="One of the ids from GET /reachy/personas")
+
+
+class GestureParseRequest(BaseModel):
+    text: str = Field(..., description="Raw LLM reply containing [emotion:..] or [dance:..] markers")
+
+
+@router.get("/personas")
+async def list_personas(include_prompt: bool = False):
+    """List every persona the voice loop can wear."""
+    vs = get_voice_loop_service()
+    return {
+        "active_id": vs.get_active_persona_id(),
+        "personas": [persona_to_dict(p, include_prompt=include_prompt) for p in PERSONAS],
+    }
+
+
+@router.get("/personas/{persona_id}")
+async def get_persona_detail(persona_id: str):
+    p = get_persona(persona_id)
+    if not p:
+        raise HTTPException(404, {"error": f"unknown persona: {persona_id}"})
+    return persona_to_dict(p, include_prompt=True)
+
+
+@router.post("/personas/select")
+async def select_persona(request: PersonaSelectRequest):
+    vs = get_voice_loop_service()
+    if not vs.set_persona(request.persona_id):
+        raise HTTPException(400, {"error": f"unknown persona: {request.persona_id}"})
+    return {"active_id": vs.get_active_persona_id()}
+
+
+@router.post("/gesture/parse")
+async def gesture_parse(request: GestureParseRequest):
+    """
+    Dev endpoint: run a raw LLM reply through the gesture-marker stripper and
+    return what the voice loop would say + which gestures it would fire.
+    """
+    clean, actions = parse_and_strip(request.text)
+    return {
+        "clean_text": clean,
+        "actions": [{"kind": a.kind, "payload": a.payload, "offset": a.offset} for a in actions],
+    }
 
 
 @router.post("/wake-up")

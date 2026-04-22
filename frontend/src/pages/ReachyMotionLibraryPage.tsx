@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search } from 'lucide-react'
+import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound } from 'lucide-react'
 import {
   useMotionLibrary,
+  usePersonas,
   usePlayMotion,
   useReachyStatus,
+  useSelectPersona,
   useStopMove,
   useWakeUp,
   useGoToSleep,
@@ -25,6 +27,50 @@ function ConnectionBadge() {
     >
       {connected ? 'Reachy connected' : 'Reachy offline'}
     </span>
+  )
+}
+
+function PersonaPicker() {
+  const { data } = usePersonas()
+  const select = useSelectPersona()
+  const { toast } = useToast()
+
+  if (!data) return null
+  const active = data.personas.find((p) => p.id === data.active_id)
+
+  const onChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const id = e.target.value
+    try {
+      await select.mutateAsync(id)
+      const p = data.personas.find((x) => x.id === id)
+      toast({ title: `Persona: ${p?.name ?? id}`, description: p?.tagline })
+    } catch (err) {
+      toast({ title: 'Failed to switch persona', description: String(err), variant: 'destructive' })
+    }
+  }
+
+  return (
+    <div className="glass-card p-3 flex items-center gap-3 mb-4">
+      <div className="p-2 rounded-lg bg-fuchsia-500/10">
+        <UserRound className="w-5 h-5 text-fuchsia-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-gray-400 mb-0.5">Active persona</div>
+        <select
+          value={data.active_id}
+          onChange={onChange}
+          disabled={select.isPending}
+          className="w-full bg-gray-800/70 border border-gray-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-fuchsia-500"
+        >
+          {data.personas.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {active && <p className="text-xs text-gray-500 mt-1 italic">{active.tagline}</p>}
+      </div>
+    </div>
   )
 }
 
@@ -146,6 +192,8 @@ export function ReachyMotionLibraryPage() {
           </button>
         </div>
       </div>
+
+      <PersonaPicker />
 
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">

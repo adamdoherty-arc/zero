@@ -3,6 +3,12 @@ Voice loop service — orchestrates the full voice pipeline.
 
 Pipeline: listen → transcribe (STT) → think (LLM) → speak (TTS)
 Optionally drives Reachy Mini robot actions when connected.
+
+Persona and gesture tags: the active persona's system prompt is prepended to
+the user turn, and inline gesture markers in the LLM reply
+(`[emotion:happy]`, `[dance:simple_nod]`, `[look:0.5,0,0.1]`) are stripped
+from the spoken text and dispatched to the Reachy daemon in parallel with TTS
+playback.
 """
 
 import asyncio
@@ -12,6 +18,12 @@ import structlog
 from app.services.audio_service import get_audio_service
 from app.services.tts_service import get_tts_service
 from app.services.reachy_service import get_reachy_service
+from app.services.reachy_personas import build_full_prompt, get_persona, PERSONAS
+from app.services.reachy_emotion_parser import (
+    GestureAction,
+    action_to_motion_request,
+    parse_and_strip,
+)
 
 logger = structlog.get_logger()
 
@@ -21,12 +33,29 @@ class VoiceLoopService:
 
     _instance: Optional["VoiceLoopService"] = None
 
+    # Default persona on fresh boot. Can be changed via set_persona().
+    _DEFAULT_PERSONA = "cosmic_kitchen"
+
     def __init__(self):
         self._listening = False
         self._listen_task: Optional[asyncio.Task] = None
+        self._active_persona_id: str = self._DEFAULT_PERSONA
         self._audio_service = get_audio_service()
         self._tts_service = get_tts_service()
         self._reachy_service = get_reachy_service()
+
+    # --- Persona management ---
+
+    def get_active_persona_id(self) -> str:
+        return self._active_persona_id
+
+    def set_persona(self, persona_id: str) -> bool:
+        """Switch active persona. Returns True if the id is known."""
+        if get_persona(persona_id) is None:
+            return False
+        self._active_persona_id = persona_id
+        logger.info("voice_loop_persona_changed", persona=persona_id)
+        return True
 
     @classmethod
     def get_instance(cls) -> "VoiceLoopService":
@@ -93,42 +122,81 @@ class VoiceLoopService:
             logger.error("voice_tts_failed", error=str(e))
             result["tts_error"] = str(e)
 
-        # Step 4: Robot actions (if connected)
+        # Step 4: Strip gesture markers, dispatch to the robot, speak cleaned text
+        clean_text, actions = parse_and_strip(response_text)
+        result["llm_response"] = clean_text
+        result["raw_llm_response"] = response_text
+        result["gesture_actions"] = [
+            {"kind": a.kind, "payload": a.payload, "offset": a.offset} for a in actions
+        ]
+        result["persona"] = self._active_persona_id
+
         try:
             robot_connected = await self._reachy_service.is_connected()
             result["robot_connected"] = robot_connected
-
             if robot_connected:
-                # Play emotion based on response, then speak
-                await self._reachy_service.say(response_text)
+                # Fire gestures in parallel; don't block TTS on them.
+                asyncio.create_task(self._dispatch_gestures(actions))
+                await self._reachy_service.say(clean_text)
         except Exception as e:
             logger.debug("voice_robot_skipped", error=str(e))
 
         return result
 
+    async def _dispatch_gestures(self, actions: list[GestureAction]) -> None:
+        """Run each gesture marker sequentially so they layer cleanly."""
+        for action in actions:
+            req = action_to_motion_request(action)
+            if not req:
+                logger.debug("voice_gesture_malformed", payload=action.payload, kind=action.kind)
+                continue
+            try:
+                kind = req["kind"]
+                if kind == "look":
+                    await self._reachy_service.look_at(
+                        x=req["x"], y=req["y"], z=req["z"], duration=0.6
+                    )
+                elif kind == "dance":
+                    await self._reachy_service.play_dance(req["name"])
+                elif kind == "emotion":
+                    await self._reachy_service.play_emotion(req["name"])
+                elif kind == "motion":
+                    await self._reachy_service.play_motion(req["name"])
+            except Exception as e:
+                logger.warning("voice_gesture_failed", kind=action.kind, payload=action.payload, error=str(e))
+
     async def _get_llm_response(self, text: str) -> str:
         """Route text through LLM orchestration and get response."""
+        system_prompt = build_full_prompt(self._active_persona_id)
+
+        # Preferred path: chat_service owns orchestration, memory, and tooling.
         try:
             from app.services.chat_service import get_chat_service
             chat_service = get_chat_service()
-            response = await chat_service.chat(text)
-            # chat_service returns various formats; extract text
+            try:
+                # chat_service.chat may accept system_prompt via kwarg; fall back to
+                # plain form if not supported so we stay compatible.
+                response = await chat_service.chat(text, system_prompt=system_prompt)
+            except TypeError:
+                response = await chat_service.chat(text)
             if isinstance(response, dict):
                 return response.get("response", response.get("text", str(response)))
             return str(response)
         except ImportError:
             logger.warning("chat_service_unavailable", fallback="direct_llm")
-            # Fallback: use LLM router directly
-            try:
-                from app.infrastructure.llm_router import get_llm_router
-                router = get_llm_router()
-                response = await router.chat(
-                    messages=[{"role": "user", "content": text}],
-                    model_preference="fast",
-                )
-                return response.get("content", str(response))
-            except Exception as e:
-                raise RuntimeError(f"No LLM backend available: {e}")
+
+        # Fallback: use LLM router directly, including the persona prompt.
+        try:
+            from app.infrastructure.llm_router import get_llm_router
+            router = get_llm_router()
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": text})
+            response = await router.chat(messages=messages, model_preference="fast")
+            return response.get("content", str(response))
+        except Exception as e:
+            raise RuntimeError(f"No LLM backend available: {e}")
 
     async def start_listening(self):
         """Start continuous voice loop (listens for audio input)."""
@@ -164,6 +232,8 @@ class VoiceLoopService:
         """Get voice loop status."""
         return {
             "listening": self._listening,
+            "active_persona": self._active_persona_id,
+            "known_personas": [p.id for p in PERSONAS],
             "tts": self._tts_service.get_status(),
         }
 

@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getAuthHeaders } from '@/lib/auth'
 
 const API_BASE = '/api'
@@ -105,4 +105,60 @@ export function useGoToSleep() {
 
 export function useStopMove() {
   return useMutation({ mutationFn: () => fetchApi('/reachy/move/stop', { method: 'POST' }) })
+}
+
+// ---- Personas (Wave 2) ----
+
+export interface Persona {
+  id: string
+  name: string
+  tagline: string
+  tools: string[]
+  system_prompt?: string
+}
+
+export interface PersonaList {
+  active_id: string
+  personas: Persona[]
+}
+
+const personaKeys = {
+  all: ['reachy', 'personas'] as const,
+  list: () => [...personaKeys.all, 'list'] as const,
+  detail: (id: string) => [...personaKeys.all, 'detail', id] as const,
+}
+
+export function usePersonas() {
+  return useQuery<PersonaList>({
+    queryKey: personaKeys.list(),
+    queryFn: () => fetchApi('/reachy/personas'),
+    staleTime: 60_000,
+  })
+}
+
+export function useSelectPersona() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (persona_id: string) =>
+      fetchApi<{ active_id: string }>('/reachy/personas/select', {
+        method: 'POST',
+        body: JSON.stringify({ persona_id }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: personaKeys.list() }),
+  })
+}
+
+export interface GestureParseResult {
+  clean_text: string
+  actions: { kind: string; payload: string; offset: number }[]
+}
+
+export function useGestureParse() {
+  return useMutation({
+    mutationFn: (text: string) =>
+      fetchApi<GestureParseResult>('/reachy/gesture/parse', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      }),
+  })
 }
