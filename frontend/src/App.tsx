@@ -52,7 +52,9 @@ import { CarouselEditorPage } from '@/pages/CarouselEditorPage'
 import { MediaDetailPage } from '@/pages/MediaDetailPage'
 import { CharacterContentLayout } from '@/layouts/CharacterContentLayout'
 import BrainDashboardPage from '@/pages/BrainDashboardPage'
+import EmployeeDashboardPage from '@/pages/EmployeeDashboardPage'
 import BrainEmployeePage from '@/pages/BrainEmployeePage'
+import { ReachyMotionLibraryPage } from '@/pages/ReachyMotionLibraryPage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 /**
@@ -130,6 +132,8 @@ function App() {
             <Route path="/council" element={<CouncilRoomPage />} />
             <Route path="/brain" element={<BrainDashboardPage />} />
             <Route path="/brain/employee" element={<BrainEmployeePage />} />
+            <Route path="/employee" element={<EmployeeDashboardPage />} />
+            <Route path="/reachy" element={<ReachyMotionLibraryPage />} />
             <Route path="/characters" element={<CharacterContentLayout />}>
               <Route index element={<ErrorBoundary pageName="CharacterContent"><CharacterContentPage /></ErrorBoundary>} />
               <Route path="autopilot" element={<ErrorBoundary pageName="CharacterAutopilot"><CharacterAutopilotPage /></ErrorBoundary>} />

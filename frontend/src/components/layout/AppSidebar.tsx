@@ -35,6 +35,8 @@ import {
   BookOpen,
   Clapperboard,
   BrainCircuit,
+  Briefcase,
+  Bot,
 } from 'lucide-react'
 
 import {
@@ -92,6 +94,8 @@ const navSections = [
       { label: 'Experiment Lab', href: '/experiments', icon: FlaskConical },
       { label: 'Council Room', href: '/council', icon: Scale },
       { label: 'Brain', href: '/brain', icon: BrainCircuit },
+      { label: 'Employee', href: '/employee', icon: Briefcase },
+      { label: 'Reachy', href: '/reachy', icon: Bot },
     ],
   },
   {
