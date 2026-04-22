@@ -1,0 +1,35 @@
+# Zero Host Audio Agent — minimal host-side dependency footprint.
+# Installed into host_agent/.venv via run.bat.
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+pydantic>=2.7
+structlog>=24.0
+
+# DB client (asyncpg — same choice as DailyMeetings; avoids psycopg/WebSocket issue)
+asyncpg>=0.29
+
+# Audio capture (Windows)
+sounddevice>=0.4.7
+pyaudiowpatch>=0.2.12
+soundfile>=0.12.1
+numpy>=1.26
+
+# TTS for Reachy confirmations
+edge-tts>=7.0
+
+# Wake-word + command transcription
+pvporcupine>=3.0
+faster-whisper>=1.1
+
+# Loads c:\code\zero\.env so Picovoice + Postgres keys propagate from the
+# shared project env file into the host-agent process.
+python-dotenv>=1.0
+
+# Reachy Mini SDK — used by run_reachy_daemon.py / run_reachy_daemon.bat to
+# spawn a headless motion daemon on :8000 (same API the Tauri desktop app
+# exposes). Install once with run_reachy_daemon.bat, then Zero's backend
+# talks to it transparently. Pulls ~200 MB of motor-controller +
+# rust-kinematics wheels.
+reachy-mini==1.6.4
