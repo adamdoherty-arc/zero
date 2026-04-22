@@ -284,6 +284,27 @@ async def pomodoro_stop():
     return await get_reachy_presence_service().pomodoro_stop()
 
 
+# ---- Meeting mode (Wave 4) ----
+
+class MeetingModeRequest(BaseModel):
+    meeting_id: Optional[str] = Field(None, description="Zero meeting id, if any")
+
+
+@router.get("/presence/meeting")
+async def meeting_state():
+    return get_reachy_presence_service().meeting_state()
+
+
+@router.post("/presence/meeting/start")
+async def meeting_start(request: MeetingModeRequest):
+    return await get_reachy_presence_service().start_meeting_mode(request.meeting_id)
+
+
+@router.post("/presence/meeting/stop")
+async def meeting_stop():
+    return await get_reachy_presence_service().stop_meeting_mode()
+
+
 @router.post("/wake-up")
 async def wake_up():
     return await get_reachy_service().wake_up()

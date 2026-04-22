@@ -60,6 +60,11 @@ class ReachyPresenceService:
         self._last_gesture_at: Optional[datetime] = None
         # Job ids so we can cancel/requery.
         self._job_ids: list[str] = []
+        # Meeting mode
+        self._meeting_mode: bool = False
+        self._meeting_id: Optional[str] = None
+        self._meeting_task: Optional[asyncio.Task] = None
+        self._meeting_started_at: Optional[datetime] = None
 
     @classmethod
     def get_instance(cls) -> "ReachyPresenceService":
@@ -217,6 +222,8 @@ class ReachyPresenceService:
             return  # quiet hours
         if self._pomodoro.active and self._pomodoro.phase == "focus":
             return
+        if self._meeting_mode:
+            return
         await self._play_safe("understanding1", kind="emotion")
 
     # ------------------------------------------------------------------
@@ -224,6 +231,8 @@ class ReachyPresenceService:
     # ------------------------------------------------------------------
 
     async def _tick_presence_beat(self) -> None:
+        if self._meeting_mode:
+            return  # meeting loop is driving gestures
         if self._pomodoro.active and self._pomodoro.phase == "focus":
             return
         if self._gesture_recent(seconds=90):
@@ -244,6 +253,106 @@ class ReachyPresenceService:
         if not self._last_gesture_at:
             return False
         return (datetime.now(timezone.utc) - self._last_gesture_at).total_seconds() < seconds
+
+    # ------------------------------------------------------------------
+    # Meeting mode (Wave 4)
+    # ------------------------------------------------------------------
+
+    def meeting_state(self) -> dict:
+        elapsed = None
+        if self._meeting_started_at:
+            elapsed = (datetime.now(timezone.utc) - self._meeting_started_at).total_seconds()
+        return {
+            "active": self._meeting_mode,
+            "meeting_id": self._meeting_id,
+            "started_at": self._meeting_started_at.isoformat() if self._meeting_started_at else None,
+            "elapsed_s": elapsed,
+        }
+
+    async def start_meeting_mode(self, meeting_id: Optional[str] = None) -> dict:
+        """
+        Enter meeting mode: a background task that every ~3 s pulls the
+        daemon's DoA (direction-of-arrival) and points Reachy's head at the
+        active speaker, plus a periodic `attentive1` gesture.
+
+        Idempotent — calling twice just refreshes the meeting id.
+        """
+        self._meeting_id = meeting_id
+        self._meeting_started_at = datetime.now(timezone.utc)
+        if self._meeting_mode and self._meeting_task and not self._meeting_task.done():
+            return self.meeting_state()
+        self._meeting_mode = True
+        await self._play_safe("welcoming1", kind="emotion")
+        self._meeting_task = asyncio.create_task(self._meeting_loop())
+        logger.info("reachy_meeting_mode_started", meeting_id=meeting_id)
+        return self.meeting_state()
+
+    async def stop_meeting_mode(self) -> dict:
+        self._meeting_mode = False
+        if self._meeting_task and not self._meeting_task.done():
+            self._meeting_task.cancel()
+            try:
+                await self._meeting_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._meeting_task = None
+        # Final ack — understanding2 = "I got it"
+        await self._play_safe("understanding2", kind="emotion")
+        logger.info("reachy_meeting_mode_stopped", meeting_id=self._meeting_id)
+        state = self.meeting_state()
+        self._meeting_id = None
+        self._meeting_started_at = None
+        return state
+
+    async def _meeting_loop(self) -> None:
+        """
+        DoA-driven head tracking. Shape is intentionally simple: every POLL_S
+        seconds, fetch DoA; if `speech_detected` and the angle has moved
+        enough, call look_at with the angle projected onto unit-sphere x/y.
+
+        Every ATTENTIVE_EVERY seconds, regardless of DoA, play `attentive1`
+        to signal active listening.
+        """
+        import math
+        POLL_S = 3.0
+        ATTENTIVE_EVERY = 45.0
+        last_angle: Optional[float] = None
+        last_attentive = 0.0
+        try:
+            from app.services.reachy_service import get_reachy_service
+            svc = get_reachy_service()
+            while self._meeting_mode:
+                try:
+                    # Look-at-speaker via DoA
+                    doa = await svc.get_doa()
+                    angle = doa.get("angle") if isinstance(doa, dict) else None
+                    speech = doa.get("speech_detected") if isinstance(doa, dict) else False
+                    if speech and isinstance(angle, (int, float)):
+                        if last_angle is None or abs(angle - last_angle) > 0.15:
+                            # Project onto unit-circle 1 m in front of the robot
+                            x = math.cos(angle)
+                            y = math.sin(angle)
+                            await svc.look_at(x=x, y=y, z=0.0, duration=0.6)
+                            last_angle = angle
+                            self._last_gesture_at = datetime.now(timezone.utc)
+                except Exception as e:
+                    logger.debug("reachy_meeting_doa_tick_failed", error=str(e))
+
+                # Periodic attentiveness gesture (doesn't block look-at loop)
+                now = datetime.now(timezone.utc).timestamp()
+                if now - last_attentive > ATTENTIVE_EVERY:
+                    last_attentive = now
+                    try:
+                        await svc.play_emotion("attentive1")
+                        self._last_gesture_at = datetime.now(timezone.utc)
+                    except Exception:
+                        pass
+
+                await asyncio.sleep(POLL_S)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("reachy_meeting_loop_crashed", error=str(e))
 
     async def _play_safe(self, name: str, *, kind: str) -> None:
         """Play a clip but swallow errors so the scheduler stays clean."""
