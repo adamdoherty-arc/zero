@@ -24,7 +24,7 @@ from app.routers import (
     meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
     meeting_chat, meeting_search, meeting_speakers, meeting_ws,
     ecosystem_health,
-    tts, reachy, reachy_intent,
+    tts, reachy, reachy_intent, home_assistant,
     feedback, goals, memory,
     vision, focus,
     email_drafts, routine,
@@ -402,6 +402,7 @@ app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags
 app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
 app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
 app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Reachy Voice Intents"])
+app.include_router(home_assistant.router, prefix="/api/home-assistant", tags=["Home Assistant"])
 
 # Meeting Intelligence (DailyMemory)
 app.include_router(meetings.router, prefix="/api/meetings", tags=["Meetings"])

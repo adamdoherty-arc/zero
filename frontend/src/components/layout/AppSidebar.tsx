@@ -37,6 +37,7 @@ import {
   BrainCircuit,
   Briefcase,
   Bot,
+  Gamepad2,
 } from 'lucide-react'
 
 import {
@@ -96,6 +97,7 @@ const navSections = [
       { label: 'Brain', href: '/brain', icon: BrainCircuit },
       { label: 'Employee', href: '/employee', icon: Briefcase },
       { label: 'Reachy', href: '/reachy', icon: Bot },
+      { label: 'Teleop', href: '/reachy/teleop', icon: Gamepad2 },
     ],
   },
   {

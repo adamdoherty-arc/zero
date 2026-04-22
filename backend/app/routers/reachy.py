@@ -409,6 +409,17 @@ async def camera_specs():
     return await get_reachy_service().get_camera_specs()
 
 
+@router.get("/camera/stream")
+async def camera_stream(fmt: str = "webrtc"):
+    """
+    Return the URL where the Reachy Mini daemon serves its live camera feed.
+    The frontend (or an installable Reachy app) can consume the stream
+    directly; Zero does not proxy pixels.
+    """
+    url = get_reachy_service().get_stream_url(fmt=fmt)
+    return {"url": url, "format": fmt}
+
+
 @router.get("/camera")
 async def capture_image():
     """

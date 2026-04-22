@@ -534,6 +534,21 @@ class ReachyService:
     async def get_camera_specs(self) -> dict:
         return await self._request("GET", "/api/camera/specs")
 
+    def get_stream_url(self, *, fmt: str = "webrtc") -> str:
+        """
+        Return the URL the frontend should hit to consume Reachy's live
+        camera feed. The desktop app exposes the feed on :8443 via WebRTC;
+        Zero serves the URL verbatim so browsers can connect directly.
+        """
+        # Daemon is e.g. http://host:8000 -> feed is on the same host :8443
+        parsed = self._base_url.rstrip("/").split("//", 1)
+        scheme = parsed[0] + "//" if len(parsed) > 1 else ""
+        host_and_port = parsed[-1].split("/", 1)[0]
+        host = host_and_port.split(":", 1)[0]
+        if fmt == "webrtc":
+            return f"https://{host}:8443/webrtc"
+        return f"{scheme}{host}:8443"
+
     async def capture_image(self) -> bytes:
         """
         Camera capture is not exposed by the daemon's REST API. Frames come

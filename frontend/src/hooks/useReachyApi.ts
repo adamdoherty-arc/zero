@@ -107,6 +107,57 @@ export function useStopMove() {
   return useMutation({ mutationFn: () => fetchApi('/reachy/move/stop', { method: 'POST' }) })
 }
 
+// ---- Teleop (Wave 7) ----
+
+export interface MoveRequest {
+  roll?: number
+  pitch?: number
+  yaw?: number
+  duration?: number
+}
+
+export interface AntennasRequest {
+  left_angle?: number
+  right_angle?: number
+  duration?: number
+}
+
+export interface LookAtRequest {
+  x: number
+  y: number
+  z: number
+  duration?: number
+}
+
+export function useMoveHead() {
+  return useMutation({
+    mutationFn: (req: MoveRequest) =>
+      fetchApi('/reachy/move', { method: 'POST', body: JSON.stringify(req) }),
+  })
+}
+
+export function useSetAntennas() {
+  return useMutation({
+    mutationFn: (req: AntennasRequest) =>
+      fetchApi('/reachy/antennas', { method: 'POST', body: JSON.stringify(req) }),
+  })
+}
+
+export function useLookAt() {
+  return useMutation({
+    mutationFn: (req: LookAtRequest) =>
+      fetchApi('/reachy/look', { method: 'POST', body: JSON.stringify(req) }),
+  })
+}
+
+export function useCameraStream() {
+  return useQuery<{ url: string; format: string }>({
+    queryKey: ['reachy', 'camera', 'stream'],
+    queryFn: () => fetchApi('/reachy/camera/stream?fmt=webrtc'),
+    staleTime: 5 * 60_000,
+  })
+}
+
 // ---- Personas (Wave 2) ----
 
 export interface Persona {
