@@ -217,16 +217,22 @@ class VoiceLoopService:
         except ImportError:
             logger.warning("chat_service_unavailable", fallback="direct_llm")
 
-        # Fallback: use LLM router directly, including the persona prompt.
+        # Fallback: use the unified LLM client directly, including the persona
+        # prompt. The router itself is a resolver, not a chat caller — the
+        # unified client wraps routing + provider dispatch + retries.
         try:
-            from app.infrastructure.llm_router import get_llm_router
-            router = get_llm_router()
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": text})
-            response = await router.chat(messages=messages, model_preference="fast")
-            return response.get("content", str(response))
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            client = get_unified_llm_client()
+            response = await client.chat(
+                prompt=text,
+                system=system_prompt or None,
+                task_type="voice_reply",
+                temperature=0.6,
+                max_tokens=400,
+            )
+            if isinstance(response, dict):
+                return response.get("content") or response.get("response") or str(response)
+            return str(response)
         except Exception as e:
             raise RuntimeError(f"No LLM backend available: {e}")
 
