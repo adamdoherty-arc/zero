@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound, Mic, MicOff } from 'lucide-react'
+import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound, Mic, MicOff, Timer, Coffee, CalendarClock, BarChart3, RotateCcw } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import {
   useMotionLibrary,
@@ -10,6 +10,15 @@ import {
   useStopMove,
   useWakeUp,
   useGoToSleep,
+  usePomodoroState,
+  useStartPomodoro,
+  useStopPomodoro,
+  useMeetingState,
+  useStartMeetingMode,
+  useStopMeetingMode,
+  useContextHint,
+  usePersonaStats,
+  useResetPersonaStats,
   type MotionClip,
   type MotionKind,
 } from '@/hooks/useReachyApi'
@@ -300,6 +309,8 @@ export function ReachyMotionLibraryPage() {
 
       <PushToTalk />
       <PersonaPicker />
+      <ModesPanel />
+      <PersonaStatsPanel />
 
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">
@@ -359,6 +370,166 @@ export function ReachyMotionLibraryPage() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function ModesPanel() {
+  const pomo = usePomodoroState()
+  const startPomo = useStartPomodoro()
+  const stopPomo = useStopPomodoro()
+  const meeting = useMeetingState()
+  const startMeeting = useStartMeetingMode()
+  const stopMeeting = useStopMeetingMode()
+  const context = useContextHint()
+  const { toast } = useToast()
+
+  const pomoActive = pomo.data?.active ?? false
+  const meetingActive = meeting.data?.active ?? false
+  const [focusMin, setFocusMin] = useState(25)
+  const [breakMin, setBreakMin] = useState(5)
+
+  const formatElapsed = (s: number | null | undefined) => {
+    if (!s) return '0s'
+    if (s < 60) return `${s.toFixed(0)}s`
+    return `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`
+  }
+
+  return (
+    <div className="glass-card p-4 mb-4">
+      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <Timer className="w-4 h-4" /> Modes &amp; Context
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* Pomodoro */}
+        <div className="bg-gray-800/40 rounded p-3">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <Coffee className="w-3 h-3" /> Pomodoro
+          </div>
+          {pomoActive ? (
+            <div className="space-y-2">
+              <div className="text-sm">
+                <span className={`font-semibold ${pomo.data?.phase === 'focus' ? 'text-red-300' : 'text-emerald-300'}`}>
+                  {pomo.data?.phase}
+                </span>
+                <span className="text-gray-400 ml-2">· cycle {pomo.data?.cycle_index}</span>
+              </div>
+              <div className="text-xs text-gray-400 font-mono">{formatElapsed(pomo.data?.elapsed_s)} elapsed</div>
+              <button
+                onClick={async () => {
+                  try { await stopPomo.mutateAsync(); toast({ title: 'Pomodoro stopped' }) }
+                  catch (e) { toast({ title: 'Stop failed', description: String(e), variant: 'destructive' }) }
+                }}
+                className="w-full px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+              >
+                Stop
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] text-gray-500">Focus</label>
+                  <input type="number" min={5} max={90} value={focusMin} onChange={(e) => setFocusMin(Number(e.target.value))}
+                    className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-1 py-0.5" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-gray-500">Break</label>
+                  <input type="number" min={1} max={30} value={breakMin} onChange={(e) => setBreakMin(Number(e.target.value))}
+                    className="w-full text-xs bg-gray-800 border border-gray-700 rounded px-1 py-0.5" />
+                </div>
+              </div>
+              <button
+                onClick={() => startPomo.mutate({ focus_minutes: focusMin, break_minutes: breakMin })}
+                disabled={startPomo.isPending}
+                className="w-full px-2 py-1 text-xs font-semibold bg-red-500/20 text-red-300 hover:bg-red-500/30 rounded"
+              >
+                Start {focusMin}/{breakMin}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Meeting mode */}
+        <div className="bg-gray-800/40 rounded p-3">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <Mic className="w-3 h-3" /> Meeting mode
+          </div>
+          {meetingActive ? (
+            <div className="space-y-2">
+              <div className="text-sm text-amber-300 font-semibold">Looking at speaker</div>
+              <div className="text-xs text-gray-400 font-mono">{formatElapsed(meeting.data?.elapsed_s)}</div>
+              <button
+                onClick={() => stopMeeting.mutate()}
+                className="w-full px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded"
+              >
+                Exit meeting
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">Tracks DoA and plays attentive gestures.</p>
+              <button
+                onClick={() => startMeeting.mutate(undefined)}
+                className="w-full px-2 py-1 text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 rounded"
+              >
+                Start meeting mode
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Context hint */}
+        <div className="bg-gray-800/40 rounded p-3">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+            <CalendarClock className="w-3 h-3" /> Context hint
+          </div>
+          <p className="text-[10px] text-gray-500 mb-1">Injected into every LLM turn.</p>
+          <pre className="text-[11px] text-gray-300 whitespace-pre-wrap break-words max-h-24 overflow-y-auto bg-gray-900/50 p-1 rounded">
+            {context.data?.hint?.replace(/^\s*###\s*CURRENT CONTEXT\s*/, '').trim() || '(empty)'}
+          </pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PersonaStatsPanel() {
+  const stats = usePersonaStats()
+  const reset = useResetPersonaStats()
+  const { toast } = useToast()
+
+  const personas = stats.data?.personas ?? {}
+  const entries = Object.entries(personas).sort(([, a], [, b]) => (b.interactions - a.interactions))
+
+  if (entries.length === 0) return null
+
+  return (
+    <div className="glass-card p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" /> Persona usage
+        </h2>
+        <button
+          onClick={async () => {
+            try { await reset.mutateAsync(undefined); toast({ title: 'Stats reset' }) }
+            catch (e) { toast({ title: 'Reset failed', description: String(e), variant: 'destructive' }) }
+          }}
+          className="text-xs text-gray-400 hover:text-gray-200 flex items-center gap-1"
+        >
+          <RotateCcw className="w-3 h-3" /> Reset
+        </button>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {entries.slice(0, 8).map(([id, s]) => (
+          <div key={id} className="bg-gray-800/40 rounded px-2 py-1.5">
+            <div className="text-xs text-white truncate" title={id}>{id}</div>
+            <div className="text-[10px] text-gray-400">
+              {s.interactions} turns · {s.emotions_fired}😀 · {s.dances_fired}💃
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, Gamepad2, Keyboard, Camera, RotateCcw, Square, Disc3, Play, Trash2, CircleDot, Eye, Radio, Hand } from 'lucide-react'
+import { Bot, Gamepad2, Keyboard, Camera, RotateCcw, Square, Disc3, Play, Trash2, CircleDot, Eye, Radio, Hand, Volume2, Mic, Zap, BellRing } from 'lucide-react'
 import {
   useMoveHead,
   useSetAntennas,
@@ -19,6 +19,12 @@ import {
   useRadioStatus,
   useStartRadio,
   useStopRadio,
+  useVolume,
+  useSetVolume,
+  useTestSound,
+  useMotorStatus,
+  useSetMotorMode,
+  useWakeWordStatus,
   type VisionDetection,
 } from '@/hooks/useReachyApi'
 import { getAuthHeaders } from '@/lib/auth'
@@ -162,6 +168,7 @@ export function ReachyTeleopPage() {
 
         <div className="space-y-4">
           <PuppetView />
+          <DiagnosticsPanel />
           <RadioPanel />
           <VisionPanel />
           <MoveRecorderPanel />
@@ -688,6 +695,96 @@ function VisionPanel() {
           {lastResult.detections.length} {kind}(s) detected via {lastResult.backend}
         </p>
       )}
+    </div>
+  )
+}
+
+function DiagnosticsPanel() {
+  const speakerVol = useVolume('speaker')
+  const micVol = useVolume('mic')
+  const setSpeakerVol = useSetVolume('speaker')
+  const setMicVol = useSetVolume('mic')
+  const testSound = useTestSound()
+  const motors = useMotorStatus()
+  const setMotorMode = useSetMotorMode()
+  const wakeWord = useWakeWordStatus()
+  const { toast } = useToast()
+
+  const speakerVal = speakerVol.data?.volume ?? 0
+  const micVal = micVol.data?.volume ?? 0
+  const motorMode = (motors.data as Record<string, unknown>)?.motor_control_mode ?? (motors.data as Record<string, unknown>)?.mode ?? 'unknown'
+  const wwAvail = wakeWord.data?.available ?? false
+
+  return (
+    <div className="glass-card p-4">
+      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
+        <Zap className="w-4 h-4" /> Diagnostics
+      </h2>
+
+      {/* Speaker volume */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-gray-400 flex items-center gap-1"><Volume2 className="w-3 h-3" /> Speaker</span>
+          <span className="text-xs font-mono text-white">{speakerVal}%</span>
+        </div>
+        <input type="range" min={0} max={100} value={speakerVal}
+          onChange={(e) => setSpeakerVol.mutate(Number(e.target.value))}
+          className="w-full accent-indigo-500" />
+      </div>
+
+      {/* Mic volume */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-gray-400 flex items-center gap-1"><Mic className="w-3 h-3" /> Microphone</span>
+          <span className="text-xs font-mono text-white">{micVal}%</span>
+        </div>
+        <input type="range" min={0} max={100} value={micVal}
+          onChange={(e) => setMicVol.mutate(Number(e.target.value))}
+          className="w-full accent-indigo-500" />
+      </div>
+
+      <button
+        onClick={() => {
+          testSound.mutate(undefined, {
+            onSuccess: () => toast({ title: 'Test chime played' }),
+            onError: (e) => toast({ title: 'Test sound failed', description: String(e), variant: 'destructive' }),
+          })
+        }}
+        className="w-full mb-3 px-2 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 rounded flex items-center justify-center gap-1"
+      >
+        <BellRing className="w-3 h-3" /> Play test chime
+      </button>
+
+      {/* Motor mode */}
+      <div className="mb-3">
+        <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">Motor torque</div>
+        <div className="flex gap-1">
+          {(['enabled', 'compliant', 'disabled'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setMotorMode.mutate(mode)}
+              className={`flex-1 px-2 py-1 text-xs rounded ${
+                motorMode === mode
+                  ? 'bg-indigo-500/30 text-white ring-1 ring-indigo-400'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-500 mt-1">
+          "compliant" = user-movable, "enabled" = stiff, "disabled" = limp.
+        </p>
+      </div>
+
+      {/* Wake word */}
+      <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-700/50">
+        <span className="text-gray-400">Wake-word</span>
+        <span className={wwAvail ? 'text-emerald-400' : 'text-gray-500'}>
+          {wwAvail ? `${wakeWord.data?.model} ready` : 'not installed'}
+        </span>
+      </div>
     </div>
   )
 }

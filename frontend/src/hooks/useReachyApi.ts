@@ -338,6 +338,247 @@ export function useStopRadio() {
   })
 }
 
+// ---- Presence: Pomodoro + Meeting mode ----
+
+export interface PomodoroState {
+  active: boolean
+  phase: string
+  started_at: string | null
+  elapsed_s: number | null
+  focus_minutes: number
+  break_minutes: number
+  cycle_index: number
+}
+
+export interface MeetingState {
+  active: boolean
+  meeting_id: string | null
+  started_at: string | null
+  elapsed_s: number | null
+}
+
+export function usePomodoroState(pollMs = 2000) {
+  return useQuery<PomodoroState>({
+    queryKey: ['reachy', 'presence', 'pomodoro'],
+    queryFn: () => fetchApi('/reachy/presence/pomodoro'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useStartPomodoro() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { focus_minutes?: number; break_minutes?: number }) =>
+      fetchApi('/reachy/presence/pomodoro/start', {
+        method: 'POST',
+        body: JSON.stringify({ focus_minutes: 25, break_minutes: 5, ...req }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'presence'] }),
+  })
+}
+
+export function useStopPomodoro() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi('/reachy/presence/pomodoro/stop', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'presence'] }),
+  })
+}
+
+export function useMeetingState(pollMs = 2000) {
+  return useQuery<MeetingState>({
+    queryKey: ['reachy', 'presence', 'meeting'],
+    queryFn: () => fetchApi('/reachy/presence/meeting'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useStartMeetingMode() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (meeting_id?: string) =>
+      fetchApi('/reachy/presence/meeting/start', {
+        method: 'POST',
+        body: JSON.stringify({ meeting_id: meeting_id ?? null }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'presence'] }),
+  })
+}
+
+export function useStopMeetingMode() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi('/reachy/presence/meeting/stop', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'presence'] }),
+  })
+}
+
+// ---- Volume, motors, sounds, test ----
+
+export function useVolume(kind: 'speaker' | 'mic' = 'speaker') {
+  const path = kind === 'mic' ? '/reachy/volume/microphone' : '/reachy/volume'
+  return useQuery<{ volume: number }>({
+    queryKey: ['reachy', 'volume', kind],
+    queryFn: () => fetchApi(path),
+    staleTime: 10_000,
+  })
+}
+
+export function useSetVolume(kind: 'speaker' | 'mic' = 'speaker') {
+  const qc = useQueryClient()
+  const path = kind === 'mic' ? '/reachy/volume/microphone' : '/reachy/volume'
+  return useMutation({
+    mutationFn: (volume: number) =>
+      fetchApi(path, { method: 'POST', body: JSON.stringify({ volume }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'volume', kind] }),
+  })
+}
+
+export function useTestSound() {
+  return useMutation({ mutationFn: () => fetchApi('/reachy/test-sound', { method: 'POST' }) })
+}
+
+export interface MotorStatus {
+  mode?: string
+  ready?: boolean
+  [k: string]: unknown
+}
+
+export function useMotorStatus(pollMs = 5000) {
+  return useQuery<MotorStatus>({
+    queryKey: ['reachy', 'motors'],
+    queryFn: () => fetchApi('/reachy/motors'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useSetMotorMode() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (mode: 'enabled' | 'disabled' | 'compliant') =>
+      fetchApi('/reachy/motors/mode', {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'motors'] }),
+  })
+}
+
+export function useSounds() {
+  return useQuery<{ sounds?: string[]; files?: string[]; [k: string]: unknown }>({
+    queryKey: ['reachy', 'sounds'],
+    queryFn: () => fetchApi('/reachy/sounds'),
+    staleTime: 30_000,
+  })
+}
+
+export function usePlayDaemonSound() {
+  return useMutation({
+    mutationFn: (file: string) =>
+      fetchApi('/reachy/sounds/play', { method: 'POST', body: JSON.stringify({ file }) }),
+  })
+}
+
+export function useStopDaemonSound() {
+  return useMutation({ mutationFn: () => fetchApi('/reachy/sounds/stop', { method: 'POST' }) })
+}
+
+// ---- Context hint + persona stats ----
+
+export interface ContextHintResult { persona: string; hint: string }
+
+export function useContextHint(pollMs = 10000) {
+  return useQuery<ContextHintResult>({
+    queryKey: ['reachy', 'context', 'hint'],
+    queryFn: () => fetchApi('/reachy/context/hint'),
+    refetchInterval: pollMs,
+  })
+}
+
+export interface PersonaStats {
+  last_switched_at: string | null
+  rotation: Record<string, unknown>
+  personas: Record<string, {
+    interactions: number
+    emotions_fired: number
+    dances_fired: number
+    last_used_at: string | null
+  }>
+}
+
+export function usePersonaStats(pollMs = 5000) {
+  return useQuery<PersonaStats>({
+    queryKey: ['reachy', 'personas', 'stats'],
+    queryFn: () => fetchApi('/reachy/personas/stats'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useResetPersonaStats() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (persona_id?: string) => {
+      const qs = persona_id ? `?persona_id=${encodeURIComponent(persona_id)}` : ''
+      return fetchApi(`/reachy/personas/stats/reset${qs}`, { method: 'POST' })
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'personas', 'stats'] }),
+  })
+}
+
+// ---- Home Assistant ----
+
+export interface HaStatus {
+  configured: boolean
+  base?: string
+  message?: string
+  version?: string
+  [k: string]: unknown
+}
+
+export interface HaState {
+  entity_id: string
+  state: string
+  attributes?: Record<string, unknown>
+  last_changed?: string
+  [k: string]: unknown
+}
+
+export function useHaStatus(pollMs = 30000) {
+  return useQuery<HaStatus>({
+    queryKey: ['reachy', 'ha', 'status'],
+    queryFn: () => fetchApi('/home-assistant/status'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useHaStates() {
+  return useQuery<HaState[]>({
+    queryKey: ['reachy', 'ha', 'states'],
+    queryFn: () => fetchApi('/home-assistant/states'),
+    staleTime: 20_000,
+  })
+}
+
+export function useHaCallService() {
+  return useMutation({
+    mutationFn: (req: { domain: string; service: string; data?: Record<string, unknown> }) =>
+      fetchApi('/home-assistant/service', { method: 'POST', body: JSON.stringify(req) }),
+  })
+}
+
+export interface HaGestureMap {
+  started: boolean
+  map: Record<string, { state?: string; emotion?: string; dance?: string; cooldown_s?: number }>
+}
+
+export function useHaGestureMap() {
+  return useQuery<HaGestureMap>({
+    queryKey: ['reachy', 'ha', 'gesture-map'],
+    queryFn: () => fetchApi('/home-assistant/gesture-map'),
+    staleTime: 30_000,
+  })
+}
+
 // ---- Personas (Wave 2) ----
 
 export interface Persona {

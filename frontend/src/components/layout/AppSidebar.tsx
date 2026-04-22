@@ -38,6 +38,7 @@ import {
   Briefcase,
   Bot,
   Gamepad2,
+  Home,
 } from 'lucide-react'
 
 import {
@@ -98,6 +99,7 @@ const navSections = [
       { label: 'Employee', href: '/employee', icon: Briefcase },
       { label: 'Reachy', href: '/reachy', icon: Bot },
       { label: 'Teleop', href: '/reachy/teleop', icon: Gamepad2 },
+      { label: 'Reachy + HA', href: '/reachy/home-assistant', icon: Home },
     ],
   },
   {
