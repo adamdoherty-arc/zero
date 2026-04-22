@@ -23,13 +23,18 @@ from typing import Literal, Optional
 
 # Daemon-side dataset identifiers. These must match what the Reachy Mini
 # desktop daemon has installed. Pollen ships the HF repos under their HF id.
-EMOTIONS_DATASET = "reachy-mini-emotions-library"
-DANCES_DATASET = "reachy-mini-dances-library"
+EMOTIONS_DATASET = "pollen-robotics/reachy-mini-emotions-library"
+DANCES_DATASET = "pollen-robotics/reachy-mini-dances-library"
 
-# Some deployments still carry the pre-rename "reachy-mini-emotions" dataset.
-# play_emotion in reachy_service will try the canonical name first then fall
-# back, so downstream code does not need to care.
-EMOTIONS_DATASET_FALLBACKS = ("reachy-mini-emotions",)
+# Some deployments fed the daemon bare dataset names (no org prefix) in older
+# versions. play_emotion in reachy_service will try the canonical HF id first
+# then fall back to the legacy shapes, so downstream code does not need to
+# care. Confirmed against daemon v1.6.4: the right path is
+#   /api/move/play/recorded-move-dataset/{org}/{repo}/{move_name}
+EMOTIONS_DATASET_FALLBACKS = (
+    "reachy-mini-emotions-library",
+    "reachy-mini-emotions",
+)
 
 
 MotionKind = Literal["emotion", "dance"]
