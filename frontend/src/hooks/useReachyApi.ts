@@ -174,6 +174,170 @@ export function useReachyState(pollMs = 500) {
   })
 }
 
+// ---- Move recorder (Wave 10) ----
+
+export interface RecordStatus {
+  recording: boolean
+  library: string
+  name: string
+  description: string
+  started_at: string | null
+  elapsed_s: number | null
+  frame_count: number
+  replaying: boolean
+}
+
+export interface UserMove {
+  library: string
+  name: string
+  description: string
+  duration_s: number
+  frame_count: number
+  recorded_at: string | null
+}
+
+export function useRecordStatus(pollMs = 1000) {
+  return useQuery<RecordStatus>({
+    queryKey: ['reachy', 'moves', 'record', 'status'],
+    queryFn: () => fetchApi('/reachy/moves/record/status'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useStartRecording() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { library: string; name: string; description?: string }) =>
+      fetchApi('/reachy/moves/record/start', { method: 'POST', body: JSON.stringify(req) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'moves'] }),
+  })
+}
+
+export function useStopRecording() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi('/reachy/moves/record/stop', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'moves'] }),
+  })
+}
+
+export function useUserMoves() {
+  return useQuery<{ moves: UserMove[] }>({
+    queryKey: ['reachy', 'moves', 'user'],
+    queryFn: () => fetchApi('/reachy/moves/user'),
+    staleTime: 30_000,
+  })
+}
+
+export function usePlayUserMove() {
+  return useMutation({
+    mutationFn: (req: { library: string; name: string }) =>
+      fetchApi(`/reachy/moves/user/${encodeURIComponent(req.library)}/${encodeURIComponent(req.name)}/play`, {
+        method: 'POST',
+      }),
+  })
+}
+
+export function useDeleteUserMove() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { library: string; name: string }) =>
+      fetchApi(`/reachy/moves/user/${encodeURIComponent(req.library)}/${encodeURIComponent(req.name)}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'moves'] }),
+  })
+}
+
+// ---- Wake word (Wave 11) ----
+
+export interface WakeWordStatus {
+  available: boolean
+  model: string
+  threshold: number
+  cooldown_s: number
+  last_score: number
+  import_error: string | null
+}
+
+export function useWakeWordStatus(pollMs = 5000) {
+  return useQuery<WakeWordStatus>({
+    queryKey: ['reachy', 'wake-word', 'status'],
+    queryFn: () => fetchApi('/reachy/wake-word/status'),
+    refetchInterval: pollMs,
+  })
+}
+
+// ---- Vision (Wave 12) ----
+
+export interface VisionBackends {
+  hands: { available: boolean; library?: string; version?: string; reason?: string }
+  face: { available: boolean; library?: string; version?: string; reason?: string }
+}
+
+export interface VisionDetection {
+  kind: string
+  x: number
+  y: number
+  width: number
+  height: number
+  confidence: number
+}
+
+export interface VisionResult {
+  available: boolean
+  backend?: string
+  image_size?: { width: number; height: number }
+  detections: VisionDetection[]
+  reason?: string
+}
+
+export function useVisionBackends() {
+  return useQuery<VisionBackends>({
+    queryKey: ['reachy', 'vision', 'backends'],
+    queryFn: () => fetchApi('/reachy/vision/backends'),
+    staleTime: 30_000,
+  })
+}
+
+// ---- Radio (Wave 13) ----
+
+export interface RadioStatus {
+  active: boolean
+  bpm: number
+  beats_per_dance: number
+  dances: string[]
+  current_dance: string | null
+  dances_played: number
+  started_at: string | null
+  elapsed_s: number | null
+}
+
+export function useRadioStatus(pollMs = 2000) {
+  return useQuery<RadioStatus>({
+    queryKey: ['reachy', 'radio', 'status'],
+    queryFn: () => fetchApi('/reachy/radio/status'),
+    refetchInterval: pollMs,
+  })
+}
+
+export function useStartRadio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: { bpm: number; beats_per_dance?: number; dances?: string[] }) =>
+      fetchApi('/reachy/radio/start', { method: 'POST', body: JSON.stringify(req) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'radio'] }),
+  })
+}
+
+export function useStopRadio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchApi('/reachy/radio/stop', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reachy', 'radio'] }),
+  })
+}
+
 // ---- Personas (Wave 2) ----
 
 export interface Persona {

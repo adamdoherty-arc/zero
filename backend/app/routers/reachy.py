@@ -230,6 +230,19 @@ async def list_personas(include_prompt: bool = False):
     }
 
 
+# Must precede the /personas/{persona_id} catch-all below.
+@router.get("/personas/stats")
+async def persona_stats():
+    from app.services.reachy_persona_state import get_reachy_persona_state
+    return get_reachy_persona_state().get_stats()
+
+
+@router.post("/personas/stats/reset")
+async def persona_stats_reset(persona_id: Optional[str] = None):
+    from app.services.reachy_persona_state import get_reachy_persona_state
+    return get_reachy_persona_state().reset(persona_id)
+
+
 @router.get("/personas/{persona_id}")
 async def get_persona_detail(persona_id: str):
     p = get_persona(persona_id)
@@ -427,6 +440,143 @@ async def vision_backends():
     """Report which vision backends are available on this deployment."""
     from app.services.reachy_vision_service import get_reachy_vision_service
     return get_reachy_vision_service().backend_status()
+
+
+# ---- User-recorded moves (Wave 10) ----
+
+class RecordStartRequest(BaseModel):
+    library: str = Field("user", description="Library name — folder under workspace/reachy/user_moves")
+    name: str = Field(..., description="Move name (alnum + _-)")
+    description: str = Field("", description="Optional human description")
+
+
+@router.post("/moves/record/start")
+async def moves_record_start(request: RecordStartRequest):
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    result = await get_reachy_move_recorder().start(
+        library=request.library, name=request.name, description=request.description,
+    )
+    if result.get("error"):
+        raise HTTPException(400, result)
+    return result
+
+
+@router.post("/moves/record/stop")
+async def moves_record_stop():
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    result = await get_reachy_move_recorder().stop()
+    if result.get("error") == "not_recording":
+        raise HTTPException(400, result)
+    return result
+
+
+@router.get("/moves/record/status")
+async def moves_record_status():
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    return get_reachy_move_recorder().status()
+
+
+@router.get("/moves/user")
+async def moves_user_list():
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    return {"moves": get_reachy_move_recorder().list_moves()}
+
+
+@router.post("/moves/user/{library}/{name}/play")
+async def moves_user_play(library: str, name: str):
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    result = await get_reachy_move_recorder().play(library, name)
+    if result.get("error") == "not_found":
+        raise HTTPException(404, result)
+    if result.get("error"):
+        raise HTTPException(400, result)
+    return result
+
+
+@router.delete("/moves/user/{library}/{name}")
+async def moves_user_delete(library: str, name: str):
+    from app.services.reachy_move_recorder import get_reachy_move_recorder
+    result = get_reachy_move_recorder().delete_move(library, name)
+    if result.get("error"):
+        raise HTTPException(404, result)
+    return result
+
+
+# ---- Radio mode (Wave 13) ----
+
+class RadioStartRequest(BaseModel):
+    bpm: float = Field(..., ge=40.0, le=200.0)
+    beats_per_dance: int = Field(8, ge=2, le=32)
+    dances: Optional[list[str]] = Field(None, description="Dance clip names; default uses a preset rotation")
+
+
+@router.get("/radio/status")
+async def radio_status():
+    from app.services.reachy_radio_service import get_reachy_radio_service
+    return get_reachy_radio_service().status()
+
+
+@router.post("/radio/start")
+async def radio_start(request: RadioStartRequest):
+    from app.services.reachy_radio_service import get_reachy_radio_service
+    return await get_reachy_radio_service().start(
+        bpm=request.bpm,
+        beats_per_dance=request.beats_per_dance,
+        dances=request.dances,
+    )
+
+
+@router.post("/radio/stop")
+async def radio_stop():
+    from app.services.reachy_radio_service import get_reachy_radio_service
+    return await get_reachy_radio_service().stop()
+
+
+@router.post("/radio/analyze")
+async def radio_analyze(audio: UploadFile = File(...)):
+    """Detect BPM from an uploaded audio sample via librosa."""
+    from app.services.reachy_radio_service import get_reachy_radio_service
+    body = await audio.read()
+    result = get_reachy_radio_service().analyze_bpm(body)
+    if not result.get("available"):
+        raise HTTPException(503, result)
+    return result
+
+
+# Persona stats routes moved up above /personas/{persona_id}
+# to avoid route-matching collisions.
+
+# ---- Current context (Wave 17) ----
+
+@router.get("/context/hint")
+async def context_hint():
+    """Preview the context block that would be injected into the next LLM turn."""
+    from app.services.reachy_context_service import build_context_hint
+    vs = get_voice_loop_service()
+    hint = await build_context_hint(vs.get_active_persona_id())
+    return {"persona": vs.get_active_persona_id(), "hint": hint or ""}
+
+
+# ---- Wake-word (Wave 11) ----
+
+@router.get("/wake-word/status")
+async def wake_word_status():
+    from app.services.reachy_wake_word_service import get_reachy_wake_word_service
+    return get_reachy_wake_word_service().backend_status()
+
+
+@router.post("/wake-word/predict")
+async def wake_word_predict(audio: UploadFile = File(...)):
+    """
+    Accept a 16 kHz mono int16 PCM chunk (raw bytes, NOT a WAV) and return
+    the wake-word score. Use this from the browser's MediaRecorder pipeline
+    to hands-free-trigger the voice loop.
+    """
+    from app.services.reachy_wake_word_service import get_reachy_wake_word_service
+    svc = get_reachy_wake_word_service()
+    body = await audio.read()
+    fired, score = svc.predict_bytes(body)
+    return {"fired": fired, "score": score, "backend": svc.backend_status()}
 
 
 @router.post("/vision/detect")

@@ -97,8 +97,26 @@ edge-tts>=6.1.0
 # Image Compositing (carousel rendering)
 Pillow>=10.0.0
 
+# Perceptual image hashing for near-duplicate image detection
+imagehash>=4.3.1
+
+# OpenCV headless: face detection + saliency scoring (no GUI deps)
+opencv-python-headless>=4.10.0
+
 # Video download for TikTok reference videos (character content)
 yt-dlp>=2025.1.1
 
 # Reachy Mini Robot Integration
 # reachy-mini>=1.0.0  # Install when robot arrives
+
+# Reachy vision / audio (Waves 3 + 13).
+# Pin mediapipe below 0.10.20 — newer ARM/manylinux wheels on some indexes
+# ship only the `tasks` submodule and drop the legacy `mp.solutions`
+# namespace the vision service uses for HandLandmarker.
+mediapipe>=0.10.11,<0.10.20
+# Librosa for BPM detection in radio mode (Wave 13).
+librosa>=0.10.0
+# Wake-word detection (Wave 11) is opt-in because openwakeword has patchy
+# pre-built wheels for some Python versions. Install manually when ready:
+#   pip install openwakeword onnxruntime
+# The service reports backend_status().available=false until then.

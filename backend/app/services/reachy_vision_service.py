@@ -92,13 +92,19 @@ class ReachyVisionService:
     def _detect_hands(self, image_bytes: bytes) -> dict:
         try:
             import cv2  # type: ignore[import-not-found]
-            import mediapipe as mp  # type: ignore[import-not-found]
             import numpy as np
+            # mediapipe 0.10+ hid solutions behind an explicit submodule import.
+            # Try the new location first, fall back to the legacy one.
+            try:
+                from mediapipe.solutions import hands as mp_hands  # type: ignore[import-not-found]
+            except Exception:
+                import mediapipe as mp  # type: ignore[import-not-found]
+                mp_hands = mp.solutions.hands
         except Exception as e:
             return {"available": False, "reason": f"hands backend unavailable: {e}", "detections": []}
 
         if self._hand_tracker is None:
-            self._hand_tracker = mp.solutions.hands.Hands(
+            self._hand_tracker = mp_hands.Hands(
                 static_image_mode=True,
                 max_num_hands=2,
                 min_detection_confidence=0.5,

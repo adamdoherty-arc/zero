@@ -24,6 +24,7 @@ from app.services.reachy_emotion_parser import (
     action_to_motion_request,
     parse_and_strip,
 )
+from app.services.reachy_persona_state import get_reachy_persona_state
 from app.services.reachy_presence_service import get_reachy_presence_service
 
 logger = structlog.get_logger()
@@ -148,6 +149,20 @@ class VoiceLoopService:
         except Exception as e:
             logger.debug("voice_robot_skipped", error=str(e))
 
+        # Bump persona state; auto-rotate if the user configured a rotation.
+        try:
+            state = get_reachy_persona_state()
+            n_emotions = sum(1 for a in actions if a.kind == "emotion")
+            n_dances = sum(1 for a in actions if a.kind == "dance")
+            suggested = state.record_interaction(
+                self._active_persona_id, gestures=n_emotions, dances=n_dances
+            )
+            if suggested and suggested != self._active_persona_id:
+                if self.set_persona(suggested):
+                    result["persona_rotated_to"] = suggested
+        except Exception as e:
+            logger.debug("persona_state_update_failed", error=str(e))
+
         return result
 
     async def _dispatch_gestures(self, actions: list[GestureAction]) -> None:
@@ -175,6 +190,16 @@ class VoiceLoopService:
     async def _get_llm_response(self, text: str) -> str:
         """Route text through LLM orchestration and get response."""
         system_prompt = build_full_prompt(self._active_persona_id)
+
+        # Append calendar / time / mode-aware situational hints so every turn
+        # is grounded in the user's current reality. Cheap — local cache hit.
+        try:
+            from app.services.reachy_context_service import build_context_hint
+            hint = await build_context_hint(self._active_persona_id)
+            if hint and system_prompt:
+                system_prompt = system_prompt + hint
+        except Exception:
+            pass
 
         # Preferred path: chat_service owns orchestration, memory, and tooling.
         try:
