@@ -34,6 +34,8 @@ export interface VoiceStartArgs {
   voice?: string | null
   model?: string | null
   api_key?: string | null
+  body_motion?: boolean
+  input_source?: 'reachy' | 'browser'
 }
 
 export interface VoiceTranscript {
@@ -52,11 +54,87 @@ export interface VoiceToolEvent {
 }
 
 type VoiceState = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
+export type SessionPhase =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'thinking'
+  | 'speaking'
+  | 'moving'
+  | 'recovering'
+  | 'stalled'
+
+export interface VoiceInputHealth {
+  source: string
+  ready: boolean
+  rms: number
+  peak: number
+  empty_stt_count: number
+  confidence_state: string
+  last_signal_at?: number | null
+  last_frame_at?: number | null
+  suggested_action?: string | null
+  last_error?: string | null
+}
+
+export interface VoiceOutputHealth {
+  sink: string
+  ready: boolean
+  queued_ms: number
+  last_error?: string | null
+}
 
 const INPUT_RATE_BY_BACKEND: Record<VoiceBackend, number> = {
   openai: 24000,
   gemini: 16000,
   local: 16000,  // matches Silero VAD + faster-whisper native rate
+}
+const BROWSER_MIC_PROMPT_TIMEOUT_MS = 12000
+const BROWSER_MIC_CONSTRAINTS: MediaStreamConstraints = {
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    channelCount: 1,
+  },
+}
+
+function stopStream(stream: MediaStream | null) {
+  try {
+    stream?.getTracks().forEach((track) => track.stop())
+  } catch {
+    // best effort cleanup
+  }
+}
+
+function requestBrowserMicStream(): Promise<MediaStream> {
+  let timedOut = false
+  let timeoutId: number | null = null
+  const request = navigator.mediaDevices.getUserMedia(BROWSER_MIC_CONSTRAINTS)
+  return new Promise((resolve, reject) => {
+    timeoutId = window.setTimeout(() => {
+      timedOut = true
+      reject(
+        new Error(
+          'Computer microphone permission is still waiting. Allow microphone access in the browser prompt, then press Computer mic again.',
+        ),
+      )
+    }, BROWSER_MIC_PROMPT_TIMEOUT_MS)
+
+    request
+      .then((stream) => {
+        if (timeoutId !== null) window.clearTimeout(timeoutId)
+        if (timedOut) {
+          stopStream(stream)
+          return
+        }
+        resolve(stream)
+      })
+      .catch((error) => {
+        if (timeoutId !== null) window.clearTimeout(timeoutId)
+        if (timedOut) return
+        reject(error)
+      })
+  })
 }
 
 const OUTPUT_RATE_BY_BACKEND: Record<VoiceBackend, number> = {
@@ -74,6 +152,16 @@ export interface UseRealtimeVoice {
   model: string | null
   voice: string | null
   muted: boolean
+  bodyMotion: boolean
+  inputReady: boolean
+  inputSource: 'reachy' | 'browser' | null
+  inputDevice: string | null
+  outputSink: 'reachy_speaker' | 'unavailable' | null
+  outputDevice: string | null
+  sessionPhase: SessionPhase
+  stalledReason: string | null
+  inputHealth: VoiceInputHealth | null
+  outputHealth: VoiceOutputHealth | null
   localPlayback: boolean
   start: (overrides?: VoiceStartArgs) => Promise<void>
   stop: () => Promise<void>
@@ -81,8 +169,10 @@ export interface UseRealtimeVoice {
   swapBackend: (next: VoiceStartArgs) => boolean
   sendText: (text: string) => void
   cancelResponse: () => void
+  setBodyMotion: (enabled: boolean) => void
   toggleMute: () => void
   setMuted: (muted: boolean) => void
+  switchInputSource: (source: 'reachy' | 'browser') => Promise<void>
   setLocalPlayback: (next: boolean) => void
   isActive: boolean
 }
@@ -90,7 +180,7 @@ export interface UseRealtimeVoice {
 // Hard cap on the "connecting" state. Covers a stalled provider handshake,
 // flaky network, or an upstream that accepts the WebSocket but never emits
 // the session.ready event. Without this, the UI used to spin forever.
-const CONNECT_TIMEOUT_MS = 12_000
+const CONNECT_TIMEOUT_MS = 35_000
 
 export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoice {
   const [state, setState] = useState<VoiceState>('idle')
@@ -101,10 +191,25 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const [model, setModel] = useState<string | null>(null)
   const [voice, setVoice] = useState<string | null>(null)
   const [muted, setMutedState] = useState(false)
-  // Default false — the assistant voice should come out of the Reachy
-  // speaker (host_agent does that), not the user's PC. Users can opt-in to
-  // hear it locally too via the cockpit toggle.
-  const [localPlayback, setLocalPlaybackState] = useState(false)
+  const [bodyMotion, setBodyMotionState] = useState(false)
+  const [inputReady, setInputReady] = useState(false)
+  const [inputSource, setInputSource] = useState<'reachy' | 'browser' | null>(null)
+  const [inputDevice, setInputDevice] = useState<string | null>(null)
+  const [outputSink, setOutputSink] = useState<'reachy_speaker' | 'unavailable' | null>(
+    null,
+  )
+  const [outputDevice, setOutputDevice] = useState<string | null>(null)
+  const [sessionPhase, setSessionPhase] = useState<SessionPhase>('idle')
+  const [stalledReason, setStalledReason] = useState<string | null>(null)
+  const [inputHealth, setInputHealth] = useState<VoiceInputHealth | null>(null)
+  const [outputHealth, setOutputHealth] = useState<VoiceOutputHealth | null>(null)
+  // Reachy should speak through its own USB speaker by default. Browser
+  // playback is a manual fallback so we do not get double audio or route the
+  // assistant through the computer without making that explicit.
+  // Default ON — most users want to hear the assistant on their computer
+  // speaker, not exclusively through Reachy's USB speaker. Turn off via the
+  // "Computer on / Computer muted" toggle in the management panel or TopBar.
+  const [localPlayback, setLocalPlaybackState] = useState(true)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -114,11 +219,22 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const backendRef = useRef<VoiceBackend>('openai')
   const partialIdRef = useRef(0)
   const mutedRef = useRef(false)
-  const localPlaybackRef = useRef(false)
+  const bodyMotionRef = useRef(false)
+  const localPlaybackRef = useRef(true)
+  const sessionReadyRef = useRef(false)
+  const inputReadyRef = useRef(false)
+  const inputSourceRef = useRef<'reachy' | 'browser'>('browser')
   const connectTimerRef = useRef<number | null>(null)
   // Scheduled BufferSource nodes for assistant playback. Kept so we can
   // stop-and-flush them when the user barges in mid-reply.
   const pendingSpeakerNodesRef = useRef<AudioBufferSourceNode[]>([])
+  const intentionalCloseRef = useRef(false)
+  const autoMicFallbackRef = useRef(false)
+  const browserMicRequestSeqRef = useRef(0)
+  const browserMicBlockedRef = useRef(false)
+  const switchInputSourceRef = useRef<((source: 'reachy' | 'browser') => Promise<void>) | null>(
+    null,
+  )
 
   // Pre-fetch the audio worklet script on mount so the first `addModule` on
   // connect is a browser-cache hit (saves 150-250ms of perceived latency on
@@ -130,12 +246,15 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   }, [])
 
   const cleanupEverything = useCallback(async () => {
+    browserMicRequestSeqRef.current += 1
+    browserMicBlockedRef.current = false
     if (connectTimerRef.current !== null) {
       window.clearTimeout(connectTimerRef.current)
       connectTimerRef.current = null
     }
     try {
       if (wsRef.current) {
+        intentionalCloseRef.current = true
         try {
           wsRef.current.send(JSON.stringify({ type: 'stop' }))
         } catch {
@@ -166,12 +285,24 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       /* ignore */
     }
     playbackTimeRef.current = 0
+    setSessionPhase('idle')
+    setStalledReason(null)
   }, [])
 
   const scheduleSpeakerFrame = useCallback(
     (samples: Float32Array, sampleRate: number) => {
-      const ctx = audioCtxRef.current
+      let ctx = audioCtxRef.current
+      if (!ctx) {
+        ctx = new AudioContext()
+        audioCtxRef.current = ctx
+      }
       if (!ctx) return
+      // Browsers (Chrome/Firefox/Safari) start AudioContexts in 'suspended'
+      // state. Without an explicit resume after a user gesture, scheduled
+      // BufferSource nodes silently produce no audio.
+      if (ctx.state === 'suspended') {
+        void ctx.resume()
+      }
       if (samples.length === 0) return
       const buffer = ctx.createBuffer(1, samples.length, sampleRate)
       buffer.copyToChannel(samples, 0)
@@ -216,18 +347,304 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     playbackTimeRef.current = ctx ? ctx.currentTime : 0
   }, [])
 
+  const markConnectedAfterMicChange = useCallback(() => {
+    if (!sessionReadyRef.current) return
+    if (connectTimerRef.current !== null) {
+      window.clearTimeout(connectTimerRef.current)
+      connectTimerRef.current = null
+    }
+    setState('connected')
+  }, [])
+
+  const markBrowserMicUnavailable = useCallback(
+    (message: string) => {
+      inputSourceRef.current = 'browser'
+      // Browser input is logically selected even if capture is degraded; do
+      // not let a permission prompt block the realtime model/text session.
+      inputReadyRef.current = true
+      setInputSource('browser')
+      setInputReady(true)
+      setInputDevice('Computer microphone unavailable')
+      setInputHealth({
+        source: 'browser_mic',
+        ready: false,
+        rms: 0,
+        peak: 0,
+        empty_stt_count: 0,
+        confidence_state: 'no_signal',
+        last_signal_at: null,
+        last_frame_at: null,
+        suggested_action: 'allow_browser_mic',
+        last_error: message,
+      })
+      setSessionPhase('stalled')
+      setStalledReason('browser microphone unavailable')
+      setError(message)
+      browserMicBlockedRef.current = true
+      markConnectedAfterMicChange()
+    },
+    [markConnectedAfterMicChange],
+  )
+
+  const beginBrowserMicCapture = useCallback(
+    (inputRate: number) => {
+      const requestSeq = ++browserMicRequestSeqRef.current
+      browserMicBlockedRef.current = false
+      inputSourceRef.current = 'browser'
+      inputReadyRef.current = true
+      setInputSource('browser')
+      setInputReady(true)
+      setInputDevice('Computer microphone opening')
+      setInputHealth({
+        source: 'browser_mic',
+        ready: false,
+        rms: 0,
+        peak: 0,
+        empty_stt_count: 0,
+        confidence_state: 'waiting_for_signal',
+        last_signal_at: null,
+        last_frame_at: null,
+        suggested_action: null,
+        last_error: null,
+      })
+
+      void (async () => {
+        let stream: MediaStream
+        try {
+          stream = await requestBrowserMicStream()
+        } catch (e) {
+          if (requestSeq !== browserMicRequestSeqRef.current || inputSourceRef.current !== 'browser') {
+            return
+          }
+          markBrowserMicUnavailable(`Computer microphone unavailable: ${String(e)}`)
+          return
+        }
+
+        if (requestSeq !== browserMicRequestSeqRef.current || inputSourceRef.current !== 'browser') {
+          stopStream(stream)
+          return
+        }
+
+        micStreamRef.current = stream
+        let ctx = audioCtxRef.current
+        if (!ctx || ctx.state === 'closed') {
+          ctx = new AudioContext()
+          audioCtxRef.current = ctx
+        }
+        // AudioContext starts suspended on Chrome/Firefox/Safari and silently
+        // produces no audio frames until explicitly resumed. The click that
+        // started the session is the user gesture, so resume is allowed.
+        if (ctx.state === 'suspended') {
+          try { await ctx.resume() } catch { /* best effort */ }
+        }
+        try {
+          await ctx.audioWorklet.addModule('/reachy-mic-worklet.js')
+        } catch (e) {
+          if (requestSeq !== browserMicRequestSeqRef.current) {
+            stopStream(stream)
+            return
+          }
+          stopStream(stream)
+          micStreamRef.current = null
+          markBrowserMicUnavailable(`Audio worklet failed to load: ${String(e)}`)
+          return
+        }
+
+        if (requestSeq !== browserMicRequestSeqRef.current || inputSourceRef.current !== 'browser') {
+          stopStream(stream)
+          return
+        }
+
+        const mediaSource = ctx.createMediaStreamSource(stream)
+        const worklet = new AudioWorkletNode(ctx, 'reachy-mic-processor', {
+          processorOptions: { framesPerChunk: 960 },
+        })
+        workletNodeRef.current = worklet
+        worklet.port.onmessage = (msg: MessageEvent<Float32Array>) => {
+          if (mutedRef.current) return
+          const frame = msg.data
+          const currentWs = wsRef.current
+          if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return
+          const b64 = encodeMicFrame(frame, ctx.sampleRate, inputRate)
+          currentWs.send(JSON.stringify({ type: 'audio', audio_b64: b64, rate: inputRate }))
+        }
+        mediaSource.connect(worklet)
+        inputReadyRef.current = true
+        setInputReady(true)
+        setInputDevice('Browser microphone')
+        setInputHealth({
+          source: 'browser_mic',
+          ready: true,
+          rms: 0,
+          peak: 0,
+          empty_stt_count: 0,
+          confidence_state: 'waiting_for_signal',
+          last_signal_at: null,
+          last_frame_at: null,
+          suggested_action: null,
+          last_error: null,
+        })
+        setSessionPhase('listening')
+        setStalledReason(null)
+        setError(null)
+        browserMicBlockedRef.current = false
+        markConnectedAfterMicChange()
+      })()
+    },
+    [markBrowserMicUnavailable, markConnectedAfterMicChange],
+  )
+
   const handleServerEvent = useCallback(
     (evt: Record<string, unknown>) => {
       const type = evt.type as string | undefined
+      const markConnectedIfReady = () => {
+        if (!sessionReadyRef.current || !inputReadyRef.current) return
+        if (connectTimerRef.current !== null) {
+          window.clearTimeout(connectTimerRef.current)
+          connectTimerRef.current = null
+        }
+        setState('connected')
+      }
       switch (type) {
-        case 'session.ready':
-          if (connectTimerRef.current !== null) {
-            window.clearTimeout(connectTimerRef.current)
-            connectTimerRef.current = null
+        case 'session.phase': {
+          const phase = evt.phase as SessionPhase
+          if (phase) setSessionPhase(phase)
+          if (typeof evt.reason === 'string') setStalledReason(evt.reason)
+          break
+        }
+        case 'session.health': {
+          const phase = evt.session_phase as SessionPhase
+          if (phase) setSessionPhase(phase)
+          setStalledReason((evt.stalled_reason as string | null) ?? null)
+          if (evt.input_health && typeof evt.input_health === 'object') {
+            const health = evt.input_health as VoiceInputHealth
+            setInputHealth(health)
+            if (health.ready) {
+              inputReadyRef.current = true
+              setInputReady(true)
+              if (typeof health.source === 'string' && health.source.includes('browser')) {
+                setInputSource('browser')
+              } else if (typeof health.source === 'string' && health.source !== 'unknown') {
+                setInputSource('reachy')
+              }
+            }
           }
-          setState('connected')
+          if (evt.output_health && typeof evt.output_health === 'object') {
+            setOutputHealth(evt.output_health as VoiceOutputHealth)
+          }
+          if (phase && phase !== 'idle' && phase !== 'stalled') {
+            sessionReadyRef.current = true
+          }
+          markConnectedIfReady()
+          break
+        }
+        case 'session.ready':
+          sessionReadyRef.current = true
           setModel((evt.model as string) ?? null)
           setVoice((evt.voice as string) ?? null)
+          if (browserMicBlockedRef.current) {
+            setSessionPhase('stalled')
+            setStalledReason('browser microphone unavailable')
+          } else {
+            setSessionPhase('listening')
+          }
+          markConnectedIfReady()
+          break
+        case 'input.ready':
+          inputReadyRef.current = true
+          setInputReady(true)
+          setInputSource(inputSourceRef.current)
+          setInputDevice((evt.device_name as string) ?? null)
+          setInputHealth({
+            source: (evt.source as string) || inputSourceRef.current,
+            ready: true,
+            rms: 0,
+            peak: 0,
+            empty_stt_count: 0,
+            confidence_state: 'waiting_for_signal',
+            last_signal_at: null,
+            last_frame_at: null,
+            suggested_action: null,
+            last_error: null,
+          })
+          markConnectedIfReady()
+          break
+        case 'input.source': {
+          const source = evt.source === 'browser' ? 'browser' : 'reachy'
+          inputSourceRef.current = source
+          setInputSource(source)
+          break
+        }
+        case 'body_motion':
+          if (typeof evt.enabled === 'boolean') {
+            bodyMotionRef.current = evt.enabled
+            setBodyMotionState(evt.enabled)
+          }
+          break
+        case 'output.ready': {
+          const sink = evt.sink === 'reachy_speaker' ? 'reachy_speaker' : null
+          setOutputSink(sink)
+          setOutputDevice((evt.device_name as string) ?? null)
+          setOutputHealth({
+            sink: sink || 'unknown',
+            ready: sink === 'reachy_speaker',
+            queued_ms: 0,
+            last_error: null,
+          })
+          // Don't auto-disable computer playback when Reachy speaker is
+          // ready — playing from both is fine, and many users sit far from
+          // the robot. The user can mute computer audio explicitly via the
+          // "Computer muted" toggle.
+          break
+        }
+        case 'output.unavailable':
+          setOutputSink('unavailable')
+          setOutputDevice(null)
+          setOutputHealth({
+            sink: 'reachy_speaker',
+            ready: false,
+            queued_ms: 0,
+            last_error:
+              (evt.message as string) || 'Reachy speaker is unavailable.',
+          })
+          // Reachy speaker failed — make sure computer playback is on so
+          // the user can still hear the assistant.
+          if (!localPlaybackRef.current) {
+            localPlaybackRef.current = true
+            setLocalPlaybackState(true)
+          }
+          setError(
+            (evt.message as string) ||
+              'Reachy speaker is unavailable. Routing audio to computer speaker.',
+          )
+          break
+        case 'input.warning':
+          {
+            const nextHealth: VoiceInputHealth = {
+              source: inputSourceRef.current,
+              ready: true,
+              rms: Number(evt.rms ?? 0),
+              peak: Number(evt.peak ?? 0),
+              empty_stt_count: Number(evt.empty_stt_count ?? 0),
+              confidence_state: String(evt.confidence_state ?? 'low_confidence'),
+              suggested_action: (evt.suggested_action as string) || null,
+              last_error: (evt.message as string) || null,
+            }
+            setInputHealth(nextHealth)
+            setError((evt.message as string) || 'Reachy microphone input is degraded.')
+            const needsBrowserFallback =
+              nextHealth.confidence_state === 'no_signal' &&
+              nextHealth.suggested_action === 'switch_to_browser_mic' &&
+              inputSourceRef.current !== 'browser'
+            if (needsBrowserFallback && !autoMicFallbackRef.current) {
+              autoMicFallbackRef.current = true
+              inputReadyRef.current = false
+              setInputReady(false)
+              setSessionPhase('listening')
+              setStalledReason(null)
+              void switchInputSourceRef.current?.('browser')
+            }
+          }
           break
         case 'backend_swapped':
           // Hot-swap completed on the backend. Update the chips, flush
@@ -241,9 +658,8 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           }
           break
         case 'audio.delta': {
-          // Skip browser playback unless the user opted in. By default the
-          // assistant audio comes out of the Reachy USB speaker via
-          // host_agent's /speaker/stream — playing locally too would echo.
+          // Skip browser playback unless the user explicitly enables the
+          // computer speaker fallback.
           if (!localPlaybackRef.current) break
           const b64 = (evt.audio_b64 as string) || ''
           const rate =
@@ -253,6 +669,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
         }
         case 'audio.done':
           // Caller can use this to toggle "assistant finished speaking" UI.
+          setSessionPhase('listening')
           break
         case 'audio.cancelled':
         case 'user.speech_started':
@@ -264,10 +681,14 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           const role = (evt.role as 'user' | 'assistant') || 'assistant'
           const content = (evt.content as string) || ''
           if (!content.trim()) break
+          // A real turn means a prior mic/STT warning is stale. Keep the
+          // transcript focused on conversation, not old capture diagnostics.
+          setError(null)
           setTranscripts((prev) => [
             ...prev.filter((t) => !t.partial),
             { id: `${Date.now()}-${Math.random()}`, role, content },
           ])
+          setSessionPhase(role === 'user' ? 'thinking' : 'speaking')
           break
         }
         case 'transcript.partial': {
@@ -292,6 +713,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
               args: (evt.args as string) || '',
             },
           ])
+          setSessionPhase('moving')
           break
         }
         case 'tool.end': {
@@ -309,14 +731,58 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           if (typeof evt.cumulative_usd === 'number') setCost(evt.cumulative_usd)
           break
         case 'error':
+          if (evt.code === 'input_unavailable' && inputSourceRef.current !== 'browser') {
+            const message =
+              (evt.message as string) ||
+              'Reachy microphone is unavailable; switching to computer mic.'
+            setError(message)
+            autoMicFallbackRef.current = true
+            inputReadyRef.current = true
+            setInputReady(true)
+            setInputHealth({
+              source: 'reachy_mic',
+              ready: false,
+              rms: 0,
+              peak: 0,
+              empty_stt_count: 0,
+              confidence_state: 'no_signal',
+              suggested_action: 'switch_to_browser_mic',
+              last_error: message,
+            })
+            setSessionPhase('stalled')
+            setStalledReason('reachy_mic_no_signal')
+            markConnectedIfReady()
+            void switchInputSourceRef.current?.('browser')
+            break
+          }
+          if (evt.code === 'stt_timeout' || evt.code === 'llm_timeout') {
+            setSessionPhase('stalled')
+            setStalledReason((evt.message as string) || String(evt.code))
+          }
+          if (
+            evt.code === 'tts_timeout' ||
+            evt.code === 'speaker_backpressure' ||
+            evt.code === 'tool_timeout' ||
+            evt.code === 'websocket_closed'
+          ) {
+            setSessionPhase('stalled')
+            setStalledReason((evt.message as string) || String(evt.code))
+          }
           setError((evt.message as string) || 'unknown error')
+          if (
+            evt.code === 'input_unavailable' ||
+            String(evt.message ?? '').toLowerCase().includes('microphone stream failed')
+          ) {
+            setState('error')
+            void cleanupEverything()
+          }
           break
         case 'session.closed':
           setState('closed')
           break
       }
     },
-    [scheduleSpeakerFrame],
+    [cleanupEverything, scheduleSpeakerFrame],
   )
 
   const start = useCallback(
@@ -327,6 +793,12 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       setTools([])
       setCost(0)
       setState('connecting')
+      setSessionPhase('idle')
+      setStalledReason(null)
+      setInputHealth(null)
+      setOutputHealth(null)
+      intentionalCloseRef.current = false
+      autoMicFallbackRef.current = false
 
       // Arm the connect-timeout watchdog. If session.ready doesn't arrive
       // within CONNECT_TIMEOUT_MS we tear everything down and surface an
@@ -337,7 +809,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       connectTimerRef.current = window.setTimeout(() => {
         connectTimerRef.current = null
         setError(
-          'Connection timed out. Check your API key, network, or try the other backend.',
+          'Connection timed out while opening the model, Reachy mic, or Reachy speaker. Try again or switch backend.',
         )
         setState('error')
         void cleanupEverything()
@@ -345,53 +817,23 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
 
       const merged: VoiceStartArgs = { ...defaults, ...overrides }
       const backend: VoiceBackend = (merged.backend as VoiceBackend) || 'openai'
+      const inputSource = merged.input_source ?? 'browser'
       backendRef.current = backend
+      inputSourceRef.current = inputSource
+      sessionReadyRef.current = false
+      inputReadyRef.current = inputSource === 'browser'
+      setInputReady(inputSource === 'browser')
+      setInputSource(inputSource)
+      setInputDevice(inputSource === 'browser' ? 'Browser microphone' : null)
 
       const inputRate = INPUT_RATE_BY_BACKEND[backend]
 
-      // 1. Mic + AudioContext + Worklet
-      let stream: MediaStream
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            channelCount: 1,
-          },
-        })
-      } catch (e) {
-        setError(`Microphone permission denied: ${String(e)}`)
-        setState('error')
-        return
+      // 1. Mic + AudioContext + Worklet. Browser capture is intentionally
+      // async and non-blocking; OpenAI/Gemini session readiness should not be
+      // held hostage by a permission prompt or a flaky local microphone.
+      if (inputSource === 'browser') {
+        beginBrowserMicCapture(inputRate)
       }
-      micStreamRef.current = stream
-
-      const ctx = new AudioContext()
-      audioCtxRef.current = ctx
-      try {
-        await ctx.audioWorklet.addModule('/reachy-mic-worklet.js')
-      } catch (e) {
-        await cleanupEverything()
-        setError(`Audio worklet failed to load: ${String(e)}`)
-        setState('error')
-        return
-      }
-
-      const source = ctx.createMediaStreamSource(stream)
-      const worklet = new AudioWorkletNode(ctx, 'reachy-mic-processor', {
-        processorOptions: { framesPerChunk: 960 },
-      })
-      workletNodeRef.current = worklet
-
-      worklet.port.onmessage = (msg: MessageEvent<Float32Array>) => {
-        if (mutedRef.current) return
-        const frame = msg.data
-        const ws = wsRef.current
-        if (!ws || ws.readyState !== WebSocket.OPEN) return
-        const b64 = encodeMicFrame(frame, ctx.sampleRate, inputRate)
-        ws.send(JSON.stringify({ type: 'audio', audio_b64: b64, rate: inputRate }))
-      }
-      source.connect(worklet)
 
       // 2. WebSocket
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -413,6 +855,8 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
             voice: merged.voice ?? null,
             model: merged.model ?? null,
             api_key: merged.api_key ?? null,
+            enable_body_motion: merged.body_motion ?? false,
+            input_source: inputSource,
           }),
         )
       }
@@ -429,17 +873,35 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
         setState('error')
       }
       ws.onclose = () => {
+        const expected = intentionalCloseRef.current
         setState((current) => (current === 'error' ? current : 'closed'))
-        cleanupEverything()
+        void cleanupEverything().finally(() => {
+          if (!expected) {
+            setSessionPhase('stalled')
+            setStalledReason('WebSocket closed')
+            setError('WebSocket closed')
+          }
+          intentionalCloseRef.current = false
+        })
       }
     },
-    [cleanupEverything, defaults, handleServerEvent, state],
+    [beginBrowserMicCapture, cleanupEverything, defaults, handleServerEvent, state],
   )
 
   const stop = useCallback(async () => {
     await cleanupEverything()
     setMutedState(false)
     mutedRef.current = false
+    setBodyMotionState(false)
+    bodyMotionRef.current = false
+    sessionReadyRef.current = false
+    inputReadyRef.current = false
+    setInputReady(false)
+    setInputSource(null)
+    setInputDevice(null)
+    setOutputSink(null)
+    setOutputDevice(null)
+    autoMicFallbackRef.current = false
     setState('idle')
   }, [cleanupEverything])
 
@@ -461,6 +923,14 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'cancel_response' }))
+  }, [])
+
+  const setBodyMotion = useCallback((enabled: boolean) => {
+    bodyMotionRef.current = enabled
+    setBodyMotionState(enabled)
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_body_motion', enabled }))
   }, [])
 
   // Hot-swap to a different backend / voice / model / persona while keeping
@@ -488,11 +958,81 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const setMuted = useCallback((next: boolean) => {
     mutedRef.current = next
     setMutedState(next)
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_input_muted', muted: next }))
   }, [])
 
   const toggleMute = useCallback(() => {
     setMuted(!mutedRef.current)
   }, [setMuted])
+
+  const switchInputSource = useCallback(
+    async (source: 'reachy' | 'browser') => {
+      const ws = wsRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setError('Cannot switch microphone because the live voice socket is closed.')
+        setSessionPhase('stalled')
+        setStalledReason('voice socket closed')
+        return
+      }
+      const inputRate = INPUT_RATE_BY_BACKEND[backendRef.current]
+
+      try {
+        workletNodeRef.current?.disconnect()
+      } catch {
+        /* ignore */
+      }
+      workletNodeRef.current = null
+      try {
+        micStreamRef.current?.getTracks().forEach((t) => t.stop())
+      } catch {
+        /* ignore */
+      }
+      micStreamRef.current = null
+
+      if (source === 'browser') {
+        ws.send(JSON.stringify({ type: 'set_input_source', source }))
+        beginBrowserMicCapture(inputRate)
+        markConnectedAfterMicChange()
+        autoMicFallbackRef.current = false
+        return
+      }
+
+      browserMicRequestSeqRef.current += 1
+      browserMicBlockedRef.current = false
+      inputSourceRef.current = source
+      setInputSource(source)
+      setInputReady(false)
+      inputReadyRef.current = false
+      setInputDevice(null)
+      ws.send(JSON.stringify({ type: 'set_input_source', source }))
+    },
+    [beginBrowserMicCapture, markConnectedAfterMicChange],
+  )
+
+  switchInputSourceRef.current = switchInputSource
+
+  useEffect(() => {
+    if (state !== 'connected') return
+    if (inputSource !== 'reachy') return
+    if (autoMicFallbackRef.current) return
+    if (!inputHealth) return
+    const needsFallback =
+      inputHealth.confidence_state === 'no_signal' &&
+      inputHealth.suggested_action === 'switch_to_browser_mic'
+    if (!needsFallback) return
+    autoMicFallbackRef.current = true
+    setError(inputHealth.last_error || 'Reachy microphone is silent; switching to computer mic.')
+    void switchInputSource('browser')
+  }, [
+    inputHealth?.confidence_state,
+    inputHealth?.last_error,
+    inputHealth?.suggested_action,
+    inputSource,
+    state,
+    switchInputSource,
+  ])
 
   const setLocalPlayback = useCallback((next: boolean) => {
     localPlaybackRef.current = next
@@ -515,6 +1055,16 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     model,
     voice,
     muted,
+    bodyMotion,
+    inputReady,
+    inputSource,
+    inputDevice,
+    outputSink,
+    outputDevice,
+    sessionPhase,
+    stalledReason,
+    inputHealth,
+    outputHealth,
     localPlayback,
     start,
     stop,
@@ -522,8 +1072,10 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     swapBackend,
     sendText,
     cancelResponse,
+    setBodyMotion,
     toggleMute,
     setMuted,
+    switchInputSource,
     setLocalPlayback,
     isActive: state === 'connected' || state === 'connecting',
   }
