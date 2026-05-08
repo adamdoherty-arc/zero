@@ -54,6 +54,7 @@ from app.services.tts_service import get_tts_service
 from app.services.reachy_service import get_reachy_service
 from app.services.reachy_personas import build_full_prompt, get_persona, PERSONAS
 from app.services.reachy_voice_config_service import get_reachy_voice_config
+from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
 from app.services.reachy_emotion_parser import (
     GestureAction,
     action_to_motion_request,
@@ -76,7 +77,8 @@ async def _vault_lines_for_turn(user_text: str) -> Optional[str]:
         return None
     try:
         from app.services.vault_retrieval_service import VaultRetrievalService
-    except Exception:
+    except Exception as e:
+        logger.debug("voice_vault_retrieval_unavailable", error=str(e))
         return None
     try:
         svc = VaultRetrievalService()
@@ -110,7 +112,8 @@ class VoiceLoopService:
 
     _instance: Optional["VoiceLoopService"] = None
 
-    # Default persona on fresh boot. Can be changed via set_persona().
+    # Default persona on fresh boot. Companion mode is the primary Reachy
+    # surface; users can still switch to the chief-of-staff assistant profile.
     _DEFAULT_PERSONA = "companion"
 
     def __init__(self):
@@ -165,7 +168,12 @@ class VoiceLoopService:
                 if not persona_voice:
                     p = get_persona(self._active_persona_id)
                     persona_voice = p.voice if p else None
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    "voice_persona_voice_resolve_failed",
+                    persona=self._active_persona_id,
+                    error=str(e),
+                )
                 persona_voice = None
             audio, meta = await asyncio.wait_for(
                 self._tts_service.synthesize_with_meta(
@@ -223,7 +231,8 @@ class VoiceLoopService:
         try:
             from app.infrastructure.llm_router import get_llm_router
             llm_provider, llm_model, _fbs = get_llm_router().resolve_provider_model("voice_reply")
-        except Exception:
+        except Exception as e:
+            logger.debug("voice_llm_router_resolve_failed", error=str(e))
             llm_provider, llm_model = None, None
 
         active_models = {
@@ -296,8 +305,8 @@ class VoiceLoopService:
         # Mark activity so the presence watcher does not trigger boredom gestures.
         try:
             get_reachy_presence_service().mark_voice_activity()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("voice_presence_mark_failed", error=str(e))
 
         logger.info("voice_transcribed", text=user_text[:100])
 
@@ -328,8 +337,8 @@ class VoiceLoopService:
                 # Mark voice activity so presence watcher doesn't kick in mid-triage.
                 try:
                     get_reachy_presence_service().mark_voice_activity()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("voice_presence_mark_failed_email_path", error=str(e))
                 return result
         except Exception as e:
             logger.debug("voice_email_session_skipped", error=str(e))
@@ -418,13 +427,17 @@ class VoiceLoopService:
             robot_connected = await self._reachy_service.is_connected()
             result["robot_connected"] = robot_connected
             result["played_on_robot"] = False
+            motion_allowed = body_motion_allowed(surface="classic_voice").get("allowed")
+            if not motion_allowed:
+                result["body_motion_skipped"] = body_motion_locked_payload(surface="classic_voice")
             if robot_connected:
                 # Fire gestures in parallel; don't block TTS on them.
-                asyncio.create_task(self._dispatch_gestures(actions))
+                if motion_allowed:
+                    asyncio.create_task(self._dispatch_gestures(actions))
                 # If the LLM didn't emit any gesture markers, play a subtle
                 # baseline sway so Reachy still looks alive while speaking.
                 # Keeps the robot from reading as a static speaker.
-                if not actions:
+                if motion_allowed and not actions:
                     asyncio.create_task(
                         self._reachy_service.play_emotion("attentive1")
                     )
@@ -481,6 +494,12 @@ class VoiceLoopService:
 
     async def _dispatch_gestures(self, actions: list[GestureAction]) -> None:
         """Run each gesture marker sequentially so they layer cleanly."""
+        if not body_motion_allowed(surface="classic_voice_gesture").get("allowed"):
+            logger.debug(
+                "voice_gesture_skipped",
+                reason="body_motion_locked",
+            )
+            return
         for action in actions:
             req = action_to_motion_request(action)
             if not req:
@@ -524,8 +543,8 @@ class VoiceLoopService:
                 wc_parts.append(
                     hint.replace("### CURRENT CONTEXT\n", "").strip()
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("voice_context_hint_failed", error=str(e))
 
         # Fresh notes from user_memory (learned within the last 24h, before
         # the nightly synthesis job folds them into the human block).
