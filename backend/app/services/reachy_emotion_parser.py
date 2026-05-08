@@ -9,6 +9,9 @@ Marker grammar (case insensitive, whitespace tolerant):
     [dance:<name>]     — same, constrained to the dance library
     [motion:<name>]    — either library, name-resolved
     [look:x,y,z]       — point the head at a 3D target (meters)
+    [observe]          — Phase 5: "paying attention" beat (defaults to a
+                         gentle head-lean toward a user-facing point); the
+                         voice loop interprets it as `look:0.5,0,0.1`
 
 Anything else inside brackets is left alone (so the LLM's citation-style "[1]"
 survives). Actions are returned in order so the caller can interleave them
@@ -21,7 +24,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-GestureKind = Literal["emotion", "dance", "motion", "look"]
+GestureKind = Literal["emotion", "dance", "motion", "look", "observe"]
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,8 @@ class GestureAction:
 
 
 _PATTERN = re.compile(
-    r"\[\s*(emotion|dance|motion|look)\s*:\s*([^\]]+?)\s*\]",
+    # Two forms: "[observe]" (no colon payload) or "[kind:payload]".
+    r"\[\s*(?:(observe)|(emotion|dance|motion|look)\s*:\s*([^\]]+?))\s*\]",
     re.IGNORECASE,
 )
 
@@ -53,9 +57,12 @@ def parse_and_strip(text: str) -> tuple[str, list[GestureAction]]:
     for match in _PATTERN.finditer(text):
         out.append(text[cursor:match.start()])
         cleaned_so_far = sum(len(piece) for piece in out)
-        kind = match.group(1).lower()
-        payload = match.group(2).strip()
-        actions.append(GestureAction(kind=kind, payload=payload, offset=cleaned_so_far))
+        if match.group(1):  # [observe]
+            actions.append(GestureAction(kind="observe", payload="", offset=cleaned_so_far))
+        else:
+            kind = match.group(2).lower()
+            payload = match.group(3).strip()
+            actions.append(GestureAction(kind=kind, payload=payload, offset=cleaned_so_far))
         cursor = match.end()
     out.append(text[cursor:])
 
@@ -81,6 +88,10 @@ def action_to_motion_request(action: GestureAction) -> Optional[dict]:
         except ValueError:
             return None
         return {"kind": "look", "x": x, "y": y, "z": z}
+    if action.kind == "observe":
+        # "Paying attention" beat: gentle look toward a user-facing point.
+        # Voice loop dispatches this as a `look` movement on the robot.
+        return {"kind": "look", "x": 0.5, "y": 0.0, "z": 0.1}
     if action.kind == "dance":
         return {"kind": "dance", "name": action.payload}
     if action.kind == "emotion":

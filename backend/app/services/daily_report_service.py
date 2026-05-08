@@ -328,6 +328,42 @@ class DailyReportService:
             },
         }
 
+    async def compute_ops_grade_fast(self, window_hours: int = 24) -> Dict[str, Any]:
+        """Fast ops grade for interactive callers (employee check-in button).
+
+        Uses only `_get_job_results` + `_calculate_grade` — no LLM section,
+        no health probe, no failure investigation, no file persistence.
+        Returns a small dict with grade and a compact job summary so the
+        check-in doesn't need to invoke the full `generate_daily_report`.
+        """
+        since = datetime.utcnow() - timedelta(hours=window_hours)
+        job_results = await self._get_job_results(since)
+        grade = self._calculate_grade(job_results)
+        total = sum(len(r) for r in job_results.values())
+        successes = sum(
+            sum(1 for r in runs if r["status"] == "completed")
+            for runs in job_results.values()
+        )
+        failures = sum(
+            sum(1 for r in runs if r["status"] == "failed")
+            for runs in job_results.values()
+        )
+        failed_job_names = sorted({
+            name for name, runs in job_results.items()
+            if any(r["status"] == "failed" for r in runs)
+        })
+        return {
+            "grade": grade,
+            "job_summary": {
+                "unique_jobs": len(job_results),
+                "total_runs": total,
+                "successes": successes,
+                "failures": failures,
+            },
+            "failed_jobs": failed_job_names,
+            "window_hours": window_hours,
+        }
+
     def _calculate_grade(self, job_results: Dict) -> int:
         """Calculate an overall daily operations grade (0-100)."""
         score = 0
@@ -427,6 +463,208 @@ class DailyReportService:
         if len(summary) > 4000:
             summary = summary[:3997] + "..."
         return summary
+
+    async def generate_carousel_employee_report(
+        self, window_hours: int = 12
+    ) -> Dict[str, Any]:
+        """Build the character-content "employee" check-in report.
+
+        Summarizes what Zero did in the last window_hours:
+          - Carousels generated, approved, rejected
+          - Stage 2 avg score, best and worst carousels
+          - Top 3 (hook_style, story_template) pairs by avg_score
+          - Research queue depth and trend
+          - Stalled jobs, self-diagnosed issues, recommended actions
+        Shared by the Discord digest scheduler jobs and the frontend dashboard.
+        """
+        from sqlalchemy import and_, or_
+        from app.db.models import (
+            CharacterCarouselModel,
+            ResearchQueueStateModel,
+            CharacterModel,
+        )
+
+        now = datetime.utcnow()
+        since = now - timedelta(hours=window_hours)
+        report: Dict[str, Any] = {
+            "generated_at": now.isoformat(),
+            "window_hours": window_hours,
+            "period": {"from": since.isoformat(), "to": now.isoformat()},
+            "carousels": {},
+            "learning": {},
+            "queue": {},
+            "issues": [],
+            "wins": [],
+            "summary": "",
+        }
+
+        try:
+            async with get_session() as session:
+                # Carousel counts by status in window
+                rows = await session.execute(
+                    select(
+                        CharacterCarouselModel.status,
+                        sa_func.count(CharacterCarouselModel.id),
+                    ).where(
+                        CharacterCarouselModel.created_at >= since
+                    ).group_by(CharacterCarouselModel.status)
+                )
+                status_counts = {r[0]: int(r[1]) for r in rows.all()}
+                generated = sum(status_counts.values())
+
+                # Stage 2 score stats in window
+                score_rows = await session.execute(
+                    select(
+                        sa_func.count(CharacterCarouselModel.id),
+                        sa_func.avg(CharacterCarouselModel.final_review_score),
+                        sa_func.min(CharacterCarouselModel.final_review_score),
+                        sa_func.max(CharacterCarouselModel.final_review_score),
+                    ).where(
+                        CharacterCarouselModel.created_at >= since,
+                        CharacterCarouselModel.final_review_score.is_not(None),
+                    )
+                )
+                reviewed_count, avg_score, min_score, max_score = score_rows.one()
+
+                report["carousels"] = {
+                    "generated": generated,
+                    "by_status": status_counts,
+                    "approved": status_counts.get("approved", 0) + status_counts.get("published", 0),
+                    "rejected": status_counts.get("needs_work", 0) + status_counts.get("rejected", 0),
+                    "reviewed": int(reviewed_count or 0),
+                    "stage2_avg_score": round(float(avg_score), 2) if avg_score else None,
+                    "stage2_min_score": float(min_score) if min_score is not None else None,
+                    "stage2_max_score": float(max_score) if max_score is not None else None,
+                }
+
+                # Top variant pairs (30-day window so we get signal early)
+                try:
+                    from app.services.character_content_service import get_character_content_service
+                    variant_stats = await get_character_content_service().get_variant_stats(
+                        window_days=30
+                    )
+                except (ValueError, KeyError, AttributeError) as exc:
+                    logger.debug("variant_stats_fetch_failed", error=str(exc))
+                    variant_stats = []
+                variant_stats.sort(key=lambda r: (r.get("avg_score") or 0, r.get("uses") or 0), reverse=True)
+                report["learning"] = {
+                    "variant_sample_size": sum(int(r.get("uses", 0) or 0) for r in variant_stats),
+                    "top_variants": variant_stats[:3],
+                    "bottom_variants": variant_stats[-3:] if len(variant_stats) > 3 else [],
+                }
+
+                # Research queue depth
+                try:
+                    pending = await session.execute(
+                        select(sa_func.count(CharacterModel.id)).where(
+                            or_(
+                                CharacterModel.research_status == "pending",
+                                CharacterModel.research_status.is_(None),
+                            )
+                        )
+                    )
+                    in_progress = await session.execute(
+                        select(sa_func.count(CharacterModel.id)).where(
+                            CharacterModel.research_status == "in_progress"
+                        )
+                    )
+                    completed = await session.execute(
+                        select(sa_func.count(CharacterModel.id)).where(
+                            CharacterModel.research_status == "completed"
+                        )
+                    )
+                    report["queue"] = {
+                        "pending": int(pending.scalar() or 0),
+                        "in_progress": int(in_progress.scalar() or 0),
+                        "completed": int(completed.scalar() or 0),
+                    }
+                except Exception as exc:
+                    report["queue"] = {"error": str(exc)}
+
+        except Exception as e:
+            logger.error("carousel_employee_report_failed", error=str(e))
+            report["issues"].append(f"Report generation error: {e}")
+
+        # Self-diagnosed issues
+        c = report["carousels"]
+        q = report["queue"]
+        if c.get("generated", 0) == 0:
+            report["issues"].append("No carousels generated in this window — check character_content_generation job.")
+        elif c.get("generated", 0) < max(1, window_hours // 2):
+            report["issues"].append(
+                f"Low throughput: {c['generated']} carousels in {window_hours}h (expected >= {window_hours // 2})."
+            )
+        if c.get("reviewed", 0) > 0 and c.get("generated", 0) > 0:
+            review_rate = c["reviewed"] / c["generated"]
+            if review_rate < 0.5:
+                report["issues"].append(f"Stage 2 review lagging: only {review_rate:.0%} of new carousels reviewed.")
+        if q.get("pending", 0) > 30:
+            report["issues"].append(f"Research queue backlog: {q['pending']} pending characters.")
+        # Stage 2 scores are on a 0-10 scale (per-dimension averages aggregated)
+        if c.get("stage2_avg_score") is not None and c["stage2_avg_score"] < 7.0:
+            report["issues"].append(
+                f"Stage 2 avg score {c['stage2_avg_score']}/10 below 7 — prompt drift or regression?"
+            )
+
+        # Wins
+        if c.get("stage2_avg_score") is not None and c["stage2_avg_score"] >= 8.5:
+            report["wins"].append(f"Stage 2 avg score {c['stage2_avg_score']}/10 — strong quality.")
+        if c.get("approved", 0) >= 5:
+            report["wins"].append(f"{c['approved']} carousels approved in window.")
+        if report["learning"].get("top_variants"):
+            top = report["learning"]["top_variants"][0]
+            report["wins"].append(
+                f"Top variant: {top.get('hook_style')} + {top.get('story_template')} "
+                f"(avg {top.get('avg_score')}, n={top.get('uses')})"
+            )
+
+        report["summary"] = self._build_carousel_summary(report)
+        return report
+
+    def _build_carousel_summary(self, report: Dict[str, Any]) -> str:
+        """Build the compact Discord/UI-ready summary for the carousel employee report."""
+        c = report.get("carousels", {})
+        l = report.get("learning", {})
+        q = report.get("queue", {})
+        lines: List[str] = []
+        lines.append(f"**Zero Carousel Employee — last {report['window_hours']}h**")
+        lines.append(
+            f"Generated: **{c.get('generated', 0)}** | "
+            f"Approved: {c.get('approved', 0)} | "
+            f"Needs work: {c.get('rejected', 0)}"
+        )
+        if c.get("stage2_avg_score") is not None:
+            lines.append(
+                f"Stage 2: avg **{c['stage2_avg_score']}** "
+                f"(min {c.get('stage2_min_score')}, max {c.get('stage2_max_score')}, n={c.get('reviewed', 0)})"
+            )
+        if l.get("top_variants"):
+            lines.append("Top variants:")
+            for v in l["top_variants"][:3]:
+                lines.append(
+                    f"  - {v.get('hook_style')} + {v.get('story_template')}: "
+                    f"{v.get('avg_score')} avg (n={v.get('uses')})"
+                )
+        if q:
+            lines.append(
+                f"Queue: {q.get('pending', 0)} pending, "
+                f"{q.get('in_progress', 0)} researching, "
+                f"{q.get('completed', 0)} done"
+            )
+        if report.get("issues"):
+            lines.append("Issues:")
+            for i in report["issues"][:5]:
+                lines.append(f"  - {i}")
+        if report.get("wins"):
+            lines.append("Wins:")
+            for w in report["wins"][:3]:
+                lines.append(f"  - {w}")
+        return "\n".join(lines)
+
+    def format_carousel_discord_message(self, report: Dict[str, Any]) -> str:
+        """Truncate summary for Discord's 4000-char limit."""
+        summary = report.get("summary", "") or self._build_carousel_summary(report)
+        return summary[:3997] + "..." if len(summary) > 4000 else summary
 
     async def get_report_history(self, days: int = 7) -> List[Dict]:
         """Get report history for the last N days."""

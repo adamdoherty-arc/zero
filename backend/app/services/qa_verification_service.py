@@ -190,14 +190,16 @@ class QAVerificationService:
         t0 = time.monotonic()
         settings = get_settings()
 
-        # Build service list based on environment
+        # Build service list based on environment.
+        # Local LLM is vLLM only (Ollama retired ecosystem-wide 2026-04-27).
         if self._in_docker:
             services = {
                 "zero-api": "http://localhost:18792/health/ready",
                 "zero-ui": "http://zero-ui:5173",
                 "zero-searxng": "http://zero-searxng:8080",
                 "legion": f"{settings.legion_api_url}/health",
-                "ollama": settings.ollama_base_url.replace("/v1", "") + "/api/tags",
+                "vllm-chat": settings.vllm_chat_base_url.rstrip("/") + "/models",
+                "shared-litellm": "http://host.docker.internal:4444/health/liveliness",
             }
         else:
             services = {
@@ -205,7 +207,8 @@ class QAVerificationService:
                 "zero-ui": "http://localhost:5173",
                 "zero-searxng": "http://localhost:8888",
                 "legion": "http://localhost:8005/health",
-                "ollama": "http://localhost:11434/api/tags",
+                "vllm-chat": "http://localhost:18800/v1/models",
+                "shared-litellm": "http://localhost:4444/health/liveliness",
             }
 
         errors = []

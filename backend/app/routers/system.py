@@ -1,7 +1,7 @@
 """
 System management endpoints for ZERO API.
 
-Provides circuit breaker status, scheduler audit log, backup management,
+Provides circuit breaker status, scheduler audit log,
 self-knowledge introspection, and other operational endpoints.
 """
 
@@ -175,20 +175,6 @@ async def trigger_job(job_name: str) -> Dict[str, Any]:
 
 
 # ============================================
-# BACKUPS
-# ============================================
-
-@router.get("/backups")
-async def list_backups() -> Dict[str, Any]:
-    """List all available backups by tier."""
-    try:
-        from app.services.backup_service import get_backup_service
-        return await get_backup_service().list_backups()
-    except ImportError:
-        return {"message": "Backup service not yet available"}
-
-
-# ============================================
 # METRICS & OBSERVABILITY
 # ============================================
 
@@ -260,26 +246,6 @@ async def get_alerting_status() -> Dict[str, Any]:
     """Get current alerting status (active issues, recent alerts)."""
     from app.services.alerting_service import get_alerting_service
     return get_alerting_service().get_status()
-
-
-# ============================================
-# BACKUPS
-# ============================================
-
-@router.post("/backups")
-async def trigger_backup(tier: str = "hourly") -> Dict[str, Any]:
-    """Trigger a manual backup."""
-    if tier not in ("hourly", "daily", "weekly"):
-        raise HTTPException(400, "tier must be one of: hourly, daily, weekly")
-    from app.services.backup_service import get_backup_service
-    return await get_backup_service().create_backup(tier=tier)
-
-
-@router.post("/backups/test-restore")
-async def test_restore_backup() -> Dict[str, Any]:
-    """Test-restore the most recent backup to verify integrity."""
-    from app.services.backup_service import get_backup_service
-    return await get_backup_service().test_restore()
 
 
 # ============================================

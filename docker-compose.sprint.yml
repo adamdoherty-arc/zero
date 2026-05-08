@@ -2,34 +2,31 @@
 # Run with: docker-compose -f docker-compose.sprint.yml up
 
 services:
-  # PostgreSQL Database (required)
+  # PostgreSQL Database. Major-version data directories are incompatible, so
+  # PG17 uses its own volume instead of reusing the legacy PG16
+  # zero-postgres-data volume. Migrate old installs with dump/restore.
   zero-postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg17
     container_name: zero-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: zero
-      POSTGRES_PASSWORD: ${ZERO_POSTGRES_PASSWORD:-zero_dev}
-      POSTGRES_DB: zero
+      POSTGRES_DB: ${ZERO_DB_NAME:-zero}
+      POSTGRES_USER: ${ZERO_DB_USER:-zero}
+      POSTGRES_PASSWORD: ${ZERO_DB_PASSWORD:-${ZERO_POSTGRES_PASSWORD:-zero_dev}}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --lc-collate=C --lc-ctype=C
     volumes:
-      - zero-postgres-data:/var/lib/postgresql/data
+      - zero-postgres-data-pg17:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "${ZERO_DB_PORT:-5434}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U zero"]
+      test: ["CMD-SHELL", "pg_isready -U ${ZERO_DB_USER:-zero} -d ${ZERO_DB_NAME:-zero}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "25m"
-        max-file: "3"
+
+  # vLLM (chat + embed) lives in shared-infra/docker-compose.vllm.yml.
+  # One instance serves Zero, Ada, and Legion. Reach it via host.docker.internal
+  # (ports published on 8000 / 8001 on the host).
 
   # FastAPI Backend
   zero-api:
@@ -45,22 +42,46 @@ services:
     volumes:
       - ./workspace:/app/workspace
       - ./config:/app/config
-      - ./backups:/app/backups
       - ./mcp_servers:/app/mcp_servers:ro
+      # Persona profiles + voice clone references — bind-mounted so edits
+      # made via PUT /api/reachy/realtime/profiles/{id}/voice (and the
+      # voice clone uploader) survive container rebuilds. Without this,
+      # voice.txt + model.txt edits from the Voice Settings UI would
+      # vanish on the next `docker compose build zero-api`.
+      - ./backend/app/data/reachy_profiles:/app/app/data/reachy_profiles
+      - ./backend/app/data/voice_clones:/app/app/data/voice_clones
+      - ./backend/app/data/memory:/app/app/data/memory
       # Cross-project codebase access
       - C:/code/ADA:/projects/ada:ro
       - C:/code/fortressOS:/projects/fortressos:ro
       - C:/code/Legion:/projects/legion:rw
       - C:/code/zero:/projects/zero:rw
+      # Obsidian vault (personal second brain)
+      - C:/code/vault/ObsidianZero:/vault:rw
     environment:
       - ZERO_WORKSPACE_DIR=/app/workspace
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
+      - ZERO_VAULT_PATH=/vault
       - ZERO_OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
       - ZERO_OLLAMA_TIMEOUT=900
+      # Local LLMs routed through shared LiteLLM proxy at :4444 (shared-infra).
+      # Projects never hardcode vLLM ports — when a backend moves, only
+      # shared-infra/litellm/config.yaml changes.
+      - ZERO_VLLM_CHAT_URL=http://host.docker.internal:4444/v1
+      - ZERO_VLLM_API_KEY=${LITELLM_MASTER_KEY:-sk-shared-master-change-me}
+      # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
+      - ZERO_REACHY_API_URL=http://host.docker.internal:8000
+      - ZERO_HOST_AGENT_URL=http://host.docker.internal:18794
+      - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-qwen3-chat}
+      # Embeddings also proxy through shared LiteLLM; it maps qwen3-embed / Qwen/...
+      # aliases to vllm-embed internally.
+      - ZERO_VLLM_EMBED_URL=http://host.docker.internal:4444/v1
+      - ZERO_VLLM_EMBED_MODEL=${ZERO_VLLM_EMBED_MODEL:-qwen3-embed}
+      - ZERO_EMBED_PROVIDER=${ZERO_EMBED_PROVIDER:-vllm}
       - ZERO_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
       # OpenClaw gateway removed — messaging via Claude Agent SDK
-      - ZERO_POSTGRES_URL=postgresql://zero:${ZERO_POSTGRES_PASSWORD:-zero_dev}@zero-postgres:5432/zero
+      - ZERO_POSTGRES_URL=postgresql://${ZERO_DB_USER:-zero}:${ZERO_DB_PASSWORD:-${ZERO_POSTGRES_PASSWORD:-zero_dev}}@zero-postgres:5432/${ZERO_DB_NAME:-zero}
       # Google OAuth Configuration
       - ZERO_GOOGLE_CLIENT_ID=${ZERO_GOOGLE_CLIENT_ID}
       - ZERO_GOOGLE_CLIENT_SECRET=${ZERO_GOOGLE_CLIENT_SECRET}
@@ -93,9 +114,34 @@ services:
       - ZERO_WHISPER_COMPUTE_TYPE=${ZERO_WHISPER_COMPUTE_TYPE:-int8}
       - ZERO_WHISPER_LANGUAGE=${ZERO_WHISPER_LANGUAGE:-en}
       - ZERO_RECORDINGS_DIR=/app/workspace/recordings
-    depends_on:
-      zero-postgres:
-        condition: service_healthy
+      # Carousel V2 infrastructure plane (carosel.txt blueprint Phase 1)
+      - ZERO_USE_TEMPORAL=${ZERO_USE_TEMPORAL:-false}
+      - ZERO_TEMPORAL_HOST=zero-temporal:7233
+      - ZERO_TEMPORAL_NAMESPACE=${ZERO_TEMPORAL_NAMESPACE:-default}
+      - ZERO_REDIS_URL=redis://zero-redis:6379/0
+      - ZERO_QDRANT_URL=http://zero-qdrant:6333
+      - ZERO_MINIO_ENDPOINT=http://zero-minio:9000
+      - ZERO_MINIO_ACCESS_KEY=${ZERO_MINIO_ACCESS_KEY:-zero-minio}
+      - ZERO_MINIO_SECRET_KEY=${ZERO_MINIO_SECRET_KEY:-zero-minio-change-me}
+      - ZERO_MINIO_BUCKET_CAROUSEL=${ZERO_MINIO_BUCKET_CAROUSEL:-zero-carousel}
+      - ZERO_MINIO_BUCKET_SOURCES=${ZERO_MINIO_BUCKET_SOURCES:-zero-image-sources}
+      - ZERO_LANGFUSE_HOST=${ZERO_LANGFUSE_HOST:-http://zero-langfuse-web:3000}
+      - ZERO_LANGFUSE_PUBLIC_KEY=${ZERO_LANGFUSE_PUBLIC_KEY:-}
+      - ZERO_LANGFUSE_SECRET_KEY=${ZERO_LANGFUSE_SECRET_KEY:-}
+      # New image source APIs (Fanart.tv, Comic Vine, Reddit PRAW, IMDb GraphQL)
+      - ZERO_FANART_API_KEY=${ZERO_FANART_API_KEY:-}
+      - ZERO_COMICVINE_API_KEY=${ZERO_COMICVINE_API_KEY:-}
+      - ZERO_REDDIT_CLIENT_ID=${ZERO_REDDIT_CLIENT_ID:-}
+      - ZERO_REDDIT_CLIENT_SECRET=${ZERO_REDDIT_CLIENT_SECRET:-}
+      - ZERO_REDDIT_USER_AGENT=${ZERO_REDDIT_USER_AGENT:-zero-carousel/1.0 (https://github.com/h-adam-doherty/zero)}
+      - ZERO_IMDB_GRAPHQL_USER_AGENT=${ZERO_IMDB_GRAPHQL_USER_AGENT:-zero-carousel/1.0}
+      # R2 (Cloudflare) — production publish target for TikTok PULL_FROM_URL.
+      # Domain verification mandatory in TikTok developer portal before going public.
+      - ZERO_R2_ACCOUNT_ID=${ZERO_R2_ACCOUNT_ID:-}
+      - ZERO_R2_ACCESS_KEY=${ZERO_R2_ACCESS_KEY:-}
+      - ZERO_R2_SECRET_KEY=${ZERO_R2_SECRET_KEY:-}
+      - ZERO_R2_BUCKET=${ZERO_R2_BUCKET:-}
+      - ZERO_R2_PUBLIC_DOMAIN=${ZERO_R2_PUBLIC_DOMAIN:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18792/health/ready')"]
@@ -106,8 +152,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 2G
+          cpus: '4.0'
+          memory: 10G
     logging:
       driver: "json-file"
       options:
@@ -120,8 +166,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-      args:
-        VITE_API_TOKEN: ${ZERO_GATEWAY_TOKEN}
     ports:
       - "5173:80"
     depends_on:
@@ -171,8 +215,232 @@ services:
           cpus: '1.0'
           memory: 512M
 
+  # ---------------------------------------------------------------------------
+  # Carousel V2 infrastructure plane (carosel.txt blueprint, Phase 1)
+  # ---------------------------------------------------------------------------
+  # Started together with the main stack. Container memory caps tuned to fit a
+  # workstation; bump if the host has headroom. Disable selectively with
+  # `docker compose -f docker-compose.sprint.yml stop zero-temporal zero-langfuse`
+  # while still developing on the rest.
+
+  # Redis: rate-limit token buckets, transient cache, idempotency lookahead.
+  zero-redis:
+    image: redis:7.4-alpine
+    container_name: zero-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "${ZERO_REDIS_PORT:-6379}:6379"
+    volumes:
+      - zero-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  # MinIO: local S3 for generated carousels, master assets, source caches.
+  # Production publishes via Cloudflare R2 with a verified domain (TikTok
+  # PULL_FROM_URL constraint). MinIO mirrors are kept locally for replay.
+  zero-minio:
+    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    container_name: zero-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${ZERO_MINIO_ACCESS_KEY:-zero-minio}
+      MINIO_ROOT_PASSWORD: ${ZERO_MINIO_SECRET_KEY:-zero-minio-change-me}
+    ports:
+      # Host 9000/9001 are usually held by Portainer / other MinIOs — move to
+      # 9100/9101 to avoid the collision. Internal stays 9000/9001 so the
+      # in-network endpoint URLs (zero-minio:9000) don't change.
+      - "${ZERO_MINIO_API_PORT:-9100}:9000"
+      - "${ZERO_MINIO_CONSOLE_PORT:-9101}:9001"
+    volumes:
+      - zero-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Qdrant: image embeddings, exemplar memory, topic novelty filter.
+  # pgvector stays for atomic-facts metadata; Qdrant handles hybrid (dense +
+  # sparse + multi-vector via BGE-M3) at higher recall than pgvector.
+  zero-qdrant:
+    image: qdrant/qdrant:v1.13.0
+    container_name: zero-qdrant
+    restart: unless-stopped
+    ports:
+      - "${ZERO_QDRANT_HTTP_PORT:-6333}:6333"
+      - "${ZERO_QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - zero-qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Temporal: durable workflow orchestration. Bundled Postgres for history
+  # isolation (Temporal hammers its DB; we don't want it to contend with
+  # the Zero app DB). Activities are written in Python; workers live in
+  # zero-api as task-queue consumers.
+  zero-temporal-postgres:
+    image: postgres:16-alpine
+    container_name: zero-temporal-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - zero-temporal-postgres-data:/var/lib/postgresql/data
+      - ./infra/temporal/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  zero-temporal:
+    image: temporalio/auto-setup:1.27
+    container_name: zero-temporal
+    restart: unless-stopped
+    depends_on:
+      zero-temporal-postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: zero-temporal-postgres
+      LOG_LEVEL: warn
+    ports:
+      - "${ZERO_TEMPORAL_PORT:-7233}:7233"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  zero-temporal-ui:
+    image: temporalio/ui:2.31.2
+    container_name: zero-temporal-ui
+    restart: unless-stopped
+    depends_on:
+      - zero-temporal
+    environment:
+      TEMPORAL_ADDRESS: zero-temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:8233
+    ports:
+      - "${ZERO_TEMPORAL_UI_PORT:-8233}:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Langfuse: LLM trace capture, prompt registry, judge scores. Self-hosted
+  # OSS edition (MIT) — uses zero-temporal-postgres for its small relational
+  # store via the `langfuse` database created by the init script. Trace volume
+  # lives in ClickHouse.
+  zero-langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    container_name: zero-langfuse-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: langfuse
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${ZERO_LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-change-me}
+    volumes:
+      - zero-langfuse-clickhouse-data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  zero-langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: zero-langfuse-web
+    restart: unless-stopped
+    depends_on:
+      zero-temporal-postgres:
+        condition: service_healthy
+      zero-langfuse-clickhouse:
+        condition: service_healthy
+      zero-redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://temporal:temporal@zero-temporal-postgres:5432/langfuse
+      DIRECT_URL: postgresql://temporal:temporal@zero-temporal-postgres:5432/langfuse
+      CLICKHOUSE_URL: http://zero-langfuse-clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://zero-langfuse-clickhouse:9000
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${ZERO_LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-change-me}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${ZERO_MINIO_ACCESS_KEY:-zero-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${ZERO_MINIO_SECRET_KEY:-zero-minio-change-me}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://zero-minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: zero-redis
+      REDIS_PORT: 6379
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${ZERO_LANGFUSE_NEXTAUTH_SECRET:-langfuse-nextauth-change-me-32chars}
+      SALT: ${ZERO_LANGFUSE_SALT:-langfuse-salt-change-me-32-chars-min}
+      ENCRYPTION_KEY: ${ZERO_LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+    ports:
+      # Host 3001 is held by ada-grafana — using 3010 for Langfuse so the
+      # two coexist. Internal port stays 3000 so the in-network endpoint
+      # ZERO_LANGFUSE_HOST=http://zero-langfuse-web:3000 doesn't change.
+      - "${ZERO_LANGFUSE_PORT:-3010}:3000"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
 volumes:
   zero-postgres-data:
+    name: zero-postgres-data
+  zero-postgres-data-pg17:
+    name: zero-postgres-data-pg17
+  zero-redis-data:
+    name: zero-redis-data
+  zero-minio-data:
+    name: zero-minio-data
+  zero-qdrant-data:
+    name: zero-qdrant-data
+  zero-temporal-postgres-data:
+    name: zero-temporal-postgres-data
+  zero-langfuse-clickhouse-data:
+    name: zero-langfuse-clickhouse-data
 
 networks:
   default:

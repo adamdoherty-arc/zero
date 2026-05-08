@@ -18,8 +18,11 @@ ECOSYSTEM_SERVICES: Dict[str, Dict[str, str]] = {
     "zero": {"url": "http://localhost:18792", "health": "/health"},
     "ada": {"url": "http://localhost:8003", "health": "/health"},
     "legion": {"url": "http://localhost:8005", "health": "/health"},
-    "ollama": {"url": "http://localhost:11434", "health": "/api/tags"},
-    "reachy": {"url": "http://localhost:8000", "health": "/api/v1/status"},
+    # Local LLM is vLLM only (Ollama retired ecosystem-wide 2026-04-27).
+    "vllm-chat": {"url": "http://localhost:18800", "health": "/v1/models"},
+    "vllm-embed": {"url": "http://localhost:8001", "health": "/v1/models"},
+    "shared-litellm": {"url": "http://localhost:4444", "health": "/health/liveliness"},
+    "reachy": {"url": "http://localhost:8000", "health": "/api/daemon/status"},
 }
 
 TIMEOUT_SECONDS = 3.0

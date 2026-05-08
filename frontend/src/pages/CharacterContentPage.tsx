@@ -35,6 +35,7 @@ import {
   useUpdateCarousel,
   useReimageSlide,
   useBatchResearch,
+  useDeleteCharacter,
   useInspirations,
   useInspirationPatterns,
   useDiscoverInspirations,
@@ -50,6 +51,7 @@ import {
   useStartResearchQueue,
   useCancelResearchQueue,
   useRetryResearch,
+  useCarouselEmployeeReport,
   type Character,
   type CharacterCarousel,
   type ContentAngle,
@@ -67,9 +69,11 @@ import {
   Play, Square, ImageIcon, BookOpen,
   ChevronDown, ChevronUp, RotateCcw, Timer, X,
   Link, ExternalLink,
-  Pencil, Save, Music2,
+  Pencil, Save, Music2, Trash2, Film,
 } from 'lucide-react'
 import { ReferenceVideosTab } from '@/components/character-content/ReferenceVideosTab'
+import { ContentRequestBar } from '@/components/character-content/ContentRequestBar'
+import { AlphabetFilter, bucketOf, sortByName } from '@/components/character-content/AlphabetFilter'
 import TikTokPhonePreview from '@/components/character-content/TikTokPhonePreview'
 import MusicPickerModal from '@/components/character-content/MusicPickerModal'
 
@@ -196,7 +200,144 @@ export function CharacterContentPage() {
       {tab === 'review' && <ReviewQueueTab />}
       {tab === 'inspiration' && <InspirationTab />}
       {tab === 'analytics' && <AnalyticsTab />}
+      {tab === 'employee-report' && <EmployeeReportTab />}
     </CharacterContentErrorBoundary>
+  )
+}
+
+function EmployeeReportTab() {
+  const [windowHours, setWindowHours] = useState(12)
+  const { data, isLoading, error, refetch } = useCarouselEmployeeReport(windowHours)
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-16 text-gray-400"><Loader2 className="w-6 h-6 animate-spin mr-2" />Loading report...</div>
+  }
+  if (error) {
+    return <InlineError error={error as Error} onRetry={() => refetch()} label="employee report" />
+  }
+  if (!data) return null
+
+  const c = data.carousels || {}
+  const l = data.learning || {}
+  const q = data.queue || {}
+  const avg = c.stage2_avg_score
+  const gradeColor = avg == null ? 'text-gray-400' : avg >= 85 ? 'text-green-400' : avg >= 70 ? 'text-yellow-400' : 'text-red-400'
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-white">Zero Carousel Employee</h2>
+          <p className="text-sm text-gray-400">What Zero did in the last {data.window_hours}h. Same report delivered to Discord at 8am + 8pm.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {[6, 12, 24, 72].map(h => (
+            <button
+              key={h}
+              onClick={() => setWindowHours(h)}
+              className={`px-3 py-1 text-sm rounded-md ${windowHours === h ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+            >{h}h</button>
+          ))}
+          <Button variant="ghost" size="sm" onClick={() => refetch()} aria-label="Refresh report">
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-400 uppercase">Generated</p>
+            <p className="text-2xl font-semibold text-white">{c.generated ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-400 uppercase">Approved</p>
+            <p className="text-2xl font-semibold text-green-400">{c.approved ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-400 uppercase">Needs Work</p>
+            <p className="text-2xl font-semibold text-yellow-400">{c.rejected ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-gray-400 uppercase">Stage 2 Avg</p>
+            <p className={`text-2xl font-semibold ${gradeColor}`}>{avg == null ? '—' : avg.toFixed(1)}</p>
+            <p className="text-xs text-gray-500 mt-1">n={c.reviewed ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2"><TrendingUp className="w-4 h-4 text-indigo-400" />Top Variants (30d)</CardTitle>
+            <CardDescription>Hook style + story template pairs ranked by Stage 2 score</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(l.top_variants || []).length === 0 && (
+              <p className="text-sm text-gray-500">No Stage 2 data yet — Thompson Sampler is cold-starting via rotation.</p>
+            )}
+            {(l.top_variants || []).map((v, i) => (
+              <div key={i} className="flex items-center justify-between p-2 bg-gray-800 rounded">
+                <div>
+                  <p className="text-sm text-white">{v.hook_style} + {v.story_template}</p>
+                  <p className="text-xs text-gray-500">n={v.uses}</p>
+                </div>
+                <Badge className="bg-indigo-600">{v.avg_score.toFixed(1)}</Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2"><Layers className="w-4 h-4 text-blue-400" />Research Queue</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex justify-between text-sm"><span className="text-gray-400">Pending</span><span className="text-white">{q.pending ?? 0}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-400">In progress</span><span className="text-white">{q.in_progress ?? 0}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-gray-400">Completed</span><span className="text-white">{q.completed ?? 0}</span></div>
+            {q.error && <p className="text-xs text-red-400">{q.error}</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-400" />Issues</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.issues.length === 0 ? (
+              <p className="text-sm text-gray-500">No issues detected.</p>
+            ) : (
+              <ul className="space-y-1 text-sm text-gray-200">
+                {data.issues.map((i, idx) => (<li key={idx}>• {i}</li>))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2"><Award className="w-4 h-4 text-green-400" />Wins</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.wins.length === 0 ? (
+              <p className="text-sm text-gray-500">No standout wins yet — check back after more Stage 2 reviews complete.</p>
+            ) : (
+              <ul className="space-y-1 text-sm text-gray-200">
+                {data.wins.map((w, idx) => (<li key={idx}>• {w}</li>))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   )
 }
 
@@ -207,15 +348,26 @@ export function CharacterContentPage() {
 function CharactersTab() {
   const navigate = useNavigate()
   const [universeFilter, setUniverseFilter] = useState<string>('')
+  const [letterFilter, setLetterFilter] = useState<string | null>(null)
   const { data: characters, isLoading, isError, error, refetch } = useCharacters(
     universeFilter && universeFilter !== 'all' ? { universe: universeFilter } : undefined
   )
   const seedMutation = useSeedCharacters()
   const researchMutation = useResearchCharacter()
   const batchResearchMutation = useBatchResearch()
+  const deleteCharacterMutation = useDeleteCharacter()
+
+  const sortedCharacters = characters ? sortByName(characters, (c) => c.name) : []
+  const visibleCharacters = letterFilter
+    ? sortedCharacters.filter((c) => bucketOf(c.name) === letterFilter)
+    : sortedCharacters
 
   return (
     <div className="space-y-4">
+      <ContentRequestBar
+        placeholder="Queue characters... (e.g., 'Doctor Doom, Avengers Doomsday cast, Dune characters')"
+        context="characters"
+      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Select value={universeFilter} onValueChange={setUniverseFilter}>
@@ -229,7 +381,10 @@ function CharactersTab() {
               ))}
             </SelectContent>
           </Select>
-          <span className="text-sm text-gray-400" aria-live="polite">{characters?.length || 0} characters</span>
+          <span className="text-sm text-gray-400" aria-live="polite">
+            {visibleCharacters.length}
+            {letterFilter ? ` of ${sortedCharacters.length}` : ''} characters
+          </span>
         </div>
         <div className="flex gap-2">
           <Button
@@ -265,44 +420,99 @@ function CharactersTab() {
           <p className="text-gray-500 text-sm">Create your first character or seed the library to get started.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {characters?.map((char) => (
-            <CharacterCard
-              key={char.id}
-              character={char}
-              onResearch={(e) => { e.stopPropagation(); researchMutation.mutate(char.id) }}
-              isResearching={researchMutation.isPending}
-              onClick={() => navigate(`/characters/${char.id}`)}
-            />
-          ))}
-        </div>
+        <>
+          <AlphabetFilter
+            items={sortedCharacters}
+            getName={(c) => c.name}
+            selected={letterFilter}
+            onSelect={setLetterFilter}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {visibleCharacters.map((char) => (
+              <CharacterCard
+                key={char.id}
+                character={char}
+                onResearch={(e) => { e.stopPropagation(); researchMutation.mutate(char.id) }}
+                isResearching={researchMutation.isPending}
+                onClick={() => navigate(`/characters/${char.id}`)}
+                onDelete={(e) => {
+                  e.stopPropagation()
+                  if (window.confirm(`Delete "${char.name}" and all associated content? This cannot be undone.`)) {
+                    deleteCharacterMutation.mutate(char.id)
+                  }
+                }}
+                isDeleting={deleteCharacterMutation.isPending && deleteCharacterMutation.variables === char.id}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
 }
 
-function CharacterCard({ character, onResearch, isResearching, onClick }: {
+function CharacterCard({ character, onResearch, isResearching, onClick, onDelete, isDeleting }: {
   character: Character
   onResearch: (e: React.MouseEvent) => void
   isResearching: boolean
   onClick: () => void
+  onDelete: (e: React.MouseEvent) => void
+  isDeleting: boolean
 }) {
   const factCount = character.fact_bank?.length || 0
 
   return (
     <Card className="bg-gray-800/50 border-gray-700 hover:border-indigo-500/50 transition-colors cursor-pointer" onClick={onClick} aria-label={`View ${character.name} details`}>
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-lg text-white">{character.name}</CardTitle>
-            <CardDescription className="text-gray-400">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-base text-white leading-tight line-clamp-2 break-words" title={character.name}>
+              {character.name}
+            </CardTitle>
+            <CardDescription className="text-gray-400 text-xs truncate mt-1" title={character.franchise || UNIVERSE_LABELS[character.universe] || character.universe}>
               {character.real_name && `${character.real_name} · `}
               {character.franchise || UNIVERSE_LABELS[character.universe] || character.universe}
             </CardDescription>
           </div>
-          <Badge className={`${STATUS_COLORS[character.universe] || 'bg-gray-600'} text-white text-xs`} aria-label={`Universe: ${UNIVERSE_LABELS[character.universe] || character.universe}`}>
-            {UNIVERSE_LABELS[character.universe] || character.universe}
-          </Badge>
+          <div className="flex items-center gap-1 shrink-0">
+            <Badge className={`${STATUS_COLORS[character.universe] || 'bg-gray-600'} text-white text-[10px] whitespace-nowrap`} aria-label={`Universe: ${UNIVERSE_LABELS[character.universe] || character.universe}`}>
+              {UNIVERSE_LABELS[character.universe] || character.universe}
+            </Badge>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onDelete}
+              disabled={isDeleting}
+              aria-label={`Delete ${character.name}`}
+              title="Delete character"
+              className="h-7 w-7 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+            >
+              {isDeleting
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Trash2 className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {(!character.image_urls || character.image_urls.length === 0) && (
+            <Badge className="bg-rose-600/80 text-white text-[10px]" aria-label="No images sourced">
+              no images
+            </Badge>
+          )}
+          {character.status === 'pending' && (
+            <Badge className="bg-amber-500/80 text-white text-[10px]" title="Auto-imported from TMDB cast — review needed">
+              auto-imported
+            </Badge>
+          )}
+          {(() => {
+            const first = character.appears_in?.[0] as { _count?: number } | undefined
+            const count = first?._count ?? character.appears_in?.length ?? 0
+            return count > 0 ? (
+              <Badge className="bg-cyan-600/80 text-white text-[10px] flex items-center gap-1" title="Cast linkage from TMDB">
+                <Film className="w-2.5 h-2.5" />appears in {count}
+              </Badge>
+            ) : null
+          })()}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -459,7 +669,7 @@ function ResearchQueueTab() {
   const failedJobs = (queue?.jobs ?? []).filter(j => j.status === 'failed')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Research Queue</h2>
@@ -582,7 +792,7 @@ function ResearchQueueTab() {
         </div>
       ) : (
         <Tabs defaultValue="all" className="w-full">
-          <TabsList className="bg-gray-800 border border-gray-700 mb-4">
+          <TabsList className="bg-gray-800 border border-gray-700 mb-2">
             <TabsTrigger value="all" className="data-[state=active]:bg-gray-700">
               All <span className="ml-1.5 text-xs text-gray-400">({totalCount})</span>
             </TabsTrigger>
@@ -602,13 +812,13 @@ function ResearchQueueTab() {
             )}
           </TabsList>
 
-          <TabsContent value="all" className="space-y-3">
+          <TabsContent value="all" className="space-y-2">
             {queue.jobs.map((job) => (
               <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
             ))}
           </TabsContent>
 
-          <TabsContent value="queued" className="space-y-3">
+          <TabsContent value="queued" className="space-y-2">
             {queuedJobs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Clock className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -621,7 +831,7 @@ function ResearchQueueTab() {
             )}
           </TabsContent>
 
-          <TabsContent value="in_progress" className="space-y-3">
+          <TabsContent value="in_progress" className="space-y-2">
             {inProgressJobs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Loader2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -634,7 +844,7 @@ function ResearchQueueTab() {
             )}
           </TabsContent>
 
-          <TabsContent value="completed" className="space-y-3">
+          <TabsContent value="completed" className="space-y-2">
             {completedJobs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <CheckCircle className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -648,7 +858,7 @@ function ResearchQueueTab() {
           </TabsContent>
 
           {failedJobs.length > 0 && (
-            <TabsContent value="failed" className="space-y-3">
+            <TabsContent value="failed" className="space-y-2">
               {failedJobs.map((job) => (
                 <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
               ))}
@@ -695,31 +905,31 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
       isStuck ? 'border-amber-500/50 ring-1 ring-amber-500/20' :
       isActive ? 'border-indigo-500/50 ring-1 ring-indigo-500/20' : ''
     }`} aria-label={`Research job for ${job.character_name}, status: ${isStuck ? 'possibly stuck' : job.status}`}>
-      <CardContent className="py-4">
+      <CardContent className="py-2.5">
         {/* Clickable header */}
         <div
-          className="flex items-start gap-4 cursor-pointer select-none"
+          className="flex items-start gap-3 cursor-pointer select-none"
           onClick={() => setExpanded(!expanded)}
           aria-expanded={expanded}
           aria-label={`Toggle details for ${job.character_name}`}
         >
           {/* Status indicator */}
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
             job.status === 'queued' ? 'bg-gray-700' :
             isStuck ? 'bg-amber-600 animate-pulse' :
             job.status === 'researching' ? 'bg-indigo-600 animate-pulse' :
             job.status === 'completed' ? 'bg-green-600' :
             'bg-red-600'
           }`}>
-            {job.status === 'queued' && <Clock className="w-5 h-5 text-gray-400" />}
-            {job.status === 'researching' && <Loader2 className="w-5 h-5 text-white animate-spin" />}
-            {job.status === 'completed' && <CheckCircle className="w-5 h-5 text-white" />}
-            {job.status === 'failed' && <XCircle className="w-5 h-5 text-white" />}
+            {job.status === 'queued' && <Clock className="w-4 h-4 text-gray-400" />}
+            {job.status === 'researching' && <Loader2 className="w-4 h-4 text-white animate-spin" />}
+            {job.status === 'completed' && <CheckCircle className="w-4 h-4 text-white" />}
+            {job.status === 'failed' && <XCircle className="w-4 h-4 text-white" />}
           </div>
 
           {/* Main content */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-1 flex-wrap">
+            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
               <button
                 className="text-white font-medium hover:text-indigo-400 hover:underline transition-colors"
                 onClick={(e) => { e.stopPropagation(); navigate(`/characters/${job.character_id}`) }}
@@ -779,7 +989,7 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
 
             {/* Completed stats */}
             {job.status === 'completed' && !expanded && (
-              <div className="flex items-center gap-4 mt-2 text-sm">
+              <div className="flex items-center gap-3 mt-1 text-xs">
                 <span className="flex items-center gap-1 text-green-400">
                   <Brain className="w-3.5 h-3.5" />
                   {job.facts_found} facts
@@ -839,22 +1049,24 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
 
         {/* Expanded detail panel */}
         {expanded && (
-          <div className="mt-4 pt-4 border-t border-gray-700 space-y-3">
+          <div className="mt-3 pt-3 border-t border-gray-700 space-y-2">
             {/* Step timeline table */}
             <div className="bg-gray-900/50 rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-gray-500 text-xs border-b border-gray-700">
-                    <th className="text-left px-3 py-2 font-medium">Step</th>
-                    <th className="text-left px-3 py-2 font-medium">Status</th>
-                    <th className="text-left px-3 py-2 font-medium">Duration</th>
-                    <th className="text-left px-3 py-2 font-medium">Result</th>
+                    <th className="text-left px-2.5 py-1.5 font-medium">Step</th>
+                    <th className="text-left px-2.5 py-1.5 font-medium">Status</th>
+                    <th className="text-left px-2.5 py-1.5 font-medium">Duration</th>
+                    <th className="text-left px-2.5 py-1.5 font-medium">Result</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(job.steps || []).map((step) => {
                     const stepDuration = step.started_at
                       ? getElapsedTime(step.started_at, step.completed_at)
+                      : typeof step.avg_duration_ms === 'number' && step.avg_duration_ms > 0
+                      ? `~${formatSeconds(Math.round(step.avg_duration_ms / 1000))} (avg)`
                       : '-'
                     const stepSec = step.started_at && step.status === 'running'
                       ? Math.floor((Date.now() - new Date(step.started_at).getTime()) / 1000)
@@ -863,8 +1075,8 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
 
                     return (
                       <tr key={step.name} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/50">
-                        <td className="px-3 py-2 text-gray-300">{STEP_LABELS[step.name] || step.name}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-2.5 py-1 text-gray-300">{STEP_LABELS[step.name] || step.name}</td>
+                        <td className="px-2.5 py-1">
                           {step.status === 'completed' && <span className="text-green-400">done</span>}
                           {step.status === 'running' && (
                             <span className={stepStuck ? 'text-amber-400' : 'text-indigo-400'}>
@@ -874,8 +1086,8 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
                           {step.status === 'failed' && <span className="text-red-400">failed</span>}
                           {step.status === 'pending' && <span className="text-gray-600">pending</span>}
                         </td>
-                        <td className="px-3 py-2 text-gray-400 font-mono text-xs">{stepDuration}</td>
-                        <td className="px-3 py-2 text-gray-400 text-xs truncate max-w-[200px]">
+                        <td className="px-2.5 py-1 text-gray-400 font-mono text-xs">{stepDuration}</td>
+                        <td className="px-2.5 py-1 text-gray-400 text-xs truncate max-w-[200px]">
                           {step.result_summary || (step.error ? <span className="text-red-400">{step.error}</span> : '-')}
                         </td>
                       </tr>
@@ -887,7 +1099,7 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
 
             {/* Completed stats in expanded view */}
             {job.status === 'completed' && (
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-3 text-xs">
                 <span className="flex items-center gap-1 text-green-400">
                   <Brain className="w-3.5 h-3.5" />
                   {job.facts_found} facts
@@ -948,7 +1160,7 @@ function ResearchStepStepper({ steps, compact = false, isStuck: _isStuck = false
 
   return (
     <>
-      <div className="flex items-center gap-0.5 mt-2">
+      <div className="flex items-center gap-0.5 mt-1">
         {orderedSteps.map((step, i) => {
           const isLast = i === orderedSteps.length - 1
           const stepSec = step.started_at && step.status === 'running'
@@ -1160,7 +1372,7 @@ function ContentStudioTab() {
   const seedMusicMutation = useSeedMusic()
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <Card className="bg-gray-800/50 border-gray-700">
         <CardHeader>
           <CardTitle className="text-white">Generate Carousel</CardTitle>
@@ -1297,7 +1509,7 @@ function ContentStudioTab() {
       ) : loadingCarousels ? (
         <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-2">
           {carousels?.map((carousel) => (
             <CarouselCard
               key={carousel.id}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --bg: {{ kit.bg }};
+    --fg: {{ kit.fg }};
+    --primary: {{ kit.primary }};
+    --accent: {{ kit.accent }};
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "{{ kit.font_hook }}", "Anton", system-ui, sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  .bg {
+    position: absolute; inset: 0;
+    background-image: url("{{ image_url }}");
+    background-size: cover;
+    background-position: center 30%;
+    filter: contrast(1.05) saturate(1.05);
+  }
+  .gradient {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,0.85) 95%);
+  }
+  .badge {
+    position: absolute; top: 200px; left: 60px;
+    background: var(--primary);
+    color: #fff;
+    padding: 16px 32px;
+    font-size: 36px;
+    font-weight: 800;
+    border-radius: 4px;
+    letter-spacing: 0.06em;
+  }
+  .hook {
+    position: absolute;
+    bottom: 360px;
+    left: 60px;
+    right: 60px;
+    font-size: 108px;
+    line-height: 1.02;
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: -0.01em;
+    text-shadow: 0 6px 0 rgba(0,0,0,0.95), 0 12px 36px rgba(0,0,0,0.65);
+  }
+  .accent { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="gradient"></div>
+  {% if badge %}<div class="badge">{{ badge }}</div>{% endif %}
+  <h1 class="hook">{{ text|safe }}</h1>
+</body>
+</html>

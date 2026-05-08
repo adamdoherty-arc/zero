@@ -32,13 +32,14 @@ import {
   AudioLines,
   FlaskConical,
   Scale,
-  BookOpen,
   Clapperboard,
   BrainCircuit,
   Briefcase,
   Bot,
   Gamepad2,
   Home,
+  CalendarClock,
+  Utensils,
 } from 'lucide-react'
 
 import {
@@ -79,6 +80,7 @@ const navSections = [
       { label: 'Email', href: '/email', icon: Mail },
       { label: 'Calendar', href: '/calendar', icon: Calendar },
       { label: 'Knowledge', href: '/knowledge', icon: Brain },
+      { label: 'Meals', href: '/meals', icon: Utensils },
     ],
   },
   {
@@ -92,13 +94,16 @@ const navSections = [
     label: 'AI Company',
     items: [
       { label: 'Company', href: '/ai-company', icon: Building2 },
-      { label: 'Deep Research', href: '/deep-research', icon: BookOpen },
       { label: 'Experiment Lab', href: '/experiments', icon: FlaskConical },
       { label: 'Council Room', href: '/council', icon: Scale },
       { label: 'Brain', href: '/brain', icon: BrainCircuit },
       { label: 'Employee', href: '/employee', icon: Briefcase },
-      { label: 'Reachy', href: '/reachy', icon: Bot },
+      { label: 'Reachy Management', href: '/reachy', icon: Bot },
+      { label: 'Reachy Memory', href: '/reachy/memory', icon: Brain },
+      { label: 'Voice Settings', href: '/reachy/voice-settings', icon: AudioLines },
+      { label: 'Reachy Radio', href: '/reachy/radio', icon: Radio },
       { label: 'Teleop', href: '/reachy/teleop', icon: Gamepad2 },
+      { label: 'Reachy Meetings', href: '/reachy/meetings', icon: CalendarClock },
       { label: 'Reachy + HA', href: '/reachy/home-assistant', icon: Home },
     ],
   },
@@ -138,7 +143,18 @@ export function AppSidebar() {
 
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/'
-    return location.pathname.startsWith(href)
+    if (location.pathname === href) return true
+    if (!location.pathname.startsWith(href + '/')) return false
+    const moreSpecific = navSections
+      .flatMap((g) => g.items)
+      .map((i) => i.href)
+      .some(
+        (h) =>
+          h !== href &&
+          h.startsWith(href + '/') &&
+          (location.pathname === h || location.pathname.startsWith(h + '/')),
+      )
+    return !moreSpecific
   }
 
   return (

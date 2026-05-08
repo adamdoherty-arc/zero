@@ -19,7 +19,7 @@ from sqlalchemy import select, func as sa_func
 from app.db.models import ContentInspirationModel
 from app.infrastructure.config import get_settings
 from app.infrastructure.database import get_session
-from app.infrastructure.ollama_client import OllamaClient
+from app.infrastructure.ollama_client import get_llm_client
 from app.models.character_content import ContentInspiration, ContentInspirationCreate
 
 logger = structlog.get_logger()
@@ -57,7 +57,7 @@ class ContentInspirationService:
         settings = get_settings()
         self._searxng_url = settings.searxng_url
         self._firecrawl_url = settings.firecrawl_url
-        self._ollama = OllamaClient()
+        self._ollama = get_llm_client()
         self._timeout = aiohttp.ClientTimeout(total=20)
 
     async def get_trending_topics(self, limit: int = 10) -> List[Dict[str, Any]]:

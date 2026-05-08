@@ -34,6 +34,7 @@ from app.db.models import (
     CharacterModel,
     CharacterReferenceVideoModel,
 )
+from app.infrastructure.config import get_workspace_path
 from app.infrastructure.database import get_session
 from app.infrastructure.json_utils import llm_retry, sanitize_for_prompt
 from app.infrastructure.unified_llm_client import get_unified_llm_client
@@ -61,12 +62,44 @@ logger = structlog.get_logger()
 
 # --- Workspace layout -------------------------------------------------------
 
-WORKSPACE_ROOT = Path("workspace") / "character_content" / "reference_videos"
+def _workspace_root() -> Path:
+    """Absolute root for reference-video files. Resolved from settings so the
+    path survives process restarts and cwd changes (Docker, uvicorn reload, etc.)."""
+    return get_workspace_path("character_content/reference_videos")
+
+
+# Kept for backward compatibility with any external importers. Resolves lazily.
+WORKSPACE_ROOT = _workspace_root()
 
 
 def _reference_dir(ref_id: str) -> Path:
-    """Return the local filesystem dir for a given reference video."""
-    return WORKSPACE_ROOT / ref_id
+    """Return the absolute filesystem dir for a given reference video."""
+    return _workspace_root() / ref_id
+
+
+def resolve_reference_path(path_str: Optional[str]) -> Optional[Path]:
+    """Resolve a stored reference-video path string to an absolute Path.
+
+    Handles three cases:
+      - already absolute -> returned as-is
+      - relative to workspace root (new style, e.g. "{ref_id}/video.mp4") -> joined under workspace root
+      - legacy cwd-relative (e.g. "workspace/character_content/reference_videos/...") -> resolved against workspace parent
+    """
+    if not path_str:
+        return None
+    p = Path(path_str)
+    if p.is_absolute():
+        return p
+    # Legacy rows stored paths like "workspace/character_content/reference_videos/{id}/video.mp4".
+    # Strip any leading "workspace/character_content/reference_videos/" and rejoin under the absolute root.
+    root = _workspace_root()
+    parts = p.parts
+    marker = ("character_content", "reference_videos")
+    for i in range(len(parts) - 1):
+        if parts[i:i + 2] == marker:
+            return root.joinpath(*parts[i + 2:])
+    # Otherwise assume it's already relative to the reference-videos root
+    return root / p
 
 
 # --- Lazy Whisper singleton -------------------------------------------------
@@ -194,6 +227,13 @@ class CharacterReferenceVideoService:
 
     async def create(self, data: CharacterReferenceVideoCreate) -> CharacterReferenceVideo:
         """Create a reference video row from a full create payload (UI path)."""
+        # Reject TikTok photo posts up-front — yt-dlp can't download them and
+        # they poison the reference-video corpus with permanent failures.
+        if "/photo/" in (data.tiktok_url or ""):
+            raise ValueError(
+                "TikTok photo posts are not supported reference-video sources; "
+                "only videos can be ingested."
+            )
         canonical, video_id = await normalize_tiktok_url(data.tiktok_url)
 
         # Dedup: if (video_id, character_id) already exists, return it
@@ -220,6 +260,7 @@ class CharacterReferenceVideoService:
             )
             session.add(row)
             await session.flush()
+            await session.refresh(row)
             return self._model_to_pydantic(row)
 
     async def ingest_simple(
@@ -293,6 +334,7 @@ class CharacterReferenceVideoService:
             if notes is not None:
                 row.notes = notes
             await session.flush()
+            await session.refresh(row)
             return self._model_to_pydantic(row)
 
     async def delete(self, ref_id: str) -> bool:
@@ -320,6 +362,7 @@ class CharacterReferenceVideoService:
             row.status = RefVideoStatus.pending.value
             row.error_message = None
             await session.flush()
+            await session.refresh(row)
             return self._model_to_pydantic(row)
 
     # ------------------------- state machine -------------------------
@@ -411,18 +454,15 @@ class CharacterReferenceVideoService:
             raise RuntimeError(f"download failed: {e}") from e
 
         info = result.info or {}
-        video_path_rel = str(result.video_path.relative_to(Path.cwd())) if result.video_path.is_absolute() else str(result.video_path)
-        thumb_rel = (
-            str(result.thumbnail_path.relative_to(Path.cwd()))
-            if result.thumbnail_path and result.thumbnail_path.is_absolute()
-            else (str(result.thumbnail_path) if result.thumbnail_path else None)
-        )
+        # Store absolute paths so files resolve regardless of cwd at request time.
+        video_abs = str(result.video_path.resolve())
+        thumb_abs = str(result.thumbnail_path.resolve()) if result.thumbnail_path else None
 
         await self._set_status(
             ref_id,
             RefVideoStatus.downloaded,
-            video_path=video_path_rel,
-            thumbnail_path=thumb_rel,
+            video_path=video_abs,
+            thumbnail_path=thumb_abs,
             file_size_bytes=result.file_size_bytes,
             title=info.get("title") or info.get("description") or None,
             author_name=info.get("uploader") or info.get("channel") or info.get("creator"),
@@ -442,11 +482,10 @@ class CharacterReferenceVideoService:
         except VideoDownloadError as e:
             raise RuntimeError(f"audio extract failed: {e}") from e
 
-        audio_rel = str(audio_path)
         await self._set_status(
             ref_id,
             RefVideoStatus.transcribing,
-            audio_path=audio_rel,
+            audio_path=str(audio_path.resolve()),
         )
 
         # 3. Transcribe
@@ -884,6 +923,82 @@ class CharacterReferenceVideoService:
             status="created",
         )
 
+    # ------------------------- learning loop -------------------------
+
+    async def apply_learnings(self, batch_size: int = 20) -> dict:
+        """Consume newly-ready reference videos into character knowledge.
+
+        For each row where status=ready and learnings_applied_at IS NULL:
+          - If character_id is attached AND extracted_facts exist: auto-apply
+            facts with surprise_score >= 0.7 to the character fact_bank.
+          - If style_analysis exists: append it as a style_exemplar on the
+            linked character so carousel synthesis can use it as few-shot.
+          - Stamp learnings_applied_at so we don't re-process.
+        Character auto-promotion from proposed_character is intentionally left
+        to the existing `character_discovery_refvideos` job, which already does
+        that safely with backoff.
+        """
+        stats = {"scanned": 0, "facts_applied": 0, "exemplars_added": 0, "errors": 0}
+        async with get_session() as session:
+            q = (
+                select(CharacterReferenceVideoModel)
+                .where(
+                    CharacterReferenceVideoModel.status == RefVideoStatus.ready.value,
+                    CharacterReferenceVideoModel.learnings_applied_at.is_(None),
+                )
+                .limit(batch_size)
+            )
+            rows = (await session.execute(q)).scalars().all()
+
+        for row in rows:
+            stats["scanned"] += 1
+            try:
+                # Auto-apply high-surprise facts
+                if row.character_id and row.extracted_facts:
+                    high = [
+                        (i, f) for i, f in enumerate(row.extracted_facts)
+                        if isinstance(f, dict) and float(f.get("surprise_score") or 0) >= 0.7
+                    ]
+                    if high:
+                        try:
+                            resp = await self.apply_facts(row.id, fact_indexes=[i for i, _ in high])
+                            stats["facts_applied"] += resp.applied_count
+                        except ValueError as e:
+                            logger.info("cref_auto_facts_skipped", id=row.id, reason=str(e))
+
+                # Append style exemplar onto linked character
+                if row.character_id and row.style_analysis:
+                    async with get_session() as session:
+                        char = await session.get(CharacterModel, row.character_id)
+                        if char:
+                            exemplars = list(char.style_exemplars or [])
+                            exemplars.append({
+                                "reference_video_id": row.id,
+                                "tiktok_url": row.tiktok_url,
+                                "author": row.author_name,
+                                "captured_at": self._now().isoformat(),
+                                "style": row.style_analysis,
+                            })
+                            # Keep last 20 exemplars to bound prompt context
+                            char.style_exemplars = exemplars[-20:]
+                            stats["exemplars_added"] += 1
+                            await session.flush()
+
+                # Stamp
+                async with get_session() as session:
+                    r = await session.get(CharacterReferenceVideoModel, row.id)
+                    if r:
+                        r.learnings_applied_at = self._now()
+                        await session.flush()
+
+            except (SQLAlchemyError, ValueError, KeyError, AttributeError, TypeError) as e:
+                stats["errors"] += 1
+                logger.warning("cref_apply_learnings_failed", id=row.id, error=str(e))
+
+        if stats["scanned"]:
+            logger.info("cref_apply_learnings_done", **stats)
+        return stats
+
     # ------------------------- maintenance -------------------------
 
     async def cleanup_old_files(self, age_days: int = 30) -> int:
@@ -900,8 +1015,8 @@ class CharacterReferenceVideoService:
                 for p_str in (row.video_path, row.audio_path):
                     if not p_str:
                         continue
-                    p = Path(p_str)
-                    if p.exists():
+                    p = resolve_reference_path(p_str)
+                    if p and p.exists():
                         try:
                             p.unlink()
                             removed += 1

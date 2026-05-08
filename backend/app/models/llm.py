@@ -53,7 +53,7 @@ class ModelAssignment(BaseModel):
 
     Model strings support 'provider/model' format:
       - "gemini/gemini-3.1-pro-preview" → Gemini provider
-      - "ollama/qwen3.6:35b-a3b-q8_0" → Ollama provider
+      - "vllm/qwen3-chat" → Ollama provider
       - "openrouter/meta-llama/llama-4-maverick" → OpenRouter provider
       - "qwen3.6:35b-a3b-q8_0" → defaults to Ollama (backward compat)
     """
@@ -83,187 +83,186 @@ class LlmRouterConfig(BaseModel):
 
     Models use 'provider/model' format. Plain model names default to ollama.
     """
-    default_model: str = "ollama/qwen3.6:35b-a3b-q8_0"
+    default_model: str = "vllm/qwen3-chat"
     task_assignments: Dict[str, ModelAssignment] = Field(default_factory=lambda: {
         # -- Tier 1: Free (Ollama) --
         "coding": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["kimi/kimi-k2-0905-preview", "gemini/gemini-3.1-pro-preview"],
+            model="vllm/qwen3-chat",
+            fallbacks=["kimi/kimi-k2.6", "minimax/MiniMax-M2.7"],
             temperature=0.2,
             num_predict=4096,
         ),
         "workflow": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
+            model="vllm/qwen3-chat",
             temperature=0.7,
             num_predict=4096,
         ),
-        # -- Tier 2: Cheap paid (MiniMax M2.7 $0.30/$1.20) --
-        # Replaces all moonshot-v1 usage which is overpriced ($1.00/$3.00 for v1-32k)
+        # -- Tier 2: Local-first utility tasks with cloud fallback --
         "analysis": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2-0905-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="vllm/qwen3-chat",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.1,
             num_predict=2048,
         ),
         "chat": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2-0905-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="vllm/qwen3-chat",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.7,
             num_predict=2048,
         ),
         "classification": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["ollama/qwen3.6:35b-a3b-q8_0"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.0,
             num_predict=200,
         ),
         "summarization": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2-0905-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="vllm/qwen3-chat",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.1,
             num_predict=1024,
         ),
         "prompt_grading": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["ollama/qwen3.6:35b-a3b-q8_0"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.2,
             num_predict=1024,
         ),
-        # -- Tier 3: Reasoning (K2-thinking $0.60/$2.50) --
+        # -- Tier 3: Planning & complex reasoning (Kimi K2.6 $0.95/$4.00, MiniMax M2.7 fallback) --
         "research": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["gemini/gemini-3.1-pro-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=2048,
         ),
         "planning": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["gemini/gemini-3.1-pro-preview", "openrouter/meta-llama/llama-4-maverick", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=4096,
         ),
         "complexity_complex": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["gemini/gemini-3.1-pro-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=4096,
         ),
         "prompt_grading_heavy": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.6,
             num_predict=2048,
         ),
-        # -- Tier 3b: Non-reasoning paid (K2-0905 $0.60/$2.50, no thinking overhead) --
+        # -- Tier 3b: Structured output (MiniMax M2.7 primary — cheaper than K2.6 for non-planning cloud work) --
         "structured_output": ModelAssignment(
-            model="kimi/kimi-k2-0905-preview",
-            fallbacks=["gemini/gemini-3.1-pro-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="minimax/MiniMax-M2.7",
+            fallbacks=["kimi/kimi-k2.6", "vllm/qwen3-chat"],
             temperature=0.1,
             num_predict=4096,
         ),
         "extraction": ModelAssignment(
-            model="kimi/kimi-k2-0905-preview",
-            fallbacks=["gemini/gemini-3.1-pro-preview", "ollama/qwen3.6:35b-a3b-q8_0"],
+            model="minimax/MiniMax-M2.7",
+            fallbacks=["kimi/kimi-k2.6", "vllm/qwen3-chat"],
             temperature=0.2,
             num_predict=4096,
         ),
         # -- Character content pipeline --
         "character_content_review_final": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7", "kimi/kimi-k2-0905-preview"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat", "minimax/MiniMax-M2.7"],
             temperature=0.3,
             num_predict=2048,
         ),
         "character_content_review_escalated": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2-0905-preview"],
+            model="vllm/qwen3-chat",
+            fallbacks=["minimax/MiniMax-M2.7", "kimi/kimi-k2.6"],
             temperature=0.3,
             num_predict=2048,
         ),
         "character_hook_regen": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.7,
             num_predict=512,
         ),
         "character_research": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=4096,
         ),
         # -- Planner complexity tiers --
         "complexity_simple": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=2048,
         ),
         "complexity_moderate": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=2048,
         ),
         # -- Council of Agents (provider diversity per role) --
         "council_ceo": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["gemini/gemini-3.1-pro-preview"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7"],
             temperature=0.3,
             num_predict=2048,
         ),
         "council_researcher": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.7,
             num_predict=2048,
         ),
         "council_analyst": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=2048,
         ),
         "council_validator": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=2048,
         ),
-        # -- AI Company agents (K2 plans, Ollama executes) --
+        # -- AI Company agents (K2.6 plans, vLLM executes) --
         "agent_ceo": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["gemini/gemini-3.1-pro-preview"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_researcher_plan": ModelAssignment(
-            model="kimi/kimi-k2-thinking",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="kimi/kimi-k2.6",
+            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_researcher_execute": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_analyst": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=4096,
         ),
         "agent_engineer": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.2,
             num_predict=4096,
         ),
         "agent_validator": ModelAssignment(
-            model="ollama/qwen3.6:35b-a3b-q8_0",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="vllm/qwen3-chat",
+            fallbacks=["vllm/qwen3-chat"],
             temperature=0.3,
             num_predict=4096,
         ),

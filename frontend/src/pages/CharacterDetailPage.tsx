@@ -863,22 +863,44 @@ export function CharacterDetailPage() {
             <div className="bg-white/5 rounded-xl p-6 lg:col-span-2">
               <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
                 <Tv className="w-5 h-5 text-indigo-400" /> Appears In
+                <span className="text-xs text-gray-500 font-normal ml-1">({linkedMedia.length})</span>
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {linkedMedia.map((link) => (
                   <a
                     key={link.id}
                     href={`/characters/media/${link.media_title_id}`}
-                    className="bg-white/5 rounded-lg p-3 flex items-center gap-3 hover:bg-white/10 transition-colors"
+                    className="bg-white/5 rounded-lg p-3 flex items-center gap-3 hover:bg-white/10 hover:border-indigo-500/40 border border-transparent transition-colors"
                   >
-                    <Film className="w-5 h-5 text-cyan-400 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-200">{link.media_title_name}</p>
-                      <div className="flex gap-2 mt-1">
-                        {link.role_name && <span className="text-xs text-gray-500">as {link.role_name}</span>}
-                        <span className="text-xs px-1.5 rounded bg-indigo-500/20 text-indigo-400">{link.role_type}</span>
-                        {link.actor_name && <span className="text-xs text-gray-500">({link.actor_name})</span>}
+                    {link.media_poster_url ? (
+                      <img
+                        src={link.media_poster_url}
+                        alt={link.media_title_name || ''}
+                        className="w-12 h-16 rounded object-cover flex-shrink-0 bg-gray-900"
+                      />
+                    ) : (
+                      <div className="w-12 h-16 rounded bg-gray-900 flex items-center justify-center flex-shrink-0">
+                        {link.media_type === 'tv_show' ? (
+                          <Tv className="w-5 h-5 text-cyan-400" />
+                        ) : (
+                          <Film className="w-5 h-5 text-cyan-400" />
+                        )}
                       </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-200 truncate">
+                        {link.media_title_name}
+                        {link.media_year && (
+                          <span className="text-xs text-gray-500 font-normal ml-1">({link.media_year})</span>
+                        )}
+                      </p>
+                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                        <span className="text-[10px] px-1.5 rounded bg-indigo-500/20 text-indigo-400 capitalize">{link.role_type}</span>
+                        {link.role_name && <span className="text-xs text-gray-500 truncate">as {link.role_name}</span>}
+                      </div>
+                      {link.actor_name && (
+                        <p className="text-[10px] text-gray-600 truncate mt-0.5">played by {link.actor_name}</p>
+                      )}
                     </div>
                   </a>
                 ))}

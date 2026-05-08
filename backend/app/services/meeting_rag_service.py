@@ -2,7 +2,7 @@
 
 import structlog
 
-from app.infrastructure.ollama_client import get_ollama_client
+from app.infrastructure.ollama_client import get_llm_client
 from app.services.meeting_vector_service import get_meeting_vector_service
 
 logger = structlog.get_logger(__name__)
@@ -52,7 +52,7 @@ class MeetingRAGService:
         context = "\n\n".join(sections)
         prompt = _RAG_PROMPT.format(context=context, question=question)
 
-        client = get_ollama_client()
+        client = get_llm_client()
         answer = await client.chat(prompt, system=_RAG_SYSTEM, temperature=0.2)
 
         sources = []

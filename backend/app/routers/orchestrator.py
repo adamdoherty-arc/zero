@@ -8,11 +8,12 @@ import asyncio
 import json
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import structlog
 
+from app.infrastructure.auth import require_auth, require_auth_flex
 from app.services.orchestrator_service import get_orchestrator, AgentTask, AgentType, TaskPriority
 from app.services.enhancement_service import get_enhancement_service
 from app.services.sprint_intelligence_service import get_sprint_intelligence_service
@@ -229,7 +230,9 @@ async def get_graph_status():
                 "sprint", "task", "email", "calendar", "enhancement",
                 "briefing", "research", "notion", "money_maker", "knowledge",
                 "workflow", "system", "tiktok", "content", "prediction_market",
-                "planner", "general",
+                "planner", "ai_company", "deep_research", "experiment",
+                "council", "character_content", "brain", "pkm", "legion_ops",
+                "general",
             ],
             "checkpointer": type(_compiled_graph.checkpointer).__name__ if _compiled_graph and hasattr(_compiled_graph, 'checkpointer') and _compiled_graph.checkpointer else "none",
         }
@@ -252,6 +255,7 @@ async def list_conversations(
     errors_only: bool = False,
     limit: int = Query(default=50, le=200),
     offset: int = 0,
+    _auth: str = Depends(require_auth),
 ):
     """List orchestrator conversations with optional filters."""
     from app.services.orchestrator_trace_service import list_conversations as _list
@@ -266,7 +270,10 @@ async def list_conversations(
 
 
 @router.get("/conversations/{conversation_id}")
-async def get_conversation_detail(conversation_id: str):
+async def get_conversation_detail(
+    conversation_id: str,
+    _auth: str = Depends(require_auth),
+):
     """Get a single conversation with its full execution trace."""
     from app.services.orchestrator_trace_service import get_conversation_with_traces
     detail = await get_conversation_with_traces(conversation_id)
@@ -279,6 +286,7 @@ async def get_conversation_detail(conversation_id: str):
 async def get_threads(
     limit: int = Query(default=20, le=100),
     offset: int = 0,
+    _auth: str = Depends(require_auth),
 ):
     """List unique conversation threads."""
     from app.services.orchestrator_trace_service import list_threads as _list
@@ -289,6 +297,7 @@ async def get_threads(
 async def get_thread_history(
     thread_id: str,
     limit: int = Query(default=100, le=500),
+    _auth: str = Depends(require_auth),
 ):
     """Get full message history for a thread."""
     from app.services.orchestrator_trace_service import get_thread_history as _get
@@ -296,14 +305,20 @@ async def get_thread_history(
 
 
 @router.get("/graph/routes/stats")
-async def get_route_stats(hours: int = Query(default=24, le=720)):
+async def get_route_stats(
+    hours: int = Query(default=24, le=720),
+    _auth: str = Depends(require_auth),
+):
     """Get aggregated route statistics for the given time period."""
     from app.services.orchestrator_trace_service import get_route_stats as _get
     return await _get(hours=hours)
 
 
 @router.get("/activity/feed")
-async def get_activity_feed(limit: int = Query(default=50, le=200)):
+async def get_activity_feed(
+    limit: int = Query(default=50, le=200),
+    _auth: str = Depends(require_auth),
+):
     """Get recent activity events."""
     from app.services.orchestrator_trace_service import get_activity_feed as _get
     return await _get(limit=limit)
@@ -314,7 +329,7 @@ async def get_activity_feed(limit: int = Query(default=50, le=200)):
 # =============================================================================
 
 @router.get("/activity/stream")
-async def activity_stream():
+async def activity_stream(_auth: str = Depends(require_auth_flex)):
     """Server-Sent Events stream for real-time orchestrator activity.
 
     Clients connect and receive events as they happen:

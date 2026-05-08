@@ -24,14 +24,27 @@ scheduler if the robot is offline.
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import structlog
 
 logger = structlog.get_logger()
+
+
+# Jobs that drive autonomous Reachy motion when ambient mode is enabled.
+# Pomodoro is excluded: it's user-opt-in via its own start/stop endpoint and
+# should not respawn just because ambient mode is re-enabled.
+_AMBIENT_JOB_IDS = (
+    "reachy_presence_beat",
+    "reachy_idle_watcher",
+    "reachy_hourly_chime",
+)
+_AMBIENT_STATE_PATH = Path("workspace/reachy/ambient_state.json")
 
 
 @dataclass
@@ -46,6 +59,10 @@ class PomodoroState:
 
 IDLE_GESTURES = ("tired1", "boredom1", "sleep1", "thoughtful1")
 PRESENCE_BEATS = ("side_glance_flick", "side_to_side_sway", "simple_nod")
+# Rotated during meeting-mode quiet periods so Reachy looks attentive but
+# not metronomic. The first item fires most often.
+MEETING_FIDGETS = ("attentive1", "thoughtful1", "curious1", "attentive2")
+MEETING_PERSONA_ID = "deep_work"
 
 
 class ReachyPresenceService:
@@ -65,6 +82,17 @@ class ReachyPresenceService:
         self._meeting_id: Optional[str] = None
         self._meeting_task: Optional[asyncio.Task] = None
         self._meeting_started_at: Optional[datetime] = None
+        # Persona to restore when meeting mode exits. Captured at start.
+        self._pre_meeting_persona: Optional[str] = None
+        # Reflects whether the most recent DoA probe returned cleanly.
+        # False when meeting mode is off, or when the Reachy daemon DoA
+        # endpoint is unreachable / erroring. Lets the UI surface a
+        # "DoA unavailable" warning instead of looking silently broken.
+        self._doa_available: bool = False
+        # Ambient autonomy on/off (presence beat + idle watcher + hourly chime).
+        # Persisted to disk so user preference survives restarts. Default ON
+        # for first-run; respect saved value otherwise.
+        self._ambient_enabled: bool = self._load_ambient_enabled()
 
     @classmethod
     def get_instance(cls) -> "ReachyPresenceService":
@@ -123,7 +151,21 @@ class ReachyPresenceService:
             "reachy_presence_beat",
         ]
         self._started = True
-        logger.info("reachy_presence_started", jobs=self._job_ids)
+        # Honour persisted ambient preference: pause the autonomous-motion jobs
+        # immediately if the user previously turned them off. Pomodoro_tick is
+        # not in _AMBIENT_JOB_IDS — it stays runnable and is gated by its own
+        # active/inactive state inside the tick.
+        if not self._ambient_enabled:
+            for jid in _AMBIENT_JOB_IDS:
+                try:
+                    sched.pause_job(jid)
+                except Exception as e:
+                    logger.warning("reachy_ambient_pause_on_start_failed", job=jid, error=str(e))
+        logger.info(
+            "reachy_presence_started",
+            jobs=self._job_ids,
+            ambient_enabled=self._ambient_enabled,
+        )
 
     # ------------------------------------------------------------------
     # Activity tracking — voice loop calls this on each input it handles
@@ -131,6 +173,100 @@ class ReachyPresenceService:
 
     def mark_voice_activity(self) -> None:
         self._last_voice_activity = datetime.now(timezone.utc)
+
+    # ------------------------------------------------------------------
+    # Phase 7 — user attention state (Reachy presence ⨯ sight)
+    # ------------------------------------------------------------------
+
+    async def user_attention_state(self) -> dict:
+        """
+        Cross-reference Reachy's own signals (DoA angle, face detection) with
+        the active SightProvider's last frame to describe where the user's
+        attention actually is. Returns one of:
+          {"label": "with_reachy" | "at_screen" | "moving" | "away", ...}
+
+        Best-effort — returns `{"label": None, "reason": "..."}` if any
+        signal is missing. Callers should treat a None label as "no data".
+        """
+        import time as _time
+        try:
+            from app.services.reachy_service import get_reachy_service
+        except Exception as e:
+            return {"label": None, "reason": f"reachy_service unavailable: {e}"}
+
+        reachy_has_face = False
+        reachy_recent = False
+        reachy_angle: Optional[float] = None
+        try:
+            state = await get_reachy_service().get_full_state()
+            if state and not state.get("error"):
+                doa = state.get("doa") or {}
+                reachy_angle = doa.get("angle")
+                reachy_recent = bool(doa.get("speech_detected"))
+        except Exception:
+            pass
+
+        try:
+            # Reuse the existing detect-on-own-camera endpoint if available.
+            from app.services.sight import get_sight_registry
+            reg = get_sight_registry()
+            reachy_prov = reg.get("reachy")
+            if reachy_prov is not None:
+                jpeg = await reachy_prov.get_latest_frame()
+                if jpeg:
+                    from app.services.reachy_vision_service import get_reachy_vision_service
+                    det = get_reachy_vision_service().detect(jpeg, kind="face")
+                    reachy_has_face = bool(det.get("detections"))
+        except Exception:
+            pass
+
+        glasses_caption: Optional[str] = None
+        try:
+            from app.services.sight import get_sight_registry
+            reg = get_sight_registry()
+            glasses = reg.get("meta_rayban")
+            if glasses is not None:
+                gstatus = await glasses.status()
+                if gstatus.active and gstatus.last_frame_ts and (_time.time() - gstatus.last_frame_ts) < 15.0:
+                    gjpeg = await glasses.get_latest_frame()
+                    if gjpeg:
+                        from app.services.vision_vlm_service import get_vision_vlm_service
+                        scene = await get_vision_vlm_service().describe_scene(gjpeg)
+                        glasses_caption = (scene.get("caption") or "").lower()
+        except Exception:
+            pass
+
+        # Decision tree:
+        # 1. If Reachy sees a face close + recent speech → user with Reachy.
+        # 2. Else if glasses caption references a screen / laptop → at_screen.
+        # 3. Else if glasses caption mentions motion ("walking", "hallway") → moving.
+        # 4. Else if neither source has fresh signal → away.
+        label: Optional[str] = None
+        reason = ""
+        if reachy_has_face and reachy_recent:
+            label = "with_reachy"
+            reason = "Reachy sees face + recent speech"
+        elif glasses_caption and any(k in glasses_caption for k in (
+            "laptop", "computer", "monitor", "screen", "desk", "keyboard", "code",
+        )):
+            label = "at_screen"
+            reason = "glasses caption suggests screen"
+        elif glasses_caption and any(k in glasses_caption for k in (
+            "walking", "hallway", "street", "outside", "kitchen", "standing",
+        )):
+            label = "moving"
+            reason = "glasses caption suggests motion"
+        elif not reachy_has_face and glasses_caption is None:
+            label = "away"
+            reason = "no fresh Reachy face + no glasses caption"
+
+        return {
+            "label": label,
+            "reason": reason,
+            "reachy_has_face": reachy_has_face,
+            "reachy_doa_angle": reachy_angle,
+            "glasses_caption_preview": glasses_caption[:100] if glasses_caption else None,
+        }
 
     # ------------------------------------------------------------------
     # Pomodoro
@@ -217,7 +353,7 @@ class ReachyPresenceService:
     # ------------------------------------------------------------------
 
     async def _tick_hourly_chime(self) -> None:
-        now = datetime.now().astimezone()
+        now = datetime.now(timezone.utc).astimezone()
         if now.hour < 7 or now.hour >= 22:
             return  # quiet hours
         if self._pomodoro.active and self._pomodoro.phase == "focus":
@@ -267,13 +403,18 @@ class ReachyPresenceService:
             "meeting_id": self._meeting_id,
             "started_at": self._meeting_started_at.isoformat() if self._meeting_started_at else None,
             "elapsed_s": elapsed,
+            "doa_available": self._doa_available if self._meeting_mode else False,
         }
 
     async def start_meeting_mode(self, meeting_id: Optional[str] = None) -> dict:
         """
         Enter meeting mode: a background task that every ~3 s pulls the
         daemon's DoA (direction-of-arrival) and points Reachy's head at the
-        active speaker, plus a periodic `attentive1` gesture.
+        active speaker, plus a rotating fidget gesture during silence.
+
+        Also swaps the voice-loop persona to ``deep_work`` — silent unless
+        addressed, shortest possible reply — for the duration of the meeting.
+        The original persona is restored on stop.
 
         Idempotent — calling twice just refreshes the meeting id.
         """
@@ -281,6 +422,23 @@ class ReachyPresenceService:
         self._meeting_started_at = datetime.now(timezone.utc)
         if self._meeting_mode and self._meeting_task and not self._meeting_task.done():
             return self.meeting_state()
+
+        # Persona swap (best effort; never block the meeting on this).
+        try:
+            from app.services.voice_loop_service import get_voice_loop_service
+            vs = get_voice_loop_service()
+            current = vs.get_active_persona_id()
+            if current and current != MEETING_PERSONA_ID:
+                self._pre_meeting_persona = current
+                vs.set_persona(MEETING_PERSONA_ID)
+                logger.info(
+                    "reachy_meeting_persona_swapped",
+                    from_=current,
+                    to=MEETING_PERSONA_ID,
+                )
+        except Exception as e:
+            logger.debug("reachy_meeting_persona_swap_failed", error=str(e))
+
         self._meeting_mode = True
         await self._play_safe("welcoming1", kind="emotion")
         self._meeting_task = asyncio.create_task(self._meeting_loop())
@@ -289,6 +447,7 @@ class ReachyPresenceService:
 
     async def stop_meeting_mode(self) -> dict:
         self._meeting_mode = False
+        self._doa_available = False
         if self._meeting_task and not self._meeting_task.done():
             self._meeting_task.cancel()
             try:
@@ -298,6 +457,21 @@ class ReachyPresenceService:
         self._meeting_task = None
         # Final ack — understanding2 = "I got it"
         await self._play_safe("understanding2", kind="emotion")
+
+        # Restore pre-meeting persona if we swapped.
+        if self._pre_meeting_persona:
+            try:
+                from app.services.voice_loop_service import get_voice_loop_service
+                vs = get_voice_loop_service()
+                vs.set_persona(self._pre_meeting_persona)
+                logger.info(
+                    "reachy_meeting_persona_restored",
+                    to=self._pre_meeting_persona,
+                )
+            except Exception as e:
+                logger.debug("reachy_meeting_persona_restore_failed", error=str(e))
+            self._pre_meeting_persona = None
+
         logger.info("reachy_meeting_mode_stopped", meeting_id=self._meeting_id)
         state = self.meeting_state()
         self._meeting_id = None
@@ -325,6 +499,7 @@ class ReachyPresenceService:
                 try:
                     # Look-at-speaker via DoA
                     doa = await svc.get_doa()
+                    self._doa_available = isinstance(doa, dict) and "angle" in doa
                     angle = doa.get("angle") if isinstance(doa, dict) else None
                     speech = doa.get("speech_detected") if isinstance(doa, dict) else False
                     if speech and isinstance(angle, (int, float)):
@@ -336,14 +511,17 @@ class ReachyPresenceService:
                             last_angle = angle
                             self._last_gesture_at = datetime.now(timezone.utc)
                 except Exception as e:
+                    self._doa_available = False
                     logger.debug("reachy_meeting_doa_tick_failed", error=str(e))
 
-                # Periodic attentiveness gesture (doesn't block look-at loop)
+                # Periodic attentiveness fidget, rotated so Reachy doesn't
+                # look metronomic during long silences.
                 now = datetime.now(timezone.utc).timestamp()
                 if now - last_attentive > ATTENTIVE_EVERY:
                     last_attentive = now
                     try:
-                        await svc.play_emotion("attentive1")
+                        fidget = random.choice(MEETING_FIDGETS)
+                        await svc.play_emotion(fidget)
                         self._last_gesture_at = datetime.now(timezone.utc)
                     except Exception:
                         pass
@@ -368,6 +546,73 @@ class ReachyPresenceService:
             self._last_gesture_at = datetime.now(timezone.utc)
         except Exception as e:
             logger.debug("reachy_presence_play_failed", clip=name, kind=kind, error=str(e))
+
+    # ------------------------------------------------------------------
+    # Ambient autonomy on/off
+    # ------------------------------------------------------------------
+
+    def _load_ambient_enabled(self) -> bool:
+        try:
+            if _AMBIENT_STATE_PATH.exists():
+                data = json.loads(_AMBIENT_STATE_PATH.read_text(encoding="utf-8"))
+                return bool(data.get("enabled", True))
+        except Exception as e:
+            logger.warning("reachy_ambient_state_load_failed", error=str(e))
+        return True
+
+    def _save_ambient_enabled(self, enabled: bool) -> None:
+        try:
+            _AMBIENT_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _AMBIENT_STATE_PATH.write_text(
+                json.dumps({"enabled": enabled, "updated_at": datetime.now(timezone.utc).isoformat()}),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning("reachy_ambient_state_save_failed", error=str(e))
+
+    def ambient_state(self) -> dict:
+        from app.services.scheduler_service import get_scheduler_service
+        sched = get_scheduler_service().scheduler
+        jobs = []
+        for jid in _AMBIENT_JOB_IDS:
+            j = sched.get_job(jid)
+            if j is None:
+                jobs.append({"id": jid, "registered": False, "next_run_time": None})
+            else:
+                jobs.append({
+                    "id": jid,
+                    "registered": True,
+                    "next_run_time": j.next_run_time.isoformat() if j.next_run_time else None,
+                })
+        return {"enabled": self._ambient_enabled, "jobs": jobs}
+
+    def ambient_start(self) -> dict:
+        """Resume the autonomous-motion jobs (presence beat, idle watcher, hourly chime)."""
+        from app.services.scheduler_service import get_scheduler_service
+        sched = get_scheduler_service().scheduler
+        for jid in _AMBIENT_JOB_IDS:
+            try:
+                sched.resume_job(jid)
+            except Exception as e:
+                logger.warning("reachy_ambient_resume_failed", job=jid, error=str(e))
+        self._ambient_enabled = True
+        self._save_ambient_enabled(True)
+        logger.info("reachy_ambient_started", jobs=list(_AMBIENT_JOB_IDS))
+        return self.ambient_state()
+
+    def ambient_stop(self) -> dict:
+        """Pause the autonomous-motion jobs. Persists across restarts."""
+        from app.services.scheduler_service import get_scheduler_service
+        sched = get_scheduler_service().scheduler
+        for jid in _AMBIENT_JOB_IDS:
+            try:
+                sched.pause_job(jid)
+            except Exception as e:
+                logger.warning("reachy_ambient_pause_failed", job=jid, error=str(e))
+        self._ambient_enabled = False
+        self._save_ambient_enabled(False)
+        logger.info("reachy_ambient_stopped", jobs=list(_AMBIENT_JOB_IDS))
+        return self.ambient_state()
 
 
 def get_reachy_presence_service() -> ReachyPresenceService:

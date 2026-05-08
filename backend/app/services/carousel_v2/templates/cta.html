@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --bg: {{ kit.bg }}; --fg: {{ kit.fg }}; --primary: {{ kit.primary }}; --accent: {{ kit.accent }}; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; }
+  body {
+    background: var(--primary); color: #fff;
+    font-family: "{{ kit.font_hook }}", sans-serif;
+    position: relative; overflow: hidden;
+  }
+  .cutout {
+    position: absolute; inset: 0;
+    background-image: url("{{ image_url }}");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center bottom;
+    filter: drop-shadow(0 30px 40px rgba(0,0,0,0.7));
+  }
+  .cta {
+    position: absolute; left: 60px; right: 60px; top: 220px;
+    font-size: 112px; line-height: 0.96; text-transform: uppercase;
+    font-weight: 900; letter-spacing: -0.02em;
+    text-shadow: 0 6px 0 rgba(0,0,0,0.85);
+  }
+  .sub {
+    position: absolute; left: 60px; right: 60px; top: 540px;
+    font-family: "{{ kit.font_body }}", sans-serif;
+    font-size: 44px; opacity: 0.96;
+  }
+</style>
+</head>
+<body>
+  <div class="cutout"></div>
+  <h1 class="cta">{{ text|safe }}</h1>
+  {% if sub %}<div class="sub">{{ sub }}</div>{% endif %}
+</body>
+</html>

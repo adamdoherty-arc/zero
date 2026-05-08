@@ -6,7 +6,7 @@ const API_URL = ''
 // Types
 
 export type CharacterUniverse = 'marvel' | 'dc' | 'star_wars' | 'lotr' | 'harry_potter' | 'anime' | 'tv' | 'film' | 'gaming' | 'other'
-export type CharacterStatus = 'active' | 'paused' | 'archived'
+export type CharacterStatus = 'active' | 'paused' | 'archived' | 'pending'
 export type ResearchStatus = 'pending' | 'researching' | 'completed' | 'failed'
 export type CarouselStatus = 'draft' | 'ai_reviewed' | 'pending_review' | 'approved' | 'rejected' | 'publishing' | 'published'
 export type ContentAngle = 'hidden_truths' | 'power_secrets' | 'underrated_moments' | 'origin_story' | 'character_evolution' | 'controversial_takes' | 'vs_comparison' | 'behind_scenes' | 'fan_theories' | 'dark_facts' | 'actor_secrets' | 'easter_eggs' | 'crossover_connections' | 'what_if' | 'timeline_deep_dive' | 'storyline_recap' | 'power_ranking'
@@ -46,6 +46,21 @@ export interface Character {
     research_depth_score: number
     content_themes: string[]
     blocked_image_urls: string[]
+    appears_in?: CharacterAppearance[]
+}
+
+export interface CharacterAppearance {
+    link_id: string
+    media_title_id: string
+    title: string
+    media_type: 'movie' | 'tv_show' | string
+    year?: number
+    poster_url?: string
+    role_name?: string
+    role_type?: 'lead' | 'supporting' | 'recurring' | 'guest' | 'cameo' | string
+    actor_name?: string
+    franchise?: string
+    universe?: string
 }
 
 export interface CarouselSlide {
@@ -53,6 +68,9 @@ export interface CarouselSlide {
     text: string
     image_query?: string
     image_url?: string
+    font_style?: string
+    accent_color?: string
+    accent_secondary?: string
 }
 
 export interface AIReview {
@@ -202,12 +220,13 @@ export interface TextOverlaySpec {
     slide_num: number
     text_position: string
     font_weight: string
-    font_style: string
+    font_style?: string
     max_chars_per_line: number
     background_overlay: number
     text_color: string
     text_shadow: boolean
     emoji_placement?: string
+    accent_color?: string
 }
 
 export interface WinningPatterns {
@@ -315,6 +334,7 @@ const characterKeys = {
     templateAnalytics: ['characters', 'analytics', 'templates'] as const,
     researchQueue: ['characters', 'research-queue'] as const,
     ideas: (id: string) => [...characterKeys.all, 'ideas', id] as const,
+    employeeReport: (windowHours: number) => ['characters', 'employee-report', windowHours] as const,
 }
 
 // Fetch helpers
@@ -338,15 +358,18 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
 // CHARACTER QUERIES
 // ============================================
 
-export function useCharacters(filters?: { universe?: string; status?: string; research_status?: string }) {
+export function useCharacters(filters?: { universe?: string; status?: string; research_status?: string; limit?: number }) {
     const params = new URLSearchParams()
     if (filters?.universe) params.set('universe', filters.universe)
     if (filters?.status) params.set('status', filters.status)
     if (filters?.research_status) params.set('research_status', filters.research_status)
-    const qs = params.toString() ? `?${params}` : ''
+    // Default to a high cap so the Characters list shows every character, not
+    // just the backend's pagination default. The backend caps at 2000.
+    params.set('limit', String(filters?.limit ?? 1000))
+    const qs = `?${params}`
 
     return useQuery({
-        queryKey: characterKeys.list(filters as Record<string, string>),
+        queryKey: characterKeys.list({ ...(filters as Record<string, string>), limit: String(filters?.limit ?? 1000) }),
         queryFn: () => fetchApi<Character[]>(`/api/characters/${qs}`),
     })
 }
@@ -371,6 +394,39 @@ export function useCharacterStats() {
     return useQuery({
         queryKey: characterKeys.stats,
         queryFn: () => fetchApi<CharacterStats>('/api/characters/stats'),
+    })
+}
+
+export interface CarouselEmployeeReport {
+    generated_at: string
+    window_hours: number
+    period: { from: string; to: string }
+    carousels: {
+        generated?: number
+        by_status?: Record<string, number>
+        approved?: number
+        rejected?: number
+        reviewed?: number
+        stage2_avg_score?: number | null
+        stage2_min_score?: number | null
+        stage2_max_score?: number | null
+    }
+    learning: {
+        variant_sample_size?: number
+        top_variants?: Array<{ hook_style: string; story_template: string; uses: number; avg_score: number }>
+        bottom_variants?: Array<{ hook_style: string; story_template: string; uses: number; avg_score: number }>
+    }
+    queue: { pending?: number; in_progress?: number; completed?: number; error?: string }
+    issues: string[]
+    wins: string[]
+    summary: string
+}
+
+export function useCarouselEmployeeReport(windowHours: number = 12) {
+    return useQuery({
+        queryKey: characterKeys.employeeReport(windowHours),
+        queryFn: () => fetchApi<CarouselEmployeeReport>(`/api/characters/employee-report?window_hours=${windowHours}`),
+        refetchInterval: 5 * 60 * 1000,
     })
 }
 
@@ -527,6 +583,33 @@ export function useSeedCharacters() {
     return useMutation({
         mutationFn: () => fetchApi<Character[]>('/api/characters/seed', { method: 'POST' }),
         onSuccess: () => qc.invalidateQueries({ queryKey: characterKeys.all }),
+    })
+}
+
+// ============================================
+// CONTENT REQUESTS
+// ============================================
+
+export interface ContentRequestResult {
+    characters_created: Array<{ id: string; name: string }>
+    movies_created: Array<{ id: string; title: string }>
+    tv_shows_created: Array<{ id: string; title: string }>
+    already_existed: string[]
+    research_queued: number
+}
+
+export function useSubmitContentRequest() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: (data: { text: string; auto_research?: boolean }) =>
+            fetchApi<ContentRequestResult>('/api/characters/content-requests', {
+                method: 'POST',
+                body: JSON.stringify(data),
+            }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: characterKeys.all })
+            qc.invalidateQueries({ queryKey: ['media-content'] })
+        },
     })
 }
 
@@ -832,6 +915,79 @@ export function useReimageCarousel() {
     })
 }
 
+export interface SlideImageCandidate {
+    id: string
+    url: string
+    source: string
+    width?: number | null
+    height?: number | null
+    quality_score: number
+    phash?: string | null
+    is_used_in_carousel: boolean
+}
+
+export function useSlideImageCandidates(carouselId: string, slideIndex: number, limit = 24) {
+    return useQuery({
+        queryKey: ['carousels', carouselId, 'slide-image-candidates', slideIndex, limit],
+        queryFn: () =>
+            fetchApi<SlideImageCandidate[]>(
+                `/api/characters/carousels/${carouselId}/slides/${slideIndex}/image-candidates?limit=${limit}`,
+            ),
+        enabled: !!carouselId && slideIndex >= 0,
+        staleTime: 15_000,
+    })
+}
+
+export function useSwapSlideImage() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: ({
+            carouselId, slideIndex, imageUrl, imageId,
+        }: { carouselId: string; slideIndex: number; imageUrl: string; imageId?: string }) =>
+            fetchApi<CharacterCarousel>(
+                `/api/characters/carousels/${carouselId}/slides/${slideIndex}/image`,
+                {
+                    method: 'PATCH',
+                    body: JSON.stringify({ image_url: imageUrl, image_id: imageId ?? null }),
+                },
+            ),
+        onSuccess: (_d, vars) => {
+            qc.invalidateQueries({ queryKey: ['carousels'] })
+            qc.invalidateQueries({ queryKey: ['carousels', 'detail', vars.carouselId] })
+            qc.invalidateQueries({ queryKey: ['carousels', vars.carouselId, 'slide-image-candidates'] })
+        },
+    })
+}
+
+export function useUploadSlideImage() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: async ({
+            carouselId, slideIndex, file,
+        }: { carouselId: string; slideIndex: number; file: File }) => {
+            const form = new FormData()
+            form.append('file', file)
+            const res = await fetch(
+                `/api/characters/carousels/${carouselId}/slides/${slideIndex}/image/upload`,
+                {
+                    method: 'POST',
+                    headers: { ...getAuthHeaders() },
+                    body: form,
+                },
+            )
+            if (!res.ok) {
+                throw new Error(`Upload failed: ${await res.text()}`)
+            }
+            return res.json() as Promise<CharacterCarousel>
+        },
+        onSuccess: (_d, vars) => {
+            qc.invalidateQueries({ queryKey: ['carousels'] })
+            qc.invalidateQueries({ queryKey: ['carousels', 'detail', vars.carouselId] })
+            qc.invalidateQueries({ queryKey: ['carousels', vars.carouselId, 'slide-image-candidates'] })
+        },
+    })
+}
+
 export function useReimageSlide() {
     const qc = useQueryClient()
     return useMutation({
@@ -1033,6 +1189,30 @@ export function useRejectImage() {
             ),
         onSuccess: (_data, { characterId }) => {
             qc.invalidateQueries({ queryKey: characterKeys.images(characterId) })
+        },
+    })
+}
+
+export function useDeleteCharacter() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: (characterId: string) =>
+            fetchApi<{ status: string; id: string }>(`/api/characters/${characterId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: characterKeys.all })
+            qc.invalidateQueries({ queryKey: ['carousels'] })
+        },
+    })
+}
+
+export function useDeleteCarousel() {
+    const qc = useQueryClient()
+    return useMutation({
+        mutationFn: (carouselId: string) =>
+            fetchApi<{ status: string; id: string }>(`/api/characters/carousels/${carouselId}`, { method: 'DELETE' }),
+        onSuccess: () => {
+            qc.invalidateQueries({ queryKey: ['carousels'] })
+            qc.invalidateQueries({ queryKey: characterKeys.all })
         },
     })
 }

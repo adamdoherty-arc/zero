@@ -191,6 +191,9 @@ class Character(BaseModel):
     content_themes: List[str] = Field(default_factory=list)
     blocked_image_urls: List[str] = Field(default_factory=list)
     content_ideas: List[Dict[str, Any]] = Field(default_factory=list)
+    # Populated by GET /characters/{id} via the character_media_titles join.
+    # Empty on list endpoints (would N+1 queries) — only set on detail.
+    appears_in: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +227,22 @@ class CarouselUpdate(BaseModel):
     hashtags: Optional[List[str]] = None
     music_mood: Optional[str] = None
     human_notes: Optional[str] = None
+
+
+class SlideImageCandidate(BaseModel):
+    id: str
+    url: str
+    source: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    quality_score: float = 0.0
+    phash: Optional[str] = None
+    is_used_in_carousel: bool = False
+
+
+class SlideImagePatchRequest(BaseModel):
+    image_url: str
+    image_id: Optional[str] = None
 
 
 class AIReviewResult(BaseModel):
@@ -319,7 +338,7 @@ class EnhanceCarouselRequest(BaseModel):
     target: CarouselEnhanceTarget = "hook"
     slide_num: Optional[int] = None  # required when target="slide"
     provider: Optional[str] = None   # ollama | kimi | minimax | gemini
-    model: Optional[str] = None      # e.g. "kimi-k2.5" or "MiniMax-M2.7"
+    model: Optional[str] = None      # e.g. "kimi-k2.6" or "MiniMax-M2.7"
     instruction: Optional[str] = None  # optional user steering text
     n_variants: int = Field(1, ge=1, le=5)
 

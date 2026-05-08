@@ -1,6 +1,7 @@
 """Meeting summary endpoints."""
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select, delete
 import structlog
 
@@ -10,6 +11,39 @@ from app.models.meeting import SummaryResponse
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+
+class LiveTickRequest(BaseModel):
+    chunk_text: str
+    running_notes: list[str] = []
+    meeting_title: str = ""
+
+
+class LiveTickResponse(BaseModel):
+    running_notes_delta: list[str]
+    new_action_items: list[dict]
+
+
+@router.post("/live-tick", response_model=LiveTickResponse)
+async def live_tick(req: LiveTickRequest):
+    """Cheap LLM tick to update running notes during a live meeting.
+
+    Stateless: the caller passes the chunk + the notes accumulated so far,
+    and we return only the delta. Designed to be polled every 60 seconds
+    by the LiveMeetingPanel.
+    """
+    from app.services.meeting_summary_service import get_meeting_summary_service
+
+    svc = get_meeting_summary_service()
+    data = await svc.live_tick(
+        chunk_text=req.chunk_text,
+        running_notes=req.running_notes,
+        meeting_title=req.meeting_title,
+    )
+    return LiveTickResponse(
+        running_notes_delta=data.get("running_notes_delta", []),
+        new_action_items=data.get("new_action_items", []),
+    )
 
 
 @router.get("/{meeting_id}")

@@ -67,6 +67,8 @@ FRANCHISE_FANDOM_OVERRIDES = {
     "Wednesday": "wednesday.fandom.com",
     "The Office": "theoffice.fandom.com",
     "24": "24.fandom.com",
+    "From": "from.fandom.com",
+    "The Boys": "the-boys.fandom.com",
     # Anime
     "Naruto": "naruto.fandom.com",
     "One Piece": "onepiece.fandom.com",
@@ -124,6 +126,8 @@ FRANCHISE_REDDIT_SUBS = {
     "Wednesday": ["Wednesday", "AddamsFamily"],
     "The Office": ["DunderMifflin", "TheOffice"],
     "24": ["24"],
+    "From": ["FromSeries", "FromTVShow", "FanTheories"],
+    "The Boys": ["TheBoys", "TheBoysTV", "FanTheories"],
     # Anime
     "Naruto": ["Naruto", "Boruto", "anime"],
     "One Piece": ["OnePiece", "anime"],

@@ -6,7 +6,6 @@ Share sheet ("Send to Zero") hits `POST /ingest-simple` with just a URL; a
 scheduler poller downloads, transcribes, and analyzes each video.
 """
 
-from pathlib import Path
 from typing import List, Optional
 
 import structlog
@@ -14,7 +13,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, sta
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.infrastructure.auth import require_auth
+from app.infrastructure.auth import require_auth, require_auth_flex
 from app.models.character_reference_video import (
     ApplyFactsRequest,
     ApplyFactsResponse,
@@ -35,6 +34,9 @@ from app.services.character_reference_video_service import (
 )
 
 router = APIRouter(dependencies=[Depends(require_auth)])
+# Separate router for file-serving endpoints: browsers can't set Authorization
+# headers on <img>/<video> tags, so these endpoints accept ?token= as well.
+file_router = APIRouter(dependencies=[Depends(require_auth_flex)])
 logger = structlog.get_logger()
 
 
@@ -145,7 +147,7 @@ async def get_reference_video(ref_id: str) -> CharacterReferenceVideo:
     return ref
 
 
-@router.get("/{ref_id}/file/{kind}")
+@file_router.get("/{ref_id}/file/{kind}")
 async def get_reference_file(ref_id: str, kind: str):
     """Serve video / thumbnail / audio with auth.
 
@@ -168,9 +170,15 @@ async def get_reference_file(ref_id: str, kind: str):
     if not path_str:
         raise HTTPException(status_code=404, detail=f"{kind} not available yet")
 
-    path = Path(path_str)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"{kind} file missing on disk")
+    # Resolve against workspace root so legacy cwd-relative paths still work.
+    from app.services.character_reference_video_service import resolve_reference_path
+
+    path = resolve_reference_path(path_str)
+    if not path or not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"{kind} file missing on disk (stored={path_str!r}, resolved={str(path) if path else 'None'!r})",
+        )
 
     media_types = {
         "video": "video/mp4",

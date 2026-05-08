@@ -1,13 +1,8 @@
 """Prompt Grader Service: LLM-as-judge for prompt runs.
 
-Scores each prompt run 0-100 and detects common failure flags using
-Kimi K2.5 as the judge (matches Legion's evaluation rubric so we can
-compare across projects later). Runs as a scheduler job that batches
-over ungraded prompt_runs rows.
-
-Grading is intentionally cheap: one short judge call per run using
-moonshot-v1-32k (~$0.024/1M tokens) by default, with K2.5 reserved for
-the hardest task types.
+Scores each prompt run 0-100 and detects common failure flags using the
+central LLM router (MiniMax M2.7 default, Kimi K2.6 for heavy tasks).
+Runs as a scheduler job that batches over ungraded prompt_runs rows.
 """
 
 from __future__ import annotations
@@ -90,8 +85,8 @@ class PromptGraderService:
     """LLM-as-judge grader for prompt runs.
 
     Routes through the central LLM router by task type.
-    - prompt_grading: cheap default judge (moonshot-v1-32k by default).
-    - prompt_grading_heavy: reserved for tough task types (K2.5 by default).
+    - prompt_grading: vLLM local by default.
+    - prompt_grading_heavy: K2.6 for tough task types, M2.7 fallback.
     Actual model selection lives in the router config so swaps need no code edit.
     """
 

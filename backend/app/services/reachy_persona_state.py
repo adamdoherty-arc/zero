@@ -10,7 +10,7 @@ Pure layer on top of reachy_personas.PERSONAS. Tracks (per-persona):
 Optional rotation config (env or workspace JSON):
   {
     "rotate_after_interactions": 20,
-    "rotation": ["cosmic_kitchen", "noir_detective", "victorian_butler"]
+    "rotation": ["companion", "explorer", "narrator"]
   }
 If present, every N interactions the service quietly rotates to the next
 persona in the list. Off by default — personas are sticky unless the user

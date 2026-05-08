@@ -96,12 +96,21 @@ TERMINAL_FORMAT = """Format for terminal/CLI:
 - Use standard markdown formatting
 - Be concise but complete"""
 
+REACHY_FORMAT = """Format for the Reachy Mini voice surface:
+- This response will be spoken aloud by a TTS voice, not read on a screen.
+- Plain spoken English only: no markdown, no asterisks, no bullets, no code, no URLs, no emoji.
+- Keep it to 1-3 short sentences. Under 200 characters total when possible.
+- Write numbers, times, dates in a natural spoken form ('three p.m.', 'two unread emails', 'April twenty-first').
+- Prefer direct action confirmations over status dumps."""
+
 
 def _get_format_instructions(channel: str) -> str:
     if channel == "discord":
         return DISCORD_FORMAT
     elif channel == "whatsapp":
         return WHATSAPP_FORMAT
+    elif channel == "reachy":
+        return REACHY_FORMAT
     return TERMINAL_FORMAT
 
 

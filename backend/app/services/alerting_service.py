@@ -30,7 +30,6 @@ class AlertingService:
         await self._check_circuit_breakers()
         await self._check_scheduler_health()
         await self._check_disk_space()
-        await self._check_backup_recency()
 
     async def _check_circuit_breakers(self):
         """Alert when any circuit breaker opens, recovery when it closes."""
@@ -108,35 +107,6 @@ class AlertingService:
                 )
         except Exception:
             pass
-
-    async def _check_backup_recency(self):
-        """Alert if no successful backup in the last 48 hours."""
-        try:
-            from app.infrastructure.database import get_session
-            from sqlalchemy import text
-
-            async with get_session() as session:
-                result = await session.execute(
-                    text(
-                        "SELECT MAX(completed_at) FROM scheduler_audit_log "
-                        "WHERE job_name IN ('backup_hourly', 'backup_daily') "
-                        "AND status = 'success'"
-                    )
-                )
-                row = result.fetchone()
-                if row and row[0]:
-                    last_backup = row[0]
-                    if isinstance(last_backup, str):
-                        last_backup = datetime.fromisoformat(last_backup)
-                    age_hours = (datetime.utcnow() - last_backup.replace(tzinfo=None)).total_seconds() / 3600
-                    if age_hours > 48:
-                        await self._fire_alert(
-                            "backup_stale",
-                            title="Backup Warning",
-                            message=f"No successful backup in {age_hours:.0f} hours.",
-                        )
-        except Exception as e:
-            logger.debug("alert_check_backup_failed", error=str(e))
 
     async def _fire_alert(self, issue_key: str, title: str, message: str):
         """Send an alert, respecting deduplication window."""

@@ -33,8 +33,8 @@ class KnowledgeService:
     async def _generate_embedding(self, text: str) -> Optional[List[float]]:
         """Generate an embedding vector for text via Ollama. Returns None on failure."""
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            return await get_ollama_client().embed_safe(text)
+            from app.infrastructure.ollama_client import get_llm_client
+            return await get_llm_client().embed_safe(text)
         except Exception as e:
             logger.warning("embedding_generation_failed", error=str(e))
             return None
@@ -96,8 +96,8 @@ class KnowledgeService:
         Intended to be called as a background task after enabling pgvector.
         Returns counts of items embedded.
         """
-        from app.infrastructure.ollama_client import get_ollama_client
-        client = get_ollama_client()
+        from app.infrastructure.ollama_client import get_llm_client
+        client = get_llm_client()
         counts = {"notes": 0, "facts": 0}
 
         # Backfill notes

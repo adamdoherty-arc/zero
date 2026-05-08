@@ -545,8 +545,8 @@ class ResearchRulesService:
         pattern_text = "\n".join(patterns[:10])
 
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            ollama = get_ollama_client()
+            from app.infrastructure.ollama_client import get_llm_client
+            ollama = get_llm_client()
 
             prompt = f"""Analyze these high-scoring research findings that weren't caught by any rules.
 Suggest up to {limit} new categorization/scoring rules.

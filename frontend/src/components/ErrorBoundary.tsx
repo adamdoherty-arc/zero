@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react'
+import { getAuthHeaders } from '@/lib/auth'
 
 interface Props {
   children: ReactNode
@@ -24,12 +25,11 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     // Report error to backend (fire-and-forget)
     try {
-      const token = localStorage.getItem('zero_token') || ''
       fetch('/api/system/errors', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           message: error.message,

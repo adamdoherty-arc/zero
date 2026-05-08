@@ -90,8 +90,8 @@ Instructions:
 Write ONLY the email body (no subject line, no "Subject:" prefix). Keep it concise."""
 
             # Generate via LLM
-            from app.infrastructure.ollama_client import get_ollama_client
-            client = get_ollama_client()
+            from app.infrastructure.ollama_client import get_llm_client
+            client = get_llm_client()
             draft = await client.chat(
                 messages=[{"role": "user", "content": prompt}],
                 task_type="email",
@@ -146,8 +146,8 @@ Sign as: {user_name}
 
 Write ONLY the email body. Keep it concise and clear."""
 
-            from app.infrastructure.ollama_client import get_ollama_client
-            client = get_ollama_client()
+            from app.infrastructure.ollama_client import get_llm_client
+            client = get_llm_client()
             draft = await client.chat(
                 messages=[{"role": "user", "content": prompt}],
                 task_type="email",

@@ -153,7 +153,7 @@ class EmailAutomationService:
             email_data = state["email_data"]
             
             # Classify with AI
-            category, confidence = classifier.classify(
+            category, confidence = await classifier.classify(
                 subject=email_data.get("subject", ""),
                 from_addr=email_data.get("from_address", {}).get("email", ""),
                 body_preview=email_data.get("snippet", "")

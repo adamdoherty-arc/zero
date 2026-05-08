@@ -81,7 +81,7 @@ async def set_client_config(config: Dict[str, Any]):
 async def disconnect_calendar():
     """Disconnect Google Calendar account."""
     service = get_calendar_service()
-    service.disconnect()
+    await service.disconnect()
     return {"status": "disconnected"}
 
 
@@ -98,25 +98,38 @@ async def get_status():
 
 @router.post("/sync")
 async def sync_calendar(
-    days_ahead: int = Query(default=30, ge=7, le=90)
+    days_ahead: int = Query(default=30, ge=7, le=90),
+    account_id: Optional[str] = Query(default=None, description="Specific account; omit to sync every connected account"),
 ):
-    """Sync calendar events from Google Calendar."""
+    """Sync calendar events. Without account_id, fans out across every account."""
     service = get_calendar_service()
 
-    if not service.has_valid_tokens():
-        raise HTTPException(
-            status_code=401,
-            detail="Calendar not connected. Complete OAuth flow first."
-        )
+    from app.services.gmail_oauth_service import get_gmail_oauth_service
+    oauth_svc = get_gmail_oauth_service()
 
-    try:
-        result = await service.sync_events(days_ahead)
-        return result
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.error("calendar_sync_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+    if account_id:
+        if not await oauth_svc.has_valid_tokens(account_id=account_id):
+            raise HTTPException(401, f"Account {account_id} not connected.")
+        try:
+            return await service.sync_events(days_ahead, account_id=account_id)
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+        except Exception as e:
+            logger.error("calendar_sync_failed", account_id=account_id, error=str(e))
+            raise HTTPException(500, f"Sync failed: {e}")
+
+    accounts = await oauth_svc.list_accounts()
+    if not accounts:
+        raise HTTPException(401, "No Google accounts connected.")
+    results: list[dict] = []
+    for acct in accounts:
+        try:
+            r = await service.sync_events(days_ahead, account_id=acct["id"])
+            results.append({"account_id": acct["id"], "email": acct["email"], **r})
+        except Exception as e:
+            logger.error("calendar_sync_failed", account_id=acct["id"], error=str(e))
+            results.append({"account_id": acct["id"], "email": acct["email"], "error": str(e)})
+    return {"results": results}
 
 
 @router.get("/calendars", response_model=List[Calendar])
@@ -124,7 +137,7 @@ async def list_calendars():
     """List available calendars."""
     service = get_calendar_service()
 
-    if not service.has_valid_tokens():
+    if not await service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Calendar not connected")
 
     return await service.get_calendars()
@@ -134,11 +147,12 @@ async def list_calendars():
 async def list_events(
     start_date: Optional[datetime] = Query(default=None),
     end_date: Optional[datetime] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200)
+    limit: int = Query(default=50, ge=1, le=200),
+    account_id: Optional[str] = Query(default=None, description="Filter by account; omit for All Accounts merged view"),
 ):
-    """List calendar events with optional date range filter."""
+    """List calendar events with optional date range and account filter."""
     service = get_calendar_service()
-    return await service.list_events(start_date, end_date, limit)
+    return await service.list_events(start_date, end_date, limit, account_id=account_id)
 
 
 @router.get("/events/{event_id}", response_model=CalendarEvent)
@@ -156,7 +170,7 @@ async def create_event(event_data: EventCreate):
     """Create a new calendar event."""
     service = get_calendar_service()
 
-    if not service.has_valid_tokens():
+    if not await service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Calendar not connected")
 
     try:
@@ -171,7 +185,7 @@ async def update_event(event_id: str, updates: EventUpdate):
     """Update a calendar event."""
     service = get_calendar_service()
 
-    if not service.has_valid_tokens():
+    if not await service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Calendar not connected")
 
     event = await service.update_event(event_id, updates)
@@ -185,7 +199,7 @@ async def delete_event(event_id: str):
     """Delete a calendar event."""
     service = get_calendar_service()
 
-    if not service.has_valid_tokens():
+    if not await service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Calendar not connected")
 
     success = await service.delete_event(event_id)
@@ -207,7 +221,7 @@ async def create_event_from_task(request: TaskToEventRequest):
     calendar_service = get_calendar_service()
     task_service = get_task_service()
 
-    if not calendar_service.has_valid_tokens():
+    if not await calendar_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Calendar not connected")
 
     task = await task_service.get_task(request.task_id)

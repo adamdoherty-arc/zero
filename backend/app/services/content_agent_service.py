@@ -190,8 +190,8 @@ class ContentAgentService:
 
             # Generate embedding
             try:
-                from app.infrastructure.ollama_client import get_ollama_client
-                client = get_ollama_client()
+                from app.infrastructure.ollama_client import get_llm_client
+                client = get_llm_client()
                 embed_text = " ".join(filter(None, [data.title, data.caption, data.script]))
                 if embed_text:
                     embedding = await client.embed_safe(embed_text)

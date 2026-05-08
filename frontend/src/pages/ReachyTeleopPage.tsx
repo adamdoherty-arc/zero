@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, Gamepad2, Keyboard, Camera, RotateCcw, Square, Disc3, Play, Trash2, CircleDot, Eye, Radio, Hand, Volume2, Mic, Zap, BellRing } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Bot, Gamepad2, Keyboard, RotateCcw, Square, Disc3, Play, Trash2, CircleDot, Radio, Volume2, Mic, Zap, BellRing } from 'lucide-react'
+import { ReachyCameraViewer } from '@/components/reachy/ReachyCameraViewer'
 import {
   useMoveHead,
   useSetAntennas,
@@ -7,7 +8,6 @@ import {
   useWakeUp,
   useGoToSleep,
   useReachyStatus,
-  useCameraStream,
   useReachyState,
   useRecordStatus,
   useStartRecording,
@@ -15,7 +15,6 @@ import {
   useUserMoves,
   usePlayUserMove,
   useDeleteUserMove,
-  useVisionBackends,
   useRadioStatus,
   useStartRadio,
   useStopRadio,
@@ -25,7 +24,6 @@ import {
   useMotorStatus,
   useSetMotorMode,
   useWakeWordStatus,
-  type VisionDetection,
 } from '@/hooks/useReachyApi'
 import { getAuthHeaders } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
@@ -37,7 +35,6 @@ import { useToast } from '@/hooks/use-toast'
  */
 export function ReachyTeleopPage() {
   const status = useReachyStatus()
-  const stream = useCameraStream()
   const moveHead = useMoveHead()
   const setAntennas = useSetAntennas()
   const stop = useStopMove()
@@ -170,23 +167,8 @@ export function ReachyTeleopPage() {
           <PuppetView />
           <DiagnosticsPanel />
           <RadioPanel />
-          <VisionPanel />
+          <ReachyCameraViewer height={320} />
           <MoveRecorderPanel />
-          <div className="glass-card p-4">
-            <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Camera className="w-4 h-4" /> Camera feed
-            </h2>
-            {stream.data?.url ? (
-              <div className="text-xs text-gray-400">
-                <p>Daemon serves WebRTC on:</p>
-                <a href={stream.data.url} target="_blank" rel="noreferrer" className="text-indigo-400 break-all">
-                  {stream.data.url}
-                </a>
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500">Camera URL unavailable.</div>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -563,137 +545,6 @@ function RadioPanel() {
           )}
           <button onClick={() => stopRadio.mutate()} className="w-full px-3 py-1.5 text-sm font-semibold bg-gray-700 hover:bg-gray-600 rounded">Stop</button>
         </div>
-      )}
-    </div>
-  )
-}
-
-function VisionPanel() {
-  const backends = useVisionBackends()
-  const videoRef = useRef<HTMLVideoElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const [active, setActive] = useState(false)
-  const [kind, setKind] = useState<'face' | 'hands'>('face')
-  const [lastResult, setLastResult] = useState<{ detections: VisionDetection[]; backend?: string } | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const { toast } = useToast()
-
-  const start = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
-      streamRef.current = stream
-      setActive(true)
-    } catch (e) {
-      toast({ title: 'Camera denied', description: String(e), variant: 'destructive' })
-    }
-  }
-
-  const stop = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    if (videoRef.current) videoRef.current.srcObject = null
-    setActive(false)
-  }
-
-  const detect = async () => {
-    if (!videoRef.current || !canvasRef.current) return
-    const v = videoRef.current
-    const c = canvasRef.current
-    const w = v.videoWidth
-    const h = v.videoHeight
-    if (w === 0) return
-    c.width = w
-    c.height = h
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.drawImage(v, 0, 0, w, h)
-    const blob: Blob | null = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85))
-    if (!blob) return
-
-    const form = new FormData()
-    form.append('image', blob, 'frame.jpg')
-    try {
-      const res = await fetch(`/api/reachy/vision/detect?kind=${kind}`, {
-        method: 'POST',
-        headers: { ...getAuthHeaders() },
-        body: form,
-      })
-      const data = await res.json()
-      if (res.ok) {
-        setLastResult({ detections: data.detections || [], backend: data.backend })
-      } else {
-        toast({ title: 'Detect failed', description: data?.detail?.reason ?? `${res.status}`, variant: 'destructive' })
-      }
-    } catch (e) {
-      toast({ title: 'Detect failed', description: String(e), variant: 'destructive' })
-    }
-  }
-
-  useEffect(() => {
-    return () => stop()
-
-  }, [])
-
-  const canHand = backends.data?.hands?.available
-  const canFace = backends.data?.face?.available
-
-  return (
-    <div className="glass-card p-4">
-      <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide mb-3 flex items-center gap-2">
-        <Eye className="w-4 h-4" /> Vision detect
-      </h2>
-      <div className="flex items-center gap-2 mb-2 text-xs">
-        <button
-          onClick={() => setKind('face')}
-          className={`px-2 py-1 rounded ${kind === 'face' ? 'bg-indigo-500/30 text-white' : 'bg-gray-800 text-gray-400'}`}
-          disabled={!canFace}
-        >
-          Face {canFace ? '' : '(unavailable)'}
-        </button>
-        <button
-          onClick={() => setKind('hands')}
-          className={`px-2 py-1 rounded flex items-center gap-1 ${kind === 'hands' ? 'bg-indigo-500/30 text-white' : 'bg-gray-800 text-gray-400'}`}
-          disabled={!canHand}
-        >
-          <Hand className="w-3 h-3" /> Hands {canHand ? '' : '(unavailable)'}
-        </button>
-      </div>
-      <div className="relative bg-black/60 rounded overflow-hidden aspect-video mb-2">
-        <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
-        <canvas ref={canvasRef} className="hidden" />
-        {lastResult && videoRef.current && (
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1 1" preserveAspectRatio="none">
-            {lastResult.detections.map((d, i) => (
-              <rect
-                key={i}
-                x={d.x - d.width / 2}
-                y={d.y - d.height / 2}
-                width={d.width}
-                height={d.height}
-                fill="none" stroke="#4ade80" strokeWidth="0.005"
-              />
-            ))}
-          </svg>
-        )}
-      </div>
-      <div className="flex gap-2">
-        {!active ? (
-          <button onClick={start} className="flex-1 px-3 py-1.5 text-sm bg-emerald-500/20 text-emerald-300 rounded">Start camera</button>
-        ) : (
-          <>
-            <button onClick={detect} className="flex-1 px-3 py-1.5 text-sm bg-indigo-500/20 text-indigo-300 rounded">Detect</button>
-            <button onClick={stop} className="px-3 py-1.5 text-sm bg-gray-700 rounded">Stop</button>
-          </>
-        )}
-      </div>
-      {lastResult && (
-        <p className="text-xs text-gray-400 mt-2">
-          {lastResult.detections.length} {kind}(s) detected via {lastResult.backend}
-        </p>
       )}
     </div>
   )

@@ -7,7 +7,6 @@ google-oauth-credentials.json
 
 # Runtime data & workspace
 workspace/
-backups/
 
 # Node.js
 node_modules/
@@ -63,3 +62,16 @@ Thumbs.db
 
 # SearXNG runtime data (config is tracked)
 config/searxng/uwsgi.ini
+
+# host_agent runtime
+host_agent/logs/
+host_agent/state/
+host_agent/recordings/
+host_agent/*.log
+host_agent/wake_*.wav
+host_agent/pip-install.log
+host_agent/host_agent.log
+host_agent/host_agent_startup.log
+
+# Recorded / cloned voice samples — don't commit user audio
+backend/voices/

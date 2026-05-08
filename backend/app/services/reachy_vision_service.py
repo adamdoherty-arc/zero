@@ -89,6 +89,107 @@ class ReachyVisionService:
             return self._detect_faces(image_bytes)
         return {"available": False, "reason": f"unknown kind: {kind}", "detections": []}
 
+    async def analyze_latest(self, *, kind: DetectorKind = "face", provider_id: Optional[str] = None) -> dict:
+        """
+        Pull the latest frame from a SightProvider (defaulting to the active
+        one) and run detection. This is the bridge that Phase 4's VLM layer
+        will compose with — today it reuses MediaPipe / OpenCV.
+        """
+        from app.services.sight import get_sight_registry
+
+        reg = get_sight_registry()
+        prov = reg.get(provider_id) if provider_id else reg.get_active()
+        if prov is None:
+            return {
+                "available": False,
+                "reason": f"no provider named {provider_id!r}" if provider_id else "no active provider",
+                "detections": [],
+            }
+        jpeg = await prov.get_latest_frame()
+        if not jpeg:
+            return {
+                "available": False,
+                "reason": f"no frame from provider {prov.name!r}",
+                "detections": [],
+                "provider": prov.name,
+            }
+        out = self.detect(jpeg, kind=kind)
+        out.setdefault("provider", prov.name)
+        return out
+
+    async def analyze_scene(
+        self,
+        jpeg: Optional[bytes] = None,
+        *,
+        provider_id: Optional[str] = None,
+        kind: DetectorKind = "face",
+        question: Optional[str] = None,
+    ) -> dict:
+        """
+        Full scene analysis: VLM caption + MediaPipe/OpenCV detections
+        fused into one dict. If `jpeg` is None, pulls from a SightProvider.
+
+        Returns:
+            {
+              "provider": str | None,
+              "caption": str,
+              "actionable": str | None,
+              "answer": str | None,          # when `question` is given
+              "detections": [...],           # face or hand bboxes
+              "tags": [...],                 # salient objects
+              "available": bool,
+            }
+        """
+        from app.services.sight import get_sight_registry
+        from app.services.vision_vlm_service import get_vision_vlm_service
+
+        provider_used: Optional[str] = None
+        if jpeg is None:
+            reg = get_sight_registry()
+            prov = reg.get(provider_id) if provider_id else reg.get_active()
+            if prov is None:
+                return {
+                    "available": False,
+                    "reason": "no active sight provider",
+                    "caption": "",
+                    "detections": [],
+                    "tags": [],
+                    "actionable": None,
+                    "answer": None,
+                }
+            jpeg = await prov.get_latest_frame()
+            provider_used = prov.name
+            if not jpeg:
+                return {
+                    "available": False,
+                    "reason": f"no frame from provider {prov.name!r}",
+                    "caption": "",
+                    "detections": [],
+                    "tags": [],
+                    "actionable": None,
+                    "answer": None,
+                    "provider": prov.name,
+                }
+
+        vlm = get_vision_vlm_service()
+        scene_task = vlm.describe_scene(jpeg)
+        answer_task = vlm.answer_about_scene(jpeg, question) if question else None
+        scene = await scene_task
+        answer = await answer_task if answer_task is not None else None
+        detections = self.detect(jpeg, kind=kind)
+
+        return {
+            "available": bool(scene.get("caption") or detections.get("detections")),
+            "provider": provider_used,
+            "model": scene.get("model"),
+            "caption": scene.get("caption", ""),
+            "actionable": scene.get("actionable"),
+            "answer": answer,
+            "detections": detections.get("detections", []),
+            "backend": detections.get("backend"),
+            "tags": [],  # tag_objects is optional + slower; caller can invoke separately
+        }
+
     def _detect_hands(self, image_bytes: bytes) -> dict:
         try:
             import cv2  # type: ignore[import-not-found]

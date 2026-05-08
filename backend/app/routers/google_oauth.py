@@ -16,43 +16,34 @@ logger = structlog.get_logger()
 
 @router.get("/auth/status")
 async def get_auth_status():
-    """
-    Get Google OAuth connection status.
-    
-    Returns whether user has connected their Google account
-    and the email address if connected.
+    """Aggregate connection status across all connected Google accounts.
+
+    Reports `connected=True` if at least one account has valid tokens.
+    `accounts` lists every connected identity for the multi-account UI.
     """
     oauth_service = get_gmail_oauth_service()
-    
-    has_tokens = oauth_service.has_valid_tokens()
-    email_address = None
-    
-    if has_tokens:
-        try:
-            creds = oauth_service.get_credentials()
-            if creds:
-                from googleapiclient.discovery import build
-                service = build("gmail", "v1", credentials=creds)
-                profile = service.users().getProfile(userId="me").execute()
-                email_address = profile.get("emailAddress")
-        except Exception as e:
-            logger.warning("failed_to_get_email_address", error=str(e))
-    
+    accounts = await oauth_service.list_accounts()
+
+    has_any = False
+    primary_email = None
+    for acct in accounts:
+        if await oauth_service.has_valid_tokens(account_id=acct["id"]):
+            has_any = True
+            if acct.get("is_default") or primary_email is None:
+                primary_email = acct["email"]
+
     return {
-        "connected": has_tokens,
-        "email_address": email_address,
-        "services": {
-            "gmail": has_tokens,
-            "calendar": has_tokens
-        }
+        "connected": has_any,
+        "email_address": primary_email,
+        "services": {"gmail": has_any, "calendar": has_any},
+        "accounts": accounts,
     }
 
 
 @router.get("/auth/start")
-async def auth_start():
-    """
-    Start Google OAuth flow — redirects browser directly to Google consent screen.
-    """
+async def auth_start(label: str = Query(default="personal", description="Account label: personal, work, etc.")):
+    """Start Google OAuth flow. `label` is recorded against the new account
+    so the user can distinguish personal vs work after callback."""
     oauth_service = get_gmail_oauth_service()
 
     if not oauth_service.has_client_config():
@@ -62,7 +53,7 @@ async def auth_start():
         )
 
     try:
-        result = oauth_service.get_auth_url()
+        result = oauth_service.get_auth_url(label=label)
         return RedirectResponse(url=result["auth_url"])
     except Exception as e:
         logger.error("failed_to_generate_auth_url", error=str(e))
@@ -73,10 +64,8 @@ async def auth_start():
 
 
 @router.get("/auth/url")
-async def get_auth_url():
-    """
-    Get Google OAuth authorization URL as JSON (for programmatic use).
-    """
+async def get_auth_url(label: str = Query(default="personal")):
+    """Get Google OAuth authorization URL as JSON (for programmatic use)."""
     oauth_service = get_gmail_oauth_service()
 
     if not oauth_service.has_client_config():
@@ -86,7 +75,7 @@ async def get_auth_url():
         )
 
     try:
-        result = oauth_service.get_auth_url()
+        result = oauth_service.get_auth_url(label=label)
         return result
     except Exception as e:
         logger.error("failed_to_generate_auth_url", error=str(e))
@@ -111,7 +100,7 @@ async def auth_callback(
     settings = get_settings()
     
     try:
-        result = oauth_service.handle_callback(code, state)
+        result = await oauth_service.handle_callback(code, state)
         email = result.get("email_address", "unknown")
 
         logger.info("google_oauth_complete", email=email)
@@ -165,7 +154,7 @@ async def disconnect():
     oauth_service = get_gmail_oauth_service()
     
     try:
-        oauth_service.disconnect()
+        await oauth_service.disconnect()
         return {
             "status": "disconnected",
             "message": "Google account disconnected successfully"

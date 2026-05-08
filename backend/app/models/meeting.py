@@ -50,6 +50,8 @@ class RecordingStartRequest(BaseModel):
     meeting_id: Optional[str] = None
     title: Optional[str] = None
     source: Literal["system", "mic", "mixed"] = "mixed"
+    mic_device_index: Optional[int] = None
+    system_device_index: Optional[int] = None
 
 
 class RecordingStatusResponse(BaseModel):
@@ -57,6 +59,7 @@ class RecordingStatusResponse(BaseModel):
     meeting_id: Optional[str] = None
     duration_seconds: float = 0
     audio_levels: Optional[dict] = None
+    mic_device_name: Optional[str] = None
 
 
 class RecordingMetadataResponse(BaseModel):
@@ -66,8 +69,23 @@ class RecordingMetadataResponse(BaseModel):
     format: str
     sample_rate: int
     channels: int
+    mic_device_name: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+class AudioDeviceInfo(BaseModel):
+    index: int
+    name: str
+    host_api: str
+    max_input_channels: int
+    default_samplerate: int
+    is_reachy: bool
+
+
+class AudioDevicesResponse(BaseModel):
+    mic: list[AudioDeviceInfo]
+    system_loopback: list[AudioDeviceInfo]
 
 
 # --- Transcript ---
@@ -155,3 +173,27 @@ class SpeakerMappingResponse(BaseModel):
 class SpeakerMappingUpdate(BaseModel):
     speaker_label: str
     display_name: str
+
+
+# --- Voiceprints ---
+
+class VoiceprintResponse(BaseModel):
+    id: int
+    display_name: str
+    samples_seconds: float
+    is_primary: bool
+    source_meeting_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class VoiceprintMatchResult(BaseModel):
+    display_name: str
+    similarity: float
+
+
+class VoiceprintEnrollResponse(BaseModel):
+    voiceprint: VoiceprintResponse
+    replaced_existing: bool

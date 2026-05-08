@@ -42,6 +42,10 @@ MUTATION_INSTRUCTIONS = [
     "Make output format explicit. Keep the same variables and format.",
     "Rewrite this prompt with more audience-aware language focused on 18-25 pop-culture fans. "
     "Emphasize hooks, payoffs, and emotional specificity. Keep the same variables and format.",
+    # Phase 4.2: tighten_rhythm — target slide-level text punch
+    "Rewrite the prompt so generated slides have tighter line rhythm: no dangling prepositions, "
+    "no mid-phrase newlines, 6-22 words per body slide. Require short setup, sharp twist, and a "
+    "2-5 word payoff line on every body slide. Keep the same variables and format.",
 ]
 
 

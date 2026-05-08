@@ -13,7 +13,7 @@ import re
 import time
 import uuid
 import aiohttp
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from functools import lru_cache
 
@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.infrastructure.database import get_session
 from app.infrastructure.config import get_settings
-from app.infrastructure.ollama_client import get_ollama_client
+from app.infrastructure.ollama_client import get_llm_client
 from app.infrastructure.llm_router import get_llm_router
 from app.db.models import (
     CharacterModel, CharacterCarouselModel, CharacterImageModel,
@@ -65,9 +65,163 @@ from app.services.character_content_utils import (
     version_to_pydantic,
     get_hook_examples_for_angle,
     get_tone_instruction_for_angle,
+    pick_accent_palette,
+    pick_slide_accent,
+    pick_font_style_for_slide,
+    normalize_slide_text,
+    phrase_overlap_ratio,
+    trigram_set,
+)
+from app.services.character_brand_kit_service import (
+    get_brand_kit,
+    enrich_brand_kit,
+)
+from app.services.carousel_layout_service import (
+    pick_layout_rotation,
+    pick_text_effects,
+    pick_stickers,
+    pick_image_treatment,
 )
 
 logger = structlog.get_logger()
+
+
+# ---------------------------------------------------------------------------
+# Global image-source filters (audit 2026-04-28)
+# ---------------------------------------------------------------------------
+#
+# Hosts blocked outright. Three groups:
+#   1. Stock-photo aggregators that almost never produce on-character imagery
+#      (their results are usually generic models or unrelated scenes).
+#   2. AI-generation hosts — these ship synthetic likenesses that look
+#      uncanny, plus we'd be amplifying training-set leakage.
+#   3. Low-quality wallpaper farms that scrape and rehost everything.
+#
+# Per-character ``CharacterModel.blocked_image_urls`` still applies on top.
+_BLOCKED_IMAGE_HOSTS: tuple[str, ...] = (
+    # Stock photo
+    "shutterstock.com",
+    "istockphoto.com",
+    "gettyimages.com",
+    "alamy.com",
+    "dreamstime.com",
+    "freepik.com",
+    "depositphotos.com",
+    "vecteezy.com",
+    "123rf.com",
+    "stockphoto",
+    # AI-generated
+    "stablediffusionweb.com",
+    "civitai.com",
+    "leonardo.ai",
+    "midjourney",
+    "playgroundai.com",
+    "lexica.art",
+    "openart.ai",
+    # Wallpaper farms (low quality, rarely the right scene)
+    "wallpapercave.com",
+    "wallpaperaccess.com",
+    "wallpaperflare.com",
+    "hdwallpapers",
+    "wallpaperscraft",
+    "wall.alphacoders",
+    "wallhaven",
+    # Generic blogs/aggregators that pad results with stock or off-topic art
+    "windowsreport.com",
+)
+
+
+def _is_blocked_image_host(url: str) -> bool:
+    """Return True when ``url`` belongs to a host that's been excluded for
+    quality reasons. Match is on hostname substring so subdomains and CDN
+    variants (e.g. ``static1.alamy.com``) are caught.
+    """
+    if not url:
+        return True
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001
+        return True
+    return any(blocked in host for blocked in _BLOCKED_IMAGE_HOSTS)
+
+
+# Phrases that show up in fact_bank rows when the research pipeline was
+# served wrong-topic data (e.g. character disambiguation failed) but stored
+# the failure note as a "fact" with high surprise_score. Detect ≥1 of these
+# in the top-3 facts → refuse to generate.
+_RESEARCH_FAILURE_SENTINELS: tuple[str, ...] = (
+    "no character information was retrieved",
+    "search returned 0 results",
+    "no fragments retrieved",
+    "no results found",
+    "the search returned results for",       # "...for a Japanese video game series called A-Train..."
+    "could not find specific information",
+    "unable to retrieve",
+    "wrong character",
+)
+
+
+def _fact_bank_is_failed_research(fact_bank: list) -> bool:
+    """Return True when the top facts in ``fact_bank`` look like they were
+    sourced from a failed-disambiguation research run.
+
+    Looks at the first 3 facts (sorted by whatever order the bank is in,
+    which is typically surprise_score-desc). One sentinel hit is enough to
+    block generation — the caller should kick off re-research.
+    """
+    if not fact_bank:
+        return False
+    sample = fact_bank[:3]
+    for item in sample:
+        text = ""
+        if isinstance(item, dict):
+            text = (item.get("text") or item.get("fact") or item.get("source") or "").lower()
+        elif isinstance(item, str):
+            text = item.lower()
+        if any(sent in text for sent in _RESEARCH_FAILURE_SENTINELS):
+            return True
+    return False
+
+
+class CarouselImageMissingError(RuntimeError):
+    """Raised when a carousel cannot be persisted because >=1 slide has no image."""
+
+
+# LLM-agnostic placeholder/echo detection. Carousel JSON schemas use example
+# values like "<hook text>" or "fact 1"; some models echo them verbatim instead
+# of substituting real content. This guard rejects any carousel that looks like
+# the schema bled through.
+_PLACEHOLDER_TOKENS = {
+    "hook text", "fact 1", "fact 2", "fact 3", "fact 4", "fact 5", "fact 6",
+    "short title", "cta", "caption with emojis", "the hook rewritten",
+    "fact rewritten", "punchy cta or twist", "scroll-stopping opener",
+    "3-6 word title", "hook", "title", "caption",
+}
+_ANGLE_BRACKET_RE = re.compile(r"<[^>\n]{1,80}>")
+
+
+def _carousel_has_placeholders(result: Dict[str, Any]) -> bool:
+    """Return True if the carousel looks like a schema echo or contains
+    angle-bracketed placeholders. Works for any LLM provider."""
+    fields = [
+        str(result.get("hook_text", "")),
+        str(result.get("title", "")),
+        str(result.get("caption", "")),
+    ]
+    fields.extend(str(s.get("text", "")) for s in result.get("slides", []) if isinstance(s, dict))
+    for raw in fields:
+        clean = raw.strip().lower()
+        if not clean:
+            continue
+        if clean in _PLACEHOLDER_TOKENS:
+            return True
+        if _ANGLE_BRACKET_RE.search(raw):
+            return True
+        # Reject any field that's <8 chars AND a known placeholder token substring
+        if len(clean) < 12 and any(tok in clean for tok in ("fact 1", "fact 2", "fact 3", "hook text", "short title")):
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +448,6 @@ Generate a {slide_count}-slide carousel. Return JSON:
   "slides": [
     {{
       "slide_num": 1,
-      "text": "Slide 1 on-image copy. Usually matches the hook, but can be a shorter punchline version. Should immediately hint at the promise of slides 2-6.",
       "image_query": "search query to find a fitting cinematic image for this slide"
     }},
     {{
@@ -303,6 +456,8 @@ Generate a {slide_count}-slide carousel. Return JSON:
       "image_query": "search query for relevant character image"
     }}
   ],
+
+SLIDE 1 RULE: Slide 1 has NO `text` field. The hook is rendered on top of the image and is already the full headline for slide 1. Do NOT repeat, paraphrase, or shorten the hook into slide 1. Slides 2 onward carry the facts and payoff.
   "caption": "TikTok caption with emojis, debate-sparking question, 2-3 sentences max",
   "hashtags": ["charactername", "franchise", "topicangle", "communitytag", "fyp", "viral", "didyouknow", "comicbooktok", "movietok", "learnontiktok", "geekculture", "nerdtok", "characteranalysis", "mindblown", "edutok"],
   "music_mood": "epic|dark|emotional|mysterious|dramatic"
@@ -460,12 +615,68 @@ Score each dimension 1-10:
   "suggestions": ["actionable improvement 1", "improvement 2", ...],
   "fact_check_flags": ["any facts that seem inaccurate or need verification"],
   "rewrite_hook": "optional: a better hook if score < 7",
-  "rewrite_caption": "optional: a better caption if score < 7"
+  "rewrite_caption": "optional: a better caption if score < 7",
+  "slides": [
+    {{
+      "slide_num": int (1-indexed, matching the input slide number),
+      "text_punch": score 0-10 (how punchy and scroll-stopping the slide copy reads on its own),
+      "image_fit": score 0-10 (how well the slide text matches a plausible character image),
+      "font_style_fit": score 0-10 (how well the line rhythm, bold emphasis, and payoff match TikTok carousel style),
+      "note": "one short sentence. What would make this slide a 10?"
+    }}
+  ]
 }}
 
 CRITICAL:
 - rewrite_caption is plain text only. No asterisks, no em dashes.
-- rewrite_hook MAY contain **word** for ONE emphasis token. No em dashes."""
+- rewrite_hook MAY contain **word** for ONE emphasis token. No em dashes.
+- slides MUST include one entry per input slide, with slide_num matching the input."""
+
+
+def _build_character_sketch(char: Any) -> str:
+    """Assemble a structured sketch from `char.research_data` for LLM context.
+
+    The fact_bank is already bulleted into facts_text; this block surfaces the
+    narrative fields (bio, powers, notable_arcs, quotes, aliases) that the
+    research pipeline populates but that the prompt has historically ignored.
+    Returns "" when the character has no research_data.
+    """
+    rd = getattr(char, "research_data", None) or {}
+    if not isinstance(rd, dict) or not rd:
+        return ""
+
+    parts: list[str] = []
+    bio = rd.get("bio")
+    if isinstance(bio, str) and bio.strip():
+        parts.append(f"BIO: {bio.strip()[:800]}")
+
+    powers = rd.get("powers")
+    if isinstance(powers, list) and powers:
+        powers_str = "; ".join(str(p).strip() for p in powers if str(p).strip())[:400]
+        if powers_str:
+            parts.append(f"POWERS: {powers_str}")
+    elif isinstance(powers, str) and powers.strip():
+        parts.append(f"POWERS: {powers.strip()[:400]}")
+
+    arcs = rd.get("notable_arcs") or rd.get("arcs")
+    if isinstance(arcs, list) and arcs:
+        top = [str(a).strip() for a in arcs[:3] if str(a).strip()]
+        if top:
+            parts.append("NOTABLE ARCS:\n- " + "\n- ".join(a[:200] for a in top))
+
+    quotes = rd.get("quotes")
+    if isinstance(quotes, list) and quotes:
+        q_top = [str(q).strip().strip('"\u201c\u201d') for q in quotes[:5] if str(q).strip()]
+        if q_top:
+            parts.append("QUOTES:\n- " + "\n- ".join(f'"{q[:160]}"' for q in q_top))
+
+    aliases = rd.get("aliases")
+    if isinstance(aliases, list) and aliases:
+        a_str = ", ".join(str(a).strip() for a in aliases if str(a).strip())[:200]
+        if a_str:
+            parts.append(f"ALIASES: {a_str}")
+
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +687,7 @@ class CharacterContentService:
     """Manages character content creation pipeline."""
 
     def __init__(self):
-        self._ollama = get_ollama_client()  # Routes through UnifiedLLMClient (multi-provider)
+        self._ollama = get_llm_client()  # Routes through UnifiedLLMClient (multi-provider)
 
     # ==================================================================
     # CHARACTER CRUD
@@ -499,14 +710,28 @@ class CharacterContentService:
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return character_to_pydantic(row)
+            char = character_to_pydantic(row)
+
+        # Eagerly source images so the character is eligible for carousel
+        # generation on the very next scheduler tick instead of waiting for
+        # the daily research refresh.
+        async def _bootstrap(cid: str):
+            try:
+                inserted = await self.discover_more_character_images(cid, max_per_source=8)
+                logger.info("character_create_images_bootstrapped", character_id=cid, inserted=inserted)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("character_create_image_bootstrap_failed", character_id=cid, error=str(exc)[:200])
+
+        asyncio.create_task(_bootstrap(char_id))
+        return char
 
     async def list_characters(
         self,
         universe: Optional[str] = None,
         status: Optional[str] = None,
         research_status: Optional[str] = None,
-        limit: int = 100,
+        limit: int = 500,
+        offset: int = 0,
     ) -> List[Character]:
         async with get_session() as session:
             query = select(CharacterModel).order_by(CharacterModel.name)
@@ -516,12 +741,15 @@ class CharacterContentService:
                 query = query.where(CharacterModel.status == status)
             if research_status:
                 query = query.where(CharacterModel.research_status == research_status)
+            if offset:
+                query = query.offset(offset)
             query = query.limit(limit)
             result = await session.execute(query)
             rows = result.scalars().all()
 
             char_ids = [r.id for r in rows]
             counts: Dict[str, int] = {}
+            appears_counts: Dict[str, int] = {}
             if char_ids:
                 count_result = await session.execute(
                     select(
@@ -532,7 +760,31 @@ class CharacterContentService:
                     .group_by(CharacterCarouselModel.character_id)
                 )
                 counts = {cid: cnt for cid, cnt in count_result.all()}
-            return [character_to_pydantic(r, carousels_created=counts.get(r.id, 0)) for r in rows]
+
+                # Single batched count of media appearances per character so
+                # cards can show "Appears in N" without N+1 detail fetches.
+                from app.db.models import CharacterMediaTitleModel as _CMT
+                appears_result = await session.execute(
+                    select(
+                        _CMT.character_id,
+                        sql_func.count(_CMT.id),
+                    )
+                    .where(_CMT.character_id.in_(char_ids))
+                    .group_by(_CMT.character_id)
+                )
+                appears_counts = {cid: cnt for cid, cnt in appears_result.all()}
+
+            results: List[Character] = []
+            for r in rows:
+                pyd = character_to_pydantic(r, carousels_created=counts.get(r.id, 0))
+                count = appears_counts.get(r.id, 0)
+                if count:
+                    # List endpoint returns a count-only placeholder. The
+                    # detail endpoint returns the full join rows. UI keys off
+                    # ``_count`` to render "Appears in N" without inspecting.
+                    pyd.appears_in = [{"_count": count}]
+                results.append(pyd)
+            return results
 
     async def get_character(self, character_id: str) -> Optional[Character]:
         async with get_session() as session:
@@ -544,7 +796,39 @@ class CharacterContentService:
                 .where(CharacterCarouselModel.character_id == character_id)
             )
             carousels_created = count_result.scalar() or 0
-            return character_to_pydantic(row, carousels_created=carousels_created)
+
+            # Join character_media_titles + media_titles for the deep-link
+            # "Appears in" surface on the character detail card.
+            from app.db.models import (
+                CharacterMediaTitleModel as _CMT,
+                MediaTitleModel as _MT,
+            )
+            appears_result = await session.execute(
+                select(_CMT, _MT)
+                .join(_MT, _CMT.media_title_id == _MT.id)
+                .where(_CMT.character_id == character_id)
+            )
+            appears_in: List[Dict[str, Any]] = []
+            for link, media in appears_result.all():
+                appears_in.append({
+                    "link_id": link.id,
+                    "media_title_id": media.id,
+                    "title": media.title,
+                    "media_type": media.media_type,
+                    "year": media.year,
+                    "poster_url": media.poster_url,
+                    "role_name": link.role_name,
+                    "role_type": link.role_type,
+                    "actor_name": link.actor_name,
+                    "franchise": media.franchise,
+                    "universe": media.universe,
+                })
+            # Newest first.
+            appears_in.sort(key=lambda x: (x.get("year") or 0), reverse=True)
+
+            char = character_to_pydantic(row, carousels_created=carousels_created)
+            char.appears_in = appears_in
+            return char
 
     async def update_character(self, character_id: str, data: CharacterUpdate) -> Optional[Character]:
         async with get_session() as session:
@@ -660,6 +944,14 @@ class CharacterContentService:
             # so batch-research picks them up on the next cycle instead of silently
             # declaring the character fully researched.
             final_status = "completed" if len(fact_bank) >= 3 else "needs_retry"
+            if final_status == "needs_retry":
+                logger.warning(
+                    "research_completed_empty",
+                    character_id=character_id,
+                    fact_count=len(fact_bank),
+                    image_count=len(images),
+                    sources=list(source_types),
+                )
             async with get_session() as session:
                 row = await session.get(CharacterModel, character_id)
                 if row:
@@ -985,11 +1277,21 @@ class CharacterContentService:
             return fallback
 
     async def _validate_image_url(self, url: str) -> Dict[str, Any]:
-        """HTTP HEAD + partial download to validate image URL and extract dimensions."""
+        """HTTP HEAD + partial download to validate image URL and extract dimensions.
+
+        Also checks the URL against a global host blocklist that excludes
+        stock-photo aggregators, AI-generation hosts, and low-quality wallpaper
+        sites which were dominating the slide image mix (audit 2026-04-28
+        showed 61 wallpapercave + 31 dreamstime + 25 AI-generated slides per
+        24h). Blocked hosts return ``is_valid=False`` immediately so the
+        caller (3-tier image picker) escalates to the next candidate.
+        """
         result: Dict[str, Any] = {
             "is_valid": False, "width": None, "height": None,
             "content_type": None, "file_size": 0,
         }
+        if _is_blocked_image_host(url):
+            return result
         try:
             async with aiohttp.ClientSession() as http:
                 async with http.head(
@@ -1064,6 +1366,8 @@ class CharacterContentService:
                         quality_score=img_data.get("quality_score", 0.0),
                         content_type=img_data.get("content_type"),
                         file_size=img_data.get("file_size"),
+                        phash=img_data.get("phash"),
+                        sha256=img_data.get("sha256"),
                     ))
                     await session.commit()
                 images.append({"id": img_id, **img_data})
@@ -1224,6 +1528,21 @@ class CharacterContentService:
             universe = char.universe
             fact_bank = char.fact_bank or []
 
+        # Research-quality guard (audit 2026-04-28): refuse to generate when
+        # the fact bank is dominated by failure sentinels (e.g. "Search
+        # returned 0 results", "No character information was retrieved",
+        # ambiguous-disambiguation notes). The A-Train carousel that came out
+        # about a 1985 Japanese railroad simulation game was the canonical
+        # case — those facts had ``surprise_score=10`` and the LLM happily
+        # used them. Caller should kick off a re-research instead of saving
+        # a wrong-topic carousel.
+        if _fact_bank_is_failed_research(fact_bank):
+            raise ValueError(
+                f"Character {name} has failure-sentinel research data "
+                f"(e.g. 'Search returned 0 results'). Refusing to generate "
+                f"carousel — re-run research with disambiguation context first."
+            )
+
         gen_start = time.monotonic()
 
         angle = data.angle.value if hasattr(data.angle, "value") else data.angle
@@ -1299,19 +1618,52 @@ class CharacterContentService:
         # Get brain context for enriched generation
         brain_context = await self._get_brain_context(name, angle)
 
-        # Build prompt
+        # Build prompt — balanced sample of up to 30 facts (max 4 per category
+        # so one category doesn't dominate), sorted by surprise_score.
+        from collections import defaultdict as _defaultdict
+        _by_cat: dict[str, list[dict]] = _defaultdict(list)
+        for _f in sorted(filtered_facts, key=lambda f: f.get("surprise_score", 0), reverse=True):
+            _cat = _f.get("category", "general")
+            if len(_by_cat[_cat]) < 4:
+                _by_cat[_cat].append(_f)
+        _balanced_facts: list[dict] = []
+        for _flist in _by_cat.values():
+            _balanced_facts.extend(_flist)
+        _balanced_facts.sort(key=lambda f: f.get("surprise_score", 0), reverse=True)
         facts_text = "\n".join(
             f"- [{f.get('category', 'general')}] (surprise: {f.get('surprise_score', 5)}/10) {f.get('text', '')}"
-            for f in filtered_facts[:15]
+            for f in _balanced_facts[:30]
         )
+
+        # Build a character sketch from structured research_data so the LLM has
+        # bio/powers/quotes/arcs/aliases in addition to the bullet-pointed facts.
+        # Starves vs overloads: the old prompt ran ~900 chars; this targets ~4k+.
+        character_sketch = _build_character_sketch(char)
 
         slide_count = getattr(data, 'slide_count', 6) or 6
 
         _carousel_variant = None
         _carousel_system = CAROUSEL_SYSTEM_PROMPT
+        # W5 lore retrieval: prefer top-k chunks scored against the angle + name
+        # query over dumping raw research_data into the prompt. Falls back to
+        # the old behavior when no chunks exist for this character yet.
+        lore_chunks_text = await self._fetch_lore_summary(
+            character_id=data.character_id,
+            name=name,
+            angle=angle,
+        )
         if template_prompt:
-            # Use template prompt with variable substitution
-            research_summary = json.dumps(char.research_data, indent=1)[:2000] if hasattr(char, 'research_data') else ""
+            # Use template prompt with variable substitution. Inject both the
+            # lore chunks AND the structured character sketch — they are
+            # complementary: lore chunks are retrieval-ranked against the angle,
+            # the sketch provides stable bio/powers/quotes/arcs context.
+            lore_body = lore_chunks_text[:4000] if lore_chunks_text else (
+                json.dumps(char.research_data, indent=1)[:4000] if hasattr(char, 'research_data') else ""
+            )
+            research_summary = (
+                (character_sketch + "\n\n" if character_sketch else "")
+                + lore_body
+            )
             prompt = template_prompt.format(
                 name=name,
                 universe=universe,
@@ -1349,6 +1701,25 @@ class CharacterContentService:
                     facts_text=facts_text,
                     slide_count=slide_count,
                 )
+            # Append structured character sketch (bio/powers/quotes/arcs/
+            # aliases) first — always available from research_data; no
+            # dependence on the lore_chunks ingestor having run yet.
+            if character_sketch:
+                prompt += f"\n\nCharacter sketch (structured research):\n{character_sketch}"
+            # W5 lore retrieval: append grounded context from lore chunks when
+            # available. Keeps the base template intact; just adds citations.
+            if lore_chunks_text:
+                prompt += f"\n\nGrounded lore context (from canonical sources):\n{lore_chunks_text[:4000]}"
+        # Log prompt size so regression in context width is visible in grades.
+        logger.debug(
+            "carousel_prompt_size",
+            character=name,
+            angle=angle,
+            prompt_chars=len(prompt),
+            facts_used=len(_balanced_facts[:30]) if '_balanced_facts' in locals() else 0,
+            sketch_chars=len(character_sketch or ""),
+            lore_chars=len(lore_chunks_text or ""),
+        )
 
         # Add hook style instruction to prompt
         hook_style = getattr(data, 'hook_style', None)
@@ -1451,18 +1822,58 @@ class CharacterContentService:
             result = sanitize_carousel(result, character_name=name)
             if not isinstance(result, dict) or "slides" not in result:
                 raise ValueError("Invalid carousel JSON structure")
+
+            # Slide-count compliance retry: models occasionally return fewer
+            # slides than requested (observed qwen3 returning 4 when asked for
+            # 7). Reissue ONCE with a corrective directive before resorting to
+            # the simpler/static fallback paths below. Bail on any failure and
+            # keep the short result (better than nothing).
+            _actual_count = len(result.get("slides") or [])
+            if _actual_count < max(3, slide_count - 1):
+                logger.info(
+                    "carousel_slide_count_short_retry",
+                    name=name,
+                    requested=slide_count,
+                    actual=_actual_count,
+                )
+                correction = (
+                    f"\n\nYour previous response contained only {_actual_count} slides. "
+                    f"Return EXACTLY {slide_count} slides, numbered 1 through {slide_count}. "
+                    f"Do not drop any slides. Reissue the complete JSON."
+                )
+                try:
+                    fix_raw = await get_unified_llm_client().chat(
+                        prompt=prompt + correction,
+                        system=_carousel_system,
+                        task_type="character_carousel_generation",
+                        temperature=0.6,
+                        max_tokens=4096,
+                    )
+                    fixed = parse_json_response(fix_raw, f"carousel_{name}_slidefix")
+                    fixed = sanitize_carousel(fixed, character_name=name)
+                    if isinstance(fixed, dict) and len(fixed.get("slides") or []) >= slide_count - 1:
+                        logger.info(
+                            "carousel_slide_count_retry_success",
+                            name=name,
+                            count=len(fixed["slides"]),
+                        )
+                        result = fixed
+                except (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError, ValueError, json.JSONDecodeError):
+                    pass
         except (ValueError, json.JSONDecodeError, TimeoutError, ConnectionError) as e:
             logger.info("carousel_generation_retry_simpler", name=name, error=str(e))
             # Retry with a simpler prompt: fewer slides, explicit JSON instruction, Ollama fallback
             simple_facts = "\n".join(f"- {f.get('text', '')}" for f in filtered_facts[:4])
             simple_prompt = (
                 f"Create a 4-slide TikTok carousel about {name} ({universe}), angle: {angle}.\n\n"
-                f"Facts:\n{simple_facts}\n\n"
-                f"OUTPUT ONLY THIS JSON, nothing else:\n"
-                f'{{"title": "short title", "hook_text": "scroll-stopping first line about {name}", '
-                f'"slides": [{{"slide_num": 1, "text": "hook text"}}, {{"slide_num": 2, "text": "fact 1"}}, '
-                f'{{"slide_num": 3, "text": "fact 2"}}, {{"slide_num": 4, "text": "CTA"}}], '
-                f'"caption": "caption with emojis", "hashtags": ["tag1", "tag2"], "music_mood": "epic"}}'
+                f"Facts to use (one per body slide, rewritten in a punchy voice):\n{simple_facts}\n\n"
+                f"Return ONLY valid JSON matching this schema (DO NOT echo these field descriptions - substitute real content):\n"
+                f'{{"title": <3-6 word title>, "hook_text": <scroll-stopping opener mentioning {name}>, '
+                f'"slides": [{{"slide_num": 1, "text": <the hook rewritten>}}, '
+                f'{{"slide_num": 2, "text": <fact rewritten, 10-25 words>}}, '
+                f'{{"slide_num": 3, "text": <fact rewritten, 10-25 words>}}, '
+                f'{{"slide_num": 4, "text": <punchy CTA or twist>}}], '
+                f'"caption": <caption with 2-3 emojis>, "hashtags": [<4-6 tags>], "music_mood": "epic"}}'
             )
             try:
                 retry_raw = await self._ollama.chat(
@@ -1477,6 +1888,10 @@ class CharacterContentService:
                 result = parse_json_response(retry_raw, f"carousel_retry_{name}")
                 result = sanitize_carousel(result, character_name=name)
                 if not isinstance(result, dict) or "slides" not in result:
+                    result = None
+                elif _carousel_has_placeholders(result):
+                    _slide_texts = [str(s.get("text", "")).strip().lower() for s in result.get("slides", [])]
+                    logger.warning("carousel_generation_retry_returned_placeholders", name=name, sample=_slide_texts[:3])
                     result = None
                 else:
                     logger.info("carousel_generation_retry_success", name=name)
@@ -1500,23 +1915,170 @@ class CharacterContentService:
 
         # Source images for each slide
         slides = result.get("slides", [])
-        await self._assign_slide_images(data.character_id, slides)
+        unassigned = await self._assign_slide_images(data.character_id, slides)
+        if unassigned:
+            logger.warning(
+                "carousel_blocked_no_images",
+                character_id=data.character_id,
+                character_name=name,
+                unassigned_slides=unassigned,
+                total_slides=len(slides),
+            )
+            asyncio.create_task(self.discover_more_character_images(data.character_id, max_per_source=8))
+            raise CarouselImageMissingError(
+                f"{name}: {unassigned}/{len(slides)} slides have no image; queued background discovery"
+            )
 
-        # Generate text overlay specs
-        accent = UNIVERSE_ACCENT_COLORS.get(universe.lower() if universe else "", "#FB923C")
-        text_overlay_specs = [
-            {
-                "slide_num": s.get("slide_num", i + 1),
+        # Generate text overlay specs with randomized palette + per-slide
+        # font style (Phase 1.2/1.3).
+        carousel_id = generate_id("cc")
+        palette = pick_accent_palette(universe, carousel_id)
+
+        # Resolve character brand kit (per-character visual preset). Falls back
+        # to a universe/film default. Enriched with a per-carousel hue nudge so
+        # two carousels for the same character don't look identical.
+        try:
+            base_kit = get_brand_kit(
+                name=name,
+                universe=universe,
+                franchise=getattr(char_row if "char_row" in dir() else None, "franchise", None),
+                tags=getattr(char_row if "char_row" in dir() else None, "tags", None),
+            )
+            brand_kit = enrich_brand_kit(base_kit, carousel_id)
+        except (KeyError, ValueError, AttributeError, TypeError) as _bk_err:
+            logger.debug("brand_kit_lookup_failed", error=str(_bk_err))
+            brand_kit = None
+
+        # If the brand kit declares a palette, prefer it (more character-true).
+        if brand_kit and brand_kit.get("palette"):
+            bp = brand_kit["palette"]
+            if bp.get("primary"):
+                palette["primary"] = bp["primary"]
+            if bp.get("secondary"):
+                palette["secondary"] = bp["secondary"]
+
+        # Apply slide-level normalization + font style + per-slide accent.
+        normalized_slides = []
+        text_overlay_specs = []
+        for i, s in enumerate(slides):
+            slide_num = s.get("slide_num", i + 1)
+            raw_text = s.get("text", "") or ""
+            norm = normalize_slide_text(
+                raw_text,
+                is_hook=(i == 0),
+            )
+            s_clean = dict(s)
+            s_clean["text"] = norm["text"]
+            slide_accent = pick_slide_accent(palette, carousel_id, slide_num)
+            font_style = pick_font_style_for_slide(
+                norm["text"], i, hook_style=hook_style, is_hook_slide=(i == 0),
+            )
+            # Brand kit can override font style by slide role.
+            if brand_kit and brand_kit.get("fonts"):
+                kit_fonts = brand_kit["fonts"]
+                if i == 0 and kit_fonts.get("hook"):
+                    font_style = kit_fonts["hook"]
+                elif font_style in ("display-stat", "display-mono") and kit_fonts.get("stat"):
+                    font_style = kit_fonts["stat"]
+                elif kit_fonts.get("body"):
+                    font_style = kit_fonts["body"]
+            s_clean["font_style"] = font_style
+            s_clean["accent_color"] = slide_accent
+            s_clean["accent_secondary"] = (
+                palette["secondary"] if slide_accent == palette["primary"] else palette["primary"]
+            )
+            normalized_slides.append(s_clean)
+            text_overlay_specs.append({
+                "slide_num": slide_num,
                 "text_position": "center" if i == 0 else "bottom",
                 "font_weight": "bold",
+                "font_style": font_style,
                 "max_chars_per_line": 30,
                 "background_overlay": 0.5,
                 "text_color": "#FFFFFF",
-                "accent_color": accent,
+                "accent_color": slide_accent,
+                "accent_secondary": s_clean["accent_secondary"],
                 "text_shadow": True,
-            }
-            for i, s in enumerate(slides)
-        ]
+            })
+        slides = normalized_slides
+
+        # Layer in layouts + text effects + stickers + image treatments from
+        # the layout engine (Phase: world-class). Wrapped in try/except so any
+        # failure falls back to the flat specs above.
+        try:
+            layouts = pick_layout_rotation(
+                normalized_slides, brand_kit, hook_style, carousel_id=carousel_id,
+            )
+            for i, spec in enumerate(text_overlay_specs):
+                lay = layouts[i] if i < len(layouts) else "center"
+                spec["layout"] = lay
+                spec["text_effects"] = pick_text_effects(
+                    lay, spec.get("font_style"), brand_kit,
+                    carousel_id=carousel_id, slide_num=i,
+                )
+                spec["stickers"] = pick_stickers(
+                    i, len(text_overlay_specs), brand_kit,
+                    carousel_id=carousel_id, layout=lay,
+                )
+                treatment, params = pick_image_treatment(
+                    i, brand_kit, carousel_id=carousel_id,
+                )
+                spec["image_treatment"] = treatment
+                spec["treatment_params"] = params
+                if brand_kit and brand_kit.get("name"):
+                    spec["brand_kit_name"] = brand_kit["name"]
+                # Also mirror onto the slide so the frontend can read it
+                # without traversing text_overlay_specs.
+                if i < len(slides):
+                    slides[i]["layout"] = spec["layout"]
+                    slides[i]["text_effects"] = spec["text_effects"]
+                    slides[i]["stickers"] = spec["stickers"]
+                    slides[i]["image_treatment"] = spec["image_treatment"]
+        except (KeyError, ValueError, TypeError, IndexError) as _lay_err:
+            logger.warning("layout_enrichment_failed", error=str(_lay_err))
+
+        # Phrase-level dedup (Phase 1.5): reject if >=2 slides heavily overlap
+        # with any carousel for this character in the last 14 days.
+        try:
+            async with get_session() as phrase_session:
+                from datetime import timedelta as _td
+                cutoff14 = datetime.now(timezone.utc) - _td(days=14)
+                recent_rows = await phrase_session.execute(
+                    select(CharacterCarouselModel).where(
+                        CharacterCarouselModel.character_id == data.character_id,
+                        CharacterCarouselModel.created_at >= cutoff14,
+                    ).order_by(CharacterCarouselModel.created_at.desc()).limit(20)
+                )
+                recent = list(recent_rows.scalars().all())
+            new_slide_trigrams = [trigram_set(s.get("text", "")) for s in slides]
+            for prev in recent:
+                prev_slide_trigrams = [
+                    trigram_set((ps or {}).get("text", ""))
+                    for ps in (prev.slides or [])
+                ]
+                overlap_slide_count = 0
+                for new_tri in new_slide_trigrams:
+                    if not new_tri:
+                        continue
+                    for prev_tri in prev_slide_trigrams:
+                        if not prev_tri:
+                            continue
+                        overlap = len(new_tri & prev_tri) / max(
+                            1, len(new_tri | prev_tri)
+                        )
+                        if overlap >= 0.55:
+                            overlap_slide_count += 1
+                            break
+                if overlap_slide_count >= 2:
+                    logger.info(
+                        "carousel_phrase_dupe_skip",
+                        character_id=data.character_id,
+                        prev_carousel_id=prev.id,
+                        overlap_slides=overlap_slide_count,
+                    )
+                    return carousel_to_pydantic(prev, name)
+        except (ValueError, KeyError, AttributeError) as exc:
+            logger.debug("phrase_dedup_skipped", error=str(exc))
 
         # Auto-assign music
         music_track_data = None
@@ -1544,9 +2106,9 @@ class CharacterContentService:
             except (ValueError, KeyError) as e:
                 logger.debug("template_usage_increment_failed", error=str(e))
 
-        # Save carousel with all new fields
+        # Save carousel with all new fields (carousel_id was generated above
+        # alongside the accent palette so slide accents are deterministic).
         duration_ms = int((time.monotonic() - gen_start) * 1000)
-        carousel_id = generate_id("cc")
         async with get_session() as session:
             row = CharacterCarouselModel(
                 id=carousel_id,
@@ -1675,11 +2237,16 @@ class CharacterContentService:
                 best_img = img
         return best_img if best_score >= 2 else None
 
-    async def _assign_slide_images(self, character_id: str, slides: List[Dict]):
-        """Match images to slides using 3-tier strategy:
+    async def _assign_slide_images(self, character_id: str, slides: List[Dict]) -> int:
+        """Match images to slides using 3-tier strategy.
+
         1. Keyword match slide's image_query against existing images
         2. On-demand SearXNG search with slide's image_query
         3. Fallback to least-used existing image
+
+        Returns the number of slides that ended up WITHOUT an image. Callers
+        must treat any non-zero return as a generation failure (carousel must
+        not persist) and kick off background image discovery.
         """
         # Load all valid images for this character, sorted by quality then usage
         async with get_session() as session:
@@ -1695,6 +2262,10 @@ class CharacterContentService:
             existing = result.scalars().all()
 
         used_ids: set = set()
+        used_urls: set = set()  # URL-level dedup — catches cases where SearXNG
+        # returns the same popular image for different slide_queries (the
+        # img_id path sets `used_ids` only after insert/lookup, too late to
+        # prevent the same URL landing on two slides).
         assigned_ids: list = []
 
         for slide in slides:
@@ -1704,9 +2275,10 @@ class CharacterContentService:
             # Tier 1: Keyword match against existing images
             if image_query and existing:
                 match = self._match_image_to_query(image_query, existing, used_ids)
-                if match:
+                if match and match.url not in used_urls:
                     slide["image_url"] = match.url
                     used_ids.add(match.id)
+                    used_urls.add(match.url)
                     assigned_ids.append(match.id)
                     assigned = True
 
@@ -1725,10 +2297,15 @@ class CharacterContentService:
                         )
                         if not img_url or not img_url.startswith("http"):
                             continue
+                        if img_url in used_urls:
+                            continue  # already on another slide this carousel
                         validation = await self._validate_image_url(img_url)
                         if not validation["is_valid"]:
                             continue
-                        # Store new image and assign
+                        # Store new image and assign. The URL may already exist
+                        # on this character (from initial research); the unique
+                        # constraint `uq_character_image_url` raises IntegrityError
+                        # in that case — treat it as "already-known, reuse it".
                         img_id = generate_id("ci")
                         try:
                             async with get_session() as session:
@@ -1743,17 +2320,57 @@ class CharacterContentService:
                                     usage_count=1,
                                 ))
                                 await session.commit()
+                        except IntegrityError:
+                            # URL already saved for this character — look up the
+                            # existing row's id so usage tracking stays consistent.
+                            async with get_session() as session:
+                                existing_row = (await session.execute(
+                                    select(CharacterImageModel).where(
+                                        CharacterImageModel.character_id == character_id,
+                                        CharacterImageModel.url == img_url,
+                                    ).limit(1)
+                                )).scalar_one_or_none()
+                                if existing_row is not None:
+                                    img_id = existing_row.id
                         except (ValueError, OSError):
                             pass
                         slide["image_url"] = img_url
                         used_ids.add(img_id)
+                        used_urls.add(img_url)
                         assigned = True
                         break
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, ConnectionError):
                     pass
 
-            # Tier 3: Fallback to least-used existing image
+            # Tier 3: Fallback to least-used existing image — but ONLY if the
+            # image URL hasn't already been used on a previous slide of this
+            # same carousel (prevents visual repetition when the character
+            # pool is shallow).
             if not assigned and existing:
+                for img in existing:
+                    if img.id in used_ids:
+                        continue
+                    if img.url in used_urls:
+                        continue
+                    slide["image_url"] = img.url
+                    used_ids.add(img.id)
+                    used_urls.add(img.url)
+                    assigned_ids.append(img.id)
+                    assigned = True
+                    break
+
+            # Shallow-pool guard: if this slide still has no image AND the
+            # character's entire image pool is smaller than the carousel's
+            # slide count, kick background image discovery so future carousels
+            # have more variety. Do NOT block this one — we'd rather ship
+            # with a repeated image than fail generation.
+            if not assigned and existing and len(existing) < len(slides):
+                asyncio.create_task(
+                    self.discover_more_character_images(
+                        character_id, max_per_source=8,
+                    )
+                )
+                # Relax dedup for this slide only — pool is genuinely shallow.
                 for img in existing:
                     if img.id not in used_ids:
                         slide["image_url"] = img.url
@@ -1770,6 +2387,9 @@ class CharacterContentService:
                     .values(usage_count=CharacterImageModel.usage_count + 1)
                 )
                 await session.commit()
+
+        unassigned = sum(1 for s in slides if not s.get("image_url"))
+        return unassigned
 
     # ==================================================================
     # IMAGE REFRESH (per-carousel / per-slide / fresh-source)
@@ -1891,6 +2511,457 @@ class CharacterContentService:
         return await self.reimage_carousel(carousel_id)
 
     # ==================================================================
+    # SLIDE IMAGE PICKER (manual override + upload)
+    # ==================================================================
+
+    async def list_slide_image_candidates(
+        self,
+        carousel_id: str,
+        slide_index: int,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        """Return top image candidates for a slide plus usage flags.
+
+        Output: {character_id, needs_discover: bool, candidates: [...]}.
+        Caller decides whether to kick off a background discover based on
+        `needs_discover`.
+        """
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                raise ValueError(f"Carousel {carousel_id} not found")
+            slides = list(row.slides or [])
+            if slide_index < 0 or slide_index >= len(slides):
+                raise IndexError(
+                    f"Invalid slide_index {slide_index} (carousel has {len(slides)} slides)"
+                )
+            character_id = row.character_id
+            used_urls = {
+                (s or {}).get("image_url")
+                for s in slides
+                if isinstance(s, dict) and s.get("image_url")
+            }
+
+            img_rows = (await session.execute(
+                select(CharacterImageModel)
+                .where(CharacterImageModel.character_id == character_id)
+                .where(CharacterImageModel.is_valid.is_(True))
+                .order_by(CharacterImageModel.quality_score.desc().nulls_last())
+                .limit(limit)
+            )).scalars().all()
+
+            char = await session.get(CharacterModel, character_id)
+
+        candidates = [
+            {
+                "id": r.id,
+                "url": r.url,
+                "source": r.source,
+                "width": r.width,
+                "height": r.height,
+                "quality_score": float(r.quality_score or 0.0),
+                "phash": r.phash,
+                "is_used_in_carousel": r.url in used_urls,
+            }
+            for r in img_rows
+        ]
+
+        return {
+            "character_id": character_id,
+            "character_name": char.name if char else None,
+            "universe": char.universe if char else None,
+            "franchise": getattr(char, "franchise", None) if char else None,
+            "needs_discover": len(candidates) < 5,
+            "candidates": candidates,
+        }
+
+    async def discover_more_character_images(
+        self,
+        character_id: str,
+        max_per_source: int = 6,
+    ) -> int:
+        """Background-friendly helper: run ImageSourceService.discover_images
+        and persist any new ones for the character. Returns count inserted.
+        """
+        from app.services.image_source_service import get_image_source_service
+
+        async with get_session() as session:
+            char = await session.get(CharacterModel, character_id)
+            if not char:
+                return 0
+            name = char.name
+            universe = char.universe or ""
+            franchise = getattr(char, "franchise", None)
+
+            existing_urls = set((await session.execute(
+                select(CharacterImageModel.url)
+                .where(CharacterImageModel.character_id == character_id)
+            )).scalars().all())
+
+        try:
+            results = await get_image_source_service().discover_images(
+                name=name,
+                universe=universe,
+                franchise=franchise,
+                max_per_source=max_per_source,
+            )
+        except Exception as e:
+            logger.warning(
+                "slide_image_discover_failed",
+                character_id=character_id,
+                error=str(e),
+            )
+            return 0
+
+        inserted = 0
+        async with get_session() as session:
+            for item in results:
+                url = item.get("url")
+                if not url or url in existing_urls:
+                    continue
+                relevance = item.get("relevance_score")
+                relevance_reason = item.get("relevance_reason")
+                # If vision validated and rejected, store as is_valid=False so
+                # the image is captured for audit but doesn't surface in the
+                # character's primary pool. Vision-unavailable (None) keeps
+                # the historical default (is_valid=True).
+                vision_rejected = (
+                    relevance is not None and float(relevance) < 0.3
+                )
+                feedback = None
+                if vision_rejected and relevance_reason:
+                    feedback = f"vision_rejected: {relevance_reason}"
+                try:
+                    session.add(CharacterImageModel(
+                        id=f"cimg-{uuid.uuid4().hex[:12]}",
+                        character_id=character_id,
+                        url=url,
+                        source=item.get("source") or "discover",
+                        query_used=item.get("query_used"),
+                        width=item.get("width"),
+                        height=item.get("height"),
+                        quality_score=float(item.get("quality_score") or 0.0),
+                        phash=item.get("phash"),
+                        is_valid=not vision_rejected,
+                        feedback_reason=feedback,
+                    ))
+                    existing_urls.add(url)
+                    inserted += 1
+                except Exception:
+                    continue
+            if inserted:
+                try:
+                    await session.commit()
+                except IntegrityError:
+                    await session.rollback()
+        logger.info(
+            "slide_image_discover_complete",
+            character_id=character_id,
+            inserted=inserted,
+        )
+        return inserted
+
+    async def revalidate_existing_images(
+        self,
+        character_id: str,
+        *,
+        dry_run: bool = False,
+        refill_if_thin: bool = True,
+    ) -> Dict[str, Any]:
+        """Re-score every existing image for a character via Gemini Vision.
+
+        Updates ``quality_score`` (with the relevance multiplier), and for
+        rejects (relevance < 0.3) sets ``is_valid=False`` + ``feedback_reason``
+        so they drop out of the primary pool without being deleted.
+
+        Primary-image safety: if the current ``CharacterModel.image_url``
+        fails relevance, we promote the highest-scoring still-valid image
+        to be the new primary. If no valid image remains, the existing
+        primary stays in place — a vision miss never leaves a character
+        imageless.
+
+        When ``refill_if_thin=True`` and fewer than 5 valid images remain
+        post-revalidation, kicks off ``discover_more_character_images`` to
+        replenish the pool.
+
+        Returns a dict with: character_id, name, total, kept, rejected,
+        promoted_primary (bool), refilled (int), changes ([...]).
+        """
+        from app.services.character_image_relevance_service import (
+            get_character_image_relevance_service,
+        )
+
+        rel_service = get_character_image_relevance_service()
+        from app.services.image_source_service import compute_quality_score as _cqs
+
+        async with get_session() as session:
+            char = await session.get(CharacterModel, character_id)
+            if not char:
+                return {"error": "character_not_found", "character_id": character_id}
+            img_rows = (await session.execute(
+                select(CharacterImageModel)
+                .where(CharacterImageModel.character_id == character_id)
+                .where(CharacterImageModel.is_valid.is_(True))
+            )).scalars().all()
+
+            # Skip rows already vision-rejected on a previous run.
+            candidates = [
+                r for r in img_rows
+                if not (r.feedback_reason or "").startswith("vision_")
+            ]
+
+        async def _score(row: CharacterImageModel) -> Dict[str, Any]:
+            result = await rel_service.score_relevance(
+                image_url=row.url,
+                character_name=char.name,
+                universe=char.universe or "",
+                franchise=getattr(char, "franchise", None),
+                description=getattr(char, "description", None),
+            )
+            # Vision-unavailable: leave quality_score untouched. Recomputing
+            # from scratch would lose the face_present / safe_zone / centered
+            # bonuses computed during the original discovery, so a vision
+            # outage would silently demote every image.
+            if result["source"] == "vision":
+                new_quality = _cqs(
+                    row.width, row.height, row.source or "manual",
+                    relevance=result["score"],
+                )
+            else:
+                new_quality = float(row.quality_score or 0.0)
+            return {
+                "row": row,
+                "url": row.url,
+                "old_quality": float(row.quality_score or 0.0),
+                "new_quality": new_quality,
+                "relevance_score": result["score"],
+                "relevance_source": result["source"],
+                "relevance_reason": result["reason"],
+                "is_match": result["is_match"],
+            }
+
+        scored = await asyncio.gather(
+            *[_score(r) for r in candidates], return_exceptions=False,
+        )
+
+        # Only count as rejected when vision actually answered AND scored low.
+        # vision_unavailable / image_fetch_failed leave the row alone.
+        rejected = [
+            s for s in scored
+            if s["relevance_source"] == "vision"
+            and not s["is_match"]
+            and s["relevance_score"] < 0.3
+        ]
+        kept = [s for s in scored if s not in rejected]
+
+        changes = [
+            {
+                "url": s["url"],
+                "old_quality": s["old_quality"],
+                "new_quality": s["new_quality"],
+                "relevance_score": s["relevance_score"],
+                "relevance_reason": s["relevance_reason"],
+                "decision": "rejected" if s in rejected else "kept",
+            }
+            for s in scored
+        ]
+
+        promoted_primary = False
+        refilled = 0
+        if not dry_run:
+            async with get_session() as session:
+                # Apply quality + validity updates.
+                for s in scored:
+                    row = await session.get(CharacterImageModel, s["row"].id)
+                    if not row:
+                        continue
+                    row.quality_score = s["new_quality"]
+                    if s in rejected:
+                        row.is_valid = False
+                        row.feedback_reason = (
+                            f"vision_rejected: {s['relevance_reason']}"[:500]
+                        )
+
+                # Promote a new primary if the current one was rejected.
+                fresh_char = await session.get(CharacterModel, character_id)
+                rejected_urls = {s["url"] for s in rejected}
+                if fresh_char and fresh_char.image_url in rejected_urls:
+                    valid_kept = sorted(kept, key=lambda x: x["new_quality"], reverse=True)
+                    if valid_kept:
+                        new_primary = valid_kept[0]["url"]
+                        new_image_urls = [s["url"] for s in valid_kept[:10]]
+                        fresh_char.image_url = new_primary
+                        fresh_char.image_urls = new_image_urls
+                        promoted_primary = True
+                    # If nothing valid remains, leave image_url alone — never
+                    # nuke a character's primary on a vision-rejection sweep.
+
+                await session.commit()
+
+            if refill_if_thin and len(kept) < 5:
+                try:
+                    refilled = await self.discover_more_character_images(
+                        character_id, max_per_source=10,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "revalidate_refill_failed",
+                        character_id=character_id, error=str(e),
+                    )
+
+        logger.info(
+            "revalidate_existing_images",
+            character_id=character_id,
+            character=char.name,
+            total=len(scored),
+            rejected=len(rejected),
+            kept=len(kept),
+            promoted_primary=promoted_primary,
+            refilled=refilled,
+            dry_run=dry_run,
+        )
+
+        return {
+            "character_id": character_id,
+            "name": char.name,
+            "total": len(scored),
+            "kept": len(kept),
+            "rejected": len(rejected),
+            "promoted_primary": promoted_primary,
+            "refilled": refilled,
+            "dry_run": dry_run,
+            "changes": changes,
+        }
+
+    async def revalidate_all_images(
+        self,
+        *,
+        dry_run: bool = False,
+        universe: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run ``revalidate_existing_images`` across every character.
+
+        Optional ``universe`` filter and ``limit`` for safe staged rollouts.
+        """
+        async with get_session() as session:
+            stmt = select(CharacterModel.id, CharacterModel.name)
+            if universe:
+                stmt = stmt.where(CharacterModel.universe == universe)
+            stmt = stmt.order_by(CharacterModel.name.asc())
+            if limit:
+                stmt = stmt.limit(limit)
+            rows = (await session.execute(stmt)).all()
+
+        results: List[Dict[str, Any]] = []
+        for row in rows:
+            try:
+                summary = await self.revalidate_existing_images(
+                    row.id, dry_run=dry_run,
+                )
+                results.append({
+                    "character_id": row.id,
+                    "name": row.name,
+                    "total": summary.get("total", 0),
+                    "rejected": summary.get("rejected", 0),
+                    "kept": summary.get("kept", 0),
+                    "promoted_primary": summary.get("promoted_primary", False),
+                    "refilled": summary.get("refilled", 0),
+                })
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "revalidate_character_failed",
+                    character_id=row.id, error=str(e),
+                )
+                results.append({
+                    "character_id": row.id, "name": row.name,
+                    "error": str(e)[:200],
+                })
+
+        total_rejected = sum(r.get("rejected", 0) for r in results)
+        total_kept = sum(r.get("kept", 0) for r in results)
+        total_refilled = sum(r.get("refilled", 0) for r in results)
+        promoted = sum(1 for r in results if r.get("promoted_primary"))
+
+        return {
+            "characters_processed": len(results),
+            "total_kept": total_kept,
+            "total_rejected": total_rejected,
+            "primaries_promoted": promoted,
+            "images_refilled": total_refilled,
+            "dry_run": dry_run,
+            "details": results,
+        }
+
+    async def set_slide_image(
+        self,
+        carousel_id: str,
+        slide_index: int,
+        image_url: str,
+        *,
+        created_by: str = "human",
+        source: str = "manual_edit",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> CharacterCarousel:
+        """Overwrite a slide's image_url (and matching text_overlay_specs
+        entry) and snapshot the carousel version."""
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                raise ValueError(f"Carousel {carousel_id} not found")
+            slides = [dict(s) for s in (row.slides or [])]
+            if slide_index < 0 or slide_index >= len(slides):
+                raise IndexError(
+                    f"Invalid slide_index {slide_index} (carousel has {len(slides)} slides)"
+                )
+
+            slide = slides[slide_index]
+            previous_url = slide.get("image_url")
+            slide_num = slide.get("slide_num", slide_index + 1)
+            slide["image_url"] = image_url
+            slides[slide_index] = slide
+
+            specs = [dict(sp) for sp in (row.text_overlay_specs or [])]
+            for sp in specs:
+                if sp.get("slide_num") == slide_num or sp.get("slide_index") == slide_index:
+                    sp["image_url"] = image_url
+
+            # Snapshot prior state before mutating.
+            snap_meta = {
+                "fields": ["slides"],
+                "slide_index": slide_index,
+                "previous_image_url": previous_url,
+                "new_image_url": image_url,
+            }
+            if metadata:
+                snap_meta.update(metadata)
+            await self._snapshot_carousel(
+                session, row,
+                source=source,
+                source_metadata=snap_meta,
+                created_by=created_by,
+            )
+
+            row.slides = slides
+            if specs:
+                row.text_overlay_specs = specs
+            row.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(row)
+            char = await session.get(CharacterModel, row.character_id)
+            char_name = char.name if char else None
+
+            logger.info(
+                "slide_image_set",
+                carousel_id=carousel_id,
+                slide_index=slide_index,
+                source=source,
+                previous_url=previous_url,
+                new_url=image_url,
+            )
+            return carousel_to_pydantic(row, char_name)
+
+    # ==================================================================
     # AI REVIEW
     # ==================================================================
 
@@ -1987,6 +3058,27 @@ class CharacterContentService:
 
         overall = review.get("overall_score", 5)
 
+        # Phase 4.2: per-slide scoring — flag weak slides so the breeder can target them
+        slide_reviews = review.get("slides")
+        if isinstance(slide_reviews, list):
+            for sr in slide_reviews:
+                if not isinstance(sr, dict):
+                    continue
+                try:
+                    text_punch = float(sr.get("text_punch", 0) or 0)
+                except (TypeError, ValueError):
+                    text_punch = 0.0
+                if text_punch < 5:
+                    logger.info(
+                        "slide_weak_flag",
+                        carousel_id=carousel_id,
+                        slide_num=sr.get("slide_num"),
+                        text_punch=text_punch,
+                        image_fit=sr.get("image_fit"),
+                        font_style_fit=sr.get("font_style_fit"),
+                        reason=sr.get("note") or "text_punch below 5",
+                    )
+
         # If score >= 7, ready for human review. Otherwise try one rewrite.
         new_status = "pending_review" if overall >= 7 else "ai_reviewed"
 
@@ -2024,17 +3116,21 @@ class CharacterContentService:
             await session.commit()
             await session.refresh(row)
 
-        # Stage 2: Minimax final polish (only if Stage 1 passed the bar)
-        if overall >= 7:
-            try:
-                await self._final_review_carousel(carousel_id, review)
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as exc:
-                # Final review failures must never block Stage 1 result
-                logger.warning(
-                    "final_review_skipped",
-                    carousel_id=carousel_id,
-                    error=str(exc),
-                )
+        # Stage 2: Minimax final polish — run on EVERY carousel now (used to
+        # gate on overall>=7, which meant weak carousels never got the best
+        # review pass and auto-approval thresholds had only ~30% of the pool
+        # to choose from). Minimax/Kimi is cheap relative to the quality
+        # lift; budget cap stays enforced at the LLM router level.
+        try:
+            await self._final_review_carousel(carousel_id, review)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as exc:
+            # Final review failures must never block Stage 1 result
+            logger.warning(
+                "final_review_skipped",
+                carousel_id=carousel_id,
+                error=str(exc),
+                stage_1_overall=overall,
+            )
 
         async with get_session() as session:
             row = await session.get(CharacterCarouselModel, carousel_id)
@@ -2292,6 +3388,122 @@ class CharacterContentService:
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
+
+    async def get_variant_stats(
+        self,
+        window_days: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """Aggregate (hook_style, story_template) outcome stats from recent carousels.
+
+        Scoring priority:
+        1. Real engagement when available — views + engagement_rate (via the
+           TikTok analytics sync) is the ground-truth audience signal.
+        2. Stage 2 final_review_score (0-100) as a self-judged proxy.
+        3. ai_review.overall_score (0-10, scaled) when Stage 2 hasn't run.
+
+        The engagement bonus maps audience signal onto the same 0-100 scale:
+            engagement_component = min(100, 50 + 200 * engagement_rate) + log-scaled views
+        so variants that get real reach/engagement outrank variants that only
+        the judge liked.
+        """
+        import math as _math
+        from datetime import timedelta as _td
+        cutoff = datetime.now(timezone.utc) - _td(days=window_days)
+        async with get_session() as session:
+            rows = await session.execute(
+                select(
+                    CharacterCarouselModel.hook_style,
+                    CharacterCarouselModel.story_template,
+                    CharacterCarouselModel.final_review_score,
+                    CharacterCarouselModel.ai_review,
+                    CharacterCarouselModel.views,
+                    CharacterCarouselModel.engagement_rate,
+                ).where(
+                    CharacterCarouselModel.created_at >= cutoff,
+                    CharacterCarouselModel.hook_style.is_not(None),
+                    CharacterCarouselModel.story_template.is_not(None),
+                )
+            )
+            raw = rows.all()
+        bucket: Dict[tuple, Dict[str, float]] = {}
+        for hs, st, final_s, ai_review, views, eng_rate in raw:
+            key = (hs, st)
+            score = None
+            if views and views > 0:
+                eng = float(eng_rate or 0.0)
+                reach = _math.log10(max(views, 10)) * 10.0  # 10 views → 10pts, 10k → 40pts
+                score = min(100.0, 50.0 + 200.0 * eng + reach)
+            elif final_s is not None and final_s > 0:
+                score = float(final_s)
+            elif isinstance(ai_review, dict):
+                overall = ai_review.get("overall_score") or ai_review.get("overall")
+                if overall is not None:
+                    try:
+                        score = float(overall) * 10.0
+                    except (TypeError, ValueError):
+                        score = None
+            if score is None:
+                continue
+            agg = bucket.setdefault(key, {"sum": 0.0, "uses": 0})
+            agg["sum"] += score
+            agg["uses"] += 1
+        out: List[Dict[str, Any]] = []
+        for (hs, st), agg in bucket.items():
+            uses = int(agg["uses"])
+            avg = agg["sum"] / uses if uses else 0.0
+            out.append({
+                "hook_style": hs,
+                "story_template": st,
+                "uses": uses,
+                "avg_score": round(avg, 3),
+            })
+        return out
+
+    async def pick_next_variant(
+        self,
+        character_id: str,
+        generation_index: int = 0,
+    ) -> Dict[str, Any]:
+        """Choose the next (hook_style, story_template) pair for this character.
+
+        Uses Thompson Sampling over recent outcome data; falls back to
+        deterministic rotation for cold-start pairs. Seeded by character_id so
+        that in the no-data case the schedule still covers the space evenly.
+        """
+        from app.services.character_content_utils import pick_winning_variant
+        from app.models.character_content import HookStyle
+
+        hook_styles = [hs.value for hs in HookStyle]
+        try:
+            template_svc = get_story_template_service()
+            templates = await template_svc.list_templates(active_only=True)
+            story_templates = [t.template_type for t in templates] or ["secrets_revealed"]
+        except (SQLAlchemyError, ValueError, KeyError, AttributeError):
+            story_templates = ["secrets_revealed", "dark_origin", "hot_take"]
+
+        try:
+            stats = await self.get_variant_stats(window_days=30)
+        except (SQLAlchemyError, ValueError, KeyError) as exc:
+            logger.debug("variant_stats_query_failed", error=str(exc))
+            stats = []
+
+        seed = (abs(hash(character_id)) + generation_index) & 0xFFFFFFFF
+        pick = pick_winning_variant(
+            stats=stats,
+            hook_styles=hook_styles,
+            story_templates=story_templates,
+            seed=seed,
+        )
+        logger.info(
+            "variant_selected",
+            character_id=character_id,
+            hook_style=pick["hook_style"],
+            story_template=pick["story_template"],
+            method=pick["method"],
+            sampled_score=pick.get("sampled_score"),
+            stats_rows=len(stats),
+        )
+        return pick
 
     async def _should_escalate_to_minimax(
         self,
@@ -2603,6 +3815,9 @@ class CharacterContentService:
                 query = query.where(CharacterCarouselModel.character_id == character_id)
             if status:
                 query = query.where(CharacterCarouselModel.status == status)
+            else:
+                # Hide user-deleted carousels from all default listings.
+                query = query.where(CharacterCarouselModel.status != "deleted")
             query = query.limit(limit)
             result = await session.execute(query)
             carousels = []
@@ -2660,6 +3875,19 @@ class CharacterContentService:
             char = await session.get(CharacterModel, row.character_id)
             char_name = char.name if char else None
             return carousel_to_pydantic(row, char_name)
+
+    async def delete_carousel(self, carousel_id: str) -> bool:
+        """Soft-delete a carousel. Keeps the row so the gap-audit job sees the
+        angle as already used and does not regenerate it. Hidden from all
+        default listings (see list_carousels)."""
+        async with get_session() as session:
+            row = await session.get(CharacterCarouselModel, carousel_id)
+            if not row:
+                return False
+            row.status = "deleted"
+            await session.commit()
+            logger.info("carousel_soft_deleted", carousel_id=carousel_id, character_id=row.character_id)
+            return True
 
     # ==================================================================
     # FORMATTING MIGRATION
@@ -3462,8 +4690,12 @@ Return JSON of this exact shape:
         from app.db.models import MediaTitleModel, MediaImageModel
         jobs_list = []
 
+        # Use the same step names as the character pipeline so the UI renders
+        # a consistent 7-stage progress bar for characters + media alike. The
+        # underlying sources differ (media uses TMDB/IMDB/Rotten), but these
+        # are just labels for the progress indicator.
         media_step_names = [
-            "tmdb_search", "wiki_scrape", "imdb_trivia",
+            "searxng_search", "wiki_scrape", "deep_research",
             "synthesis", "fact_extraction", "image_sourcing", "save_results",
         ]
 
@@ -4152,6 +5384,13 @@ Return JSON of this exact shape:
             research_data["last_run_at"] = datetime.now(timezone.utc).isoformat()
 
             final_status = "completed" if len(fact_bank) >= 3 else "needs_retry"
+            if final_status == "needs_retry":
+                logger.warning(
+                    "research_completed_empty",
+                    character_id=character_id,
+                    fact_count=len(fact_bank),
+                    job_id=job_id,
+                )
             async with get_session() as session:
                 row = await session.get(CharacterModel, character_id)
                 if row:
@@ -4608,6 +5847,135 @@ Return JSON of this exact shape:
             {"name": "Tyler Durden", "universe": "film", "franchise": "Fight Club", "real_name": "Tyler Durden", "tags": ["fightclub", "antihero", "anarchy"]},
             {"name": "Neo", "universe": "film", "franchise": "The Matrix", "real_name": "Thomas A. Anderson", "tags": ["matrix", "hero", "chosen"]},
             {"name": "Indiana Jones", "universe": "film", "franchise": "Indiana Jones", "real_name": "Henry Walton Jones Jr.", "tags": ["adventure", "archaeologist", "hero"]},
+            # ============================================================
+            # Marvel — expansion (Avengers/X-Men/Spider-Verse/Cosmic/Defenders)
+            # ============================================================
+            {"name": "Vision", "universe": "marvel", "franchise": "Avengers", "real_name": "Vision", "tags": ["mcu", "avengers", "android", "mind-stone"]},
+            {"name": "Hawkeye", "universe": "marvel", "franchise": "Avengers", "real_name": "Clint Barton", "tags": ["mcu", "avengers", "archer"]},
+            {"name": "Winter Soldier", "universe": "marvel", "franchise": "Avengers", "real_name": "Bucky Barnes", "tags": ["mcu", "avengers", "antihero", "hydra"]},
+            {"name": "Falcon", "universe": "marvel", "franchise": "Avengers", "real_name": "Sam Wilson", "tags": ["mcu", "avengers", "wings"]},
+            {"name": "Ant-Man", "universe": "marvel", "franchise": "Avengers", "real_name": "Scott Lang", "tags": ["mcu", "avengers", "shrinking", "thief"]},
+            {"name": "Wasp", "universe": "marvel", "franchise": "Avengers", "real_name": "Hope van Dyne", "tags": ["mcu", "avengers", "shrinking", "wings"]},
+            {"name": "Star-Lord", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Peter Quill", "tags": ["mcu", "guardians", "cosmic"]},
+            {"name": "Gamora", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Gamora", "tags": ["mcu", "guardians", "assassin", "thanos"]},
+            {"name": "Rocket Raccoon", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Subject 89P13", "tags": ["mcu", "guardians", "cosmic", "weapons"]},
+            {"name": "Groot", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Groot", "tags": ["mcu", "guardians", "flora-colossus"]},
+            {"name": "Drax", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Drax the Destroyer", "tags": ["mcu", "guardians", "warrior"]},
+            {"name": "Mantis", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Mantis", "tags": ["mcu", "guardians", "empath"]},
+            {"name": "Nebula", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Nebula", "tags": ["mcu", "guardians", "cyborg", "thanos"]},
+            {"name": "Captain Marvel", "universe": "marvel", "franchise": "Avengers", "real_name": "Carol Danvers", "tags": ["mcu", "avengers", "cosmic", "pilot"]},
+            {"name": "Ms. Marvel", "universe": "marvel", "franchise": "Avengers", "real_name": "Kamala Khan", "tags": ["mcu", "teen", "inhuman"]},
+            {"name": "Moon Knight", "universe": "marvel", "franchise": "Marvel Comics", "real_name": "Marc Spector", "tags": ["mcu", "antihero", "khonshu", "vigilante"]},
+            {"name": "She-Hulk", "universe": "marvel", "franchise": "Marvel Comics", "real_name": "Jennifer Walters", "tags": ["mcu", "lawyer", "gamma"]},
+            {"name": "Daredevil", "universe": "marvel", "franchise": "Defenders", "real_name": "Matt Murdock", "tags": ["mcu", "defenders", "lawyer", "vigilante", "blind"]},
+            {"name": "Kingpin", "universe": "marvel", "franchise": "Defenders", "real_name": "Wilson Fisk", "tags": ["mcu", "villain", "crime-boss"]},
+            {"name": "Punisher", "universe": "marvel", "franchise": "Defenders", "real_name": "Frank Castle", "tags": ["mcu", "antihero", "vigilante", "marine"]},
+            {"name": "Jessica Jones", "universe": "marvel", "franchise": "Defenders", "real_name": "Jessica Jones", "tags": ["mcu", "defenders", "detective", "antihero"]},
+            {"name": "Luke Cage", "universe": "marvel", "franchise": "Defenders", "real_name": "Carl Lucas", "tags": ["mcu", "defenders", "harlem", "unbreakable"]},
+            {"name": "Iron Fist", "universe": "marvel", "franchise": "Defenders", "real_name": "Danny Rand", "tags": ["mcu", "defenders", "kung-fu", "kun-lun"]},
+            {"name": "Storm", "universe": "marvel", "franchise": "X-Men", "real_name": "Ororo Munroe", "tags": ["xmen", "mutant", "weather", "queen"]},
+            {"name": "Cyclops", "universe": "marvel", "franchise": "X-Men", "real_name": "Scott Summers", "tags": ["xmen", "mutant", "leader", "optic-blast"]},
+            {"name": "Jean Grey", "universe": "marvel", "franchise": "X-Men", "real_name": "Jean Grey", "tags": ["xmen", "mutant", "phoenix", "telepath"]},
+            {"name": "Magneto", "universe": "marvel", "franchise": "X-Men", "real_name": "Erik Lehnsherr", "tags": ["xmen", "mutant", "villain", "magnetism", "holocaust"]},
+            {"name": "Gambit", "universe": "marvel", "franchise": "X-Men", "real_name": "Remy LeBeau", "tags": ["xmen", "mutant", "thief", "kinetic"]},
+            {"name": "Rogue", "universe": "marvel", "franchise": "X-Men", "real_name": "Anna Marie", "tags": ["xmen", "mutant", "absorption"]},
+            {"name": "Beast", "universe": "marvel", "franchise": "X-Men", "real_name": "Hank McCoy", "tags": ["xmen", "mutant", "scientist"]},
+            {"name": "Professor X", "universe": "marvel", "franchise": "X-Men", "real_name": "Charles Xavier", "tags": ["xmen", "mutant", "telepath", "mentor"]},
+            {"name": "Mystique", "universe": "marvel", "franchise": "X-Men", "real_name": "Raven Darkhölme", "tags": ["xmen", "mutant", "shape-shifter", "antihero"]},
+            {"name": "Carnage", "universe": "marvel", "franchise": "Spider-Man", "real_name": "Cletus Kasady", "tags": ["villain", "symbiote", "serial-killer"]},
+            {"name": "Venom", "universe": "marvel", "franchise": "Spider-Man", "real_name": "Eddie Brock", "tags": ["antihero", "symbiote"]},
+            {"name": "Green Goblin", "universe": "marvel", "franchise": "Spider-Man", "real_name": "Norman Osborn", "tags": ["villain", "spider-man", "oscorp"]},
+            {"name": "Mysterio", "universe": "marvel", "franchise": "Spider-Man", "real_name": "Quentin Beck", "tags": ["villain", "spider-man", "illusionist"]},
+            {"name": "Doctor Octopus", "universe": "marvel", "franchise": "Spider-Man", "real_name": "Otto Octavius", "tags": ["villain", "spider-man", "tentacles"]},
+            {"name": "Kang the Conqueror", "universe": "marvel", "franchise": "Avengers", "real_name": "Nathaniel Richards", "tags": ["mcu", "villain", "time-travel", "multiverse"]},
+            {"name": "Galactus", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Galan", "tags": ["cosmic", "world-eater", "fantastic-four"]},
+            {"name": "Silver Surfer", "universe": "marvel", "franchise": "Fantastic Four", "real_name": "Norrin Radd", "tags": ["cosmic", "herald", "fantastic-four"]},
+            {"name": "High Evolutionary", "universe": "marvel", "franchise": "Guardians of the Galaxy", "real_name": "Herbert Edgar Wyndham", "tags": ["villain", "cosmic", "geneticist"]},
+            # ============================================================
+            # DC — expansion (Bat-Family/Justice League/Villains)
+            # ============================================================
+            {"name": "Catwoman", "universe": "dc", "franchise": "Batman", "real_name": "Selina Kyle", "tags": ["dc", "antihero", "gotham", "thief"]},
+            {"name": "Two-Face", "universe": "dc", "franchise": "Batman", "real_name": "Harvey Dent", "tags": ["dc", "villain", "gotham", "duality"]},
+            {"name": "Penguin", "universe": "dc", "franchise": "Batman", "real_name": "Oswald Cobblepot", "tags": ["dc", "villain", "gotham", "crime-lord"]},
+            {"name": "Riddler", "universe": "dc", "franchise": "Batman", "real_name": "Edward Nygma", "tags": ["dc", "villain", "gotham", "puzzle"]},
+            {"name": "Bane", "universe": "dc", "franchise": "Batman", "real_name": "Bane", "tags": ["dc", "villain", "gotham", "venom-drug"]},
+            {"name": "Scarecrow", "universe": "dc", "franchise": "Batman", "real_name": "Jonathan Crane", "tags": ["dc", "villain", "gotham", "fear-toxin"]},
+            {"name": "Ra's al Ghul", "universe": "dc", "franchise": "Batman", "real_name": "Ra's al Ghul", "tags": ["dc", "villain", "gotham", "league-of-shadows", "lazarus-pit"]},
+            {"name": "Nightwing", "universe": "dc", "franchise": "Batman", "real_name": "Dick Grayson", "tags": ["dc", "gotham", "bludhaven", "former-robin"]},
+            {"name": "Robin", "universe": "dc", "franchise": "Batman", "real_name": "Damian Wayne", "tags": ["dc", "gotham", "bat-family", "league-of-shadows"]},
+            {"name": "Red Hood", "universe": "dc", "franchise": "Batman", "real_name": "Jason Todd", "tags": ["dc", "antihero", "gotham", "former-robin"]},
+            {"name": "Cyborg", "universe": "dc", "franchise": "Justice League", "real_name": "Victor Stone", "tags": ["dc", "tech", "boom-tube"]},
+            {"name": "Shazam", "universe": "dc", "franchise": "Justice League", "real_name": "Billy Batson", "tags": ["dc", "magic", "lightning"]},
+            {"name": "Black Adam", "universe": "dc", "franchise": "Justice League", "real_name": "Teth-Adam", "tags": ["dc", "antihero", "kahndaq", "magic"]},
+            {"name": "Deadshot", "universe": "dc", "franchise": "Suicide Squad", "real_name": "Floyd Lawton", "tags": ["dc", "antihero", "assassin", "task-force-x"]},
+            {"name": "Lex Luthor", "universe": "dc", "franchise": "Justice League", "real_name": "Alexander Luthor", "tags": ["dc", "villain", "lexcorp", "metropolis"]},
+            {"name": "Brainiac", "universe": "dc", "franchise": "Justice League", "real_name": "Vril Dox", "tags": ["dc", "villain", "alien", "collector"]},
+            {"name": "Darkseid", "universe": "dc", "franchise": "Justice League", "real_name": "Uxas", "tags": ["dc", "villain", "apokolips", "cosmic"]},
+            {"name": "Doomsday", "universe": "dc", "franchise": "Justice League", "real_name": "Doomsday", "tags": ["dc", "villain", "krypton", "kill-superman"]},
+            {"name": "Black Canary", "universe": "dc", "franchise": "Justice League", "real_name": "Dinah Lance", "tags": ["dc", "sonic-cry", "birds-of-prey"]},
+            {"name": "Zatanna", "universe": "dc", "franchise": "Justice League", "real_name": "Zatanna Zatara", "tags": ["dc", "magic", "magician"]},
+            {"name": "John Constantine", "universe": "dc", "franchise": "Justice League Dark", "real_name": "John Constantine", "tags": ["dc", "magic", "occult", "antihero"]},
+            {"name": "Swamp Thing", "universe": "dc", "franchise": "Justice League Dark", "real_name": "Alec Holland", "tags": ["dc", "elemental", "horror"]},
+            {"name": "Martian Manhunter", "universe": "dc", "franchise": "Justice League", "real_name": "J'onn J'onzz", "tags": ["dc", "alien", "telepath", "shape-shifter"]},
+            {"name": "Supergirl", "universe": "dc", "franchise": "Justice League", "real_name": "Kara Zor-El", "tags": ["dc", "krypton", "godlike"]},
+            {"name": "Lobo", "universe": "dc", "franchise": "Justice League", "real_name": "Lobo", "tags": ["dc", "antihero", "bounty-hunter", "alien"]},
+            {"name": "Deathstroke", "universe": "dc", "franchise": "DC Comics", "real_name": "Slade Wilson", "tags": ["dc", "villain", "assassin", "merc"]},
+            # ============================================================
+            # The Boys (Amazon Prime / Vought)
+            # ============================================================
+            {"name": "Billy Butcher", "universe": "tv", "franchise": "The Boys", "real_name": "William Butcher", "tags": ["theboys", "antihero", "vought-hunter", "karl-urban"]},
+            {"name": "Hughie Campbell", "universe": "tv", "franchise": "The Boys", "real_name": "Hugh Campbell Jr.", "tags": ["theboys", "everyman", "moral-center", "jack-quaid"]},
+            {"name": "Mother's Milk", "universe": "tv", "franchise": "The Boys", "real_name": "Marvin Milk", "tags": ["theboys", "leader", "family-man", "laz-alonso"]},
+            {"name": "Frenchie", "universe": "tv", "franchise": "The Boys", "real_name": "Serge", "tags": ["theboys", "weapons", "chemistry", "tomer-capone"]},
+            {"name": "Kimiko Miyashiro", "universe": "tv", "franchise": "The Boys", "real_name": "Kimiko Miyashiro", "tags": ["theboys", "supe", "silent", "karen-fukuhara"]},
+            {"name": "Starlight", "universe": "tv", "franchise": "The Boys", "real_name": "Annie January", "tags": ["theboys", "supe", "ex-seven", "erin-moriarty"]},
+            {"name": "Homelander", "universe": "tv", "franchise": "The Boys", "real_name": "John", "tags": ["theboys", "villain", "supe", "vought", "antony-starr"]},
+            {"name": "A-Train", "universe": "tv", "franchise": "The Boys", "real_name": "Reggie Franklin", "tags": ["theboys", "supe", "speedster", "jessie-t-usher"]},
+            {"name": "Black Noir", "universe": "tv", "franchise": "The Boys", "real_name": "Black Noir", "tags": ["theboys", "supe", "ninja", "nathan-mitchell"]},
+            {"name": "The Deep", "universe": "tv", "franchise": "The Boys", "real_name": "Kevin Moskowitz", "tags": ["theboys", "supe", "aquatic", "chace-crawford"]},
+            {"name": "Ashley Barrett", "universe": "tv", "franchise": "The Boys", "real_name": "Ashley Barrett", "tags": ["theboys", "vought-ceo", "colby-minifie"]},
+            {"name": "Victoria Neuman", "universe": "tv", "franchise": "The Boys", "real_name": "Victoria Neuman", "tags": ["theboys", "supe", "politician", "head-popper", "claudia-doumit"]},
+            {"name": "Ryan Butcher", "universe": "tv", "franchise": "The Boys", "real_name": "Ryan Butcher", "tags": ["theboys", "supe", "homelander-son", "cameron-crovetti"]},
+            {"name": "Sister Sage", "universe": "tv", "franchise": "The Boys", "real_name": "Sister Sage", "tags": ["theboys", "supe", "smartest-woman", "susan-heyward"]},
+            {"name": "Soldier Boy", "universe": "tv", "franchise": "The Boys", "real_name": "Benjamin", "tags": ["theboys", "supe", "ww2", "vought", "jensen-ackles"]},
+            {"name": "Stormfront", "universe": "tv", "franchise": "The Boys", "real_name": "Klara Risinger", "tags": ["theboys", "villain", "supe", "nazi", "aya-cash"]},
+            {"name": "Stan Edgar", "universe": "tv", "franchise": "The Boys", "real_name": "Stan Edgar", "tags": ["theboys", "vought", "former-ceo", "giancarlo-esposito"]},
+            {"name": "Firecracker", "universe": "tv", "franchise": "The Boys", "real_name": "Shauna McAfee", "tags": ["theboys", "supe", "conspiracy", "valorie-curry"]},
+            {"name": "Translucent", "universe": "tv", "franchise": "The Boys", "real_name": "Translucent", "tags": ["theboys", "supe", "invisible", "alex-hassell"]},
+            {"name": "Queen Maeve", "universe": "tv", "franchise": "The Boys", "real_name": "Maggie Shaw", "tags": ["theboys", "supe", "ex-seven", "warrior", "dominique-mcelligott"]},
+            # ============================================================
+            # From (MGM+ / Epix)
+            # ============================================================
+            {"name": "Boyd Stevens", "universe": "tv", "franchise": "From", "real_name": "Boyd Stevens", "tags": ["from", "sheriff", "former-cop", "harold-perrineau"]},
+            {"name": "Jim Matthews", "universe": "tv", "franchise": "From", "real_name": "Jim Matthews", "tags": ["from", "engineer", "matthews-family", "eion-bailey"]},
+            {"name": "Tabitha Matthews", "universe": "tv", "franchise": "From", "real_name": "Tabitha Matthews", "tags": ["from", "matthews-family", "visions", "catalina-sandino-moreno"]},
+            {"name": "Donna Raines", "universe": "tv", "franchise": "From", "real_name": "Donna Raines", "tags": ["from", "colony-house", "leader", "elizabeth-saunders"]},
+            {"name": "Jade Herrera", "universe": "tv", "franchise": "From", "real_name": "Jade Herrera", "tags": ["from", "tech-genius", "symbols", "david-alpay"]},
+            {"name": "Kristi Miller", "universe": "tv", "franchise": "From", "real_name": "Kristi Miller", "tags": ["from", "doctor", "chloe-van-landschoot"]},
+            {"name": "Sara Myers", "universe": "tv", "franchise": "From", "real_name": "Sara Myers", "tags": ["from", "voices", "redemption", "avery-konrad"]},
+            {"name": "Victor", "universe": "tv", "franchise": "From", "real_name": "Victor", "tags": ["from", "longtime-resident", "secrets", "scott-mccord"]},
+            {"name": "Ethan Matthews", "universe": "tv", "franchise": "From", "real_name": "Ethan Matthews", "tags": ["from", "matthews-family", "child", "simon-webster"]},
+            {"name": "Julie Matthews", "universe": "tv", "franchise": "From", "real_name": "Julie Matthews", "tags": ["from", "matthews-family", "teen", "hannah-cheramy"]},
+            {"name": "Kenny Liu", "universe": "tv", "franchise": "From", "real_name": "Kenny Liu", "tags": ["from", "deputy", "ricky-he"]},
+            {"name": "Fatima Hassan", "universe": "tv", "franchise": "From", "real_name": "Fatima Hassan", "tags": ["from", "pregnancy-mythology", "pegah-ghafoori"]},
+            # ============================================================
+            # Invincible (Amazon Prime / Image Comics)
+            # ============================================================
+            {"name": "Invincible", "universe": "tv", "franchise": "Invincible", "real_name": "Mark Grayson", "tags": ["invincible", "viltrumite", "hero", "image-comics", "steven-yeun"]},
+            {"name": "Omni-Man", "universe": "tv", "franchise": "Invincible", "real_name": "Nolan Grayson", "tags": ["invincible", "viltrumite", "villain", "father", "j-k-simmons"]},
+            {"name": "Atom Eve", "universe": "tv", "franchise": "Invincible", "real_name": "Samantha Eve Wilkins", "tags": ["invincible", "matter-manipulation", "hero", "gillian-jacobs"]},
+            {"name": "Allen the Alien", "universe": "tv", "franchise": "Invincible", "real_name": "Allen", "tags": ["invincible", "champion-evaluator", "alien", "seth-rogen"]},
+            {"name": "Cecil Stedman", "universe": "tv", "franchise": "Invincible", "real_name": "Cecil Stedman", "tags": ["invincible", "gda-director", "walton-goggins"]},
+            {"name": "Debbie Grayson", "universe": "tv", "franchise": "Invincible", "real_name": "Debbie Grayson", "tags": ["invincible", "mother", "human", "sandra-oh"]},
+            {"name": "Rex Splode", "universe": "tv", "franchise": "Invincible", "real_name": "Rex Sloan", "tags": ["invincible", "guardians", "kinetic-detonation", "jason-mantzoukas"]},
+            {"name": "Robot", "universe": "tv", "franchise": "Invincible", "real_name": "Rudolph Connors", "tags": ["invincible", "guardians", "drone-pilot", "zachary-quinto"]},
+            {"name": "Monster Girl", "universe": "tv", "franchise": "Invincible", "real_name": "Amanda", "tags": ["invincible", "guardians", "transformation", "grey-griffin"]},
+            {"name": "Dupli-Kate", "universe": "tv", "franchise": "Invincible", "real_name": "Kate Cha", "tags": ["invincible", "guardians", "duplication", "malese-jow"]},
+            {"name": "The Immortal", "universe": "tv", "franchise": "Invincible", "real_name": "The Immortal", "tags": ["invincible", "guardians", "immortal", "ross-marquand"]},
+            {"name": "Conquest", "universe": "tv", "franchise": "Invincible", "real_name": "Conquest", "tags": ["invincible", "viltrumite", "villain", "warrior"]},
+            {"name": "Anissa", "universe": "tv", "franchise": "Invincible", "real_name": "Anissa", "tags": ["invincible", "viltrumite", "agent", "shantel-vansanten"]},
+            {"name": "Battle Beast", "universe": "tv", "franchise": "Invincible", "real_name": "Battle Beast", "tags": ["invincible", "alien-warrior", "villain", "michael-dorn"]},
+            {"name": "Donald Ferguson", "universe": "tv", "franchise": "Invincible", "real_name": "Donald Ferguson", "tags": ["invincible", "gda-agent", "cyborg", "chris-diamantopoulos"]},
         ]
 
         created = []
@@ -4625,6 +5993,76 @@ Return JSON of this exact shape:
 
         logger.info("characters_seeded", count=len(created))
         return created
+
+    async def rush_reseed(self, enhancement_per_char: int = 12) -> Dict[str, Any]:
+        """High-priority re-seed: seed all canonical characters, kick off
+        batch research for everything pending, then schedule a follow-up
+        image-enhancement pass once research drains. One-button recovery
+        when the characters table is wiped.
+        """
+        created = await self.seed_characters()
+        char_ids = [c.id for c in created]
+
+        # Total pending characters in DB after seed (covers any pre-existing
+        # pending entries too) — we want the queue to handle them all.
+        pending_total = len(
+            await self.list_characters(research_status="pending", limit=1000)
+        )
+
+        queue_status = await self.start_batch_research_async(
+            universe=None, limit=max(pending_total, len(char_ids), 1)
+        )
+
+        # Fire-and-forget enhancement pass once research drains.
+        asyncio.create_task(
+            self._post_research_image_boost(char_ids, enhancement_per_char)
+        )
+
+        return {
+            "seeded": len(created),
+            "pending_total": pending_total,
+            "queued_for_research": queue_status.queued,
+            "researching": queue_status.researching,
+            "concurrency": 3,
+            "estimated_completion": queue_status.estimated_completion,
+        }
+
+    async def _post_research_image_boost(
+        self, char_ids: List[str], add_images: int
+    ) -> None:
+        """Wait for the research queue to drain, then enhance each newly
+        seeded character with `add_images` more images (no carousel regen —
+        the scheduler covers that)."""
+        # Cap the wait at 48h so a stuck queue can't leak this task forever.
+        deadline = datetime.now(timezone.utc) + timedelta(hours=48)
+        while datetime.now(timezone.utc) < deadline:
+            try:
+                status = await self.get_research_queue_status()
+            except Exception as e:
+                logger.warning("rush_reseed_status_check_failed", error=str(e))
+                await asyncio.sleep(120)
+                continue
+            if status.queued == 0 and status.researching == 0:
+                break
+            await asyncio.sleep(60)
+
+        for cid in char_ids:
+            try:
+                await self.enhance_character(
+                    cid,
+                    refresh_research=False,
+                    add_images=add_images,
+                    regenerate_weak_carousels=False,
+                )
+            except Exception as e:
+                logger.warning(
+                    "rush_reseed_enhance_failed", character_id=cid, error=str(e)
+                )
+        logger.info(
+            "rush_reseed_image_boost_done",
+            characters=len(char_ids),
+            add_images=add_images,
+        )
 
     # ==================================================================
     # CONTENT REQUESTS
@@ -4667,9 +6105,9 @@ Return JSON of this exact shape:
         )
 
         try:
-            # Use raw Ollama client to avoid multi-provider routing issues
-            from app.infrastructure.ollama_client import OllamaClient
-            _ollama_raw = OllamaClient()
+            # Use unified LLM client (vLLM via shared-litellm; Ollama retired 2026-04-27).
+            from app.infrastructure.ollama_client import get_llm_client
+            _ollama_raw = get_llm_client()
             raw = await _ollama_raw.chat(
                 prompt=prompt,
                 system="You are a content research assistant. Extract structured data from natural language requests. Return only valid JSON.",
@@ -4900,6 +6338,46 @@ Return JSON of this exact shape:
     # ==================================================================
     # BRAIN INTEGRATION
     # ==================================================================
+
+    async def _fetch_lore_summary(
+        self,
+        *,
+        character_id: str,
+        name: str,
+        angle: str,
+        k: int = 6,
+    ) -> str:
+        """Retrieve top-k lore chunks for this character + angle, formatted for prompt injection.
+
+        Returns an empty string when no chunks exist or retrieval fails, signaling
+        the caller to fall back to raw research_data.
+        """
+        try:
+            from app.services.lore_ingestion_service import get_lore_ingestion_service
+            lore_svc = get_lore_ingestion_service()
+            query = f"{name} {angle.replace('_', ' ')}"
+            chunks = await lore_svc.retrieve(character_id=character_id, query=query, k=k)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("lore_retrieval_failed", character_id=character_id, error=str(exc)[:150])
+            return ""
+        if not chunks:
+            return ""
+        lines = []
+        for c in chunks:
+            src = c.get("source") or "lore"
+            text = (c.get("text") or "").strip().replace("\n", " ")
+            if not text:
+                continue
+            lines.append(f"[{src}] {text[:320]}")
+        summary = "\n".join(lines)
+        if summary:
+            logger.info(
+                "lore_retrieval_used",
+                character_id=character_id,
+                chunks_used=len(lines),
+                angle=angle,
+            )
+        return summary
 
     async def _get_brain_context(self, character_name: str, angle: str) -> Dict[str, Any]:
         """Fetch brain learnings to inject into carousel generation prompt."""
@@ -5313,8 +6791,29 @@ Return JSON:
             )
             rows = result.all()
             now = datetime.now(timezone.utc)
+            # Quality guardrail: never auto-approve a carousel where slide 1's
+            # body text duplicates the hook. This failure mode has shipped
+            # multiple times without telemetry catching it; this gate closes
+            # the loop and surfaces the regression as needs_work.
+            from app.services.carousel_audit_service import _trigram_overlap
+            duplicate_count = 0
             for carousel, _char in rows:
                 score = float(carousel.final_review_score or 0)
+                hook = (carousel.hook_text or "").strip()
+                slides = carousel.slides or []
+                first_text = ""
+                if slides and isinstance(slides[0], dict):
+                    first_text = (slides[0].get("text") or "").strip()
+                if hook and first_text and _trigram_overlap(first_text, hook) >= 0.7:
+                    carousel.status = "needs_work"
+                    carousel.auto_approve_reason = "slide_1_hook_duplicate"
+                    duplicate_count += 1
+                    logger.info(
+                        "auto_approve_blocked_slide_1_hook_duplicate",
+                        carousel_id=carousel.id,
+                        overlap=round(_trigram_overlap(first_text, hook), 2),
+                    )
+                    continue
                 if score >= threshold:
                     carousel.status = "approved"
                     carousel.auto_approved = True
@@ -5331,9 +6830,15 @@ Return JSON:
             "character_auto_approve_eligible",
             approved=approved_count,
             needs_work=needs_work_count,
+            slide_1_duplicates=duplicate_count,
             threshold=threshold,
         )
-        return {"approved": approved_count, "needs_work": needs_work_count, "threshold": threshold}
+        return {
+            "approved": approved_count,
+            "needs_work": needs_work_count,
+            "slide_1_duplicates": duplicate_count,
+            "threshold": threshold,
+        }
 
     async def ensure_publish_backlog(self, target: int = 6) -> Dict[str, Any]:
         """Keep the approved+queued backlog above `target` by generating more carousels."""
@@ -6047,14 +7552,13 @@ Return JSON:
         provider = (req.provider or "kimi").strip().lower()
         # Default models per provider. Operator can override via req.model.
         default_model = {
-            "kimi": "moonshot-v1-32k",
+            "kimi": "kimi-k2.6",
             "minimax": "MiniMax-M2.7",
             "ollama": "qwen3.6:35b-a3b-q8_0",
-            "gemini": "gemini-2.5-flash",
-        }.get(provider, "kimi-k2.5")
+            "gemini": "gemini-3.1-flash",
+        }.get(provider, "kimi-k2.6")
         model_name = req.model or default_model
-        # Kimi K2.5 requires temperature=1 exactly; pick diverse temps otherwise.
-        temps = [1.0] if model_name == "kimi-k2.5" else [0.7, 0.85, 0.95, 0.6, 0.75][: max(1, req.n_variants)]
+        temps = [0.7, 0.85, 0.95, 0.6, 0.75][: max(1, req.n_variants)]
         if len(temps) < req.n_variants:
             temps = (temps * ((req.n_variants // len(temps)) + 1))[: req.n_variants]
 

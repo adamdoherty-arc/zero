@@ -12,13 +12,48 @@ playback.
 """
 
 import asyncio
+import re
+import time
 from typing import Optional, Dict, Any
 import structlog
+
+
+# Per-stage timeouts (seconds). Keep these well inside the frontend's outer
+# AbortController timeout (50 s) so the backend fails cleanly before the
+# browser aborts. STT sits at 25 s to absorb first-turn cold starts when the
+# user picks a larger Whisper size; pre-warm on startup keeps normal turns
+# well under that.
+_STT_TIMEOUT = 25.0
+_LLM_TIMEOUT = 20.0
+_TTS_TIMEOUT = 10.0
+
+# Canned fallback lines so the user *hears* the failure mode instead of
+# staring at a spinner.
+_FALLBACK_STT = "I had trouble hearing that. Could you try again?"
+_FALLBACK_LLM = "I'm having trouble thinking right now. Try me again in a moment?"
+_FALLBACK_TTS = None  # no audio possible when TTS itself fails
+
+
+_VISION_QUESTION_PATTERNS = [
+    re.compile(r"\bwhat\s+(do|can)\s+you\s+see\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+am\s+i\s+(looking at|holding|wearing)\b", re.IGNORECASE),
+    re.compile(r"\bwhat\s+is\s+this\b", re.IGNORECASE),
+    re.compile(r"\bread\s+(this|the)\b.*\b(note|sign|label|receipt|sticker|paper|screen|recipe|whiteboard)\b", re.IGNORECASE),
+    re.compile(r"\bdescribe\s+(this|the)\s+(room|scene|view|image|picture)\b", re.IGNORECASE),
+    re.compile(r"\bhow\s+many\s+.*\b(see|visible|on|in|around)\b", re.IGNORECASE),
+]
+
+
+def _is_vision_question(text: str) -> bool:
+    if not text:
+        return False
+    return any(p.search(text) for p in _VISION_QUESTION_PATTERNS)
 
 from app.services.audio_service import get_audio_service
 from app.services.tts_service import get_tts_service
 from app.services.reachy_service import get_reachy_service
 from app.services.reachy_personas import build_full_prompt, get_persona, PERSONAS
+from app.services.reachy_voice_config_service import get_reachy_voice_config
 from app.services.reachy_emotion_parser import (
     GestureAction,
     action_to_motion_request,
@@ -30,13 +65,53 @@ from app.services.reachy_presence_service import get_reachy_presence_service
 logger = structlog.get_logger()
 
 
+async def _vault_lines_for_turn(user_text: str) -> Optional[str]:
+    """Return a compact "related notes" block from the Obsidian vault, or
+    None when nothing relevant is found / the vault is offline.
+
+    Cap: top-3 chunks, ~200 chars each, ~600 chars total — fits cleanly in
+    the working_context budget without crowding the persona / human blocks.
+    """
+    if not user_text or len(user_text.strip()) < 4:
+        return None
+    try:
+        from app.services.vault_retrieval_service import VaultRetrievalService
+    except Exception:
+        return None
+    try:
+        svc = VaultRetrievalService()
+        # No partition filter — voice context should pull from anywhere the
+        # user has written (the actual partition mix in this vault is
+        # personal / inbox / zero-dev / reference, not the spec defaults).
+        result = await asyncio.wait_for(
+            svc.search(user_text, top_k=3, per_side_k=20),
+            timeout=2.5,
+        )
+    except (asyncio.TimeoutError, Exception) as e:
+        logger.debug("vault_search_skipped", error=str(e))
+        return None
+
+    hits = (result or {}).get("hits") or []
+    if not hits:
+        return None
+
+    lines: list[str] = []
+    for c in hits[:3]:
+        path = c.get("path") or "?"
+        body = (c.get("content") or "").strip().replace("\n", " ")
+        if len(body) > 200:
+            body = body[:200].rstrip() + "…"
+        lines.append(f"- ({path}) {body}")
+    return "\n".join(lines)
+
+
 class VoiceLoopService:
     """Orchestrates listen → transcribe → think → speak pipeline."""
 
     _instance: Optional["VoiceLoopService"] = None
 
     # Default persona on fresh boot. Can be changed via set_persona().
-    _DEFAULT_PERSONA = "cosmic_kitchen"
+    _DEFAULT_PERSONA = "companion"
 
     def __init__(self):
         self._listening = False
@@ -66,41 +141,156 @@ class VoiceLoopService:
             cls._instance = cls()
         return cls._instance
 
+    async def _safe_synthesize(self, text: str, phase_log: list) -> Optional[bytes]:
+        """TTS with timeout; returns bytes or None. Appends to phase_log with engine+voice metadata.
+
+        Uses the active persona's voice as ``voice_override`` so picking
+        Sally on the Voice Settings page actually plays Jenny instead of
+        the global TTS default. Falls back to the default when the persona
+        has no voice bound.
+        """
+        t0 = time.monotonic()
+        try:
+            persona_voice: Optional[str] = None
+            try:
+                # Filesystem voice.txt wins (it's user-editable from the
+                # Voice Settings page), then PERSONAS table voice as fallback.
+                from pathlib import Path as _Path
+                vfile = (
+                    _Path(__file__).resolve().parents[1]
+                    / "data" / "reachy_profiles" / self._active_persona_id / "voice.txt"
+                )
+                if vfile.exists():
+                    persona_voice = vfile.read_text(encoding="utf-8").strip() or None
+                if not persona_voice:
+                    p = get_persona(self._active_persona_id)
+                    persona_voice = p.voice if p else None
+            except Exception:
+                persona_voice = None
+            audio, meta = await asyncio.wait_for(
+                self._tts_service.synthesize_with_meta(
+                    text, voice_override=persona_voice
+                ),
+                timeout=_TTS_TIMEOUT,
+            )
+            phase_log.append({
+                "phase": "tts",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": True,
+                "provider": meta.get("engine"),
+                "model": meta.get("voice"),
+            })
+            return audio
+        except asyncio.TimeoutError:
+            logger.error("voice_tts_timeout", seconds=_TTS_TIMEOUT)
+            phase_log.append({
+                "phase": "tts",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": "timeout",
+                "provider": self._tts_service.get_status().get("engine"),
+                "model": self._tts_service.get_status().get("model"),
+            })
+            return None
+        except Exception as e:
+            logger.error("voice_tts_failed", error=str(e))
+            phase_log.append({
+                "phase": "tts",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": str(e)[:200],
+                "provider": self._tts_service.get_status().get("engine"),
+                "model": self._tts_service.get_status().get("model"),
+            })
+            return None
+
     async def process_voice_input(self, audio_bytes: bytes) -> Dict[str, Any]:
         """
         Full voice pipeline: transcribe → think → speak.
 
-        Args:
-            audio_bytes: Raw audio bytes (WAV/MP3/etc.)
-
-        Returns:
-            Dict with transcription, llm_response, and audio_response
+        Each stage has its own timeout and records timing + success to
+        ``phase_log``. On timeout at any stage, we fall back to a canned line
+        so the user hears *what* failed instead of a silent spinner.
         """
+        phase_log: list = []
+        voice_cfg = get_reachy_voice_config()
+        stt_model = voice_cfg.get_stt_model()
+        tts_voice = voice_cfg.get_tts_voice()
+
+        # Resolve the LLM that will run for this turn. `resolve_provider_model`
+        # is cheap (in-memory lookup) and lets us surface the intended model in
+        # the response envelope before the LLM phase even starts.
+        try:
+            from app.infrastructure.llm_router import get_llm_router
+            llm_provider, llm_model, _fbs = get_llm_router().resolve_provider_model("voice_reply")
+        except Exception:
+            llm_provider, llm_model = None, None
+
+        active_models = {
+            "stt": {"provider": "faster-whisper", "model": stt_model},
+            "llm": {"provider": llm_provider, "model": llm_model},
+            "tts": {"provider": self._tts_service.get_status().get("engine"), "model": tts_voice},
+        }
         result: Dict[str, Any] = {
             "transcription": None,
             "llm_response": None,
             "audio_response": None,
             "robot_connected": False,
+            "phase_log": phase_log,
+            "active_models": active_models,
         }
 
         # Step 1: Transcribe audio (STT)
+        t0 = time.monotonic()
         try:
-            transcription = await self._audio_service.transcribe_upload(
-                audio_bytes, "voice_input.wav"
+            transcription = await asyncio.wait_for(
+                self._audio_service.transcribe_upload(audio_bytes, "voice_input.wav", model=stt_model),
+                timeout=_STT_TIMEOUT,
             )
+            phase_log.append({
+                "phase": "stt",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": True,
+                "provider": "faster-whisper",
+                "model": transcription.model_used or stt_model,
+            })
             result["transcription"] = {
                 "text": transcription.text,
                 "language": transcription.language,
                 "duration": transcription.duration_seconds,
             }
             user_text = transcription.text
+        except asyncio.TimeoutError:
+            logger.error("voice_stt_timeout", seconds=_STT_TIMEOUT, model=stt_model)
+            phase_log.append({
+                "phase": "stt",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": "timeout",
+                "provider": "faster-whisper",
+                "model": stt_model,
+            })
+            result["error"] = {"stage": "stt", "message": "Speech recognition timed out"}
+            result["llm_response"] = _FALLBACK_STT
+            result["audio_response"] = await self._safe_synthesize(_FALLBACK_STT, phase_log)
+            return result
         except Exception as e:
             logger.error("voice_stt_failed", error=str(e))
-            result["error"] = f"Transcription failed: {e}"
+            phase_log.append({
+                "phase": "stt",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": str(e)[:200],
+                "provider": "faster-whisper",
+                "model": stt_model,
+            })
+            result["error"] = {"stage": "stt", "message": f"Transcription failed: {e}"}
+            result["llm_response"] = _FALLBACK_STT
+            result["audio_response"] = await self._safe_synthesize(_FALLBACK_STT, phase_log)
             return result
 
         if not user_text or not user_text.strip():
-            result["error"] = "No speech detected"
+            result["error"] = {"stage": "stt", "message": "No speech detected"}
             return result
 
         # Mark activity so the presence watcher does not trigger boredom gestures.
@@ -111,24 +301,109 @@ class VoiceLoopService:
 
         logger.info("voice_transcribed", text=user_text[:100])
 
-        # Step 2: Get LLM response via orchestration graph
+        # Step 1.5: If an email triage session is active, route the user's
+        # speech through the FSM instead of the chat LLM. The session itself
+        # speaks via reachy.say internally, so we short-circuit and return
+        # without going through the full chat path.
         try:
-            response_text = await self._get_llm_response(user_text)
+            from app.services.email_voice_session_service import (
+                get_email_voice_session_service,
+            )
+            email_session = get_email_voice_session_service()
+            if email_session.is_active():
+                if email_session.state() == "composing_reply":
+                    handled = await email_session.submit_reply_text(user_text)
+                else:
+                    from app.services.voice_intent_router import classify_intent
+                    intent = await classify_intent(
+                        user_text, allowed=email_session.allowed_intents()
+                    )
+                    handled = await email_session.handle_user_intent(
+                        intent.intent, raw_text=user_text
+                    )
+                    handled["intent"] = intent.intent
+                    handled["intent_confidence"] = intent.confidence
+                result["email_session"] = handled
+                result["email_session_state"] = email_session.state()
+                # Mark voice activity so presence watcher doesn't kick in mid-triage.
+                try:
+                    get_reachy_presence_service().mark_voice_activity()
+                except Exception:
+                    pass
+                return result
+        except Exception as e:
+            logger.debug("voice_email_session_skipped", error=str(e))
+
+        # Step 1.6: "What do you see?" style intercept — route grounded
+        # vision questions directly to the VLM instead of hallucinating.
+        if _is_vision_question(user_text):
+            try:
+                from app.services.reachy_vision_service import get_reachy_vision_service
+                scene = await get_reachy_vision_service().analyze_scene(question=user_text)
+                vlm_answer = (scene.get("answer") or scene.get("caption") or "").strip()
+                if vlm_answer:
+                    result["vision_intercept"] = {
+                        "provider": scene.get("provider"),
+                        "caption": scene.get("caption"),
+                        "actionable": scene.get("actionable"),
+                    }
+                    # Prefix with a subtle observe beat so Reachy reacts.
+                    response_text = "[observe] " + vlm_answer
+                    # Fall through to gesture parsing + TTS below.
+                    result["llm_response"] = response_text
+                    clean, actions = parse_and_strip(response_text)
+                    asyncio.create_task(self._dispatch_gestures(actions))
+                    result["audio_response"] = await self._safe_synthesize(clean, phase_log)
+                    return result
+            except Exception as e:
+                logger.debug("vision_intercept_skipped", error=str(e))
+
+        # Step 2: Get LLM response via orchestration graph (with timeout)
+        t0 = time.monotonic()
+        try:
+            response_text = await asyncio.wait_for(
+                self._get_llm_response(user_text), timeout=_LLM_TIMEOUT
+            )
+            phase_log.append({
+                "phase": "llm",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": True,
+                "provider": llm_provider,
+                "model": llm_model,
+            })
             result["llm_response"] = response_text
+        except asyncio.TimeoutError:
+            logger.error("voice_llm_timeout", seconds=_LLM_TIMEOUT)
+            phase_log.append({
+                "phase": "llm",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": "timeout",
+                "provider": llm_provider,
+                "model": llm_model,
+            })
+            response_text = _FALLBACK_LLM
+            result["llm_response"] = response_text
+            result["error"] = {"stage": "llm", "message": "LLM timed out"}
         except Exception as e:
             logger.error("voice_llm_failed", error=str(e))
-            response_text = "I'm sorry, I had trouble processing that."
+            phase_log.append({
+                "phase": "llm",
+                "ms": int((time.monotonic() - t0) * 1000),
+                "ok": False,
+                "error": str(e)[:200],
+                "provider": llm_provider,
+                "model": llm_model,
+            })
+            response_text = _FALLBACK_LLM
             result["llm_response"] = response_text
             result["llm_error"] = str(e)
 
-        # Step 3: Synthesize response (TTS)
-        try:
-            audio_response = await self._tts_service.synthesize(response_text)
+        # Step 3: Synthesize response (TTS) — timed via helper
+        audio_response = await self._safe_synthesize(response_text, phase_log)
+        if audio_response is not None:
             result["audio_response_size"] = len(audio_response)
             result["audio_response"] = audio_response
-        except Exception as e:
-            logger.error("voice_tts_failed", error=str(e))
-            result["tts_error"] = str(e)
 
         # Step 4: Strip gesture markers, dispatch to the robot, speak cleaned text
         clean_text, actions = parse_and_strip(response_text)
@@ -142,10 +417,31 @@ class VoiceLoopService:
         try:
             robot_connected = await self._reachy_service.is_connected()
             result["robot_connected"] = robot_connected
+            result["played_on_robot"] = False
             if robot_connected:
                 # Fire gestures in parallel; don't block TTS on them.
                 asyncio.create_task(self._dispatch_gestures(actions))
-                await self._reachy_service.say(clean_text)
+                # If the LLM didn't emit any gesture markers, play a subtle
+                # baseline sway so Reachy still looks alive while speaking.
+                # Keeps the robot from reading as a static speaker.
+                if not actions:
+                    asyncio.create_task(
+                        self._reachy_service.play_emotion("attentive1")
+                    )
+                # Reuse the audio bytes we already synthesized instead of
+                # re-synthesizing via say(). Halves TTS cost and guarantees
+                # the same voice plays out of Reachy as went into audio_b64.
+                if audio_response:
+                    play_res = await self._reachy_service.play_audio_bytes(
+                        audio_response, label="voice_turn"
+                    )
+                    if not play_res.get("error"):
+                        result["played_on_robot"] = True
+                else:
+                    # Fallback: no bytes (TTS timed out) — try say() which
+                    # will re-synthesize with the fallback line.
+                    await self._reachy_service.say(clean_text)
+                    result["played_on_robot"] = True
         except Exception as e:
             logger.debug("voice_robot_skipped", error=str(e))
 
@@ -162,6 +458,24 @@ class VoiceLoopService:
                     result["persona_rotated_to"] = suggested
         except Exception as e:
             logger.debug("persona_state_update_failed", error=str(e))
+
+        # Log the turn to cross-session memory and kick off note extraction.
+        # Both are best-effort; we never want them to break a voice turn.
+        try:
+            from app.services.reachy_user_memory_service import (
+                get_reachy_user_memory_service,
+            )
+            mem = get_reachy_user_memory_service()
+            gestures_fired = [f"{a.kind}:{a.payload}" for a in actions]
+            await mem.log_turn(
+                persona_id=self._active_persona_id,
+                user_text=user_text,
+                reachy_text=clean_text,
+                gestures=gestures_fired,
+            )
+            await mem.maybe_extract()
+        except Exception as e:
+            logger.debug("memory_log_skipped", error=str(e))
 
         return result
 
@@ -188,18 +502,63 @@ class VoiceLoopService:
                 logger.warning("voice_gesture_failed", kind=action.kind, payload=action.payload, error=str(e))
 
     async def _get_llm_response(self, text: str) -> str:
-        """Route text through LLM orchestration and get response."""
-        system_prompt = build_full_prompt(self._active_persona_id)
+        """Route text through LLM orchestration and get response.
 
-        # Append calendar / time / mode-aware situational hints so every turn
-        # is grounded in the user's current reality. Cheap — local cache hit.
+        System prompt is assembled by ``compose_system_prompt`` which stitches
+        together: core identity, active persona, human block, relationship
+        block, the per-turn working context (calendar / sight / fresh notes /
+        vault hits), gesture instructions, and the voice-length suffix.
+        """
+        from app.services.reachy_memory_blocks import compose_system_prompt
+
+        # ----- Build working context (per-turn, ephemeral) ------------------
+        wc_parts: list[str] = []
+
+        # Calendar / time / mode-aware situational hints. Cheap — local cache.
         try:
             from app.services.reachy_context_service import build_context_hint
             hint = await build_context_hint(self._active_persona_id)
-            if hint and system_prompt:
-                system_prompt = system_prompt + hint
+            if hint:
+                # build_context_hint returns "\n\n### CURRENT CONTEXT\n..." —
+                # strip the duplicate header since compose adds its own.
+                wc_parts.append(
+                    hint.replace("### CURRENT CONTEXT\n", "").strip()
+                )
         except Exception:
             pass
+
+        # Fresh notes from user_memory (learned within the last 24h, before
+        # the nightly synthesis job folds them into the human block).
+        try:
+            from app.services.reachy_user_memory_service import (
+                get_reachy_user_memory_service,
+            )
+            mem = get_reachy_user_memory_service()
+            relevant = await mem.relevant_notes_async(text, k=5)
+            if relevant:
+                wc_parts.append(
+                    "Recent learned notes:\n"
+                    + "\n".join(f"- ({n.category}) {n.text}" for n in relevant)
+                )
+        except Exception as e:
+            logger.debug("memory_inject_skipped", error=str(e))
+
+        # Phase-3 hook: vault retrieval. Plugged in by Phase 3 — kept here
+        # so the call site never moves and unit tests can patch it cleanly.
+        try:
+            vault_lines = await _vault_lines_for_turn(text)
+            if vault_lines:
+                wc_parts.append("Related notes from your vault:\n" + vault_lines)
+        except Exception as e:
+            logger.debug("vault_inject_skipped", error=str(e))
+
+        working_context = "\n\n".join(p for p in wc_parts if p)
+
+        system_prompt = compose_system_prompt(
+            self._active_persona_id,
+            working_context=working_context,
+            include_voice_suffix=True,
+        )
 
         # Preferred path: chat_service owns orchestration, memory, and tooling.
         try:

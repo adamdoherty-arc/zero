@@ -5,7 +5,7 @@ Conversational AI assistant with:
 - Multi-turn conversation memory (in-memory, session-based)
 - Rich context injection from all Zero domain services
 - Project-aware system prompts
-- Streaming responses via Ollama chat API
+- Streaming responses via the unified LLM client (vLLM via shared-litellm)
 - LangChain message types for conversation management
 
 Modeled after Legion's chat_service.py, adapted for Zero's 13+ domain services.
@@ -21,7 +21,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from app.infrastructure.ollama_client import get_ollama_client
+from app.infrastructure.ollama_client import get_llm_client
 
 logger = structlog.get_logger(__name__)
 
@@ -441,7 +441,7 @@ class ChatService:
         system_prompt, sources = await self._build_system_prompt(message, session)
         ollama_msgs = self._build_message_window(system_prompt, session.messages)
 
-        client = get_ollama_client()
+        client = get_llm_client()
         try:
             content = await client.chat(
                 messages=ollama_msgs,
@@ -496,7 +496,7 @@ class ChatService:
         system_prompt, sources = await self._build_system_prompt(message, session)
         ollama_msgs = self._build_message_window(system_prompt, session.messages)
 
-        client = get_ollama_client()
+        client = get_llm_client()
         model_name = client._resolve_model(None, "chat")
         full_content = ""
 

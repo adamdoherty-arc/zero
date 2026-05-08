@@ -4,8 +4,12 @@ REST API for managing character profiles, research pipelines, carousel generatio
 AI review, and human approval for TikTok character development posts.
 """
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from typing import List, Optional, Dict, Any
+from pathlib import Path
+import io
+import uuid as _uuid
 import structlog
 from pydantic import BaseModel
 
@@ -31,6 +35,7 @@ from app.models.character_content import (
     RestoreVersionResponse,
     BackfillBannedHooksRequest, BackfillBannedHooksResult,
     ContentIdea, GenerateIdeasRequest, UpdateIdeaRequest,
+    SlideImageCandidate, SlideImagePatchRequest,
 )
 from app.services.character_content_service import get_character_content_service
 from app.services.content_inspiration_service import get_content_inspiration_service
@@ -168,6 +173,31 @@ class BatchResearchRequest(BaseModel):
     limit: int = 24
 
 
+class ContentRequestItem(BaseModel):
+    name: str
+    type: str = "character"  # character, movie, tv_show
+    universe: Optional[str] = None
+    franchise: Optional[str] = None
+    real_name: Optional[str] = None
+    description: Optional[str] = None
+    tags: List[str] = []
+    year: Optional[int] = None
+    genre: List[str] = []
+
+
+class ContentRequest(BaseModel):
+    text: str
+    auto_research: bool = True
+
+
+class ContentRequestResult(BaseModel):
+    characters_created: List[Dict[str, Any]] = []
+    movies_created: List[Dict[str, Any]] = []
+    tv_shows_created: List[Dict[str, Any]] = []
+    already_existed: List[str] = []
+    research_queued: int = 0
+
+
 router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger()
 
@@ -181,6 +211,35 @@ async def get_stats():
     """Get character content pipeline statistics."""
     service = get_character_content_service()
     return await service.get_stats()
+
+
+@router.get("/employee-report", response_model=Dict[str, Any])
+async def get_employee_report(window_hours: int = Query(12, ge=1, le=168)):
+    """Zero's carousel-employee check-in: what got built, learned, and where we're stuck.
+
+    Same payload Zero sends to Discord at 8am + 8pm via the
+    carousel_morning_briefing and carousel_evening_recap scheduler jobs.
+    """
+    from app.services.daily_report_service import get_daily_report_service
+    return await get_daily_report_service().generate_carousel_employee_report(
+        window_hours=window_hours
+    )
+
+
+@router.post("/carousels/{carousel_id}/audit", response_model=Dict[str, Any])
+async def audit_carousel(
+    carousel_id: str,
+    apply_fixes: bool = Query(True, description="Apply Tier 1/2 safe fixes inline"),
+):
+    """Re-audit a carousel: detect bad images, duplicate text, placeholders, and
+    optionally auto-remediate (Tier 1 image swap, Tier 2 overlay dedup)."""
+    from app.services.carousel_audit_service import get_carousel_audit_service
+    try:
+        return await get_carousel_audit_service().audit_carousel(
+            carousel_id, apply_fixes=apply_fixes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/review-queue", response_model=List[CharacterCarousel])
@@ -202,6 +261,26 @@ async def seed_characters():
     """Pre-populate with iconic characters (Marvel, DC, TV, Film)."""
     service = get_character_content_service()
     return await service.seed_characters()
+
+
+@router.post("/rush-reseed")
+async def rush_reseed(enhancement_per_char: int = 12):
+    """High-priority recovery: seed canonical characters, kick off batch
+    research, and schedule a follow-up image-enhancement pass once research
+    drains. Returns immediately with the seeded count and queue ETA."""
+    service = get_character_content_service()
+    return await service.rush_reseed(enhancement_per_char=enhancement_per_char)
+
+
+@router.post("/content-requests", response_model=ContentRequestResult)
+async def submit_content_request(data: ContentRequest):
+    """Submit a free-text content request to queue characters, movies, or TV shows.
+
+    Parses the text into entities, creates them if they don't exist,
+    sets priority tier, and optionally starts research.
+    """
+    service = get_character_content_service()
+    return await service.process_content_request(data.text, data.auto_research)
 
 
 @router.post("/batch-generate", response_model=List[CharacterCarousel])
@@ -275,10 +354,28 @@ async def get_smart_review_queue(limit: int = Query(50, ge=1, le=200)):
 
 
 @router.post("/fix-formatting")
-async def fix_carousel_formatting():
-    """One-time migration: fix text formatting on all existing carousels."""
+async def fix_carousel_formatting(
+    restyle: bool = Query(False, description="Run an LLM restyle pass on slide text (3-line rhythm + bold)"),
+    limit: int = Query(200, ge=1, le=1000),
+    character_id: Optional[str] = Query(None, description="Restrict to a single character"),
+    force: bool = Query(False, description="Restyle even if a carousel was already restyled"),
+):
+    """Migration endpoint for existing carousels.
+
+    Default behavior (no flags): clean inline numbered lists, stamp accent_color
+    onto text_overlay_specs, expand hashtags. Cheap, no LLM calls.
+
+    With restyle=true: additionally rewrite each body slide into the v2 rhythm
+    (setup / twist / payoff with one **bold** token per slide). Costs ~1 LLM call
+    per carousel.
+    """
     service = get_character_content_service()
-    return await service.fix_carousel_formatting()
+    return await service.fix_carousel_formatting(
+        restyle=restyle,
+        limit=limit,
+        character_id=character_id,
+        force=force,
+    )
 
 
 # ============================================
@@ -513,6 +610,17 @@ async def update_carousel(carousel_id: str, data: CarouselUpdate):
     return carousel
 
 
+@router.delete("/carousels/{carousel_id}", response_model=DeleteResponse)
+async def delete_carousel(carousel_id: str):
+    """Soft-delete a carousel. Hidden from listings; the used angle is kept
+    recorded so the gap-audit job does not regenerate it."""
+    service = get_character_content_service()
+    deleted = await service.delete_carousel(carousel_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Carousel not found")
+    return {"status": "deleted", "id": carousel_id}
+
+
 # ============================================
 # CAROUSEL ENHANCE / COUNCIL / VERSIONS
 # ============================================
@@ -675,6 +783,209 @@ async def reimage_slide(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+UPLOADS_ROOT = Path("backend/uploads/character_images")
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_UPLOAD_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
+
+
+def _is_probable_image_url(url: str) -> bool:
+    if not url or not isinstance(url, str):
+        return False
+    if url.startswith("/api/characters/uploads/"):
+        return True
+    lower = url.lower().split("?", 1)[0]
+    if lower.startswith(("http://", "https://", "data:image/")):
+        return True
+    return False
+
+
+@router.get(
+    "/carousels/{carousel_id}/slides/{slide_index}/image-candidates",
+    response_model=List[SlideImageCandidate],
+)
+async def list_slide_image_candidates(
+    carousel_id: str,
+    slide_index: int,
+    background_tasks: BackgroundTasks,
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Top sourced images for this carousel's character, sorted by quality.
+
+    If fewer than 5 exist, triggers a background discover_images() run so the
+    pool fills up for subsequent requests. The response does not block on it.
+    """
+    service = get_character_content_service()
+    try:
+        result = await service.list_slide_image_candidates(
+            carousel_id, slide_index, limit=limit,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if result.get("needs_discover"):
+        background_tasks.add_task(
+            service.discover_more_character_images,
+            result["character_id"],
+        )
+
+    return [SlideImageCandidate(**c) for c in result["candidates"]]
+
+
+@router.patch(
+    "/carousels/{carousel_id}/slides/{slide_index}/image",
+    response_model=CharacterCarousel,
+)
+async def set_slide_image(
+    carousel_id: str,
+    slide_index: int,
+    data: SlideImagePatchRequest,
+):
+    """Manually set the image_url for a single slide. Snapshots a version."""
+    if not _is_probable_image_url(data.image_url):
+        raise HTTPException(status_code=400, detail="image_url does not look like an image URL")
+    service = get_character_content_service()
+    try:
+        return await service.set_slide_image(
+            carousel_id,
+            slide_index,
+            data.image_url,
+            created_by="human",
+            source="manual_edit",
+            metadata={"image_id": data.image_id} if data.image_id else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/carousels/{carousel_id}/slides/{slide_index}/image/upload",
+    response_model=CharacterCarousel,
+)
+async def upload_slide_image(
+    carousel_id: str,
+    slide_index: int,
+    file: UploadFile = File(...),
+):
+    """Accept a multipart image upload, compute pHash, persist to disk, wire it
+    into the slide, and register a CharacterImageModel row for future reuse."""
+    from sqlalchemy import select
+    from app.db.models import CharacterCarouselModel, CharacterImageModel
+    from app.infrastructure.database import get_session
+
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="file must be an image/* upload")
+
+    body = await file.read()
+    if not body:
+        raise HTTPException(status_code=400, detail="uploaded file is empty")
+    if len(body) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file exceeds 10MB limit")
+
+    # Compute perceptual hash + dimensions.
+    phash_hex: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    try:
+        from PIL import Image  # type: ignore
+        import imagehash  # type: ignore
+
+        img = Image.open(io.BytesIO(body))
+        width, height = img.size
+        phash_hex = str(imagehash.phash(img))
+    except Exception as e:
+        logger.warning("slide_image_upload_hash_failed", error=str(e))
+
+    # Resolve character_id from carousel.
+    service = get_character_content_service()
+    async with get_session() as session:
+        row = await session.get(CharacterCarouselModel, carousel_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Carousel not found")
+        character_id = row.character_id
+
+    # Pick extension.
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower() if file.filename else ""
+    if ext not in ALLOWED_UPLOAD_EXTS:
+        ext_from_type = content_type.split("/", 1)[-1].split(";", 1)[0].strip().lower()
+        if ext_from_type == "jpeg":
+            ext_from_type = "jpg"
+        ext = ext_from_type if ext_from_type in ALLOWED_UPLOAD_EXTS else "png"
+
+    dest_dir = UPLOADS_ROOT / character_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{_uuid.uuid4().hex}.{ext}"
+    dest_path = dest_dir / filename
+    try:
+        dest_path.write_bytes(body)
+    except OSError as e:
+        logger.error("slide_image_upload_write_failed", error=str(e))
+        raise HTTPException(status_code=500, detail="failed to persist uploaded file")
+
+    public_url = f"/api/characters/uploads/character-images/{character_id}/{filename}"
+
+    # Insert CharacterImageModel row for reuse.
+    async with get_session() as session:
+        session.add(CharacterImageModel(
+            id=f"cimg-{_uuid.uuid4().hex[:12]}",
+            character_id=character_id,
+            url=public_url,
+            source="user_upload",
+            width=width,
+            height=height,
+            quality_score=1.0,
+            phash=phash_hex,
+            is_valid=True,
+            is_approved=True,
+            content_type=content_type,
+            file_size=len(body),
+        ))
+        try:
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.warning("slide_image_upload_db_insert_failed", error=str(e))
+
+    try:
+        return await service.set_slide_image(
+            carousel_id,
+            slide_index,
+            public_url,
+            created_by="human",
+            source="manual_upload",
+            metadata={"filename": filename, "phash": phash_hex},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/uploads/character-images/{character_id}/{filename}")
+async def serve_uploaded_character_image(character_id: str, filename: str):
+    """Serve a user-uploaded character image. Auth-gated via router dependency."""
+    # Guard against path traversal.
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    path = UPLOADS_ROOT / character_id / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="image not found")
+    ext = path.suffix.lstrip(".").lower()
+    media_types = {
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png", "webp": "image/webp", "gif": "image/gif",
+    }
+    return FileResponse(
+        path=str(path),
+        media_type=media_types.get(ext, "application/octet-stream"),
+        filename=path.name,
+    )
+
+
 @router.post(
     "/carousels/{carousel_id}/reimage-with-fresh-sources",
     response_model=CharacterCarousel,
@@ -737,8 +1048,13 @@ async def render_carousel(carousel_id: str):
         text_overlay_specs=carousel.text_overlay_specs,
         character_image_url=image_url,
         character_image_urls=image_urls,
+        hook_text=carousel.hook_text,
     )
-    return result
+    return RenderResponse(
+        carousel_id=carousel_id,
+        slides=result.get("paths", []),
+        count=result.get("rendered_slides", 0),
+    )
 
 
 @router.get("/carousels/{carousel_id}/rendered", response_model=RenderResponse)
@@ -751,6 +1067,32 @@ async def get_rendered_slides(carousel_id: str):
     if not paths:
         raise HTTPException(status_code=404, detail="No rendered slides found. Call POST /render first.")
     return {"carousel_id": carousel_id, "slides": paths, "count": len(paths)}
+
+
+@router.get("/carousels/{carousel_id}/rendered/{filename}")
+async def serve_rendered_slide(carousel_id: str, filename: str):
+    """Serve a rendered carousel slide PNG. Auth-gated via router dependency.
+
+    Guards against path traversal: filename must match slide_NN.png or similar
+    and carousel_id is quoted to prevent ../ attacks.
+    """
+    from pathlib import Path
+    import re as _re
+    from fastapi.responses import FileResponse
+
+    if not _re.fullmatch(r"[a-zA-Z0-9_\-]+\.(png|jpg|jpeg|webp)", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if not _re.fullmatch(r"[a-zA-Z0-9_\-]+", carousel_id):
+        raise HTTPException(status_code=400, detail="Invalid carousel id")
+    base = Path("/app/workspace/content/rendered") / carousel_id
+    target = (base / filename).resolve()
+    try:
+        target.relative_to(base.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escape denied")
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="Rendered slide not found")
+    return FileResponse(str(target))
 
 
 # ============================================
@@ -817,13 +1159,14 @@ async def list_characters(
     universe: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     research_status: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
 ):
     """List characters with optional filters."""
     service = get_character_content_service()
     return await service.list_characters(
         universe=universe, status=status,
-        research_status=research_status, limit=limit,
+        research_status=research_status, limit=limit, offset=offset,
     )
 
 
@@ -855,6 +1198,45 @@ async def delete_character(character_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Character not found")
     return {"status": "deleted", "id": character_id}
+
+
+# ============================================
+# ADMIN: image relevance backfill
+# ============================================
+
+@router.post("/admin/revalidate-images")
+async def admin_revalidate_images(
+    character_id: Optional[str] = Query(None),
+    all: bool = Query(False),
+    universe: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=2000),
+    dry_run: bool = Query(False),
+):
+    """Re-score every existing character image via Gemini Vision relevance.
+
+    - ``character_id``: revalidate one character's images.
+    - ``all=true``: revalidate every character (optionally scoped to ``universe``
+      and capped by ``limit``).
+    - ``dry_run=true``: returns the per-image diff without persisting changes.
+
+    Vision-rejected images are flagged ``is_valid=false`` with a
+    ``feedback_reason`` of ``vision_rejected: <model reason>``. The current
+    primary image is only demoted if a higher-scoring valid image exists —
+    a vision miss never leaves a character imageless.
+    """
+    service = get_character_content_service()
+    if all:
+        return await service.revalidate_all_images(
+            dry_run=dry_run, universe=universe, limit=limit,
+        )
+    if not character_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide character_id or all=true",
+        )
+    return await service.revalidate_existing_images(
+        character_id, dry_run=dry_run,
+    )
 
 
 # ============================================
@@ -1610,3 +1992,47 @@ async def autopilot_activity(limit: int = Query(10, ge=1, le=50)):
             "total_in_progress_carousels": int(total_in_progress_carousels),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-character image re-sourcing (used by frontend "broken image" fallback)
+# ---------------------------------------------------------------------------
+
+class CharacterReimageResponse(BaseModel):
+    character_id: str
+    inserted: int
+
+
+@router.post("/characters/{character_id}/resource-images", response_model=CharacterReimageResponse)
+async def resource_character_images(character_id: str, max_per_source: int = Query(8, ge=1, le=20)):
+    """Run image discovery for a character and persist any new images.
+
+    Used by the carousel UI when a slide renders a broken image and the user
+    clicks "Re-source images".
+    """
+    service = get_character_content_service()
+    char = await service.get_character(character_id)
+    if not char:
+        raise HTTPException(status_code=404, detail=f"Character {character_id} not found")
+    inserted = await service.discover_more_character_images(character_id, max_per_source=max_per_source)
+    return CharacterReimageResponse(character_id=character_id, inserted=inserted)
+
+
+# ---------------------------------------------------------------------------
+# Character relationship graph (rivalries / team-ups / franchise clusters)
+# ---------------------------------------------------------------------------
+
+@router.get("/graph/crossover-ideas")
+async def graph_crossover_ideas(limit: int = Query(10, ge=1, le=50)) -> List[Dict[str, Any]]:
+    """Return ranked crossover/team-up/franchise carousel ideas built from
+    character relationship_map + franchise/universe clustering."""
+    from app.services.character_graph_service import get_character_graph_service
+    return await get_character_graph_service().propose_crossover_carousels(limit=limit)
+
+
+@router.get("/graph/franchise-clusters")
+async def graph_franchise_clusters(min_size: int = Query(2, ge=2, le=10), limit: int = Query(50, ge=1, le=200)) -> List[Dict[str, Any]]:
+    """Active characters grouped by (universe, franchise). Frontend uses this
+    to surface 'characters in this title' clusters."""
+    from app.services.character_graph_service import get_character_graph_service
+    return await get_character_graph_service().list_franchise_clusters(min_size=min_size, limit=limit)

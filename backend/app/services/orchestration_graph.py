@@ -106,10 +106,12 @@ VALID_ROUTES = {
     "workflow", "system", "tiktok", "content", "prediction_market",
     "planner", "ai_company", "deep_research", "experiment", "council",
     "character_content", "brain", "general",
+    # SecondBrain Phase 3 additions
+    "pkm", "legion_ops",
 }
 
 ROUTE_KEYWORDS = {
-    "sprint": ["sprint", "project", "legion", "backlog", "progress", "velocity"],
+    "sprint": ["sprint", "project", "legion", "backlog", "progress", "velocity", "tasks", "blocked"],
     "task": ["create task", "add task", "new task", "update task", "move task", "complete task", "block task", "mark task", "task done"],
     "email": ["email", "gmail", "inbox", "unread", "digest", "mail", "message", "send"],
     "calendar": ["calendar", "schedule", "meeting", "event", "free", "busy", "appointment", "today"],
@@ -152,6 +154,13 @@ ROUTE_KEYWORDS = {
               "calibration", "prompt evolution", "episodic memory", "how am i doing",
               "improvement cycle", "learning velocity", "brain benchmark",
               "what have you learned", "zero brain", "brain dashboard"],
+    # SecondBrain Phase 3 PKM (vault) routes
+    "pkm": ["vault", "obsidian", "my notes", "daily note", "atomic note",
+            "knowledge base", "find note", "search vault", "linked note",
+            "pkm", "second brain", "zettelkasten"],
+    "legion_ops": ["legion", "legion task", "delegate to legion", "legion sprint",
+                   "ship code", "cross-project", "fix in legion", "legion build",
+                   "legion deploy", "legion audit"],
 }
 
 CLASSIFICATION_SYSTEM_PROMPT = """You are an intent classifier for a personal AI assistant called Zero.
@@ -225,6 +234,12 @@ def classify_route_keywords(message: str) -> tuple[str, int]:
 
     best_route = max(scores, key=scores.get)
     return best_route, scores[best_route]
+
+
+def classify_route(message: str) -> str:
+    """Compatibility helper for callers that need synchronous keyword routing."""
+    route, _confidence = classify_route_keywords(message)
+    return route
 
 
 async def classify_route_llm(message: str) -> str:
@@ -784,8 +799,8 @@ async def system_node(state: OrchestratorState) -> dict:
             parts.append("**System Health Check**")
             # Check Ollama
             try:
-                from app.infrastructure.ollama_client import get_ollama_client
-                client = get_ollama_client()
+                from app.infrastructure.ollama_client import get_llm_client
+                client = get_llm_client()
                 await client.chat("ping", system="Reply with 'pong'", num_predict=5, timeout=5)
                 parts.append("Ollama: online")
             except Exception:
@@ -1449,6 +1464,68 @@ async def character_content_node(state: OrchestratorState) -> dict:
         return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
 
 
+async def pkm_node(state: OrchestratorState) -> dict:
+    """PKM / vault surface. Searches the indexed Obsidian vault and returns hits.
+
+    SecondBrain Phase 3. For writes, the supervisor goes through vault_writer
+    (agent namespace) or cyanheads MCP (append-only markers on human-owned notes).
+    """
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    try:
+        from app.services.vault_retrieval_service import get_vault_retrieval
+        svc = get_vault_retrieval()
+        result = await svc.search(content or "", top_k=8)
+        if not result.get("hits"):
+            text = "No matching vault content yet. Has the vault been indexed? Try `POST /api/vault/reindex`."
+        else:
+            lines = [f"Vault hits ({result['bm25_count']} BM25, {result['dense_count']} dense, fused top-{len(result['hits'])})"]
+            for h in result["hits"]:
+                lines.append(
+                    f"- `[{h['partition']}]` {h['path']}"
+                    + (f" > {h['heading_path']}" if h.get("heading_path") else "")
+                    + f" (score {h['score']:.3f})\n  {h['content'][:240]}..."
+                )
+            text = "\n".join(lines)
+    except Exception as e:  # noqa: BLE001
+        text = f"PKM node error: {e}"
+    return {"result": text, "route": "pkm"}
+
+
+async def legion_ops_node(state: OrchestratorState) -> dict:
+    """Delegates code-improvement work to Legion. Gated by approval_queue.
+
+    SecondBrain Phase 3. For now this is a thin wrapper that surfaces Legion
+    health + the legion_client capability set. Actual task dispatch with
+    interrupt()-gated approval lands in Phase 2.5 when Legion is hardened.
+    """
+    messages = state.get("messages", [])
+    content = messages[-1].content if messages else ""
+    try:
+        from app.services.legion_client import get_legion_client
+        client = get_legion_client()
+        try:
+            metrics = await client.get_project_metrics(
+                project_id=int(getattr(client, "_project_id", 8))
+            )
+            summary = (
+                f"Legion project 8 metrics: "
+                f"tasks_open={metrics.get('tasks_open', '?')}, "
+                f"sprints_active={metrics.get('sprints_active', '?')}"
+            )
+        except Exception as e:  # noqa: BLE001
+            summary = f"Legion unreachable or project metrics missing: {e}"
+        text = (
+            f"legion_ops received: {content[:120]}...\n\n"
+            f"Status: {summary}\n"
+            "Task dispatch with approval gating arrives in Phase 2.5. For now, use "
+            "`zero-deep-review` to audit Legion or `GET /api/legion/health` in the UI."
+        )
+    except Exception as e:  # noqa: BLE001
+        text = f"legion_ops node error: {e}"
+    return {"result": text, "route": "legion_ops"}
+
+
 async def brain_node(state: OrchestratorState) -> dict:
     """Handle Zero Brain queries — status, benchmarks, learnings, memory."""
     messages = state.get("messages", [])
@@ -1569,6 +1646,8 @@ def build_orchestration_graph(checkpointer=None) -> Any:
         "council": council_node,
         "character_content": character_content_node,
         "brain": brain_node,
+        "pkm": pkm_node,
+        "legion_ops": legion_ops_node,
         "general": general_node,
     }
     for i, (name, func) in enumerate(_domain_nodes.items(), start=1):
@@ -1605,6 +1684,9 @@ def build_orchestration_graph(checkpointer=None) -> Any:
             "experiment": "experiment",
             "council": "council",
             "character_content": "character_content",
+            "brain": "brain",
+            "pkm": "pkm",
+            "legion_ops": "legion_ops",
             "general": "general",
         },
     )
@@ -1615,7 +1697,7 @@ def build_orchestration_graph(checkpointer=None) -> Any:
                  "knowledge", "task", "workflow", "system",
                  "tiktok", "content", "prediction_market",
                  "ai_company", "deep_research", "experiment", "council",
-                 "character_content"]:
+                 "character_content", "brain", "pkm", "legion_ops"]:
         graph.add_edge(node, "synthesizer")
     graph.add_edge("synthesizer", END)
 

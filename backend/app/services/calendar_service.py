@@ -62,12 +62,11 @@ class CalendarService:
         self.credentials_file.write_text(json.dumps(config, indent=2))
         logger.info("calendar_client_config_saved")
 
-    def has_valid_tokens(self) -> bool:
-        """Check if valid tokens exist (from Gmail OAuth service)."""
+    async def has_valid_tokens(self) -> bool:
+        """True iff at least one connected Google account has valid tokens."""
         from app.services.gmail_oauth_service import get_gmail_oauth_service
-
         gmail_oauth = get_gmail_oauth_service()
-        return gmail_oauth.has_valid_tokens()
+        return await gmail_oauth.has_valid_tokens()
 
     def get_auth_url(self, redirect_uri: str = "http://localhost:18792/api/calendar/auth/callback") -> Dict[str, str]:
         """Get OAuth authorization URL."""
@@ -132,46 +131,32 @@ class CalendarService:
             "email_address": calendar.get("id", "unknown")
         }
 
-    def _get_credentials(self):
-        """Get valid OAuth credentials from Gmail OAuth service."""
-        from app.services.gmail_oauth_service import get_gmail_oauth_service, GOOGLE_SCOPES
+    async def _get_credentials(self, account_id: Optional[str] = None):
+        """Get valid OAuth credentials for the given (or default) account.
 
+        Multi-account aware: delegates to GmailOAuthService which loads + refreshes
+        from the `oauth_accounts` table.
+        """
+        from app.services.gmail_oauth_service import get_gmail_oauth_service
         gmail_oauth = get_gmail_oauth_service()
+        return await gmail_oauth.get_credentials(account_id=account_id)
 
-        # Check if Gmail OAuth has valid tokens
-        if not gmail_oauth.has_valid_tokens():
-            return None
+    async def _get_service(self, account_id: Optional[str] = None):
+        """Authenticated Calendar API client for the given (or default) account."""
+        cache_key = account_id or "_default"
+        if not hasattr(self, "_services"):
+            self._services: dict = {}
+        cached = self._services.get(cache_key)
+        if cached is not None:
+            return cached
 
-        # Get credentials from Gmail OAuth service
-        _, Credentials = self._load_google_modules()
-        tokens_file = gmail_oauth.tokens_file
-
-        if not tokens_file.exists():
-            return None
-
-        # IMPORTANT: Use GOOGLE_SCOPES (not CALENDAR_SCOPES) because tokens were issued with unified scopes
-        creds = Credentials.from_authorized_user_file(str(tokens_file), GOOGLE_SCOPES)
-
-        if creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request
-            creds.refresh(Request())
-            # Save refreshed tokens back to Gmail OAuth service
-            tokens_file.write_text(creds.to_json())
-
-        return creds if creds.valid else None
-
-    def _get_service(self):
-        """Get authenticated Calendar API service."""
-        if self._service:
-            return self._service
-
-        creds = self._get_credentials()
+        creds = await self._get_credentials(account_id=account_id)
         if not creds:
             raise RuntimeError("Calendar not connected")
-
         from googleapiclient.discovery import build
-        self._service = build("calendar", "v3", credentials=creds)
-        return self._service
+        client = build("calendar", "v3", credentials=creds)
+        self._services[cache_key] = client
+        return client
 
     # ------------------------------------------------------------------
     # Sync Status (PostgreSQL)
@@ -213,15 +198,27 @@ class CalendarService:
     async def get_sync_status(self) -> CalendarSyncStatus:
         """Get current sync status."""
         status = await self._load_sync_status()
-        status.connected = self.has_valid_tokens()
+        status.connected = await self.has_valid_tokens()
         return status
 
-    def disconnect(self):
-        """Disconnect calendar."""
-        if self.tokens_file.exists():
-            self.tokens_file.unlink()
+    async def disconnect(self, account_id: Optional[str] = None) -> None:
+        """Disconnect a calendar account (default account if None).
+
+        Multi-account aware: removes the row from `oauth_accounts` via the
+        Gmail OAuth service. Legacy `tokens_file` is also unlinked if still
+        present from a pre-migration install.
+        """
+        from app.services.gmail_oauth_service import get_gmail_oauth_service
+        await get_gmail_oauth_service().disconnect(account_id=account_id)
+        if hasattr(self, "tokens_file") and self.tokens_file.exists():
+            try:
+                self.tokens_file.unlink()
+            except Exception:
+                pass
+        if hasattr(self, "_services"):
+            self._services.clear()
         self._service = None
-        logger.info("calendar_disconnected")
+        logger.info("calendar_disconnected", account_id=account_id)
 
     # ------------------------------------------------------------------
     # Event parsing helpers (unchanged)
@@ -469,9 +466,20 @@ class CalendarService:
     # Core operations (PostgreSQL persistence)
     # ------------------------------------------------------------------
 
-    async def sync_events(self, days_ahead: int = 30) -> Dict[str, Any]:
-        """Sync calendar events."""
-        service = self._get_service()
+    async def sync_events(self, days_ahead: int = 30, account_id: Optional[str] = None) -> Dict[str, Any]:
+        """Sync calendar events for one account (default if account_id is None).
+
+        Multi-account: every cached event row is tagged with account_id so the
+        UI can filter and the auto-record service can resolve back to the
+        right calendar when fetching event details.
+        """
+        service = await self._get_service(account_id=account_id)
+
+        # Resolve the account so cached rows can be tagged.
+        if account_id is None:
+            from app.services.gmail_oauth_service import get_gmail_oauth_service
+            account = await get_gmail_oauth_service().get_account()
+            account_id = account.id if account else None
 
         now = datetime.utcnow()
         time_min = now.isoformat() + "Z"
@@ -489,10 +497,12 @@ class CalendarService:
 
             events = [self._event_to_model(e) for e in results.get("items", [])]
 
-            # Upsert all events into PostgreSQL
+            # Upsert all events into PostgreSQL with the account tag.
             async with get_session() as session:
                 for event in events:
-                    await session.merge(self._calendar_event_to_row(event))
+                    row = self._calendar_event_to_row(event)
+                    row.account_id = account_id
+                    await session.merge(row)
 
             # Get calendars count
             calendars = service.calendarList().list().execute()
@@ -520,25 +530,43 @@ class CalendarService:
         self,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        limit: int = 50
+        limit: int = 50,
+        account_id: Optional[str] = None,
     ) -> List[EventSummary]:
-        """List events from DB."""
+        """List events from DB. account_id=None merges all accounts."""
         async with get_session() as session:
             stmt = select(CalendarEventCacheModel)
+            if account_id:
+                stmt = stmt.where(CalendarEventCacheModel.account_id == account_id)
 
             # We need to load all rows and filter by parsed start_dt JSONB
             # since start_dt is JSONB (contains date_time or date fields)
             result = await session.execute(stmt)
             rows = result.scalars().all()
 
-        # Filter by date range in Python (JSONB datetime filtering)
+        # Filter by date range in Python (JSONB datetime filtering).
+        # _event_start_datetime returns naive datetimes (tz stripped); incoming
+        # query params from FastAPI may be tz-aware. Normalize both sides to
+        # naive UTC so the comparison doesn't raise.
+        from datetime import timezone as _tz
+
+        def _to_naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
+            if dt is None:
+                return None
+            if dt.tzinfo is not None:
+                return dt.astimezone(_tz.utc).replace(tzinfo=None)
+            return dt
+
+        start_naive = _to_naive_utc(start_date)
+        end_naive = _to_naive_utc(end_date)
+
         filtered = []
         for row in rows:
             event_dict = self._row_to_event_dict(row)
             event_start = self._event_start_datetime(event_dict)
-            if start_date and event_start < start_date:
+            if start_naive and event_start < start_naive:
                 continue
-            if end_date and event_start > end_date:
+            if end_naive and event_start > end_naive:
                 continue
             filtered.append((event_start, row))
 
@@ -557,7 +585,7 @@ class CalendarService:
 
     async def create_event(self, event_data: EventCreate) -> CalendarEvent:
         """Create a new calendar event."""
-        service = self._get_service()
+        service = await self._get_service()
 
         body = {
             "summary": event_data.summary,
@@ -606,7 +634,7 @@ class CalendarService:
 
     async def update_event(self, event_id: str, updates: EventUpdate) -> Optional[CalendarEvent]:
         """Update a calendar event."""
-        service = self._get_service()
+        service = await self._get_service()
 
         # Get existing event
         try:
@@ -641,7 +669,7 @@ class CalendarService:
 
     async def delete_event(self, event_id: str) -> bool:
         """Delete a calendar event."""
-        service = self._get_service()
+        service = await self._get_service()
 
         try:
             service.events().delete(calendarId="primary", eventId=event_id).execute()
@@ -653,7 +681,7 @@ class CalendarService:
 
     async def get_calendars(self) -> List[Calendar]:
         """Get list of calendars."""
-        service = self._get_service()
+        service = await self._get_service()
 
         results = service.calendarList().list().execute()
         return [
@@ -685,7 +713,7 @@ class CalendarService:
         Returns:
             List of events from all specified calendars, sorted by start time
         """
-        service = self._get_service()
+        service = await self._get_service()
 
         if time_min is None:
             time_min = datetime.utcnow()

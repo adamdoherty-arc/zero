@@ -54,11 +54,17 @@ class MeetingTranscriptionService:
         )
         segments = []
         for seg in segments_iter:
+            # faster-whisper renamed avg_log_prob -> avg_logprob in 1.1+ and
+            # some builds drop the attribute entirely; fall back gracefully.
+            confidence = (
+                getattr(seg, "avg_logprob", None)
+                or getattr(seg, "avg_log_prob", None)
+            )
             segments.append({
                 "start": round(seg.start, 3),
                 "end": round(seg.end, 3),
                 "text": seg.text.strip(),
-                "confidence": round(seg.avg_log_prob, 4),
+                "confidence": round(confidence, 4) if confidence is not None else None,
             })
         elapsed = time.perf_counter() - start
         logger.info("transcription_complete", segments=len(segments), elapsed=f"{elapsed:.2f}s",

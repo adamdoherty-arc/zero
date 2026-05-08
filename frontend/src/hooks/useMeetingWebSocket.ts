@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMeetingRecordingStore } from '@/store/meetingRecordingStore'
 import type { LiveTranscriptSegment } from '@/types/meeting'
 
-// WebSocket connects to DailyMeetings (standalone host app on port 18793)
-// which handles audio recording since Docker can't access Windows audio APIs.
+// Connects through the same-origin nginx proxy — zero-ui routes /ws/meeting-*
+// to zero-api, which runs the live-transcript/processing/recording sockets
+// (and itself forwards audio capture out to the Windows host_agent).
 function getWsBaseUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.hostname}:18793`
+  return `${protocol}//${window.location.host}`
 }
 
 // ---- Recording Status WebSocket ----

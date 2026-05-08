@@ -10,10 +10,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     MeetingModel, MeetingRecordingModel, MeetingTranscriptSegmentModel, MeetingSummaryModel,
+    MeetingSpeakerMappingModel,
 )
 from app.infrastructure.config import get_settings
 
 logger = structlog.get_logger(__name__)
+
+
+def _resolve_audio_path(raw_path: str):
+    """
+    Recordings created by the Zero Host Audio Agent live on the Windows host.
+    Zero-api (inside Docker) mounts `./workspace -> /app/workspace`, so a host
+    path like `C:\\code\\zero\\workspace\\recordings\\X.wav` appears inside the
+    container at `/app/workspace/recordings/X.wav`. Translate here so the
+    pipeline can open the file regardless of which process wrote it.
+    """
+    from pathlib import Path
+    p = raw_path.replace("\\", "/")
+    # Host path produced by host_agent (default recordings dir).
+    for host_prefix in (
+        "C:/code/zero/workspace/",
+        "c:/code/zero/workspace/",
+    ):
+        if p.lower().startswith(host_prefix.lower()):
+            return Path("/app/workspace/" + p[len(host_prefix):])
+    # Legacy host_agent recordings dir (before the shared-workspace move).
+    for host_prefix in (
+        "C:/code/zero/host_agent/recordings/",
+        "c:/code/zero/host_agent/recordings/",
+    ):
+        if p.lower().startswith(host_prefix.lower()):
+            return Path("/app/workspace/recordings/" + p[len(host_prefix):])
+    return Path(raw_path)
+
 
 # WebSocket broadcast clients
 _ws_clients: list = []
@@ -51,7 +80,7 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         raise ValueError(f"No recording for meeting {meeting_id}")
 
     from pathlib import Path
-    audio_path = Path(recording.file_path)
+    audio_path = _resolve_audio_path(recording.file_path)
     if not audio_path.exists():
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
@@ -81,6 +110,7 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         return result
 
     # --- Step 2: Diarize ---
+    diar_segments_raw: list = []
     try:
         await broadcast_processing_progress({"stage": "diarizing", "progress": 0.0, "message": "Running speaker diarization..."})
         from app.services.meeting_diarization_service import get_meeting_diarization_service
@@ -88,13 +118,76 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         if not diarization.is_loaded:
             diarization.load_model()
         t0 = time.time()
-        diar_segments = diarization.diarize(audio_path)
-        segments = diarization.align_with_transcript(diar_segments, segments)
+        diar_segments_raw = diarization.diarize(audio_path)
+        segments = diarization.align_with_transcript(diar_segments_raw, segments)
         result["steps"]["diarization"] = {"speakers": len(set(s.get("speaker", "") for s in segments)), "elapsed_ms": int((time.time() - t0) * 1000)}
         await broadcast_processing_progress({"stage": "diarizing", "progress": 1.0, "message": "Diarization complete"})
     except Exception as e:
         logger.warning("diarization_skipped", error=str(e))
         result["steps"]["diarization"] = {"skipped": True, "reason": str(e)}
+
+    # --- Step 2b: Voiceprint match ---
+    # For each diarized cluster, compute a centroid embedding and look it up in
+    # the voiceprints table. When a known identity matches above the threshold,
+    # rewrite that cluster's speaker label everywhere downstream.
+    label_to_identity: dict[str, str] = {}
+    if diar_segments_raw:
+        try:
+            from app.services.voiceprint_service import get_voiceprint_service
+            vp_svc = get_voiceprint_service()
+            # Group raw diarization segments by SPEAKER_XX label.
+            clusters: dict[str, list[dict]] = {}
+            for d in diar_segments_raw:
+                clusters.setdefault(d["speaker"], []).append(d)
+
+            t0 = time.time()
+            matched = 0
+            for label, cluster_segs in clusters.items():
+                centroid = vp_svc.compute_cluster_centroid(audio_path, cluster_segs)
+                if centroid is None:
+                    continue
+                match = await vp_svc.match(centroid)
+                if match:
+                    name, sim = match
+                    label_to_identity[label] = name
+                    matched += 1
+                    logger.info(
+                        "voiceprint_matched",
+                        meeting_id=meeting_id,
+                        label=label,
+                        identity=name,
+                        similarity=round(sim, 3),
+                    )
+
+            if label_to_identity:
+                # Rewrite speaker labels on transcript segments.
+                for seg in segments:
+                    label = seg.get("speaker")
+                    if label and label in label_to_identity:
+                        seg["speaker"] = label_to_identity[label]
+
+                # Persist mappings so the speaker-mapping UI shows them upfront.
+                await db.execute(
+                    delete(MeetingSpeakerMappingModel).where(
+                        MeetingSpeakerMappingModel.meeting_id == meeting_id
+                    )
+                )
+                for label, name in label_to_identity.items():
+                    db.add(MeetingSpeakerMappingModel(
+                        meeting_id=meeting_id,
+                        speaker_label=label,
+                        display_name=name,
+                    ))
+                await db.commit()
+
+            result["steps"]["voiceprint_match"] = {
+                "clusters": len(clusters),
+                "matched": matched,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("voiceprint_match_skipped", error=str(e))
+            result["steps"]["voiceprint_match"] = {"skipped": True, "reason": str(e)}
 
     # --- Step 3: Store segments ---
     await broadcast_processing_progress({"stage": "storing", "progress": 0.0, "message": "Saving transcript..."})
@@ -168,6 +261,65 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
     if meeting:
         meeting.status = "completed"
         await db.commit()
+
+    # --- Step 5b: Auto-create tasks from action items (opt-in) ---
+    try:
+        from app.routers.meeting_preferences import get_meeting_prefs
+        _auto_tasks = bool(get_meeting_prefs().get("auto_create_tasks_from_meetings"))
+    except Exception:
+        _auto_tasks = get_settings().auto_create_tasks_from_meetings
+    if _auto_tasks:
+        try:
+            from app.routers.meetings import (
+                CreateTasksRequest,
+                create_tasks_from_action_items,
+            )
+            t0 = time.time()
+            resp = await create_tasks_from_action_items(
+                meeting_id,
+                CreateTasksRequest(owner_filter="me", auto_assign=True),
+            )
+            result["steps"]["task_creation"] = {
+                "created": len(resp.created),
+                "skipped": len(resp.skipped),
+                "elapsed_ms": int((time.time() - t0) * 1000),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("auto_task_creation_failed", error=str(exc))
+            result["steps"]["task_creation"] = {"skipped": True, "reason": str(exc)}
+
+    # --- Step 6: Save to vault (best-effort) ---
+    # Append a human-readable artifact under 00_Meta/_agent/meetings/ so the
+    # vault can link to it. Non-fatal: the DB row is the source of truth.
+    try:
+        summary_result = await db.execute(
+            select(MeetingSummaryModel).where(MeetingSummaryModel.meeting_id == meeting_id)
+        )
+        summary_row = summary_result.scalar_one_or_none()
+        if meeting and summary_row:
+            from app.services.vault_writer_service import get_vault_writer
+            writer = get_vault_writer()
+            if writer.available():
+                transcript_md_lines = [
+                    f"**[{int(seg['start'] // 60):02d}:{int(seg['start'] % 60):02d}] "
+                    f"{seg.get('speaker') or 'Speaker'}:** {seg['text']}"
+                    for seg in segments
+                ]
+                writer.write_meeting_summary(
+                    meeting_id=meeting_id,
+                    title=meeting.title or "Untitled meeting",
+                    start_time=meeting.start_time,
+                    duration_seconds=meeting.duration_seconds,
+                    summary_text=summary_row.summary_text or "",
+                    key_topics=list(summary_row.key_topics or []),
+                    action_items=list(summary_row.action_items or []),
+                    decisions=list(summary_row.decisions or []),
+                    transcript="\n".join(transcript_md_lines),
+                )
+                result["steps"]["vault_save"] = {"ok": True}
+    except Exception as e:
+        logger.warning("meeting_vault_save_failed", meeting_id=meeting_id, error=str(e))
+        result["steps"]["vault_save"] = {"ok": False, "reason": str(e)}
 
     total_elapsed = int((time.time() - total_start) * 1000)
     result["total_elapsed_ms"] = total_elapsed

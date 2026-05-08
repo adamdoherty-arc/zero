@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --bg: {{ kit.bg }}; --fg: {{ kit.fg }}; --primary: {{ kit.primary }}; --accent: {{ kit.accent }}; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: "{{ kit.font_body }}", system-ui, sans-serif;
+    position: relative; overflow: hidden;
+  }
+  .image {
+    position: absolute; inset: 0 0 800px 0;
+    background-image: url("{{ image_url }}");
+    background-size: cover;
+    background-position: center;
+  }
+  .image::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0) 60%, rgba(0,0,0,0.9) 100%);
+  }
+  .number {
+    position: absolute; top: 160px; left: 60px;
+    font-family: "{{ kit.font_hook }}", sans-serif;
+    font-size: 220px; font-weight: 900; line-height: 1;
+    color: var(--primary); opacity: 0.95;
+    text-shadow: 0 6px 0 rgba(0,0,0,0.85);
+  }
+  .panel {
+    position: absolute; left: 60px; right: 60px; bottom: 280px;
+    padding: 40px 48px;
+    background: rgba(20,20,20,0.55);
+    backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    font-family: "{{ kit.font_headline }}", sans-serif;
+    font-size: 56px; line-height: 1.18; font-weight: 700;
+    text-shadow: 0 2px 0 rgba(0,0,0,0.85);
+  }
+  .transition {
+    position: absolute; left: 60px; right: 60px; bottom: 180px;
+    font-size: 28px; color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+  <div class="image"></div>
+  {% if number %}<div class="number">{{ number }}</div>{% endif %}
+  <div class="panel">{{ text|safe }}</div>
+  {% if transition %}<div class="transition">{{ transition }}</div>{% endif %}
+</body>
+</html>

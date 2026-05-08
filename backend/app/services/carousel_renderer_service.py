@@ -59,6 +59,55 @@ _WCAG_AA_NORMAL = 4.5
 _WCAG_AA_LARGE = 3.0
 
 
+def _tokenize_bold_runs(text: str) -> List[Tuple[str, bool]]:
+    """Split body text into (word, is_bold) tokens.
+
+    `**word**` or `**multi word phrase**` yields is_bold=True for each word in
+    the phrase; everything else is plain. Markers are stripped from the output.
+    """
+    tokens: List[Tuple[str, bool]] = []
+    pattern = re.compile(r"\*\*(.+?)\*\*|(\S+)")
+    for match in pattern.finditer(text):
+        bold_chunk = match.group(1)
+        plain_chunk = match.group(2)
+        if bold_chunk is not None:
+            for word in bold_chunk.split():
+                if word:
+                    tokens.append((word, True))
+        elif plain_chunk is not None:
+            # Drop lingering ** inside a token (malformed markers).
+            cleaned = plain_chunk.replace("**", "")
+            if cleaned:
+                tokens.append((cleaned, False))
+    return tokens
+
+
+def _pack_runs_into_lines(
+    tokens: List[Tuple[str, bool]],
+    font: Any,
+    max_width: int,
+    draw: Any,
+) -> List[List[Tuple[str, bool]]]:
+    """Greedy word-wrap that preserves the bold flag on each token."""
+    lines: List[List[Tuple[str, bool]]] = []
+    current: List[Tuple[str, bool]] = []
+    current_w = 0.0
+    space_w = float(draw.textlength(" ", font=font))
+    for token, is_bold in tokens:
+        word_w = float(draw.textlength(token, font=font))
+        needed = word_w + (space_w if current else 0.0)
+        if current and current_w + needed > max_width:
+            lines.append(current)
+            current = [(token, is_bold)]
+            current_w = word_w
+        else:
+            current.append((token, is_bold))
+            current_w += needed
+    if current:
+        lines.append(current)
+    return lines
+
+
 class CarouselRendererService:
     """Renders carousel slides as ready-to-publish images."""
 
@@ -73,6 +122,7 @@ class CarouselRendererService:
         character_image_url: Optional[str] = None,
         character_image_urls: Optional[List[str]] = None,
         no_break_terms: Optional[Iterable[str]] = None,
+        hook_text: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Render all slides of a carousel as PNG images.
@@ -109,6 +159,12 @@ class CarouselRendererService:
             slide_num = i + 1
             slide_text = slide.get("text", "")
             slide_title = slide.get("title", "")
+
+            # Slide 1 has no body text server-side (it's the hook's home). If
+            # the caller supplied hook_text, render it as slide 1's on-image
+            # headline so the published PNG has the scroll-stopping hook.
+            if i == 0 and hook_text and not slide_text:
+                slide_text = hook_text
 
             # Per-slide image: try slide.image_url first, then fallback
             slide_bg = None
@@ -255,21 +311,51 @@ class CarouselRendererService:
                 y += 62
             y += 20
 
-        # Strip **bold** markers for PIL rendering (frontend handles visual emphasis)
+        # Body text — render with bold-aware coloring so **marked** runs show
+        # in accent_color (WCAG-gated) and plain runs stay white. This is the
+        # published-PNG counterpart to the frontend's accent-pill emphasis.
         if body_text:
-            body_text = body_text.replace("**", "")
+            # WCAG gate: only colorize bold runs when the accent has ≥3:1
+            # contrast against the composited text region. Fall back to white
+            # otherwise so accessibility doesn't regress on low-contrast images.
+            effective_accent = text_color
+            try:
+                accent_lum = self._region_luminance(img, text_region)
+                accent_contrast = self._contrast_ratio(accent_color, accent_lum)
+                if accent_contrast >= 3.0:
+                    effective_accent = accent_color
+            except (ValueError, ZeroDivisionError, AttributeError):
+                pass
 
-        # Body text
-        if body_text:
-            wrapped_body = self._wrap_text(
-                body_text, body_font, text_area_width, draw,
-                no_break_terms=no_break_terms, warnings_out=warnings_out,
-            )
-            for line in wrapped_body[:12]:  # Max 12 lines
-                if text_shadow:
-                    draw.text((margin_x + 2, y + 2), line, fill="#00000080", font=body_font)
-                draw.text((margin_x, y), line, fill=text_color, font=body_font)
+            runs = _tokenize_bold_runs(body_text)
+            # Auto-emphasis fallback: if the LLM produced no **bold** markers,
+            # color the LAST line (the payoff) in accent to guarantee every
+            # slide has visible color variety. Keeps the renderer honest even
+            # when the generation prompt is ignored.
+            if runs and not any(is_bold for _, is_bold in runs):
+                # Locate the newline-separated payoff — the run list doesn't
+                # carry line breaks, so use the raw body_text to find the
+                # count of tokens that belong to the final line.
+                last_line_tokens = body_text.strip().splitlines()[-1].split() if body_text.strip() else []
+                if last_line_tokens:
+                    n = len(last_line_tokens)
+                    runs = runs[:-n] + [(t, True) for t, _ in runs[-n:]]
+            packed_lines = _pack_runs_into_lines(runs, body_font, text_area_width, draw)
+            space_w = int(draw.textlength(" ", font=body_font))
+            for line in packed_lines[:12]:  # Max 12 lines
+                x = margin_x
+                for i, (token, is_bold) in enumerate(line):
+                    if i > 0:
+                        x += space_w
+                    color = effective_accent if is_bold else text_color
+                    if text_shadow:
+                        draw.text((x + 2, y + 2), token, fill="#00000080", font=body_font)
+                    draw.text((x, y), token, fill=color, font=body_font)
+                    x += int(draw.textlength(token, font=body_font))
                 y += 52
+            # Clear body_text so the downstream contrast check uses text_color
+            # (most body pixels are still white; accent pixels are a minority).
+            body_text = ""
 
         # Contrast validation (simulates the final composited text area luminance).
         try:

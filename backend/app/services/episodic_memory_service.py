@@ -15,7 +15,7 @@ import structlog
 from sqlalchemy import select, delete, func as sql_func, text
 
 from app.infrastructure.database import get_session
-from app.infrastructure.ollama_client import get_ollama_client
+from app.infrastructure.ollama_client import get_llm_client
 from app.infrastructure.unified_llm_client import get_unified_llm_client
 from app.db.models import EpisodicMemoryModel
 from app.models.brain import EpisodicMemory, MemorySearchResult
@@ -69,7 +69,7 @@ class EpisodicMemoryService:
                 extracted = [extracted] if isinstance(extracted, dict) else []
 
             memories = []
-            ollama = get_ollama_client()
+            ollama = get_llm_client()
 
             for item in extracted[:10]:  # cap at 10 per extraction
                 content = item.get("content", "")
@@ -135,7 +135,7 @@ class EpisodicMemoryService:
     ) -> Optional[EpisodicMemory]:
         """Store a single memory directly without LLM extraction."""
         try:
-            ollama = get_ollama_client()
+            ollama = get_llm_client()
             embedding = await ollama.embed_safe(content)
 
             ttl_days = HIGH_IMPORTANCE_TTL_DAYS if importance >= IMPORTANCE_THRESHOLD else DEFAULT_TTL_DAYS
@@ -183,7 +183,7 @@ class EpisodicMemoryService:
     ) -> List[MemorySearchResult]:
         """Semantic search over episodic memories using pgvector cosine distance."""
         try:
-            ollama = get_ollama_client()
+            ollama = get_llm_client()
             query_embedding = await ollama.embed_safe(query)
             if not query_embedding:
                 return []

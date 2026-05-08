@@ -1047,8 +1047,8 @@ class ResearchService:
         # Layer 1.5: LLM-enhanced scoring for promising findings
         # Only call Ollama for findings that pass the heuristic threshold (perf optimization)
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            client = get_ollama_client()
+            from app.infrastructure.ollama_client import get_llm_client
+            client = get_llm_client()
             for finding in scored:
                 if finding.get("compositeScore", 0) >= 50:
                     llm_result = await self._llm_score_finding(client, finding)
@@ -1293,9 +1293,9 @@ class ResearchService:
         # Generate embedding for semantic deduplication and search
         embedding = None
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
+            from app.infrastructure.ollama_client import get_llm_client
             embed_text = f"{finding.get('title', '')} {finding.get('snippet', '')[:200]}"
-            embedding = await get_ollama_client().embed_safe(embed_text)
+            embedding = await get_llm_client().embed_safe(embed_text)
         except Exception:
             pass
 

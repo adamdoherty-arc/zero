@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain, ExternalLink, Eye, Music, Pencil, Loader2, Sparkles } from 'lucide-react'
+import { Brain, ExternalLink, Eye, Music, Pencil, Loader2, Sparkles, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,14 +8,14 @@ import TikTokPhonePreview from './TikTokPhonePreview'
 import type { CharacterCarousel, AIReview } from '@/hooks/useCharacterContentApi'
 import {
   useApplyEnhanceVariant,
+  useDeleteCarousel,
   useEnhanceCarouselPiece,
 } from '@/hooks/useCharacterContentApi'
 import { useToast } from '@/hooks/use-toast'
 
 const CARD_MODEL_OPTIONS: Array<{ label: string; provider: string; model: string }> = [
   { label: 'Local Ollama', provider: 'ollama', model: 'gemma4:26b' },
-  { label: 'Kimi K2.5', provider: 'kimi', model: 'kimi-k2.5' },
-  { label: 'Kimi Lite', provider: 'kimi', model: 'moonshot-v1-32k' },
+  { label: 'Kimi K2.6', provider: 'kimi', model: 'kimi-k2.6' },
   { label: 'MiniMax M2.7', provider: 'minimax', model: 'minimax-m2.7' },
 ]
 const CARD_LAST_MODEL_KEY = 'zero.carousel.lastModel'
@@ -30,7 +30,7 @@ function readCardModel(): { provider: string; model: string } {
   } catch {
     /* ignore */
   }
-  return { provider: 'kimi', model: 'kimi-k2.5' }
+  return { provider: 'kimi', model: 'kimi-k2.6' }
 }
 
 function writeCardModel(provider: string, model: string) {
@@ -117,10 +117,25 @@ export function CarouselCard({
 }: CarouselCardProps) {
   const navigate = useNavigate()
   const displayName = carousel.character_name || characterName || ''
+  const deleteCarousel = useDeleteCarousel()
+  const { toast } = useToast()
+
+  const handleDelete = () => {
+    const label = carousel.title || displayName || 'this carousel'
+    if (!window.confirm(`Delete "${label}"? It will be hidden permanently and won't be regenerated.`)) return
+    deleteCarousel.mutate(carousel.id, {
+      onSuccess: () => toast({ title: 'Deleted', description: `Removed ${label}.` }),
+      onError: (e) => toast({
+        title: 'Delete failed',
+        description: String((e as Error).message || e),
+        variant: 'destructive',
+      }),
+    })
+  }
 
   return (
     <Card className="bg-gray-800/50 border-gray-700">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-2 pt-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <CardTitle className="text-white text-base flex items-center gap-2 flex-wrap">
@@ -141,7 +156,7 @@ export function CarouselCard({
               <span className="text-gray-500">-</span>
               <span>{ANGLE_LABELS[carousel.angle] || carousel.angle}</span>
             </CardTitle>
-            <CardDescription className="flex items-center gap-2 mt-1 flex-wrap">
+            <CardDescription className="flex items-center gap-2 mt-0.5 flex-wrap">
               {carousel.title}
               {carousel.story_template && (
                 <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-400">
@@ -197,11 +212,24 @@ export function CarouselCard({
                 Edit
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDelete}
+              disabled={deleteCarousel.isPending}
+              aria-label={`Delete carousel ${carousel.title || displayName}`}
+              title="Delete permanently"
+              className="border-red-500/40 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+            >
+              {deleteCarousel.isPending
+                ? <Loader2 className="w-3 h-3 animate-spin" />
+                : <Trash2 className="w-3 h-3" />}
+            </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 md:grid-cols-[320px_1fr]">
+      <CardContent className="space-y-3 pb-3">
+        <div className="grid gap-3 md:grid-cols-[320px_1fr]">
           <div className="flex justify-center md:justify-start">
             <TikTokPhonePreview
               carousel={{ ...carousel, character_name: displayName }}
@@ -214,9 +242,9 @@ export function CarouselCard({
               }
             />
           </div>
-          <div className="space-y-3 min-w-0">
+          <div className="space-y-2 min-w-0">
             {carousel.hook_text && (
-              <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-lg p-3">
+              <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-lg p-2.5">
                 <div className="text-xs text-indigo-400 mb-1">Hook</div>
                 <div className="text-white font-bold">{carousel.hook_text}</div>
               </div>

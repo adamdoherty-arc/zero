@@ -5,6 +5,7 @@ import {
     EyeOff,
     Heart,
     Home,
+    Image as ImageIcon,
     Inbox,
     MessageCircle,
     Music2,
@@ -17,6 +18,7 @@ import {
     User,
 } from 'lucide-react'
 import type { CharacterCarousel, CarouselSlide } from '@/hooks/useCharacterContentApi'
+import ChangeImageModal from './ChangeImageModal'
 
 export interface TikTokPhonePreviewProps {
     carousel: CharacterCarousel
@@ -36,22 +38,69 @@ export interface TikTokPhonePreviewProps {
 const SWIPE_THRESHOLD = 50
 
 // Accent color palettes for visual variety across carousels.
-// Each carousel gets a consistent palette based on its ID hash.
+// Each carousel gets a consistent palette based on its ID hash unless the
+// backend stamped a universe-specific accent_color on text_overlay_specs.
 const ACCENT_PALETTES = [
-    { pill: 'bg-yellow-300 text-black', label: 'bg-yellow-300 text-black' },
-    { pill: 'bg-rose-400 text-black', label: 'bg-rose-400 text-black' },
-    { pill: 'bg-emerald-400 text-black', label: 'bg-emerald-400 text-black' },
-    { pill: 'bg-violet-400 text-white', label: 'bg-violet-400 text-white' },
-    { pill: 'bg-orange-400 text-black', label: 'bg-orange-400 text-black' },
-    { pill: 'bg-sky-400 text-black', label: 'bg-sky-400 text-black' },
+    { pill: 'bg-yellow-300 text-black', label: 'bg-yellow-300 text-black', hex: '#FDE047' },
+    { pill: 'bg-rose-400 text-black', label: 'bg-rose-400 text-black', hex: '#FB7185' },
+    { pill: 'bg-emerald-400 text-black', label: 'bg-emerald-400 text-black', hex: '#34D399' },
+    { pill: 'bg-violet-400 text-white', label: 'bg-violet-400 text-white', hex: '#A78BFA' },
+    { pill: 'bg-orange-400 text-black', label: 'bg-orange-400 text-black', hex: '#FB923C' },
+    { pill: 'bg-sky-400 text-black', label: 'bg-sky-400 text-black', hex: '#38BDF8' },
+    { pill: 'bg-lime-400 text-black', label: 'bg-lime-400 text-black', hex: '#A3E635' },
+    { pill: 'bg-fuchsia-400 text-black', label: 'bg-fuchsia-400 text-black', hex: '#E879F9' },
+    { pill: 'bg-red-500 text-white', label: 'bg-red-500 text-white', hex: '#EF4444' },
+    { pill: 'bg-teal-400 text-black', label: 'bg-teal-400 text-black', hex: '#2DD4BF' },
+    { pill: 'bg-amber-300 text-black', label: 'bg-amber-300 text-black', hex: '#FCD34D' },
+    { pill: 'bg-pink-400 text-black', label: 'bg-pink-400 text-black', hex: '#F472B6' },
 ] as const
 
-function accentForCarousel(carouselId: string): (typeof ACCENT_PALETTES)[number] {
+// Font-family dispatch. Backend assigns font_style per slide (see
+// character_content_utils.pick_font_style_for_slide); frontend picks the
+// matching Tailwind family. Falls back to Inter Black for unknown styles.
+const FONT_STYLE_MAP: Record<string, string> = {
+    'display-hook': 'font-display-hook font-normal',
+    'display-stat': 'font-display-stat font-normal tracking-wider',
+    'display-quote': 'font-display-quote font-black italic',
+    'display-hot': 'font-display-hot font-normal',
+    'display-shout': 'font-display-shout font-normal tracking-wide',
+    'display-block': 'font-display-block font-normal tracking-wide',
+    'display-body': 'font-sans font-black',
+}
+
+function fontClassFor(style: string | undefined): string {
+    if (!style) return 'font-sans font-black'
+    return FONT_STYLE_MAP[style] || 'font-sans font-black'
+}
+
+type Accent = {
+    pill: string
+    label: string
+    hex: string
+    /** When set, renderToken uses inline backgroundColor instead of the pill class. */
+    inlineHex?: string
+}
+
+function accentForCarousel(carouselId: string): Accent {
     let hash = 0
     for (let i = 0; i < carouselId.length; i++) {
         hash = ((hash << 5) - hash + carouselId.charCodeAt(i)) | 0
     }
-    return ACCENT_PALETTES[Math.abs(hash) % ACCENT_PALETTES.length]
+    return { ...ACCENT_PALETTES[Math.abs(hash) % ACCENT_PALETTES.length] }
+}
+
+// Pick the best contrasting text color (black/white) for a given hex bg.
+// Uses a simple luminance heuristic so accent colors stamped by the backend
+// (universe-specific) stay readable.
+function pickReadableTextOnHex(hex: string): string {
+    const m = hex.replace('#', '').match(/^([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)
+    if (!m) return '#000'
+    const r = parseInt(m[1], 16)
+    const g = parseInt(m[2], 16)
+    const b = parseInt(m[3], 16)
+    // perceptual luminance
+    const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    return lum > 0.55 ? '#000' : '#fff'
 }
 
 // Words that look like section headers or common content labels.
@@ -82,6 +131,34 @@ function initialFallback(name: string | undefined): string {
     return trimmed[0].toUpperCase()
 }
 
+// Trigram-overlap heuristic: true if slide body text is basically a restatement
+// of the hook. Matches the backend's _trigram_overlap in carousel_audit_service.
+// Used to suppress the bottom text block on slide 1 when the LLM (or legacy
+// data) echoes the hook into slides[0].text.
+function slideBodyMatchesHook(body: string, hook: string, threshold = 0.7): boolean {
+    const norm = (s: string) =>
+        (s || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9 ]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+    const a = norm(body)
+    const b = norm(hook)
+    if (a.length < 3 || b.length < 3) return false
+    if (a === b) return true
+    const trigrams = (s: string) => {
+        const set = new Set<string>()
+        for (let i = 0; i < s.length - 2; i++) set.add(s.slice(i, i + 3))
+        return set
+    }
+    const ta = trigrams(a)
+    const tb = trigrams(b)
+    let inter = 0
+    for (const t of ta) if (tb.has(t)) inter++
+    const union = ta.size + tb.size - inter
+    return union > 0 && inter / union >= threshold
+}
+
 // Single soft shadow keeps the text crisp and avoids the "ghosted / duplicated"
 // look that a triple-shadow + text-stroke stack produces on high-DPI screens.
 // The legacy stack is kept under renderMode='stroked' for screenshot parity.
@@ -104,24 +181,44 @@ function CaptivatingText({
     variant,
     renderMode = 'clean',
     accent,
+    fontStyle,
 }: {
     text: string | undefined
     variant: TextVariant
     renderMode?: RenderMode
-    accent?: (typeof ACCENT_PALETTES)[number]
+    accent?: Accent
+    fontStyle?: string
 }) {
     if (!text) return null
 
-    const sizeClasses =
-        variant === 'hook'
-            ? 'text-[24px] leading-[1.05] tracking-tight'
-            : variant === 'slide'
-              ? 'text-[18px] leading-[1.15] tracking-tight'
-              : 'text-[15px] leading-[1.2]'
+    const fontCls = fontClassFor(fontStyle)
+    // Anton/Bebas/Staatliches are already heavy display caps — bump size a touch,
+    // Playfair quotes stay smaller/italic for visual contrast, Permanent Marker
+    // gets a slight size bump to compensate for its looser weight.
+    const sizeByVariant = (() => {
+        if (variant === 'hook') {
+            if (fontStyle === 'display-hook') return 'text-[32px] leading-[0.98] tracking-tight uppercase'
+            if (fontStyle === 'display-stat') return 'text-[34px] leading-[1.0] tracking-wider uppercase'
+            if (fontStyle === 'display-quote') return 'text-[24px] leading-[1.1] tracking-tight'
+            if (fontStyle === 'display-hot') return 'text-[28px] leading-[1.05] tracking-tight'
+            if (fontStyle === 'display-shout' || fontStyle === 'display-block') return 'text-[32px] leading-[1.02] tracking-wide uppercase'
+            return 'text-[26px] leading-[1.05] tracking-tight'
+        }
+        if (variant === 'slide') {
+            if (fontStyle === 'display-hook') return 'text-[24px] leading-[1.05] tracking-tight uppercase'
+            if (fontStyle === 'display-stat') return 'text-[26px] leading-[1.05] tracking-wider uppercase'
+            if (fontStyle === 'display-quote') return 'text-[18px] leading-[1.2] tracking-tight'
+            if (fontStyle === 'display-hot') return 'text-[20px] leading-[1.1] tracking-tight'
+            if (fontStyle === 'display-shout' || fontStyle === 'display-block') return 'text-[24px] leading-[1.1] tracking-wide uppercase'
+            return 'text-[19px] leading-[1.15] tracking-tight'
+        }
+        return 'text-[15px] leading-[1.2]'
+    })()
+    const sizeClasses = sizeByVariant
 
     // Only extract labels for hooks, not body slides (avoids over-pilling)
     const { label, body } = variant === 'hook' ? splitLeadLabel(text) : { label: null, body: text }
-    const lines = body.split(/\r?\n/)
+    const lines = body.split(/\r?\n/).filter((l, i, arr) => l.trim() || i < arr.length - 1)
 
     const containerStyle: React.CSSProperties =
         renderMode === 'stroked'
@@ -134,30 +231,52 @@ function CaptivatingText({
                   filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.55))',
               }
 
-    // For slide text, disable shout detection (only highlight **bold** markers)
-    const enableShouts = variant === 'hook'
+    // Body slides also accept UPPERCASE highlights now, with the SHOUT_SKIPLIST
+    // filtering out section-header words. This rescues old carousels that have
+    // no **bold** markers but contain proper-noun ALL-CAPS payoff words.
+    const enableShouts = true
+
+    // Treat the last line as a payoff line when there are 3+ lines on a body
+    // slide. The payoff gets bolder/larger to give the slide a punchy ending.
+    const isBodyMultiLine = variant === 'slide' && lines.length >= 3
+
+    const labelStyle: React.CSSProperties = accent?.inlineHex
+        ? {
+              backgroundColor: accent.inlineHex,
+              color: pickReadableTextOnHex(accent.inlineHex),
+              textShadow: 'none',
+              WebkitTextStroke: '0',
+              filter: 'none',
+          }
+        : { textShadow: 'none', WebkitTextStroke: '0', filter: 'none' }
 
     return (
-        <div className={`font-black text-white ${sizeClasses}`} style={containerStyle}>
+        <div className={`${fontCls} text-white ${sizeClasses}`} style={containerStyle}>
             {label && (
                 <div className="mb-1.5">
                     <span
-                        className={`inline-block rounded-md ${accent?.label ?? 'bg-yellow-300 text-black'} px-1.5 py-0.5 text-[13px] font-black uppercase tracking-wide ${
+                        className={`inline-block rounded-md ${accent?.inlineHex ? '' : (accent?.label ?? 'bg-yellow-300 text-black')} px-1.5 py-0.5 text-[13px] font-black uppercase tracking-wide ${
                             variant === 'hook' ? '-skew-x-3' : ''
                         }`}
-                        style={{ textShadow: 'none', WebkitTextStroke: '0', filter: 'none' }}
+                        style={labelStyle}
                     >
                         {label}
                     </span>
                 </div>
             )}
-            {lines.map((line, li) => (
-                <div key={li} className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
-                    {coalesce(tokenize(line, enableShouts)).map((tok, ti) =>
-                        renderToken(tok, `${li}-${ti}`, variant, accent),
-                    )}
-                </div>
-            ))}
+            {lines.map((line, li) => {
+                const isPayoff = isBodyMultiLine && li === lines.length - 1
+                const lineClasses = isPayoff
+                    ? 'flex flex-wrap items-baseline gap-x-1.5 gap-y-1 mt-1 text-[22px] tracking-tight'
+                    : 'flex flex-wrap items-baseline gap-x-1.5 gap-y-1'
+                return (
+                    <div key={li} className={lineClasses}>
+                        {coalesce(tokenize(line, enableShouts)).map((tok, ti) =>
+                            renderToken(tok, `${li}-${ti}`, variant, accent),
+                        )}
+                    </div>
+                )
+            })}
         </div>
     )
 }
@@ -245,18 +364,26 @@ function tokenize(line: string, enableShouts = true): Token[] {
 function renderToken(
     tok: Token,
     key: string,
-    variant: TextVariant,
-    accent?: (typeof ACCENT_PALETTES)[number],
+    _variant: TextVariant,
+    accent?: Accent,
 ) {
     if (tok.kind === 'bold' || tok.kind === 'shout') {
-        const pillClasses = accent?.pill ?? 'bg-yellow-300 text-black'
+        const useInline = Boolean(accent?.inlineHex)
+        const pillClasses = useInline ? '' : (accent?.pill ?? 'bg-yellow-300 text-black')
+        const pillStyle: React.CSSProperties = useInline
+            ? {
+                  backgroundColor: accent!.inlineHex,
+                  color: pickReadableTextOnHex(accent!.inlineHex!),
+                  textShadow: 'none',
+                  WebkitTextStroke: '0',
+                  letterSpacing: '-0.01em',
+              }
+            : { textShadow: 'none', WebkitTextStroke: '0', letterSpacing: '-0.01em' }
         return (
             <span
                 key={key}
-                className={`inline-block rounded-md ${pillClasses} px-1.5 ${
-                    variant === 'hook' ? 'py-0.5 -skew-x-3' : 'py-0.5'
-                }`}
-                style={{ textShadow: 'none', WebkitTextStroke: '0', letterSpacing: '-0.01em' }}
+                className={`inline-block rounded-md ${pillClasses} px-1.5 py-0.5 -skew-x-3`}
+                style={pillStyle}
             >
                 {tok.value}
             </span>
@@ -300,6 +427,7 @@ export default function TikTokPhonePreview({
     const [queryEditIdx, setQueryEditIdx] = useState<number | null>(null)
     const [queryDraft, setQueryDraft] = useState('')
     const [chromeVisible, setChromeVisible] = useState(true)
+    const [changeImageIdx, setChangeImageIdx] = useState<number | null>(null)
     const audioRef = useRef<HTMLAudioElement | null>(null)
     const dragStartX = useRef<number>(0)
 
@@ -387,7 +515,36 @@ export default function TikTokPhonePreview({
         return parts.join(' - ')
     }, [carousel.music_track])
 
-    const accent = useMemo(() => accentForCarousel(carousel.id || ''), [carousel.id])
+    const accent = useMemo<Accent>(() => {
+        const base = accentForCarousel(carousel.id || '')
+        const stamped = (carousel.text_overlay_specs || [])
+            .map(spec => spec?.accent_color)
+            .find(hex => typeof hex === 'string' && /^#[\da-f]{6}$/i.test(hex))
+        if (stamped) {
+            return { ...base, inlineHex: stamped, hex: stamped }
+        }
+        return base
+    }, [carousel.id, carousel.text_overlay_specs])
+
+    // Build per-slide accent + font style lookup by slide_num. Backend can stamp
+    // these on text_overlay_specs (accent_color / font_style) to vary per slide.
+    const slideAccents = useMemo(() => {
+        const map = new Map<number, { accent?: Accent; fontStyle?: string }>()
+        for (const spec of carousel.text_overlay_specs || []) {
+            if (!spec) continue
+            const snum = spec.slide_num
+            if (typeof snum !== 'number') continue
+            const hex = spec.accent_color
+            const next: { accent?: Accent; fontStyle?: string } = {
+                fontStyle: spec.font_style || undefined,
+            }
+            if (typeof hex === 'string' && /^#[\da-f]{6}$/i.test(hex)) {
+                next.accent = { ...accent, inlineHex: hex, hex }
+            }
+            map.set(snum, next)
+        }
+        return map
+    }, [carousel.text_overlay_specs, accent])
     const offsetPct = -(activeSlide * 100) + (dragging ? (dragX / 320) * 100 : 0)
 
     return (
@@ -461,24 +618,42 @@ export default function TikTokPhonePreview({
                                 <p className="text-white/60 text-sm">No slides yet</p>
                             </div>
                         ) : (
-                            slides.map((slide, idx) => (
-                                <SlideView
-                                    key={idx}
-                                    slide={slide}
-                                    idx={idx}
-                                    characterName={carousel.character_name}
-                                    hook={idx === 0 ? carousel.hook_text : undefined}
-                                    editMode={editMode}
-                                    chromeVisible={chromeVisible}
-                                    onTextChange={text => updateSlideText(idx, text)}
-                                    onHookChange={hook_text => onChange?.({ hook_text })}
-                                    onReimage={() => onReimageSlide?.(idx)}
-                                    onEditQuery={() => startQueryEdit(idx)}
-                                    isReimaging={reimagingSlideIdx === idx}
-                                    renderMode={renderMode}
-                                    accent={accent}
-                                />
-                            ))
+                            slides.map((slide, idx) => {
+                                const slideNum = slide.slide_num ?? idx + 1
+                                const perSlide = slideAccents.get(slideNum) || {}
+                                const slideAccent = perSlide.accent || accent
+                                // Prefer slide-level fields (slide.font_style / slide.accent_color)
+                                // over text_overlay_specs when both are present, so the backend
+                                // can stamp them at either layer.
+                                const fontStyle = slide.font_style || perSlide.fontStyle
+                                const slideLevelHex =
+                                    typeof slide.accent_color === 'string' &&
+                                    /^#[\da-f]{6}$/i.test(slide.accent_color)
+                                        ? slide.accent_color
+                                        : undefined
+                                const finalAccent = slideLevelHex
+                                    ? { ...slideAccent, inlineHex: slideLevelHex, hex: slideLevelHex }
+                                    : slideAccent
+                                return (
+                                    <SlideView
+                                        key={idx}
+                                        slide={slide}
+                                        idx={idx}
+                                        characterName={carousel.character_name}
+                                        hook={idx === 0 ? carousel.hook_text : undefined}
+                                        editMode={editMode}
+                                        chromeVisible={chromeVisible}
+                                        onTextChange={text => updateSlideText(idx, text)}
+                                        onHookChange={hook_text => onChange?.({ hook_text })}
+                                        onReimage={() => onReimageSlide?.(idx)}
+                                        onEditQuery={() => startQueryEdit(idx)}
+                                        isReimaging={reimagingSlideIdx === idx}
+                                        renderMode={renderMode}
+                                        accent={finalAccent}
+                                        fontStyle={fontStyle}
+                                    />
+                                )
+                            })
                         )}
                     </div>
 
@@ -638,6 +813,15 @@ export default function TikTokPhonePreview({
                             </button>
                             <button
                                 type="button"
+                                onClick={() => setChangeImageIdx(activeSlide)}
+                                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white"
+                                title="Pick from pool, paste URL, or upload"
+                            >
+                                <ImageIcon className="w-3 h-3" />
+                                Change image
+                            </button>
+                            <button
+                                type="button"
                                 onClick={() => startQueryEdit(activeSlide)}
                                 className="rounded px-2 py-1 text-xs font-medium bg-gray-700 hover:bg-gray-600 text-white"
                                 title="Edit the image search query"
@@ -687,6 +871,15 @@ export default function TikTokPhonePreview({
                         </button>
                     )}
                 </div>
+            )}
+            {changeImageIdx !== null && (
+                <ChangeImageModal
+                    carouselId={carousel.id}
+                    slideIndex={changeImageIdx}
+                    slideNum={slides[changeImageIdx]?.slide_num ?? changeImageIdx + 1}
+                    currentUrl={slides[changeImageIdx]?.image_url}
+                    onClose={() => setChangeImageIdx(null)}
+                />
             )}
         </div>
     )
@@ -767,7 +960,8 @@ interface SlideViewProps {
     onEditQuery: () => void
     isReimaging: boolean
     renderMode?: RenderMode
-    accent?: (typeof ACCENT_PALETTES)[number]
+    accent?: Accent
+    fontStyle?: string
 }
 
 function SlideView({
@@ -783,8 +977,10 @@ function SlideView({
     isReimaging,
     renderMode = 'clean',
     accent,
+    fontStyle,
 }: SlideViewProps) {
-    const hasImage = Boolean(slide.image_url)
+    const [imgErrored, setImgErrored] = useState(false)
+    const hasImage = Boolean(slide.image_url) && !imgErrored
     const initial = initialFallback(characterName)
 
     return (
@@ -795,10 +991,22 @@ function SlideView({
                     alt={slide.image_query || `Slide ${slide.slide_num}`}
                     className="absolute inset-0 w-full h-full object-cover"
                     draggable={false}
+                    onError={() => setImgErrored(true)}
                 />
             ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-gray-900 to-black flex items-center justify-center">
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 via-gray-900 to-black flex flex-col items-center justify-center gap-3">
                     <span className="text-7xl font-black text-white/15">{initial}</span>
+                    {(!slide.image_url || imgErrored) && onReimage && (
+                        <button
+                            type="button"
+                            onClick={onReimage}
+                            className="flex items-center gap-1.5 rounded-full bg-rose-500/90 hover:bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur"
+                            aria-label="Re-source slide image"
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            {imgErrored ? 'Image broken — re-source' : 'No image — re-source'}
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -851,15 +1059,23 @@ function SlideView({
                             placeholder="Hook..."
                         />
                     ) : hook ? (
-                        <CaptivatingText text={hook} variant="hook" renderMode={renderMode} accent={accent} />
+                        <CaptivatingText text={hook} variant="hook" renderMode={renderMode} accent={accent} fontStyle={fontStyle} />
                     ) : null}
                 </div>
             )}
 
-            {/* Slide text */}
+            {/* Slide text - hidden on slide 1 (hook already fills that slot)
+                when body is empty or duplicates the hook. Still rendered in
+                edit mode so users can intentionally add different slide-1 body
+                text if they want. */}
             <div
                 className={`absolute z-10 left-4 ${
                     chromeVisible ? 'bottom-[170px] right-16' : 'bottom-10 right-4'
+                } ${
+                    !editMode && hook !== undefined && hook !== null &&
+                    (!(slide.text || '').trim() || slideBodyMatchesHook(slide.text || '', hook || ''))
+                        ? 'hidden'
+                        : ''
                 }`}
             >
                 {editMode ? (
@@ -871,7 +1087,7 @@ function SlideView({
                         placeholder="Slide text..."
                     />
                 ) : (
-                    <CaptivatingText text={slide.text} variant="slide" renderMode={renderMode} accent={accent} />
+                    <CaptivatingText text={slide.text} variant="slide" renderMode={renderMode} accent={accent} fontStyle={fontStyle} />
                 )}
             </div>
         </div>

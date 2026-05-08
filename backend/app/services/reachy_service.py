@@ -40,11 +40,36 @@ import asyncio
 import io
 import math
 import os
+import time
 import uuid as uuid_mod
-from typing import Any, Iterable, Optional
+from collections import deque
+from typing import Any, Deque, Iterable, Optional
 
 import httpx
 import structlog
+
+
+# Ring buffer of the last N motions the robot played. Populated by
+# play_emotion / play_dance / play_motion so the UI can show a "recent
+# activity" strip without us having to persist anything. Ephemeral on
+# purpose — clears on process restart.
+_RECENT_MOTION_CAP = 20
+_recent_motions: Deque[dict] = deque(maxlen=_RECENT_MOTION_CAP)
+
+
+def _record_motion(name: str, kind: str, source: str = "direct") -> None:
+    _recent_motions.appendleft(
+        {
+            "name": name,
+            "kind": kind,
+            "source": source,
+            "ts": time.time(),
+        }
+    )
+
+
+def get_recent_motions(limit: int = 10) -> list[dict]:
+    return list(_recent_motions)[: max(1, min(limit, _RECENT_MOTION_CAP))]
 
 from app.services.reachy_motion_library import (
     ALL_CLIPS,
@@ -372,41 +397,82 @@ class ReachyService:
             "kind": clip.kind,
         }
 
+    async def _maybe_play_sequence(self, name: str) -> Optional[dict]:
+        """If `name` matches a user-defined sequence, play it and return the
+        result. Returns None when no sequence matches (caller falls back to
+        hardcoded clip resolution)."""
+        try:
+            # Imported lazily to avoid a circular import (sequence service ->
+            # reachy_service via playback).
+            from app.services.reachy_sequence_service import (
+                get_reachy_sequence_service,
+            )
+            svc = get_reachy_sequence_service()
+            match = await svc.resolve(name)
+            if not match:
+                return None
+            result = await svc.play_sequence(match["id"], reachy_service=self)
+            return {**result, "is_sequence": True}
+        except Exception as e:
+            # Never let sequence resolution failures break the hardcoded path.
+            logger.warning("sequence_resolve_failed", name=name, error=str(e))
+            return None
+
     async def play_emotion(self, emotion: str) -> dict:
         """
         Play a canned emotion animation. Accepts canonical names (``cheerful1``),
         aliases (``happy``), or free-form LLM tags (``thank you``). Returns a
         descriptive error + the list of known emotions if resolution fails.
+
+        User-defined sequences share the same namespace — a sequence named
+        ``happy_greeting`` (or with that alias) is played in full when the
+        caller passes it here.
         """
+        seq_result = await self._maybe_play_sequence(emotion)
+        if seq_result is not None:
+            _record_motion(emotion, "sequence")
+            return seq_result
         clip = resolve_motion(emotion, kind="emotion")
         if not clip:
             return {
                 "error": f"unknown emotion: {emotion}",
                 "known": [c.name for c in EMOTION_CLIPS],
             }
+        _record_motion(clip.name, "emotion")
         return await self._play_clip_with_fallback(
             clip, extra_datasets=EMOTIONS_DATASET_FALLBACKS
         )
 
     async def play_dance(self, dance: str) -> dict:
-        """Play a canned dance move from the dances library."""
+        """Play a canned dance move from the dances library (or a matching sequence)."""
+        seq_result = await self._maybe_play_sequence(dance)
+        if seq_result is not None:
+            _record_motion(dance, "sequence")
+            return seq_result
         clip = resolve_motion(dance, kind="dance")
         if not clip:
             return {
                 "error": f"unknown dance: {dance}",
                 "known": [c.name for c in DANCE_CLIPS],
             }
+        _record_motion(clip.name, "dance")
         return await self._play_clip_with_fallback(clip)
 
     async def play_motion(self, name: str, *, kind: Optional[MotionKind] = None) -> dict:
         """
-        Play any clip (emotion or dance) by name or alias. Caller may constrain
-        `kind` to force one library.
+        Play any clip (emotion or dance) by name or alias. Sequences share the
+        same namespace. Caller may constrain `kind` to force one library; that
+        constraint only applies to the hardcoded clip fallback.
         """
+        seq_result = await self._maybe_play_sequence(name)
+        if seq_result is not None:
+            _record_motion(name, "sequence")
+            return seq_result
         clip = resolve_motion(name, kind=kind) if kind else resolve_motion(name)
         if not clip:
             return {"error": f"unknown motion: {name}"}
         extras = EMOTIONS_DATASET_FALLBACKS if clip.kind == "emotion" else ()
+        _record_motion(clip.name, clip.kind)
         return await self._play_clip_with_fallback(clip, extra_datasets=extras)
 
     # ------------------------------------------------------------------
@@ -474,17 +540,57 @@ class ReachyService:
     # High-level: synthesize + play + cleanup
     # ------------------------------------------------------------------
 
-    async def say(self, text: str, *, cleanup: bool = True) -> dict:
+    async def play_audio_bytes(
+        self,
+        audio_bytes: bytes,
+        *,
+        cleanup: bool = True,
+        label: str = "audio",
+    ) -> dict:
+        """
+        Upload already-synthesized WAV bytes to the daemon and play them on
+        Reachy's speaker. Skips the TTS step — use this when the caller has
+        the audio in hand already (e.g. the voice loop or persona preview)
+        to avoid double-synthesizing.
+        """
+        if not audio_bytes:
+            return {"error": "no audio bytes", "label": label}
+        filename = f"{self._tts_sound_prefix}{uuid_mod.uuid4().hex[:12]}.wav"
+        upload_res = await self.upload_sound(filename, audio_bytes)
+        if upload_res.get("error"):
+            return {"error": upload_res.get("error"), "label": label, "stage": "upload"}
+        play_res = await self.play_sound(filename)
+        if play_res.get("error"):
+            if cleanup:
+                asyncio.create_task(self._deferred_delete(filename, delay_s=1.0))
+            return {"error": play_res.get("error"), "label": label, "stage": "play"}
+        if cleanup:
+            # Best-effort cleanup. Heuristic based on audio size (16 kHz mono
+            # 16-bit → 32 kB/s). Clamp [2, 30] s.
+            approx_seconds = len(audio_bytes) / 32_000.0
+            delay = max(2.0, min(30.0, approx_seconds + 1.0))
+            asyncio.create_task(self._deferred_delete(filename, delay_s=delay))
+        return {"label": label, "file": filename, "audio_size": len(audio_bytes)}
+
+    async def say(
+        self,
+        text: str,
+        *,
+        cleanup: bool = True,
+        voice_override: Optional[str] = None,
+    ) -> dict:
         """
         Speak `text` through the Reachy speaker.
 
         Pipeline: TTSService.synthesize -> upload WAV -> play_sound.
         If `cleanup` is true, the uploaded sound is deleted in the background
         after a short delay so the daemon's sound library does not bloat.
+        `voice_override` forces an edge-tts voice for this utterance only
+        (e.g. switching to a different voice when reading email content).
         """
         try:
             tts = get_tts_service()
-            audio_bytes = await tts.synthesize(text)
+            audio_bytes = await tts.synthesize(text, voice_override=voice_override)
         except RuntimeError as e:
             logger.warning("reachy_say_tts_failed", error=str(e))
             return {"error": f"tts failed: {e}", "text": text}
@@ -530,36 +636,50 @@ class ReachyService:
     # ------------------------------------------------------------------
     # Camera
     # ------------------------------------------------------------------
+    #
+    # The daemon itself only exposes /api/camera/specs. Live frames are
+    # captured by the host_agent (on the Windows host, port 18794), which
+    # owns the USB device via OpenCV. Zero proxies the MJPEG stream and the
+    # single-frame endpoint through its own API so browsers see a same-origin
+    # URL — see backend/app/routers/reachy.py for the proxy routes.
 
     async def get_camera_specs(self) -> dict:
         return await self._request("GET", "/api/camera/specs")
 
-    def get_stream_url(self, *, fmt: str = "webrtc") -> str:
-        """
-        Return the URL the frontend should hit to consume Reachy's live
-        camera feed. The desktop app exposes the feed on :8443 via WebRTC;
-        Zero serves the URL verbatim so browsers can connect directly.
-        """
-        # Daemon is e.g. http://host:8000 -> feed is on the same host :8443
-        parsed = self._base_url.rstrip("/").split("//", 1)
-        scheme = parsed[0] + "//" if len(parsed) > 1 else ""
-        host_and_port = parsed[-1].split("/", 1)[0]
-        host = host_and_port.split(":", 1)[0]
-        if fmt == "webrtc":
-            return f"https://{host}:8443/webrtc"
-        return f"{scheme}{host}:8443"
+    def get_stream_url(self, *, fmt: str = "mjpeg") -> str:
+        """Browser-facing URL for the live camera feed (served by Zero, proxied to host_agent)."""
+        if fmt == "mjpeg":
+            return "/api/reachy/camera/mjpeg"
+        if fmt == "frame":
+            return "/api/reachy/camera/frame.jpg"
+        # Back-compat: callers that passed "webrtc" still get something usable.
+        return "/api/reachy/camera/mjpeg"
 
     async def capture_image(self) -> bytes:
         """
-        Camera capture is not exposed by the daemon's REST API. Frames come
-        through the desktop app's WebRTC channel on :8443. Returning empty
-        bytes keeps legacy callers from crashing; they should check for the
-        empty result.
+        Fetch a single JPEG from the host_agent camera worker.
+        Returns empty bytes if the host_agent / camera is unavailable so
+        callers can fail gracefully (checked via `len(...) == 0`).
         """
-        logger.debug(
-            "reachy_capture_image_unavailable",
-            hint="Daemon exposes only /api/camera/specs; frames live on WebRTC :8443",
-        )
+        from app.infrastructure.config import get_settings
+
+        settings = get_settings()
+        host_agent = (getattr(settings, "host_agent_url", None) or "").rstrip("/")
+        if not host_agent:
+            host_agent = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18794").rstrip("/")
+
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{host_agent}/camera/frame.jpg")
+            if resp.status_code == 200:
+                return resp.content
+            logger.info(
+                "reachy_capture_image_host_agent_status",
+                status=resp.status_code,
+                host_agent=host_agent,
+            )
+        except Exception as e:
+            logger.info("reachy_capture_image_host_agent_unreachable", error=str(e), host_agent=host_agent)
         return b""
 
 

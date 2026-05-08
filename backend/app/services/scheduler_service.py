@@ -7,7 +7,6 @@ Handles scheduled automation tasks including:
 - Evening review and sprint updates
 - Enhancement scans
 - Notification routing
-- Workspace backups
 
 Uses APScheduler for cron-based scheduling.
 All job executions are logged to PostgreSQL (scheduler_audit_log) for observability.
@@ -28,6 +27,32 @@ from app.infrastructure.database import get_session
 from app.db.models import SchedulerAuditLogModel
 
 logger = structlog.get_logger(__name__)
+
+
+def _is_account_quiet_now(account: dict) -> bool:
+    """True if `account` is currently inside its configured quiet-hours window.
+
+    quiet_hours shape: {enabled, start: "HH:MM", end: "HH:MM", weekdays_only}
+    Empty / disabled = always announce. Wraps midnight when start > end.
+    """
+    qh = account.get("quiet_hours") or {}
+    if not qh.get("enabled"):
+        return False
+    now = datetime.now()
+    if qh.get("weekdays_only") and now.weekday() >= 5:
+        return False  # weekends are not quiet when "weekdays_only" is set
+    try:
+        sh, sm = (int(p) for p in str(qh.get("start", "22:00")).split(":"))
+        eh, em = (int(p) for p in str(qh.get("end", "07:00")).split(":"))
+    except Exception:
+        return False
+    cur = (now.hour, now.minute)
+    s = (sh, sm)
+    e = (eh, em)
+    if s <= e:
+        return s <= cur < e
+    # Window wraps midnight (e.g. 22:00 -> 07:00)
+    return cur >= s or cur < e
 
 
 # ============================================
@@ -75,6 +100,31 @@ DAILY_SCHEDULE = {
         "description": "Incremental Gmail sync and alert check",
         "enabled": True
     },
+    "calendar_check": {
+        "cron": "*/10 * * * *",  # Every 10 minutes
+        "description": "Sync calendar events across all connected accounts",
+        "enabled": True
+    },
+    "reachy_calendar_nudge": {
+        "cron": "* * * * *",  # Every minute
+        "description": "Speak an upcoming-event warning through Reachy at 10/5/1 minute marks",
+        "enabled": True
+    },
+    "reachy_email_nudge": {
+        "cron": "*/5 * * * *",  # Every 5 minutes — aligned with gmail_check incremental sync
+        "description": "Per-email voice triage: announce new arrivals through Reachy and drive read/ignore/delete/respond loop",
+        "enabled": True
+    },
+    "reachy_meeting_auto_record": {
+        "cron": "* * * * *",  # Every minute
+        "description": "Auto-start a recording when a flagged calendar event begins",
+        "enabled": True
+    },
+    "reachy_meeting_auto_stop": {
+        "cron": "* * * * *",  # Every minute
+        "description": "Auto-stop a recording when its calendar event ends",
+        "enabled": True
+    },
     "gmail_digest": {
         "cron": "5 7 * * *",  # 7:05 AM daily (after briefing)
         "description": "Generate and send daily email digest",
@@ -110,30 +160,15 @@ DAILY_SCHEDULE = {
         "description": "Generate cross-project smart task suggestions",
         "enabled": True
     },
-    "backup_hourly": {
-        "cron": "0 * * * *",  # Every hour
-        "description": "Hourly workspace backup",
-        "enabled": True
-    },
-    "backup_daily": {
-        "cron": "0 2 * * *",  # 2:00 AM daily
-        "description": "Daily workspace backup",
-        "enabled": True
-    },
-    "backup_weekly": {
-        "cron": "0 3 * * 0",  # Sunday 3:00 AM
-        "description": "Weekly workspace backup",
-        "enabled": True
-    },
     "research_daily": {
         "cron": "0 11 * * *",  # 11:00 AM daily
         "description": "Daily research cycle - scan topics and discover new findings",
-        "enabled": True
+        "enabled": False
     },
     "research_weekly_deep_dive": {
         "cron": "0 10 * * 6",  # Saturday 10:00 AM
         "description": "Weekly deep dive research with expanded search and trend report",
-        "enabled": True
+        "enabled": False
     },
     # Ecosystem sync (S70)
     "ecosystem_quick_sync": {
@@ -212,10 +247,13 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     # GPU/Ollama Resource Manager
+    # Disabled 2026-04-27: project migrated off Ollama to vLLM. The service
+    # still polls Ollama's /api/ps and /api/tags, which now always fail.
+    # Re-enable only after porting GpuManagerService to vLLM /metrics or nvidia-smi.
     "gpu_refresh": {
-        "cron": "*/5 * * * *",  # Every 5 minutes (was every 1 min — too aggressive)
+        "cron": "*/5 * * * *",
         "description": "Refresh GPU/Ollama resource status (loaded models, VRAM)",
-        "enabled": True
+        "enabled": False
     },
     # Reminder Check
     "reminder_check": {
@@ -251,12 +289,6 @@ DAILY_SCHEDULE = {
     "metrics_snapshot": {
         "cron": "0 * * * *",  # Every hour
         "description": "Persist hourly metrics snapshot to PostgreSQL",
-        "enabled": True
-    },
-    # Backup Restore Test
-    "backup_restore_test": {
-        "cron": "0 4 * * 0",  # Sunday 4:00 AM
-        "description": "Weekly backup extraction + validation test",
         "enabled": True
     },
     # Notion Bidirectional Sync
@@ -337,6 +369,42 @@ DAILY_SCHEDULE = {
         "description": "Clean up products with article titles instead of product names",
         "enabled": True
     },
+    # Meal Manager
+    "meal_catalog_refresh": {
+        "cron": "0 6 * * *",  # 6:00 AM daily
+        "description": "Refresh menu pages + pricing for every tracked meal service",
+        "enabled": True
+    },
+    "meal_promo_hunt": {
+        "cron": "0 */4 * * *",  # Every 4 hours
+        "description": "Hunt fresh promo codes + portal cashback for tracked meal services",
+        "enabled": True
+    },
+    "meal_shipment_scan": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Scan Gmail cache for meal shipment notifications + Chase/Amex offer emails",
+        "enabled": True
+    },
+    "meal_discovery": {
+        "cron": "0 11 * * 0",  # Sunday 11:00 AM
+        "description": "Weekly discovery — search for new meal delivery services to track",
+        "enabled": True
+    },
+    "meal_daily_digest": {
+        "cron": "30 7 * * *",  # 7:30 AM daily
+        "description": "Write daily meal digest to vault (cheapest, in-transit, hot promos)",
+        "enabled": True
+    },
+    "meal_signup_sweep": {
+        "cron": "0 3 * * 6",  # Saturday 3:00 AM
+        "description": "Playwright-sign-up meal services + parse welcome-email codes from Gmail cache",
+        "enabled": True
+    },
+    "meal_vision_sweep": {
+        "cron": "0 4 * * 0",  # Sunday 4:00 AM
+        "description": "Vision-LLM screenshot sweep across meal-service homepages (env-gated)",
+        "enabled": True
+    },
     # Content Agent
     "content_performance_sync": {
         "cron": "0 */2 * * *",  # Every 2 hours
@@ -400,6 +468,53 @@ DAILY_SCHEDULE = {
     "ai_company_deep_research": {
         "cron": "0 */6 * * *",  # Every 6 hours
         "description": "Run deep research on highest-priority queued topic",
+        "enabled": False
+    },
+    # Autonomous Research Loop — 24/7 driver with concurrency + budget gates
+    "autonomous_research_tick": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Drives continuous background research; picks eligible topic, dispatches deep research, writes results into the Obsidian vault",
+        "enabled": False
+    },
+    # Ambient vision loop — Phase 5 of the Meta-glasses / Reachy-camera plan.
+    # Pulls a frame from the active SightProvider, runs VLM, writes notable
+    # observations to /vault/00_Meta/_agent/vision/. Skips when idle.
+    "ambient_vision_tick": {
+        "cron": "*/1 * * * *",  # every minute; the tick itself skips if <60s frame staleness, etc.
+        "description": "Ambient vision — capture a frame from the active sight provider, VLM-describe it, log to vault, surface actionable events",
+        "enabled": True
+    },
+    # Vault indexer — SecondBrain Phase 2
+    "vault_reindex_tick": {
+        "cron": "*/2 * * * *",  # Every 2 minutes
+        "description": "Walk the Obsidian vault for changed markdown files, re-chunk and re-embed into vault_chunks",
+        "enabled": True
+    },
+    # Vault task sync — SecondBrain Phase 3
+    "vault_task_sync_tick": {
+        "cron": "*/3 * * * *",  # Every 3 minutes
+        "description": "Scan daily notes for checkbox tasks and bi-directionally sync with TaskModel",
+        "enabled": True
+    },
+    "approvals_expire_stale": {
+        "cron": "7 * * * *",  # Hourly at :07
+        "description": "Mark pending approvals past their expiry as expired",
+        "enabled": True
+    },
+    # SecondBrain Phase 4 — morning digest + weekly review + drift scan
+    "morning_digest_tick": {
+        "cron": "30 6 * * *",  # 6:30 AM daily
+        "description": "Aggregate overnight events into a 7-section digest written into today's daily note",
+        "enabled": True
+    },
+    "weekly_review_tick": {
+        "cron": "0 17 * * 5",  # 5:00 PM Friday
+        "description": "Emit weekly review markdown (reviews/YYYY-Www.md); drives Get Clear / Get Current / Get Creative",
+        "enabled": True
+    },
+    "drift_scan_tick": {
+        "cron": "15 2 * * *",  # 2:15 AM daily
+        "description": "Run the 6 drift SQL rules (idle project, calendar-vs-actual, commit decay, intent drift, inbox bloat, trading skip); write agent_alerts",
         "enabled": True
     },
     "ai_company_idea_validation": {
@@ -423,9 +538,24 @@ DAILY_SCHEDULE = {
         "description": "Re-research characters with stale data (>7 days old)",
         "enabled": True
     },
+    "character_research_retry": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Drain pending/needs_retry research backlog (does not touch completed characters)",
+        "enabled": True,
+    },
     "character_content_generation": {
-        "cron": "0 */4 * * *",  # Every 4 hours - aggressive 24/7 content production
+        "cron": "0 * * * *",  # Every 1 hour - Phase 4.1 throughput bump
         "description": "Auto-generate carousels for researched characters, priority-tier ordered",
+        "enabled": True
+    },
+    "character_content_gate": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Demand-driven generation: fires extra carousels when approved backlog is low",
+        "enabled": True
+    },
+    "carousel_watchdog": {
+        "cron": "*/10 * * * *",  # Every 10 minutes
+        "description": "Detect stuck carousel pipeline jobs and alert when cadence is missed",
         "enabled": True
     },
     "character_performance_sync": {
@@ -448,10 +578,40 @@ DAILY_SCHEDULE = {
         "description": "Scan non-published carousels for banned hook patterns (e.g. 'The Hammer Lie') and rewrite them",
         "enabled": True,
     },
+    "carousel_morning_briefing": {
+        "cron": "0 8 * * *",  # 8:00 AM daily
+        "description": "Zero's morning check-in: last 12h carousel stats, top variants, issues, wins",
+        "enabled": True,
+    },
+    "carousel_evening_recap": {
+        "cron": "0 20 * * *",  # 8:00 PM daily
+        "description": "Zero's evening recap: last 12h carousel stats, top variants, issues, wins",
+        "enabled": True,
+    },
     "character_reference_video_processor": {
         "cron": "* * * * *",  # Every 1 minute
         "description": "Download / transcribe / analyze newly ingested TikTok reference videos",
         "enabled": True
+    },
+    "character_reference_video_learning": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Auto-apply high-surprise facts + style exemplars from analyzed reference videos",
+        "enabled": True,
+    },
+    "carousel_reaudit": {
+        "cron": "0 */2 * * *",  # Every 2 hours
+        "description": "Re-audit published/approved carousels and auto-fix bad images / duplicate text",
+        "enabled": True,
+    },
+    "entity_research_deepen": {
+        "cron": "0 2 * * *",  # 2:00 AM daily
+        "description": "Run deep research on the lowest-depth characters/shows/movies",
+        "enabled": True,
+    },
+    "employee_checkin": {
+        "cron": "0 8 * * *",  # 8:00 AM daily
+        "description": "Aggregate subsystem reports into an EmployeeCheckin and file regression tasks",
+        "enabled": True,
     },
     "character_reference_video_cleanup": {
         "cron": "0 4 * * *",  # 4:00 AM daily
@@ -506,8 +666,8 @@ DAILY_SCHEDULE = {
     },
     # Media content automation (TV shows + movies)
     "media_auto_research": {
-        "cron": "*/15 * * * *",  # Every 15 minutes
-        "description": "Auto-research pending TV/movie titles (up to 3 per run, rate-limited to share Ollama with characters)",
+        "cron": "*/2 * * * *",  # Every 2 minutes — keep the queue flowing
+        "description": "Auto-research pending TV/movie titles (up to 6 per run, ~180/hr throughput)",
         "enabled": True
     },
     "media_content_generation": {
@@ -631,6 +791,27 @@ DAILY_SCHEDULE = {
     "character_hook_style_report": {
         "cron": "0 4 * * 0",  # Weekly Sunday 4 AM
         "description": "Compute per-hook-style engagement lift, store as episodic memory",
+        "enabled": True
+    },
+    # Orchestration hardening (migration 035)
+    "autonomous_content_loop": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "Drive carousel generation off unprocessed TrendingSignalModel rows (gated by ZERO_AUTONOMOUS_CONTENT_ENABLED)",
+        "enabled": True
+    },
+    "swarm_calibration": {
+        "cron": "0 3 * * 0",  # Sunday 03:00
+        "description": "Recompute swarm role weights from 30d of prediction outcomes (Brier + rank correlation)",
+        "enabled": True
+    },
+    "lore_ingestion": {
+        "cron": "0 2 * * *",  # Daily 02:00
+        "description": "Chunk + embed CharacterModel.research_data into character_lore_chunks for retrieval",
+        "enabled": True
+    },
+    "carousel_partition_maintenance": {
+        "cron": "0 1 25 * *",  # 25th of each month at 01:00 (well before month rollover)
+        "description": "Create next-month partitions for character_carousels (native Postgres partitioning)",
         "enabled": True
     },
 }
@@ -816,16 +997,18 @@ class SchedulerService:
             "money_maker_cycle": self._run_money_maker_cycle,
             "money_maker_weekly_report": self._run_money_maker_weekly_report,
             "gmail_check": self._run_gmail_check,
+            "calendar_check": self._run_calendar_check,
             "gmail_digest": self._run_gmail_digest,
+            "reachy_calendar_nudge": self._run_reachy_calendar_nudge,
+            "reachy_email_nudge": self._run_reachy_email_nudge,
+            "reachy_meeting_auto_record": self._run_reachy_meeting_auto_record,
+            "reachy_meeting_auto_stop": self._run_reachy_meeting_auto_stop,
             "email_automation_check": self._run_email_automation_check,
             "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
             "meeting_prep": self._run_meeting_prep,
             "blocked_task_escalation": self._run_blocked_task_escalation,
             "smart_suggestions": self._run_smart_suggestions,
-            "backup_hourly": self._run_backup_hourly,
-            "backup_daily": self._run_backup_daily,
-            "backup_weekly": self._run_backup_weekly,
             "research_daily": self._run_research_daily,
             "research_weekly_deep_dive": self._run_research_weekly_deep_dive,
             # Ecosystem (S70)
@@ -862,8 +1045,6 @@ class SchedulerService:
             "alerting_check": self._run_alerting_check,
             # Metrics Snapshot
             "metrics_snapshot": self._run_metrics_snapshot,
-            # Backup Restore Test
-            "backup_restore_test": self._run_backup_restore_test,
             # Notion Bidirectional Sync
             "notion_bidirectional_sync": self._run_notion_bidirectional_sync,
             # TikTok Shop Research Agent
@@ -882,6 +1063,14 @@ class SchedulerService:
             "tiktok_weekly_report": self._run_tiktok_weekly_report,
             "tiktok_image_revalidation": self._run_tiktok_image_revalidation,
             "tiktok_article_cleanup": self._run_tiktok_article_cleanup,
+            # Meal Manager
+            "meal_catalog_refresh": self._run_meal_catalog_refresh,
+            "meal_promo_hunt": self._run_meal_promo_hunt,
+            "meal_shipment_scan": self._run_meal_shipment_scan,
+            "meal_discovery": self._run_meal_discovery,
+            "meal_daily_digest": self._run_meal_daily_digest,
+            "meal_signup_sweep": self._run_meal_signup_sweep,
+            "meal_vision_sweep": self._run_meal_vision_sweep,
             # Content Agent
             "content_performance_sync": self._run_content_performance_sync,
             "content_improvement_cycle": self._run_content_improvement_cycle,
@@ -899,18 +1088,38 @@ class SchedulerService:
             "daily_autonomous_report": self._run_daily_autonomous_report,
             # AI Company
             "ai_company_deep_research": self._run_ai_company_deep_research,
+            # Autonomous Research Loop
+            "autonomous_research_tick": self._run_autonomous_research_tick,
+            # Ambient vision (Phase 5 of Meta-glasses / Reachy-camera plan)
+            "ambient_vision_tick": self._run_ambient_vision_tick,
+            # SecondBrain phases 2 / 3 / 4 / 5
+            "vault_reindex_tick": self._run_vault_reindex_tick,
+            "vault_task_sync_tick": self._run_vault_task_sync_tick,
+            "approvals_expire_stale": self._run_approvals_expire_stale,
+            "morning_digest_tick": self._run_morning_digest_tick,
+            "weekly_review_tick": self._run_weekly_review_tick,
+            "drift_scan_tick": self._run_drift_scan_tick,
             "ai_company_idea_validation": self._run_ai_company_idea_validation,
             "ai_company_daily_council": self._run_ai_company_daily_council,
             "ai_company_experiment_monitor": self._run_ai_company_experiment_monitor,
             # Character Content
             "character_research_refresh": self._run_character_research_refresh,
+            "character_research_retry": self._run_character_research_retry,
             "character_content_generation": self._run_character_content_generation,
+            "character_content_gate": self._run_character_content_gate,
+            "carousel_watchdog": self._run_carousel_watchdog,
             "character_performance_sync": self._run_character_performance_sync,
             "character_auto_publish": self._run_character_auto_publish,
             "character_content_learning": self._run_character_content_learning,
             "carousel_banned_hook_backfill": self._run_carousel_banned_hook_backfill,
+            "carousel_morning_briefing": self._run_carousel_morning_briefing,
+            "carousel_evening_recap": self._run_carousel_evening_recap,
             "character_reference_video_processor": self._run_character_reference_video_processor,
+            "character_reference_video_learning": self._run_character_reference_video_learning,
             "character_reference_video_cleanup": self._run_character_reference_video_cleanup,
+            "carousel_reaudit": self._run_carousel_reaudit,
+            "entity_research_deepen": self._run_entity_research_deepen,
+            "employee_checkin": self._run_employee_checkin,
             "character_image_cleanup": self._run_character_image_cleanup,
             # Phase 024: Character Autopilot
             "character_auto_approval": self._run_character_auto_approval,
@@ -949,6 +1158,11 @@ class SchedulerService:
             "competitor_scrape": self._run_competitor_scrape,
             "competitor_cleanup": self._run_competitor_cleanup,
             "character_hook_style_report": self._run_character_hook_style_report,
+            # Orchestration hardening (migration 035)
+            "autonomous_content_loop": self._run_autonomous_content_loop,
+            "swarm_calibration": self._run_swarm_calibration,
+            "lore_ingestion": self._run_lore_ingestion,
+            "carousel_partition_maintenance": self._run_carousel_partition_maintenance,
         }
         return handlers.get(job_name)
 
@@ -1243,23 +1457,332 @@ Have a great evening!"""
         except Exception as e:
             logger.error("money_maker_weekly_report_failed", error=str(e))
 
+    # ------------------------------------------------------------------
+    # Reachy voice nudges (M2.3 / M2.4)
+    # ------------------------------------------------------------------
+
+    # State kept on the scheduler instance so each nudge doesn't repeat within
+    # a single event's warning window. Maps (event_id, bucket) -> announced_at.
+    _reachy_nudged_events: dict[tuple[str, int], float] = {}
+    _reachy_last_email_nudge: float = 0.0
+    _reachy_last_email_count: int = 0
+
+    async def _run_reachy_calendar_nudge(self):
+        """
+        Every minute, look at the next hour of events. When an event is 10, 5, or
+        1 minute away (and we haven't already announced that bucket), speak it
+        through the Reachy speaker.
+        """
+        import time as _time
+        try:
+            from app.services.reachy_service import get_reachy_service
+            reachy = get_reachy_service()
+            if not await reachy.is_connected():
+                return
+            from app.services.calendar_service import get_calendar_service
+            svc = get_calendar_service()
+            from datetime import datetime, timedelta, timezone
+            now = datetime.now(tz=timezone.utc)
+            events = await svc.list_events(
+                start_date=now,
+                end_date=now + timedelta(minutes=60),
+                limit=10,
+            )
+        except Exception as e:
+            logger.debug("reachy_calendar_nudge_skipped", error=str(e))
+            return
+
+        if not events:
+            return
+
+        now_s = _time.time()
+        # Drop old nudges so the dict doesn't grow unbounded.
+        self._reachy_nudged_events = {
+            k: v for k, v in self._reachy_nudged_events.items() if now_s - v < 3600
+        }
+
+        for ev in events:
+            event_id = str(getattr(ev, "id", None) or getattr(ev, "event_id", None) or "")
+            title = str(getattr(ev, "summary", None) or getattr(ev, "title", None) or "an event")
+            start = getattr(ev, "start_time", None) or getattr(ev, "start", None)
+            if not start:
+                continue
+            try:
+                if isinstance(start, str):
+                    from datetime import datetime as _dt
+                    start_dt = _dt.fromisoformat(start.replace("Z", "+00:00"))
+                else:
+                    start_dt = start
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            mins_until = (start_dt - datetime.now(tz=timezone.utc)).total_seconds() / 60.0
+            bucket = None
+            if 9.0 <= mins_until <= 10.5:
+                bucket = 10
+            elif 4.0 <= mins_until <= 5.5:
+                bucket = 5
+            elif 0.5 <= mins_until <= 1.5:
+                bucket = 1
+            if bucket is None:
+                continue
+            key = (event_id, bucket)
+            if key in self._reachy_nudged_events:
+                continue
+            self._reachy_nudged_events[key] = now_s
+            if bucket == 1:
+                text = f"Heads up — {title} starts in one minute."
+            elif bucket == 5:
+                text = f"Reminder — {title} starts in five minutes."
+            else:
+                text = f"Coming up — {title} starts in ten minutes."
+            try:
+                import asyncio as _asyncio
+                _asyncio.create_task(reachy.say(text))
+                logger.info("reachy_calendar_nudge_spoken", event=title, bucket_min=bucket)
+            except Exception as e:
+                logger.debug("reachy_calendar_nudge_say_failed", error=str(e))
+
+    async def _run_reachy_email_nudge(self):
+        """Per-email voice triage across ALL connected accounts.
+
+        Iterates accounts, skips ones currently in their configured quiet-hours
+        window, and enqueues unread emails from the rest into the voice session.
+        """
+        try:
+            from app.services.reachy_service import get_reachy_service
+            from app.services.gmail_service import get_gmail_service
+            from app.services.gmail_oauth_service import get_gmail_oauth_service
+            from app.services.email_voice_session_service import (
+                get_email_voice_session_service,
+            )
+            from app.models.email import EmailStatus
+
+            reachy = get_reachy_service()
+            if not await reachy.is_connected():
+                return
+
+            oauth_svc = get_gmail_oauth_service()
+            gmail = get_gmail_service()
+            accounts = await oauth_svc.list_accounts()
+        except Exception as e:
+            logger.debug("reachy_email_nudge_skipped", error=str(e))
+            return
+
+        if not accounts:
+            return
+
+        new_ids: list[str] = []
+        for acct in accounts:
+            if _is_account_quiet_now(acct):
+                logger.debug(
+                    "reachy_email_nudge_account_quiet",
+                    account_id=acct["id"],
+                    label=acct.get("label"),
+                )
+                continue
+            try:
+                unread = await gmail.list_emails(
+                    status=EmailStatus.UNREAD,
+                    limit=20,
+                    account_id=acct["id"],
+                )
+                new_ids.extend(e.id for e in unread)
+            except Exception as e:
+                logger.warning(
+                    "reachy_email_nudge_account_failed",
+                    account_id=acct["id"],
+                    error=str(e),
+                )
+
+        if not new_ids:
+            self._reachy_last_email_count = 0
+            return
+
+        session = get_email_voice_session_service()
+        added = await session.enqueue(new_ids)
+        if added:
+            logger.info(
+                "reachy_email_nudge_enqueued",
+                added=added,
+                total_unread=len(new_ids),
+            )
+        self._reachy_last_email_count = len(new_ids)
+
+        # Kick off the first prompt if nothing is in flight.
+        if not session.is_active():
+            announced = await session.kickstart_if_idle()
+            if announced:
+                logger.info("reachy_email_nudge_announced", email_id=announced)
+
+    async def _run_reachy_meeting_auto_record(self):
+        """Start a recording for any flagged meeting whose start time just hit.
+
+        Routes through the Zero Host Audio Agent when ZERO_HOST_AGENT_URL is
+        configured (the common case — pyaudiowpatch isn't available inside
+        zero-api's Linux container). Falls back to in-process capture only
+        when the backend itself is running on a host with audio support.
+        """
+        try:
+            from datetime import datetime, timezone
+            from app.services.meeting_auto_recorder_service import (
+                get_meeting_auto_recorder_service,
+            )
+            from app.services.reachy_service import get_reachy_service
+
+            svc = get_meeting_auto_recorder_service()
+            now = datetime.now(timezone.utc)
+            due = await svc.due_starts(now, window_seconds=60)
+            if not due:
+                return
+
+            reachy = get_reachy_service()
+            reachy_up = await reachy.is_connected()
+
+            from app.services.meeting_recording_service import (
+                start_recording,
+                start_recording_via_host_agent,
+                _host_agent_base,
+            )
+            from app.infrastructure.database import get_session
+
+            use_host_agent = _host_agent_base() is not None
+
+            for entry in due:
+                meeting_id = entry["meeting_id"]
+                event_id = entry["calendar_event_id"]
+                try:
+                    if use_host_agent:
+                        await start_recording_via_host_agent(
+                            meeting_id=meeting_id, source="mixed"
+                        )
+                    else:
+                        async with get_session() as db:
+                            await start_recording(db, meeting_id=meeting_id, source="mixed")
+                    await svc.mark_started(event_id)
+                    logger.info(
+                        "reachy_meeting_auto_record_started",
+                        meeting_id=meeting_id,
+                        event_id=event_id,
+                        via="host_agent" if use_host_agent else "local",
+                    )
+                    if reachy_up:
+                        import asyncio as _asyncio
+                        _asyncio.create_task(
+                            reachy.say(f"Recording {entry.get('title') or 'this meeting'} now.")
+                        )
+                except RuntimeError as e:
+                    logger.info(
+                        "reachy_meeting_auto_record_already_running",
+                        meeting_id=meeting_id,
+                        error=str(e),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "reachy_meeting_auto_record_failed",
+                        meeting_id=meeting_id,
+                        error=str(e),
+                    )
+        except Exception as e:
+            logger.debug("reachy_meeting_auto_record_skipped", error=str(e))
+
+    async def _run_reachy_meeting_auto_stop(self):
+        """Stop the recording for any auto-record meeting whose end time has passed.
+
+        Mirrors the routing in _run_reachy_meeting_auto_record — checks host_agent
+        status when configured, local AudioCapture otherwise.
+        """
+        try:
+            from datetime import datetime, timezone
+            from app.services.meeting_auto_recorder_service import (
+                get_meeting_auto_recorder_service,
+            )
+
+            svc = get_meeting_auto_recorder_service()
+            now = datetime.now(timezone.utc)
+            due = await svc.due_stops(now, grace_seconds=30)
+            if not due:
+                return
+
+            from app.services.meeting_recording_service import (
+                stop_recording,
+                get_recording_status,
+                stop_recording_via_host_agent,
+                get_recording_status_via_host_agent,
+                _host_agent_base,
+            )
+            from app.infrastructure.database import get_session
+
+            use_host_agent = _host_agent_base() is not None
+
+            # One status probe per tick — cheap and avoids stopping a recording
+            # that wasn't ours (e.g. manual Quick Meeting still in progress).
+            if use_host_agent:
+                status = await get_recording_status_via_host_agent()
+                is_recording = bool(status and status.get("is_recording"))
+            else:
+                is_recording = bool(get_recording_status().get("is_recording"))
+
+            for entry in due:
+                event_id = entry["calendar_event_id"]
+                if not is_recording:
+                    await svc.mark_stopped(event_id)
+                    continue
+                try:
+                    if use_host_agent:
+                        result = await stop_recording_via_host_agent()
+                    else:
+                        async with get_session() as db:
+                            result = await stop_recording(db)
+                    if result:
+                        await svc.mark_stopped(event_id)
+                        is_recording = False  # only one active recording at a time
+                        logger.info(
+                            "reachy_meeting_auto_record_stopped",
+                            meeting_id=entry["meeting_id"],
+                            event_id=event_id,
+                            via="host_agent" if use_host_agent else "local",
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "reachy_meeting_auto_stop_failed",
+                        meeting_id=entry["meeting_id"],
+                        error=str(e),
+                    )
+        except Exception as e:
+            logger.debug("reachy_meeting_auto_stop_skipped", error=str(e))
+
     async def _run_gmail_check(self):
-        """
-        Incremental Gmail sync every 5 minutes.
-        Uses History API for efficient delta sync and checks alert rules.
-        """
+        """Incremental Gmail sync — runs against EVERY connected account."""
         logger.info("running_gmail_check")
         try:
             from app.services.gmail_service import get_gmail_service
+            from app.services.gmail_oauth_service import get_gmail_oauth_service
+
             gmail = get_gmail_service()
+            accounts = await get_gmail_oauth_service().list_accounts()
+            if not accounts:
+                return  # No Google accounts connected, skip silently
 
-            if not await gmail.is_connected():
-                return  # Gmail not configured, skip silently
-
-            result = await gmail.sync_incremental()
-            new_count = result.get("new_emails", 0)
-            if new_count > 0:
-                logger.info("gmail_check_new_emails", count=new_count)
+            for acct in accounts:
+                try:
+                    result = await gmail.sync_incremental(account_id=acct["id"])
+                    new_count = result.get("new_emails", 0)
+                    if new_count > 0:
+                        logger.info(
+                            "gmail_check_new_emails",
+                            account_id=acct["id"],
+                            email=acct["email"],
+                            count=new_count,
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "gmail_check_account_failed",
+                        account_id=acct["id"],
+                        email=acct["email"],
+                        error=str(e),
+                    )
         except Exception as e:
             logger.debug("gmail_check_skipped", error=str(e))
 
@@ -1320,6 +1843,136 @@ Have a great evening!"""
 
         except Exception as e:
             logger.error("gmail_digest_failed", error=str(e))
+
+    async def _run_calendar_check(self):
+        """Calendar sync — runs against EVERY connected account.
+
+        Mirrors `_run_gmail_check`: iterate `oauth_accounts`, call
+        `CalendarService.sync_events(account_id=...)` per row. Each event is
+        cached with the source account_id so the UI's per-account view stays
+        accurate without waiting on the user to open the Calendar page.
+        """
+        logger.info("running_calendar_check")
+        try:
+            from app.services.calendar_service import get_calendar_service
+            from app.services.gmail_oauth_service import get_gmail_oauth_service
+
+            calendar = get_calendar_service()
+            accounts = await get_gmail_oauth_service().list_accounts()
+            if not accounts:
+                return
+
+            for acct in accounts:
+                try:
+                    result = await calendar.sync_events(
+                        days_ahead=30, account_id=acct["id"]
+                    )
+                    logger.info(
+                        "calendar_check_synced",
+                        account_id=acct["id"],
+                        email=acct["email"],
+                        events_count=result.get("events_count", 0),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "calendar_check_account_failed",
+                        account_id=acct["id"],
+                        email=acct["email"],
+                        error=str(e),
+                    )
+
+            # Phase 6: auto-record-all — when the user has enabled it, every
+            # newly-synced calendar event with attendees becomes a Meeting row
+            # with auto_record=True. Per-event override stays usable.
+            try:
+                await self._apply_auto_record_all()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("auto_record_all_failed", error=str(e))
+        except Exception as e:
+            logger.debug("calendar_check_skipped", error=str(e))
+
+    async def _apply_auto_record_all(self) -> None:
+        try:
+            from app.routers.meeting_preferences import get_meeting_prefs
+            prefs = get_meeting_prefs()
+        except Exception:
+            return
+        if not prefs.get("auto_record_all"):
+            return
+
+        from datetime import datetime, timezone, timedelta
+        import uuid as _uuid
+        from sqlalchemy import select
+        from app.db.models import CalendarEventCacheModel, MeetingModel
+        from app.infrastructure.database import get_session
+        from app.services.meeting_auto_recorder_service import (
+            get_meeting_auto_recorder_service,
+        )
+
+        def _parse_jsonb_dt(payload: dict | None) -> datetime | None:
+            if not payload:
+                return None
+            raw = payload.get("date_time") or payload.get("date")
+            if not raw:
+                return None
+            try:
+                if "T" in raw:
+                    dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                else:
+                    dt = datetime.strptime(raw, "%Y-%m-%d")
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(timezone.utc)
+            except Exception:  # noqa: BLE001
+                return None
+
+        now = datetime.now(timezone.utc)
+        horizon = now + timedelta(days=2)
+        auto_svc = get_meeting_auto_recorder_service()
+        promoted = 0
+        async with get_session() as session:
+            events = (
+                await session.execute(select(CalendarEventCacheModel))
+            ).scalars().all()
+            for ev in events:
+                if not ev.attendees:
+                    continue
+                start = _parse_jsonb_dt(ev.start_dt)
+                end = _parse_jsonb_dt(ev.end_dt)
+                if start is None or start < now or start > horizon:
+                    continue
+                if await auto_svc.is_marked(ev.id):
+                    continue
+
+                # Ensure a Meeting row exists for this calendar event.
+                meeting = (
+                    await session.execute(
+                        select(MeetingModel).where(MeetingModel.calendar_event_id == ev.id)
+                    )
+                ).scalar_one_or_none()
+                if meeting is None:
+                    meeting = MeetingModel(
+                        id=_uuid.uuid4().hex,
+                        title=ev.summary or "Meeting",
+                        calendar_event_id=ev.id,
+                        start_time=start,
+                        end_time=end,
+                        status="scheduled",
+                    )
+                    session.add(meeting)
+                    await session.flush()
+
+                await auto_svc.mark(
+                    calendar_event_id=ev.id,
+                    meeting_id=meeting.id,
+                    start_time=start,
+                    end_time=end,
+                    title=meeting.title,
+                )
+                promoted += 1
+            await session.commit()
+        if promoted:
+            logger.info("auto_record_all_promoted", count=promoted)
 
     async def _run_email_automation_check(self):
         """
@@ -1419,25 +2072,6 @@ Have a great evening!"""
         except Exception as e:
             logger.error("smart_suggestions_failed", error=str(e))
 
-    # ============================================
-    # BACKUP HANDLERS (Sprint 64)
-    # ============================================
-
-    async def _run_backup_hourly(self):
-        """Hourly workspace backup."""
-        from app.services.backup_service import get_backup_service
-        await get_backup_service().create_backup(tier="hourly")
-
-    async def _run_backup_daily(self):
-        """Daily workspace backup."""
-        from app.services.backup_service import get_backup_service
-        await get_backup_service().create_backup(tier="daily")
-
-    async def _run_backup_weekly(self):
-        """Weekly workspace backup."""
-        from app.services.backup_service import get_backup_service
-        await get_backup_service().create_backup(tier="weekly")
-
     async def _run_research_daily(self):
         """Daily research cycle - scan topics and discover new findings."""
         logger.info("running_research_daily")
@@ -1495,7 +2129,6 @@ Have a great evening!"""
             alerts = []
             paths_to_check = {
                 "workspace": "/app/workspace",
-                "backups": "/app/backups",
                 "system": "/",
             }
             for name, path in paths_to_check.items():
@@ -1831,27 +2464,6 @@ Have a great evening!"""
             logger.info("metrics_snapshot_complete")
         except Exception as e:
             logger.error("metrics_snapshot_failed", error=str(e))
-
-    async def _run_backup_restore_test(self):
-        """Weekly backup extraction and validation test."""
-        logger.info("running_backup_restore_test")
-        try:
-            from app.services.backup_service import get_backup_service
-            svc = get_backup_service()
-            result = await svc.test_restore()
-            if result.get("success"):
-                logger.info("backup_restore_test_passed", files=result.get("files_restored", 0))
-            else:
-                logger.error("backup_restore_test_failed", error=result.get("error"))
-                from app.services.notification_service import get_notification_service
-                await get_notification_service().create_notification(
-                    title="Backup Restore Test FAILED",
-                    message=f"Weekly backup test failed: {result.get('error')}",
-                    channel="discord",
-                    source="alerting",
-                )
-        except Exception as e:
-            logger.error("backup_restore_test_failed", error=str(e))
 
     # ============================================
     # NOTION BIDIRECTIONAL SYNC
@@ -2243,6 +2855,178 @@ Have a great evening!"""
         except Exception as e:
             logger.error("tiktok_article_cleanup_failed", error=str(e))
 
+    # ------------------------------------------------------------------
+    # Meal Manager jobs
+    # ------------------------------------------------------------------
+
+    async def _run_meal_catalog_refresh(self):
+        """Refresh menu pages + pricing for every tracked meal service."""
+        logger.info("running_meal_catalog_refresh")
+        try:
+            from app.services.meal_catalog_service import get_meal_catalog_service
+            result = await get_meal_catalog_service().refresh_all_catalogs()
+            logger.info("meal_catalog_refresh_complete", **result)
+        except Exception as e:
+            logger.error("meal_catalog_refresh_failed", error=str(e))
+
+    async def _run_meal_promo_hunt(self):
+        """Hunt fresh promo codes + portal cashback for tracked meal services."""
+        logger.info("running_meal_promo_hunt")
+        try:
+            from app.services.meal_promo_hunter_service import get_meal_promo_hunter
+            result = await get_meal_promo_hunter().hunt_all()
+            logger.info("meal_promo_hunt_complete", **result)
+        except Exception as e:
+            logger.error("meal_promo_hunt_failed", error=str(e))
+
+    async def _run_meal_shipment_scan(self):
+        """Scan Gmail cache for meal shipment notifications + card offer emails."""
+        logger.info("running_meal_shipment_scan")
+        try:
+            from app.services.meal_shipment_tracker_service import get_meal_shipment_tracker
+            result = await get_meal_shipment_tracker().scan_recent(lookback_days=14)
+            logger.info("meal_shipment_scan_complete", **result)
+        except Exception as e:
+            logger.error("meal_shipment_scan_failed", error=str(e))
+
+    async def _run_meal_discovery(self):
+        """Weekly discovery — search for new meal delivery services to track."""
+        logger.info("running_meal_discovery")
+        try:
+            from app.services.meal_scraper_service import get_meal_scraper
+            from app.db.models import MealServiceModel
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select
+
+            scraper = get_meal_scraper()
+            queries = [
+                "new meal delivery service 2026",
+                "best prepared meal delivery US comparison",
+                "cheap meal kit startup launch 2025 2026",
+            ]
+            known = set()
+            async with get_session() as session:
+                for s in (await session.execute(select(MealServiceModel))).scalars().all():
+                    known.add(s.slug.lower())
+                    known.add(s.name.lower())
+            candidates: list[dict] = []
+            for q in queries:
+                hits = await scraper.search(q, max_results=15)
+                for h in hits:
+                    title = (h.get("title") or "").lower()
+                    if any(k in title for k in known):
+                        continue
+                    candidates.append(h)
+            logger.info("meal_discovery_complete", new_candidates=len(candidates))
+            # Persist a vault note; user approves before we add to catalog.
+            try:
+                from app.services.vault_writer_service import get_vault_writer
+                writer = get_vault_writer()
+                if writer.available() and candidates:
+                    md = "# New meal service candidates\n\n"
+                    md += "Scheduler found these possible new services. Approve in /meals.\n\n"
+                    for c in candidates[:40]:
+                        md += f"- [{c.get('title','?')}]({c.get('url','')}) — {c.get('snippet','')[:160]}\n"
+                    writer.write_agent_file(
+                        "00_Meta/_agent/meals/discovery_candidates.md",
+                        md,
+                        source="meal_discovery",
+                    )
+            except Exception as e:
+                logger.debug("meal_discovery_vault_write_failed", error=str(e))
+        except Exception as e:
+            logger.error("meal_discovery_failed", error=str(e))
+
+    async def _run_meal_daily_digest(self):
+        """Write daily meal digest to the vault."""
+        logger.info("running_meal_daily_digest")
+        try:
+            from app.services.meal_price_stack_service import get_meal_price_stack_service
+            from app.services.vault_writer_service import get_vault_writer
+            from app.db.models import MealPromoCodeModel, MealShipmentModel
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select
+
+            quotes = await get_meal_price_stack_service().cheapest_across_services(
+                meal_count=6, new_customer=False
+            )
+            async with get_session() as session:
+                promos = (await session.execute(
+                    select(MealPromoCodeModel)
+                    .order_by(MealPromoCodeModel.last_seen_at.desc())
+                    .limit(10)
+                )).scalars().all()
+                in_transit = (await session.execute(
+                    select(MealShipmentModel).where(
+                        MealShipmentModel.status.in_(["shipped", "out_for_delivery", "processing"])
+                    )
+                )).scalars().all()
+
+            md_lines = [
+                "# Meal digest — " + datetime.utcnow().strftime("%Y-%m-%d"),
+                "",
+                "## Cheapest per meal (stacked, 6 meals)",
+                "",
+            ]
+            for q in quotes[:10]:
+                md_lines.append(
+                    f"- **{q.service_name}**: ${q.price_per_meal:.2f}/meal "
+                    f"(subtotal ${q.base_subtotal:.2f} - ${q.total_discounts:.2f} discounts "
+                    f"- ${q.total_cashback:.2f} cashback)"
+                )
+            md_lines += ["", "## Top promo codes", ""]
+            for p in promos:
+                md_lines.append(
+                    f"- `{p.code or 'auto'}` ({p.source}) — {p.discount_type} {p.discount_value}"
+                    + (f", expires {p.expires_at:%Y-%m-%d}" if p.expires_at else "")
+                )
+            md_lines += ["", "## In-transit shipments", ""]
+            for s in in_transit:
+                md_lines.append(
+                    f"- service={s.service_id}, order={s.order_number or '—'}, "
+                    f"carrier={s.carrier or '—'}, status={s.status}"
+                )
+
+            writer = get_vault_writer()
+            if writer.available():
+                writer.write_agent_file(
+                    "00_Meta/_agent/meals/daily_digest.md",
+                    "\n".join(md_lines),
+                    source="meal_daily_digest",
+                )
+            logger.info("meal_daily_digest_complete", quotes=len(quotes), promos=len(promos), in_transit=len(in_transit))
+        except Exception as e:
+            logger.error("meal_daily_digest_failed", error=str(e))
+
+    async def _run_meal_signup_sweep(self):
+        """Weekly: sign up newsletters + parse any welcome emails already in cache."""
+        logger.info("running_meal_signup_sweep")
+        try:
+            from app.services.meal_signup_sweeper_service import get_meal_signup_sweeper
+            svc = get_meal_signup_sweeper()
+            signup_result = await svc.sweep_signups()
+            parse_result = await svc.parse_welcome_emails(lookback_days=30)
+            logger.info(
+                "meal_signup_sweep_complete",
+                signup=signup_result.get("status"),
+                signed_up=signup_result.get("signed_up", 0),
+                parse=parse_result.get("status"),
+                parsed=parse_result.get("processed", 0),
+                welcome_codes_extracted=parse_result.get("extracted", 0),
+            )
+        except Exception as e:
+            logger.error("meal_signup_sweep_failed", error=str(e))
+
+    async def _run_meal_vision_sweep(self):
+        """Weekly: Vision-LLM sweep of meal-service homepages (env-gated)."""
+        logger.info("running_meal_vision_sweep")
+        try:
+            from app.services.meal_vision_extractor_service import get_meal_vision_extractor
+            result = await get_meal_vision_extractor().sweep()
+            logger.info("meal_vision_sweep_complete", **result)
+        except Exception as e:
+            logger.error("meal_vision_sweep_failed", error=str(e))
+
     async def _run_content_performance_sync(self):
         """Sync content performance metrics from AIContentTools."""
         logger.info("running_content_performance_sync")
@@ -2425,6 +3209,49 @@ Have a great evening!"""
         except Exception as e:
             logger.error("daily_autonomous_report_failed", error=str(e))
 
+    async def _run_carousel_morning_briefing(self):
+        await self._send_carousel_employee_digest(label="Morning", window_hours=12)
+
+    async def _run_carousel_evening_recap(self):
+        await self._send_carousel_employee_digest(label="Evening", window_hours=12)
+
+    async def _send_carousel_employee_digest(self, *, label: str, window_hours: int):
+        """Generate the carousel employee report and dispatch to Discord."""
+        logger.info("running_carousel_employee_digest", label=label)
+        try:
+            from app.services.daily_report_service import get_daily_report_service
+            from app.services.notification_service import get_notification_service
+
+            service = get_daily_report_service()
+            report = await service.generate_carousel_employee_report(window_hours=window_hours)
+            message = service.format_carousel_discord_message(report)
+            generated = int(report.get("carousels", {}).get("generated", 0))
+            avg = report.get("carousels", {}).get("stage2_avg_score")
+            color = 0x57F287 if (avg or 0) >= 80 else (0xFEE75C if generated > 0 else 0xED4245)
+            title = f"Zero Carousel Employee — {label} Report"
+            try:
+                await self._send_to_discord(title=title, message=message, color=color)
+            except Exception as exc:
+                logger.warning("carousel_employee_discord_failed", error=str(exc))
+            try:
+                await get_notification_service().create_notification(
+                    title=title,
+                    message=message[:1800],
+                    channel="discord",
+                    source="carousel_employee_report",
+                )
+            except Exception as exc:
+                logger.debug("carousel_employee_notification_failed", error=str(exc))
+            logger.info(
+                "carousel_employee_digest_sent",
+                label=label,
+                generated=generated,
+                avg=avg,
+                issue_count=len(report.get("issues", [])),
+            )
+        except Exception as e:
+            logger.error("carousel_employee_digest_failed", label=label, error=str(e))
+
     # ============================================
     # AI COMPANY HANDLERS
     # ============================================
@@ -2457,6 +3284,92 @@ Have a great evening!"""
                 logger.info("ai_company_deep_research_skipped", reason="no topics available")
         except Exception as e:
             logger.error("ai_company_deep_research_failed", error=str(e))
+
+    async def _run_autonomous_research_tick(self):
+        """24/7 research driver. Picks eligible topic, dispatches deep research, writes vault artifact on completion."""
+        try:
+            from app.services.autonomous_research_loop_service import get_autonomous_research_loop
+            loop = get_autonomous_research_loop()
+            result = await loop.tick()
+            logger.info("autonomous_research_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("autonomous_research_tick_failed", error=str(e))
+
+    async def _run_ambient_vision_tick(self):
+        """Phase 5: pull a frame from the active SightProvider, VLM-describe it, log to vault."""
+        try:
+            from app.services.ambient_vision_service import ambient_vision_tick
+            result = await ambient_vision_tick()
+            # Only log when something actually happened, to avoid spam.
+            if result.get("status") == "ok":
+                logger.info("ambient_vision_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("ambient_vision_tick_failed", error=str(e))
+
+    async def _run_vault_reindex_tick(self):
+        """SecondBrain Phase 2: incremental reindex of the Obsidian vault."""
+        try:
+            from app.services.vault_indexer_service import get_vault_indexer
+            indexer = get_vault_indexer()
+            if not indexer.available():
+                return
+            result = await indexer.reindex(force=False, max_files=200)
+            safe = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in result.items() if v is not None}
+            logger.info("vault_reindex_tick", **safe)
+        except Exception as e:
+            logger.error("vault_reindex_tick_failed", error=str(e))
+
+    async def _run_vault_task_sync_tick(self):
+        """SecondBrain Phase 3: checkbox <-> TaskModel bi-directional sync."""
+        try:
+            from app.services.vault_task_sync_service import get_vault_task_sync
+            svc = get_vault_task_sync()
+            if not svc.available():
+                return
+            result = await svc.sync_all()
+            logger.info("vault_task_sync_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("vault_task_sync_tick_failed", error=str(e))
+
+    async def _run_approvals_expire_stale(self):
+        """Hourly: mark expired agent-approvals. Keeps the queue tight."""
+        try:
+            from app.services.approval_queue_service import get_approval_queue
+            n = await get_approval_queue().expire_stale()
+            if n:
+                logger.info("approvals_expire_stale", expired=n)
+        except Exception as e:
+            logger.error("approvals_expire_stale_failed", error=str(e))
+
+    async def _run_morning_digest_tick(self):
+        """SecondBrain Phase 4: assemble + write the 7-section morning digest."""
+        try:
+            from app.services.morning_digest_service import get_morning_digest_service
+            svc = get_morning_digest_service()
+            result = await svc.generate_and_write()
+            logger.info("morning_digest_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("morning_digest_tick_failed", error=str(e))
+
+    async def _run_weekly_review_tick(self):
+        """SecondBrain Phase 4: Friday PM weekly review."""
+        try:
+            from app.services.weekly_review_service import get_weekly_review_service
+            svc = get_weekly_review_service()
+            result = await svc.generate_and_write()
+            logger.info("weekly_review_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("weekly_review_tick_failed", error=str(e))
+
+    async def _run_drift_scan_tick(self):
+        """SecondBrain Phase 5: nightly drift detection."""
+        try:
+            from app.services.drift_scanner_service import get_drift_scanner
+            scanner = get_drift_scanner()
+            result = await scanner.scan_all()
+            logger.info("drift_scan_tick", **{k: v for k, v in result.items() if v is not None})
+        except Exception as e:
+            logger.error("drift_scan_tick_failed", error=str(e))
 
     async def _run_ai_company_idea_validation(self):
         """Deep-validate top-scoring unvalidated money-maker ideas."""
@@ -2542,31 +3455,120 @@ Have a great evening!"""
     # ============================================
 
     async def _run_character_research_refresh(self):
-        """Re-research characters with stale data (>7 days)."""
+        """Re-research characters with stale data — episode-aware.
+
+        Characters linked to a recent or upcoming release signal (via
+        TrendingSignalModel populated by trend_tvmaze_schedule) are treated
+        as "in active shows" and refreshed on a 3-day window. Static/legacy
+        characters stay on a 14-day window. This stops "From" / "The Boys"
+        carousels from citing season-2 facts the week season 3 drops.
+        """
         logger.info("running_character_research_refresh")
         try:
             from app.services.character_content_service import get_character_content_service
-            from datetime import datetime, timedelta, timezone
+            from app.db.models import TrendingSignalModel
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select
+            from datetime import datetime, timedelta, timezone, date
             svc = get_character_content_service()
 
-            characters = await svc.list_characters(research_status="completed", limit=50)
+            # Build the set of character_ids tied to recent/upcoming release
+            # signals (±14 days). Cheap single query.
+            today = date.today()
+            window_start = today - timedelta(days=14)
+            window_end = today + timedelta(days=14)
+            active_ids: set = set()
+            async with get_session() as session:
+                res = await session.execute(
+                    select(TrendingSignalModel.linked_character_ids).where(
+                        TrendingSignalModel.signal_type == "release",
+                        TrendingSignalModel.release_date.is_not(None),
+                        TrendingSignalModel.release_date >= window_start,
+                        TrendingSignalModel.release_date <= window_end,
+                    )
+                )
+                for (linked,) in res.all():
+                    for cid in (linked or []):
+                        if cid:
+                            active_ids.add(cid)
+
+            characters = await svc.list_characters(research_status="completed", limit=100)
+            now = datetime.now(timezone.utc)
+            active_cutoff = now - timedelta(days=3)
+            static_cutoff = now - timedelta(days=14)
+
             refreshed = 0
-            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            active_refreshed = 0
             for char in characters:
-                if char.last_researched and char.last_researched < cutoff:
+                if not char.last_researched:
+                    continue
+                is_active = char.id in active_ids
+                cutoff = active_cutoff if is_active else static_cutoff
+                if char.last_researched < cutoff:
                     await svc.research_character(char.id)
                     refreshed += 1
-                    if refreshed >= 3:
+                    if is_active:
+                        active_refreshed += 1
+                    # Active shows get more throughput per run (6) than static (3).
+                    cap = 6 if is_active else 3
+                    if refreshed >= cap:
                         break
-            logger.info("character_research_refresh_done", refreshed=refreshed)
+            logger.info(
+                "character_research_refresh_done",
+                refreshed=refreshed,
+                active_refreshed=active_refreshed,
+                active_pool=len(active_ids),
+            )
         except Exception as e:
             logger.error("character_research_refresh_failed", error=str(e))
+
+    async def _run_character_research_retry(self):
+        """Drain pending + needs_retry characters every 2h. Daily refresh handles
+        completed characters; this handler handles backlog so the queue doesn't
+        sit for hours after a transient failure."""
+        logger.info("running_character_research_retry")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            svc = get_character_content_service()
+            attempted = 0
+            for status in ("pending", "needs_retry"):
+                chars = await svc.list_characters(research_status=status, limit=20)
+                for ch in chars:
+                    if attempted >= 10:
+                        break
+                    try:
+                        await svc.research_character(ch.id)
+                        attempted += 1
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("character_research_retry_item_failed", character_id=ch.id, error=str(exc)[:200])
+                if attempted >= 10:
+                    break
+            logger.info("character_research_retry_done", attempted=attempted)
+        except Exception as e:
+            logger.error("character_research_retry_failed", error=str(e))
+
+    async def _safe_image_discovery(self, svc, character_id: str) -> None:
+        """Background image discovery used by the generation loop.
+
+        Fire-and-forget so the hourly generation job isn't blocked by
+        slow SearxNG round-trips for characters with empty image pools.
+        """
+        try:
+            await svc.discover_more_character_images(character_id, max_per_source=8)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "character_image_discovery_bg_failed",
+                character_id=character_id,
+                error=str(exc)[:200],
+            )
 
     async def _run_character_content_generation(self):
         """Auto-generate carousels for researched characters.
 
-        Prioritizes by priority_tier (priority > standard > probation),
-        rotates angles for variety, and generates up to 10 per run.
+        Phase 4.1 throughput bump:
+          - 25 carousels per run (up from 10)
+          - Prioritize under-served characters (posts_created asc) within each tier
+          - Enforce hook_style variety: cycles through 7 styles, caps any single style at 3/run
         """
         logger.info("running_character_content_generation")
         try:
@@ -2575,29 +3577,117 @@ Have a great evening!"""
             import random
             svc = get_character_content_service()
 
-            characters = await svc.list_characters(research_status="completed", limit=100)
+            characters = await svc.list_characters(research_status="completed", limit=200)
             angles = list(ContentAngle)
-            # Sort by priority_tier: priority first, then standard, then probation
+            # Sort by priority_tier, then by posts_created asc (prioritize under-served characters)
             tier_order = {"priority": 0, "standard": 1, "probation": 2}
-            characters.sort(key=lambda c: (tier_order.get(getattr(c, "priority_tier", "standard"), 1), c.posts_created))
+            characters.sort(key=lambda c: (
+                tier_order.get(getattr(c, "priority_tier", "standard"), 1),
+                getattr(c, "posts_created", 0) or 0,
+            ))
+
+            # Phase 4.1: hook style variety enforcement
+            hook_styles = [
+                "numbered_list",
+                "story_opener",
+                "hot_take",
+                "question",
+                "comparison",
+                "reveal",
+                "superlative",
+            ]
+            hook_style_counts: Dict[str, int] = {s: 0 for s in hook_styles}
+            template_counts: Dict[str, int] = {}
+            HOOK_STYLE_CAP = 3
+            TEMPLATE_CAP = 4
 
             generated = 0
             failed = 0
-            max_per_run = 10
+            max_per_run = 25
+            # Cap how many characters we look at per run so one stuck
+            # subsystem (e.g. image discovery) can't burn the whole hour.
+            max_visits = max_per_run * 4
+            # Cap synchronous image discoveries so the job still finishes even
+            # when many characters have empty image pools.
+            max_image_discoveries = 5
+            image_discoveries = 0
+            visits = 0
             for char in characters:
                 if generated >= max_per_run:
                     break
+                visits += 1
+                if visits > max_visits:
+                    logger.info(
+                        "character_content_generation_visit_cap_reached",
+                        visits=visits,
+                        generated=generated,
+                    )
+                    break
+                # Skip characters with empty image pool — generating their
+                # carousels would just be blocked by CarouselImageMissingError.
+                # Image bootstrap fires asynchronously; they'll be eligible on
+                # a later tick.
+                if not getattr(char, "image_urls", None):
+                    logger.info(
+                        "character_skipped_no_images",
+                        character_id=char.id,
+                        character_name=char.name,
+                    )
+                    if image_discoveries < max_image_discoveries:
+                        image_discoveries += 1
+                        # Fire-and-forget: don't block the generation loop on
+                        # multi-second SearxNG round trips. The character
+                        # becomes eligible on a later tick once images land.
+                        asyncio.create_task(
+                            self._safe_image_discovery(svc, char.id)
+                        )
+                    continue
                 # Rotate angle based on character index for variety
                 angle = angles[(generated + hash(char.id)) % len(angles)]
+
+                # Thompson Sampling picks (hook_style, story_template) using
+                # historical Stage 2 scores; falls back to rotation for
+                # under-sampled pairs. Respect per-run variety caps.
+                pick = await svc.pick_next_variant(
+                    character_id=char.id, generation_index=generated
+                )
+                chosen_style = pick["hook_style"]
+                chosen_template = pick["story_template"]
+                if hook_style_counts.get(chosen_style, 0) >= HOOK_STYLE_CAP:
+                    # Fall back to any under-cap style, keep template from picker
+                    chosen_style = next(
+                        (
+                            hook_styles[(generated + offset) % len(hook_styles)]
+                            for offset in range(len(hook_styles))
+                            if hook_style_counts[hook_styles[(generated + offset) % len(hook_styles)]] < HOOK_STYLE_CAP
+                        ),
+                        None,
+                    )
+                if chosen_style is None:
+                    logger.info("character_carousel_hook_style_saturated", generated=generated)
+                    break
+                if template_counts.get(chosen_template, 0) >= TEMPLATE_CAP:
+                    # Rotate to next template if this one is saturated for the run
+                    chosen_template = None
+
                 try:
                     await svc.generate_carousel(CarouselCreate(
-                        character_id=char.id, angle=angle
+                        character_id=char.id,
+                        angle=angle,
+                        hook_style=chosen_style,
+                        story_template=chosen_template,
                     ))
+                    hook_style_counts[chosen_style] = hook_style_counts.get(chosen_style, 0) + 1
+                    if chosen_template:
+                        template_counts[chosen_template] = template_counts.get(chosen_template, 0) + 1
                     generated += 1
                     logger.info(
                         "character_carousel_generated",
                         character=char.name,
                         angle=angle.value if hasattr(angle, "value") else str(angle),
+                        hook_style=chosen_style,
+                        story_template=chosen_template,
+                        pick_method=pick.get("method"),
                     )
                 except Exception as e:
                     failed += 1
@@ -2607,22 +3697,290 @@ Have a great evening!"""
                         error=str(e)[:200],
                     )
                     continue
-            logger.info("character_content_generation_done", generated=generated, failed=failed)
+            logger.info(
+                "character_content_generation_done",
+                generated=generated,
+                failed=failed,
+                hook_style_distribution=hook_style_counts,
+            )
         except Exception as e:
             logger.error("character_content_generation_failed", error=str(e))
             await self._alert_pipeline_failure("character_content_generation", e)
 
-    async def _run_character_performance_sync(self):
-        """Sync performance metrics from published character carousels."""
-        logger.info("running_character_performance_sync")
+    async def _run_character_content_gate(self):
+        """Demand-driven gate: fire an extra generation wave when backlog is low.
+
+        The fixed hourly base cadence is kept; this runs every 15 minutes and
+        only actually generates when approved backlog or research queue signals
+        demand. Prevents silent drought between hourly runs.
+        """
+        logger.info("running_character_content_gate")
         try:
             from app.services.character_content_service import get_character_content_service
             svc = get_character_content_service()
+            approved_backlog_target = 10
+            research_pending_high = 30
+            # approved + pending_review counts as "ready to publish" backlog
+            approved = await svc.list_carousels(status="approved", limit=100)
+            pending = await svc.list_carousels(status="pending_review", limit=100)
+            backlog = len(approved) + len(pending)
+
+            from app.db.models import CharacterModel
+            from sqlalchemy import func as sa_func, or_
+            async with get_session() as session:
+                pending_research = await session.execute(
+                    select(sa_func.count(CharacterModel.id)).where(
+                        or_(
+                            CharacterModel.research_status == "pending",
+                            CharacterModel.research_status.is_(None),
+                        )
+                    )
+                )
+                research_pending = int(pending_research.scalar() or 0)
+
+            should_fire = (
+                backlog < approved_backlog_target
+                or research_pending > research_pending_high
+            )
+            logger.info(
+                "character_content_gate_eval",
+                backlog=backlog,
+                approved_backlog_target=approved_backlog_target,
+                research_pending=research_pending,
+                research_pending_high=research_pending_high,
+                should_fire=should_fire,
+            )
+            if should_fire:
+                await self._run_character_content_generation()
+        except Exception as e:
+            logger.error("character_content_gate_failed", error=str(e))
+
+    async def _run_carousel_watchdog(self):
+        """Detect stalled carousel-pipeline jobs and alert.
+
+        A job is stalled if it hasn't completed in 2x its expected interval.
+        Resets nothing (APScheduler already reschedules); it exists to surface
+        silent failures through alerting + structured logs so the Employee
+        Report picks them up.
+        """
+        logger.info("running_carousel_watchdog")
+        try:
+            from app.db.models import SchedulerAuditLogModel
+            from sqlalchemy import func as sa_func
+            watched = {
+                "character_content_generation": 60,   # every 1h
+                "character_auto_approval": 30,         # every 30m
+                "character_final_review_backfill": 20, # every 20m
+                "character_auto_research": 120,        # every 2h
+                "character_publish_backlog": 120,      # every 2h
+                "character_content_gate": 15,          # every 15m
+                "media_content_generation": 240,       # every 4h
+            }
+            now = datetime.utcnow()
+            stalled: List[Dict[str, Any]] = []
+            async with get_session() as session:
+                for job_name, interval_min in watched.items():
+                    row = await session.execute(
+                        select(sa_func.max(SchedulerAuditLogModel.completed_at)).where(
+                            SchedulerAuditLogModel.job_name == job_name,
+                            SchedulerAuditLogModel.status == "completed",
+                        )
+                    )
+                    last_done = row.scalar()
+                    if last_done is None:
+                        stalled.append({
+                            "job": job_name,
+                            "reason": "never_completed",
+                            "expected_interval_min": interval_min,
+                        })
+                        continue
+                    age_min = (now - last_done.replace(tzinfo=None)).total_seconds() / 60.0
+                    if age_min > interval_min * 2:
+                        stalled.append({
+                            "job": job_name,
+                            "reason": "stalled",
+                            "age_min": round(age_min, 1),
+                            "expected_interval_min": interval_min,
+                        })
+            if stalled:
+                logger.warning("carousel_watchdog_stalled", stalled=stalled)
+                try:
+                    from app.services.notification_service import get_notification_service
+                    note_svc = get_notification_service()
+                    await note_svc.create_notification(
+                        title=f"Carousel watchdog: {len(stalled)} stalled job(s)",
+                        message="\n".join(
+                            f"- {s['job']}: {s['reason']}"
+                            + (f" (age {s['age_min']}m, expected <{s['expected_interval_min']*2}m)" if s.get("age_min") else "")
+                            for s in stalled
+                        ),
+                        channel="discord",
+                        source="carousel_watchdog",
+                    )
+                except Exception as exc:
+                    logger.debug("carousel_watchdog_alert_failed", error=str(exc))
+            else:
+                logger.info("carousel_watchdog_ok", jobs_checked=len(watched))
+
+            # Active rescue passes
+            await self._watchdog_rescue_stuck_carousels()
+            await self._watchdog_rescue_unimaged_characters()
+        except Exception as e:
+            logger.error("carousel_watchdog_failed", error=str(e))
+
+    async def _watchdog_rescue_stuck_carousels(self):
+        """Re-trigger Stage-2 review for draft carousels older than 2h with
+        no final_review_score. These are usually the result of a transient LLM
+        failure during the original auto-review fire-and-forget task."""
+        try:
+            from datetime import timedelta
+            from app.db.models import CharacterCarouselModel
+            from app.services.character_content_service import get_character_content_service
+            cutoff = datetime.utcnow() - timedelta(hours=2)
+            async with get_session() as session:
+                rows = (await session.execute(
+                    select(CharacterCarouselModel.id)
+                    .where(CharacterCarouselModel.status == "draft")
+                    .where(CharacterCarouselModel.final_review_score.is_(None))
+                    .where(CharacterCarouselModel.created_at < cutoff)
+                    .limit(20)
+                )).scalars().all()
+            if not rows:
+                return
+            svc = get_character_content_service()
+            rescued = 0
+            for cid in rows:
+                try:
+                    await svc.ai_review_carousel(cid)
+                    rescued += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("watchdog_carousel_rescue_failed", carousel_id=cid, error=str(exc)[:200])
+            logger.info("watchdog_carousels_rescued", count=rescued, candidates=len(rows))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("watchdog_carousel_rescue_pass_failed", error=str(exc)[:200])
+
+    async def _watchdog_rescue_unimaged_characters(self):
+        """Re-queue image discovery for any active character with empty image_urls."""
+        try:
+            from app.db.models import CharacterModel
+            from app.services.character_content_service import get_character_content_service
+            async with get_session() as session:
+                rows = (await session.execute(
+                    select(CharacterModel.id, CharacterModel.name)
+                    .where(CharacterModel.status == "active")
+                    .where((CharacterModel.image_urls.is_(None)) | (CharacterModel.image_urls == []))
+                    .limit(10)
+                )).all()
+            if not rows:
+                return
+            svc = get_character_content_service()
+            for cid, name in rows:
+                try:
+                    inserted = await svc.discover_more_character_images(cid, max_per_source=8)
+                    logger.info("watchdog_character_reimaged", character_id=cid, name=name, inserted=inserted)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("watchdog_character_reimage_failed", character_id=cid, error=str(exc)[:200])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("watchdog_character_rescue_pass_failed", error=str(exc)[:200])
+
+    async def _run_character_performance_sync(self):
+        """Pull per-carousel TikTok analytics back into character_carousels.
+
+        Was a stub that only logged totals. Now hits TikTok Display API v2 for
+        each published carousel whose `publish_url` identifies a TikTok video,
+        and writes view/like/comment/share counts + engagement_rate. This is
+        the feedback signal PromptBreeder / variant-stats consume when ranking
+        hook_style + story_template combinations.
+        """
+        import re
+        logger.info("running_character_performance_sync")
+        try:
+            from app.services.character_content_service import get_character_content_service
+            from app.db.models import CharacterCarouselModel
+            from app.infrastructure.database import get_session
+            from app.infrastructure.tiktok_api_client import get_tiktok_api_client
+            from sqlalchemy import select
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+            svc = get_character_content_service()
             stats = await svc.get_stats()
-            logger.info("character_performance_sync_done",
-                        characters=stats.total_characters,
-                        carousels=stats.total_carousels,
-                        published=stats.total_published)
+
+            client = get_tiktok_api_client()
+            if not client.is_configured:
+                logger.info(
+                    "character_performance_sync_skipped_no_tiktok",
+                    characters=stats.total_characters,
+                    carousels=stats.total_carousels,
+                    published=stats.total_published,
+                )
+                return
+            await client.load_tokens_from_db()
+            if not client.is_authorized:
+                logger.info(
+                    "character_performance_sync_skipped_no_auth",
+                    published=stats.total_published,
+                )
+                return
+
+            # Candidates: published carousels with a publish_url and either no
+            # views yet OR last sync > 6h old (heuristic: use published_at as
+            # proxy — we re-sync any row whose published_at is within 30 days
+            # so recent content gets fresh numbers; older rows skip).
+            cutoff = _dt.now(_tz.utc) - _td(days=30)
+            async with get_session() as session:
+                res = await session.execute(
+                    select(CharacterCarouselModel)
+                    .where(
+                        CharacterCarouselModel.status == "published",
+                        CharacterCarouselModel.publish_url.is_not(None),
+                        CharacterCarouselModel.published_at.is_not(None),
+                        CharacterCarouselModel.published_at >= cutoff,
+                    )
+                    .limit(200)
+                )
+                rows = list(res.scalars().all())
+
+            # Extract TikTok video_id from publish_url like
+            #   https://www.tiktok.com/@user/video/7123456789012345678
+            pattern = re.compile(r"/video/(\d{15,25})")
+            vid_to_row = {}
+            for row in rows:
+                m = pattern.search(row.publish_url or "")
+                if m:
+                    vid_to_row[m.group(1)] = row
+            video_ids = list(vid_to_row.keys())
+            synced = 0
+            for start in range(0, len(video_ids), 20):
+                batch = video_ids[start:start + 20]
+                metrics = await client.query_video_metrics(batch)
+                if not metrics:
+                    continue
+                async with get_session() as session:
+                    for v in metrics:
+                        row = vid_to_row.get(str(v.get("id")))
+                        if row is None:
+                            continue
+                        fresh = await session.get(CharacterCarouselModel, row.id)
+                        if fresh is None:
+                            continue
+                        fresh.views = int(v.get("view_count") or 0)
+                        fresh.likes = int(v.get("like_count") or 0)
+                        fresh.comments = int(v.get("comment_count") or 0)
+                        fresh.shares = int(v.get("share_count") or 0)
+                        total_actions = (fresh.likes or 0) + (fresh.comments or 0) + (fresh.shares or 0)
+                        if fresh.views and fresh.views > 0:
+                            fresh.engagement_rate = float(total_actions) / float(fresh.views)
+                        synced += 1
+                    await session.commit()
+
+            logger.info(
+                "character_performance_sync_done",
+                characters=stats.total_characters,
+                carousels=stats.total_carousels,
+                published=stats.total_published,
+                candidates=len(video_ids),
+                synced=synced,
+            )
         except Exception as e:
             logger.error("character_performance_sync_failed", error=str(e))
 
@@ -2691,6 +4049,48 @@ Have a great evening!"""
                 logger.info("character_reference_video_processor_tick", processed=processed)
         except Exception as e:
             logger.error("character_reference_video_processor_failed", error=str(e))
+
+    async def _run_character_reference_video_learning(self):
+        """Auto-apply facts + style exemplars from analyzed reference videos."""
+        try:
+            from app.services.character_reference_video_service import (
+                get_character_reference_video_service,
+            )
+            service = get_character_reference_video_service()
+            stats = await service.apply_learnings(batch_size=20)
+            if stats.get("scanned"):
+                logger.info("character_reference_video_learning_tick", **stats)
+        except Exception as e:
+            logger.error("character_reference_video_learning_failed", error=str(e))
+
+    async def _run_carousel_reaudit(self):
+        """Re-audit a rolling batch of carousels and auto-remediate Tier 1/2 issues."""
+        try:
+            from app.services.carousel_audit_service import get_carousel_audit_service
+            stats = await get_carousel_audit_service().run_batch(batch_size=20)
+            if stats.get("scanned"):
+                logger.info("carousel_reaudit_tick", **stats)
+        except Exception as e:
+            logger.error("carousel_reaudit_failed", error=str(e))
+
+    async def _run_entity_research_deepen(self):
+        """Deep-research the lowest-depth entities (characters/TV/movies)."""
+        try:
+            from app.services.entity_research_service import get_entity_research_service
+            stats = await get_entity_research_service().deepen_lowest_depth(batch_size=3)
+            if stats.get("scanned"):
+                logger.info("entity_research_deepen_tick", **stats)
+        except Exception as e:
+            logger.error("entity_research_deepen_failed", error=str(e))
+
+    async def _run_employee_checkin(self):
+        """Aggregate subsystem reports into an EmployeeCheckin row + Legion tasks."""
+        try:
+            from app.services.employee_checkin_service import get_employee_checkin_service
+            result = await get_employee_checkin_service().run_checkin()
+            logger.info("employee_checkin_tick", overall=result.get("overall_grade"))
+        except Exception as e:
+            logger.error("employee_checkin_failed", error=str(e))
 
     async def _run_character_reference_video_cleanup(self):
         """Purge stale reference video files (30+ days old)."""
@@ -2919,35 +4319,89 @@ Have a great evening!"""
     # ============================================
 
     async def _run_media_auto_research(self):
-        """Auto-research pending media titles (TV/movie), up to 3 per run."""
+        """Auto-research pending media titles (TV/movie), up to 3 per run.
+
+        Resets any title stuck in 'researching' for >30 min to 'pending' first —
+        `research_media_title` sets the status at the start of its run and
+        leaves it there if the process is killed mid-pipeline (e.g. container
+        restart), so without this reset orphaned titles stay stuck forever.
+        """
         if self._autopilot_disabled("media_auto_research"):
             return
         logger.info("running_media_auto_research")
         try:
             from app.services.media_content_service import get_media_content_service
+            from app.db.models import MediaTitleModel
+            from app.infrastructure.database import get_session
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select, or_
+            from sqlalchemy.exc import SQLAlchemyError
             svc = get_media_content_service()
-            pending = await svc.list_media_titles(research_status="pending", limit=3)
+
+            # Reset stuck 'researching' titles older than 30 min
+            stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+            reset_count = 0
+            async with get_session() as session:
+                stuck_rows = await session.execute(
+                    select(MediaTitleModel).where(
+                        MediaTitleModel.research_status == "researching",
+                        or_(
+                            MediaTitleModel.last_researched == None,  # noqa: E711
+                            MediaTitleModel.last_researched < stuck_cutoff,
+                        ),
+                    )
+                )
+                for row in stuck_rows.scalars().all():
+                    row.research_status = "pending"
+                    reset_count += 1
+                if reset_count:
+                    await session.commit()
+                    logger.info("media_auto_research_reset_stuck", count=reset_count)
+
+            pending = await svc.list_media_titles(research_status="pending", limit=6)
             if not pending:
                 logger.debug("media_auto_research_skipped_none_pending")
                 return
-            researched = 0
-            failed = 0
-            for title in pending:
+
+            async def _research_one(title):
                 try:
                     await svc.research_media_title(title.id)
-                    researched += 1
                     logger.info(
                         "media_auto_research_item_done",
                         title=title.title,
                         media_type=title.media_type,
                     )
+                    return ("ok", title.id, None)
                 except (ValueError, RuntimeError, KeyError, AttributeError, TypeError) as e:
-                    failed += 1
+                    try:
+                        async with get_session() as session:
+                            row = await session.get(MediaTitleModel, title.id)
+                            if row and row.research_status == "researching":
+                                row.research_status = "failed"
+                                if not isinstance(row.research_data, dict):
+                                    row.research_data = {}
+                                row.research_data["error"] = str(e)[:300]
+                                await session.commit()
+                    except (RuntimeError, SQLAlchemyError):
+                        pass
                     logger.warning(
                         "media_auto_research_item_failed",
                         title=title.title,
                         error=str(e)[:200],
                     )
+                    return ("fail", title.id, str(e)[:200])
+
+            # Run up to 3 concurrently so the batch doesn't slam Ollama; the
+            # underlying research_media_title does a single LLM synthesis per
+            # title, so 3 in flight is safe alongside any character jobs.
+            sem = asyncio.Semaphore(3)
+            async def _guarded(t):
+                async with sem:
+                    return await _research_one(t)
+
+            results = await asyncio.gather(*(_guarded(t) for t in pending), return_exceptions=False)
+            researched = sum(1 for r in results if r[0] == "ok")
+            failed = sum(1 for r in results if r[0] == "fail")
             logger.info("media_auto_research_done", researched=researched, failed=failed)
         except Exception as e:
             logger.error("media_auto_research_failed", error=str(e))
@@ -2977,19 +4431,39 @@ Have a great evening!"""
             generated = 0
             failed = 0
             max_per_run = 10
+            # Rotate hook_style + story_template deterministically so the
+            # media pipeline matches the character pipeline's variety instead
+            # of leaving both NULL (which kills PromptBreeder evaluation and
+            # defaults the LLM to a generic hook).
+            from app.models.character_content import HookStyle
+            hook_styles = [hs.value for hs in HookStyle]
+            story_template_rotation = [
+                "secrets_revealed", "dark_origin", "fan_theory_deep_dive",
+                "hot_take", "timeline_tragedy", "hidden_connection",
+                "actor_behind_role",
+            ]
             for title in titles:
                 if generated >= max_per_run:
                     break
                 angle = angles[(generated + hash(title.id)) % len(angles)]
+                chosen_style = hook_styles[(generated + hash(title.id)) % len(hook_styles)]
+                chosen_template = story_template_rotation[
+                    (generated + hash(title.id)) % len(story_template_rotation)
+                ]
                 try:
                     await svc.generate_carousel(MediaCarouselCreate(
-                        media_title_id=title.id, angle=angle
+                        media_title_id=title.id,
+                        angle=angle,
+                        hook_style=chosen_style,
+                        story_template=chosen_template,
                     ))
                     generated += 1
                     logger.info(
                         "media_carousel_generated",
                         title=title.title,
                         angle=angle.value if hasattr(angle, "value") else str(angle),
+                        hook_style=chosen_style,
+                        story_template=chosen_template,
                     )
                 except (ValueError, RuntimeError, KeyError, AttributeError, TypeError) as e:
                     failed += 1
@@ -3160,9 +4634,25 @@ Have a great evening!"""
 
                     for angle in burst_angles:
                         try:
+                            # Pull hook_style + story_template from the
+                            # Thompson picker so release-prep bursts inherit
+                            # the same variety/learning as the main generation
+                            # loop (was previously skipping both → most of
+                            # these rows had hook_style=NULL, which silently
+                            # disables PromptBreeder evaluation).
+                            variant_pick = {}
+                            try:
+                                variant_pick = await svc.pick_next_variant(
+                                    character_id=ch_id,
+                                    generation_index=generated,
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
                             await svc.generate_carousel(CarouselCreate(
                                 character_id=ch_id,
                                 angle=angle,
+                                hook_style=variant_pick.get("hook_style"),
+                                story_template=variant_pick.get("story_template"),
                             ))
                             generated += 1
                         except Exception as e:  # noqa: BLE001
@@ -3233,9 +4723,20 @@ Have a great evening!"""
                             continue
 
                     try:
+                        # Rotate hook_style/template so release-prep media
+                        # bursts also inherit variety (previously both NULL).
+                        from app.models.character_content import HookStyle as _HS
+                        _hs_list = [hs.value for hs in _HS]
+                        _tpl_list = [
+                            "secrets_revealed", "dark_origin", "timeline_tragedy",
+                            "fan_theory_deep_dive", "hot_take",
+                        ]
+                        _idx = generated + hash(mt_id)
                         await svc.generate_carousel(MediaCarouselCreate(
                             media_title_id=mt_id,
                             angle=MediaContentAngle.CULTURAL_IMPACT,
+                            hook_style=_hs_list[_idx % len(_hs_list)],
+                            story_template=_tpl_list[_idx % len(_tpl_list)],
                         ))
                         generated += 1
                     except Exception as e:  # noqa: BLE001
@@ -3549,6 +5050,42 @@ Have a great evening!"""
             "jobs": jobs,
             "job_count": len(jobs)
         }
+
+    # ------------------------------------------------------------------
+    # Orchestration hardening handlers (migration 035)
+    # ------------------------------------------------------------------
+
+    async def _run_autonomous_content_loop(self):
+        """W2: pull trending signals and drive carousel generation."""
+        from app.services.autonomous_content_loop_service import get_autonomous_content_loop_service
+        svc = get_autonomous_content_loop_service()
+        result = await svc.run_once()
+        logger.info("scheduler_autonomous_content_loop", **result)
+
+    async def _run_swarm_calibration(self):
+        """W4: recompute swarm role weights from recent outcomes."""
+        from app.services.content_swarm_service import get_content_swarm_service
+        svc = get_content_swarm_service()
+        result = await svc.run_calibration(lookback_days=30)
+        logger.info(
+            "scheduler_swarm_calibration",
+            samples_total=result.get("samples_total"),
+            weights=result.get("weights"),
+        )
+
+    async def _run_lore_ingestion(self):
+        """W5: chunk + embed character research into character_lore_chunks."""
+        from app.services.lore_ingestion_service import get_lore_ingestion_service
+        svc = get_lore_ingestion_service()
+        result = await svc.ingest_all(limit=50)  # cap per nightly run; scales up later
+        logger.info("scheduler_lore_ingestion", **result)
+
+    async def _run_carousel_partition_maintenance(self):
+        """W6: create next-month partitions ahead of time on partitioned tables."""
+        from app.services.partition_maintenance_service import get_partition_maintenance_service
+        svc = get_partition_maintenance_service()
+        result = await svc.ensure_future_partitions()
+        logger.info("scheduler_partition_maintenance", **result)
 
 
 # ============================================

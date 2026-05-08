@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getAuthHeaders } from '@/lib/auth'
 import { Mail, RefreshCw, Star, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import { GoogleOAuthButton } from '@/components/GoogleOAuthButton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { EmailRulesPanel } from '@/components/email/EmailRulesPanel'
+import { AccountSwitcher } from '@/components/AccountSwitcher'
 
 interface Email {
   id: string
@@ -27,29 +28,15 @@ export function EmailPage() {
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [connected, setConnected] = useState(false)
+  // null = All Accounts merged view; otherwise the selected account id.
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
 
-  useEffect(() => {
-    checkConnection()
-  }, [])
-
-  const checkConnection = async () => {
-    try {
-      const response = await fetch('/api/google/auth/status', { headers: getAuthHeaders() })
-      const data = await response.json()
-      setConnected(data.connected)
-
-      if (data.connected) {
-        loadEmails()
-      }
-    } catch (error) {
-      console.error('Failed to check connection:', error)
-    }
-  }
-
-  const loadEmails = async () => {
+  const loadEmails = useCallback(async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/email/messages?limit=50', { headers: getAuthHeaders() })
+      const qs = new URLSearchParams({ limit: '50' })
+      if (selectedAccount) qs.set('account_id', selectedAccount)
+      const response = await fetch(`/api/email/messages?${qs.toString()}`, { headers: getAuthHeaders() })
       const data = await response.json()
       setEmails(data)
     } catch (error) {
@@ -57,12 +44,35 @@ export function EmailPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedAccount])
+
+  const checkConnection = useCallback(async () => {
+    try {
+      const response = await fetch('/api/google/auth/status', { headers: getAuthHeaders() })
+      const data = await response.json()
+      setConnected(data.connected)
+      if (data.connected) {
+        loadEmails()
+      }
+    } catch (error) {
+      console.error('Failed to check connection:', error)
+    }
+  }, [loadEmails])
+
+  useEffect(() => {
+    checkConnection()
+  }, [checkConnection])
+
+  useEffect(() => {
+    if (connected) loadEmails()
+  }, [selectedAccount, connected, loadEmails])
 
   const syncInbox = async () => {
     try {
       setSyncing(true)
-      await fetch('/api/email/sync?max_results=100', {
+      const qs = new URLSearchParams({ max_results: '100' })
+      if (selectedAccount) qs.set('account_id', selectedAccount)
+      await fetch(`/api/email/sync?${qs.toString()}`, {
         method: 'POST',
         headers: getAuthHeaders(),
       })
@@ -113,14 +123,15 @@ export function EmailPage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-end mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3">
+        <AccountSwitcher value={selectedAccount} onChange={setSelectedAccount} />
         <Button
           onClick={syncInbox}
           disabled={syncing}
           className="gap-2"
         >
           <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Syncing...' : 'Sync Inbox'}
+          {syncing ? 'Syncing...' : selectedAccount ? 'Sync this account' : 'Sync all accounts'}
         </Button>
       </div>
 

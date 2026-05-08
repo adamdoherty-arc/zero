@@ -63,7 +63,7 @@ async def auth_callback(
     oauth_service = get_gmail_oauth_service()
 
     try:
-        result = oauth_service.handle_callback(code, state)
+        result = await oauth_service.handle_callback(code, state)
         # Return HTML page that closes itself or redirects
         return {
             "status": "success",
@@ -101,7 +101,7 @@ async def set_client_config(config: Dict[str, Any]):
 async def disconnect_gmail():
     """Disconnect Gmail account."""
     oauth_service = get_gmail_oauth_service()
-    oauth_service.disconnect()
+    await oauth_service.disconnect()
     return {"status": "disconnected", "message": "Gmail account disconnected"}
 
 
@@ -119,29 +119,37 @@ async def get_status():
 @router.post("/sync")
 async def sync_inbox(
     max_results: int = Query(default=100, ge=10, le=500),
-    days_back: int = Query(default=7, ge=1, le=30)
+    days_back: int = Query(default=7, ge=1, le=30),
+    account_id: Optional[str] = Query(default=None, description="Specific account to sync; omit to sync all connected accounts"),
 ):
-    """
-    Sync inbox from Gmail.
-
-    Fetches recent emails and caches them locally.
-    """
+    """Sync inbox from Gmail. When `account_id` is omitted, syncs every connected account."""
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
-        raise HTTPException(
-            status_code=401,
-            detail="Gmail not connected. Complete OAuth flow first."
-        )
 
+    if account_id:
+        if not await oauth_service.has_valid_tokens(account_id=account_id):
+            raise HTTPException(401, f"Account {account_id} not connected.")
+        try:
+            return await get_gmail_service().sync_inbox(max_results, days_back, account_id=account_id)
+        except RuntimeError as e:
+            raise HTTPException(503, str(e))
+        except Exception as e:
+            logger.error("email_sync_failed", account_id=account_id, error=str(e))
+            raise HTTPException(500, f"Sync failed: {e}")
+
+    # No account specified — fan out across every connected account.
+    accounts = await oauth_service.list_accounts()
+    if not accounts:
+        raise HTTPException(401, "No Google accounts connected.")
     service = get_gmail_service()
-    try:
-        result = await service.sync_inbox(max_results, days_back)
-        return result
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.error("email_sync_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+    results: list[dict] = []
+    for acct in accounts:
+        try:
+            r = await service.sync_inbox(max_results, days_back, account_id=acct["id"])
+            results.append({"account_id": acct["id"], "email": acct["email"], **r})
+        except Exception as e:
+            logger.error("email_sync_failed", account_id=acct["id"], error=str(e))
+            results.append({"account_id": acct["id"], "email": acct["email"], "error": str(e)})
+    return {"results": results}
 
 
 @router.get("/messages", response_model=List[EmailSummary])
@@ -149,11 +157,12 @@ async def list_emails(
     category: Optional[EmailCategory] = Query(default=None),
     status: Optional[EmailStatus] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0)
+    offset: int = Query(default=0, ge=0),
+    account_id: Optional[str] = Query(default=None, description="Filter by account; omit for All Accounts merged view"),
 ):
     """List emails with optional filters."""
     service = get_gmail_service()
-    return await service.list_emails(category, status, limit, offset)
+    return await service.list_emails(category, status, limit, offset, account_id=account_id)
 
 
 @router.get("/messages/{email_id}", response_model=Email)
@@ -170,7 +179,7 @@ async def get_email(email_id: str):
 async def mark_as_read(email_id: str):
     """Mark email as read."""
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Gmail not connected")
 
     service = get_gmail_service()
@@ -184,7 +193,7 @@ async def mark_as_read(email_id: str):
 async def archive_email(email_id: str):
     """Archive email (remove from inbox)."""
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Gmail not connected")
 
     service = get_gmail_service()
@@ -201,7 +210,7 @@ async def star_email(
 ):
     """Star or unstar an email."""
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Gmail not connected")
 
     service = get_gmail_service()
@@ -257,7 +266,7 @@ async def convert_to_task(email_id: str, request: EmailToTaskRequest):
 async def get_labels():
     """Get Gmail labels."""
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Gmail not connected")
 
     service = get_gmail_service()
@@ -399,7 +408,7 @@ async def process_new_emails():
         )
     
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(
             status_code=401,
             detail="Gmail not connected. Complete OAuth flow first."
@@ -462,7 +471,7 @@ async def undo_automation_action(email_id: str):
     from app.services.email_automation_service import get_email_automation_service
     
     oauth_service = get_gmail_oauth_service()
-    if not oauth_service.has_valid_tokens():
+    if not await oauth_service.has_valid_tokens():
         raise HTTPException(status_code=401, detail="Gmail not connected")
     
     automation_service = get_email_automation_service()

@@ -34,7 +34,9 @@ class GmailService:
         self.workspace_path = Path(workspace_path)
         self.email_path = self.workspace_path / "email"
         self.email_path.mkdir(parents=True, exist_ok=True)
-        self._service = None
+        # Per-account API client cache. Key: account_id (or "_default" for the
+        # singleton account). Each entry holds a googleapiclient.discovery.Resource.
+        self._services: dict[str, Any] = {}
         self._breaker = get_circuit_breaker(
             "gmail",
             failure_threshold=3,
@@ -42,30 +44,41 @@ class GmailService:
         )
 
     async def is_connected(self) -> bool:
-        """Check if Gmail is configured and connected."""
+        """True if at least one Google account has valid tokens."""
+        oauth_service = get_gmail_oauth_service()
+        accounts = await oauth_service.list_accounts()
+        for acct in accounts:
+            if await oauth_service.has_valid_tokens(account_id=acct["id"]):
+                return True
+        # Fall back to the legacy SyncStatus row for installs that haven't migrated yet.
         status = await self._load_sync_status()
-        return status.connected if hasattr(status, 'connected') else False
+        return status.connected if hasattr(status, "connected") else False
 
-    def _get_gmail_service(self):
-        """Get authenticated Gmail API service."""
-        if self._service:
-            return self._service
+    async def _get_gmail_service(self, account_id: Optional[str] = None):
+        """Authenticated Gmail API client for the given (or default) account."""
+        cache_key = account_id or "_default"
+        cached = self._services.get(cache_key)
+        if cached is not None:
+            return cached
 
         oauth_service = get_gmail_oauth_service()
-        creds = oauth_service.get_credentials()
-
+        creds = await oauth_service.get_credentials(account_id=account_id)
         if not creds:
             raise RuntimeError("Gmail not connected. Complete OAuth flow first.")
-
         try:
             from googleapiclient.discovery import build
-            self._service = build("gmail", "v1", credentials=creds)
-            return self._service
+            client = build("gmail", "v1", credentials=creds)
+            self._services[cache_key] = client
+            return client
         except ImportError:
             raise RuntimeError(
                 "Google API client not installed. "
                 "Install with: pip install google-api-python-client"
             )
+
+    async def list_account_ids(self) -> list[str]:
+        """All connected account ids (multi-account scheduler sync uses this)."""
+        return [a["id"] for a in await get_gmail_oauth_service().list_accounts()]
 
     # ------------------------------------------------------------------
     # Sync Status (PostgreSQL)
@@ -105,10 +118,10 @@ class GmailService:
             ))
 
     async def get_sync_status(self) -> EmailSyncStatus:
-        """Get current sync status."""
+        """Get current sync status (default account)."""
         oauth_service = get_gmail_oauth_service()
         status = await self._load_sync_status()
-        status.connected = oauth_service.has_valid_tokens()
+        status.connected = await oauth_service.has_valid_tokens()
         return status
 
     # ------------------------------------------------------------------
@@ -291,20 +304,21 @@ Reply with ONLY the category name, nothing else."""
     async def sync_inbox(
         self,
         max_results: int = 100,
-        days_back: int = 7
+        days_back: int = 7,
+        account_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Sync inbox from Gmail.
+        Sync inbox from Gmail for one account (default if account_id is None).
 
-        Args:
-            max_results: Maximum emails to fetch
-            days_back: Fetch emails from this many days back
-
-        Returns:
-            Sync result with counts
+        Multi-account: every cached email row is tagged with the source account_id
+        so the UI can filter; history_id is stored on the account row.
         """
-        service = self._get_gmail_service()
+        service = await self._get_gmail_service(account_id=account_id)
         status = await self._load_sync_status()
+        # Resolve account_id when not supplied so we can still tag rows.
+        if account_id is None:
+            account = await get_gmail_oauth_service().get_account()
+            account_id = account.id if account else None
 
         # Build query for recent emails
         after_date = datetime.utcnow() - timedelta(days=days_back)
@@ -389,10 +403,12 @@ Reply with ONLY the category name, nothing else."""
                     errors.append(f"Error fetching {msg_ref['id']}: {str(e)}")
                     logger.warning("gmail_message_fetch_error", id=msg_ref["id"], error=str(e))
 
-            # Upsert all emails into PostgreSQL
+            # Upsert all emails into PostgreSQL with account tag.
             async with get_session() as session:
                 for email in emails:
-                    await session.merge(self._email_to_row(email))
+                    row = self._email_to_row(email)
+                    row.account_id = account_id
+                    await session.merge(row)
 
             # Get profile for email address
             async def _get_profile():
@@ -454,9 +470,13 @@ Reply with ONLY the category name, nothing else."""
         category: Optional[EmailCategory] = None,
         status: Optional[EmailStatus] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
+        account_id: Optional[str] = None,
     ) -> List[EmailSummary]:
-        """List emails from DB with optional filters."""
+        """List emails from DB with optional filters.
+
+        `account_id`: filter to one account. None = all connected accounts merged.
+        """
         async with get_session() as session:
             stmt = select(EmailCacheModel)
 
@@ -464,6 +484,8 @@ Reply with ONLY the category name, nothing else."""
                 stmt = stmt.where(EmailCacheModel.category == category.value)
             if status:
                 stmt = stmt.where(EmailCacheModel.status == status.value)
+            if account_id:
+                stmt = stmt.where(EmailCacheModel.account_id == account_id)
 
             stmt = stmt.order_by(EmailCacheModel.received_at.desc())
             stmt = stmt.offset(offset).limit(limit)
@@ -483,7 +505,7 @@ Reply with ONLY the category name, nothing else."""
 
     async def get_labels(self) -> List[EmailLabel]:
         """Get Gmail labels."""
-        service = self._get_gmail_service()
+        service = await self._get_gmail_service()
 
         async def _fetch_labels():
             results = service.users().labels().list(userId="me").execute()
@@ -511,7 +533,7 @@ Reply with ONLY the category name, nothing else."""
     async def mark_as_read(self, email_id: str) -> bool:
         """Mark email as read."""
         try:
-            service = self._get_gmail_service()
+            service = await self._get_gmail_service()
 
             async def _mark_read():
                 service.users().messages().modify(
@@ -540,7 +562,7 @@ Reply with ONLY the category name, nothing else."""
     async def archive_email(self, email_id: str) -> bool:
         """Archive email (remove from inbox)."""
         try:
-            service = self._get_gmail_service()
+            service = await self._get_gmail_service()
 
             async def _archive():
                 service.users().messages().modify(
@@ -566,10 +588,101 @@ Reply with ONLY the category name, nothing else."""
             logger.error("archive_email_failed", email_id=email_id, error=str(e))
             return False
 
+    async def trash_email(self, email_id: str) -> bool:
+        """Move email to Trash (recoverable for 30 days). Uses Gmail TRASH label.
+
+        Distinct from archive_email which only removes INBOX. trash_email also
+        removes INBOX and adds TRASH so the message disappears from the inbox
+        view and lands in the user's Trash folder.
+        """
+        try:
+            service = await self._get_gmail_service()
+
+            async def _trash():
+                service.users().messages().modify(
+                    userId="me",
+                    id=email_id,
+                    body={"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX", "UNREAD"]},
+                ).execute()
+
+            await self._breaker.call(_trash)
+
+            async with get_session() as session:
+                row = await session.get(EmailCacheModel, email_id)
+                if row:
+                    row.status = EmailStatus.DELETED.value
+                    labels = list(row.labels or [])
+                    if "INBOX" in labels:
+                        labels.remove("INBOX")
+                    if "UNREAD" in labels:
+                        labels.remove("UNREAD")
+                    if "TRASH" not in labels:
+                        labels.append("TRASH")
+                    row.labels = labels
+
+            return True
+        except Exception as e:
+            logger.error("trash_email_failed", email_id=email_id, error=str(e))
+            return False
+
+    async def send_email(
+        self,
+        *,
+        to: str,
+        subject: str,
+        body_text: str,
+        in_reply_to: Optional[str] = None,
+        references: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """Send an email via the Gmail API. Returns the new message id on success.
+
+        When `in_reply_to` is provided the message is a reply: the In-Reply-To
+        and References headers are set, the subject is prefixed with 'Re:' if
+        not already, and `thread_id` (Gmail's thread id, not RFC message id)
+        keeps the message in the same thread.
+        """
+        try:
+            from email.message import EmailMessage
+
+            service = await self._get_gmail_service()
+            msg = EmailMessage()
+            msg["To"] = to
+            subj = subject
+            if in_reply_to and not subj.lower().startswith("re:"):
+                subj = f"Re: {subj}"
+            msg["Subject"] = subj
+            if in_reply_to:
+                msg["In-Reply-To"] = in_reply_to
+                msg["References"] = references or in_reply_to
+            msg.set_content(body_text)
+
+            raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+            payload: Dict[str, Any] = {"raw": raw}
+            if thread_id:
+                payload["threadId"] = thread_id
+
+            async def _send():
+                return service.users().messages().send(userId="me", body=payload).execute()
+
+            sent = await self._breaker.call(_send)
+            sent_id = sent.get("id") if isinstance(sent, dict) else None
+            logger.info(
+                "email_sent",
+                to=to,
+                subject=subj,
+                in_reply_to=in_reply_to,
+                sent_id=sent_id,
+            )
+            return sent_id
+        except Exception as e:
+            logger.error("send_email_failed", to=to, subject=subject, error=str(e))
+            return None
+
     async def star_email(self, email_id: str, starred: bool = True) -> bool:
         """Star or unstar an email."""
         try:
-            service = self._get_gmail_service()
+            service = await self._get_gmail_service()
             body = {"addLabelIds": ["STARRED"]} if starred else {"removeLabelIds": ["STARRED"]}
 
             async def _star():
@@ -659,24 +772,34 @@ Reply with ONLY the category name, nothing else."""
     # HISTORY API - Incremental Sync (Sprint 41 Task 68)
     # ========================================================================
 
-    async def sync_incremental(self) -> Dict[str, Any]:
+    async def sync_incremental(self, account_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Incremental sync using Gmail History API.
-        Only fetches changes since last sync, much faster than full sync.
-        Falls back to full sync if history ID is missing or expired.
-        """
-        service = self._get_gmail_service()
+        Incremental sync via Gmail History API for one account.
 
-        # Load history_id from sync status metadata
+        Multi-account: history_id lives on the account's `oauth_accounts.metadata`.
+        Falls back to full `sync_inbox(account_id=...)` when no history_id is
+        cached or the cached id has expired (Gmail returns 404 after ~7 days).
+        """
+        service = await self._get_gmail_service(account_id=account_id)
+
+        oauth_svc = get_gmail_oauth_service()
+        account = await oauth_svc.get_account(account_id)
+        account_id = account.id if account else account_id  # resolve default
+
+        # Load history_id from the account's metadata; fall back to legacy
+        # SyncStatusModel for installs that pre-date the multi-account migration.
         history_id = None
-        async with get_session() as session:
-            row = await session.get(SyncStatusModel, "gmail")
-            if row and row.metadata_:
-                history_id = row.metadata_.get("history_id")
+        if account:
+            history_id = (account.metadata_ or {}).get("history_id")
+        if not history_id:
+            async with get_session() as session:
+                row = await session.get(SyncStatusModel, "gmail")
+                if row and row.metadata_:
+                    history_id = row.metadata_.get("history_id")
 
         if not history_id:
-            logger.info("no_history_id_falling_back_to_full_sync")
-            return await self.sync_inbox(max_results=50, days_back=3)
+            logger.info("no_history_id_falling_back_to_full_sync", account_id=account_id)
+            return await self.sync_inbox(max_results=50, days_back=3, account_id=account_id)
 
         try:
             async def _list_history():
@@ -750,27 +873,42 @@ Reply with ONLY the category name, nothing else."""
                 except Exception as e:
                     logger.warning("history_message_fetch_error", id=msg_id, error=str(e))
 
-            # Persist new emails and update history_id
+            # Persist new emails (tagged with account_id) and update history_id.
             async with get_session() as session:
                 for email in new_email_objects:
-                    await session.merge(self._email_to_row(email))
-
-                # Update history_id in sync status metadata
-                row = await session.get(SyncStatusModel, "gmail")
-                if row:
-                    meta = row.metadata_ or {}
-                    meta["history_id"] = str(new_history_id)
-                    row.metadata_ = meta
-                    row.last_sync = datetime.utcnow()
+                    row = self._email_to_row(email)
+                    row.account_id = account_id
                     await session.merge(row)
 
-            logger.info("gmail_incremental_sync_complete", new_emails=new_emails, history_changes=len(histories))
-            return {"status": "success", "type": "incremental", "new_emails": new_emails}
+            # Update history_id on the account row (preferred) and mirror to
+            # the legacy SyncStatus row for the default account so old code
+            # that reads from SyncStatusModel keeps working.
+            if new_history_id:
+                if account_id:
+                    await oauth_svc.update_account_metadata(
+                        account_id, history_id=str(new_history_id)
+                    )
+                async with get_session() as session:
+                    legacy = await session.get(SyncStatusModel, "gmail")
+                    if legacy:
+                        meta = legacy.metadata_ or {}
+                        meta["history_id"] = str(new_history_id)
+                        legacy.metadata_ = meta
+                        legacy.last_sync = datetime.utcnow()
+                        await session.merge(legacy)
+
+            logger.info(
+                "gmail_incremental_sync_complete",
+                account_id=account_id,
+                new_emails=new_emails,
+                history_changes=len(histories),
+            )
+            return {"status": "success", "type": "incremental", "new_emails": new_emails, "account_id": account_id}
 
         except Exception as e:
             if "historyId" in str(e).lower() or "404" in str(e):
-                logger.info("history_expired_falling_back", error=str(e))
-                return await self.sync_inbox(max_results=50, days_back=3)
+                logger.info("history_expired_falling_back", account_id=account_id, error=str(e))
+                return await self.sync_inbox(max_results=50, days_back=3, account_id=account_id)
             raise
 
     # ========================================================================

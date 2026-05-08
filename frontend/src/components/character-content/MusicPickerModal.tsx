@@ -3,6 +3,7 @@ import { Flame, Music2, Pause, Play, Search as SearchIcon, Sparkles } from 'luci
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog'
@@ -75,6 +76,9 @@ export default function MusicPickerModal({
                         <Music2 className="w-5 h-5 text-indigo-400" />
                         Pick music
                     </DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Search and assign a music track to this content item.
+                    </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex flex-col gap-3">

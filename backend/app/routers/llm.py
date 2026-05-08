@@ -228,31 +228,36 @@ async def available_models():
     registry = get_provider_registry()
     result = {}
 
-    # Ollama models from the Ollama API
-    ollama_provider = registry.get("ollama")
-    if ollama_provider and ollama_provider.is_configured:
-        try:
-            from app.infrastructure.ollama_client import OllamaClient
-            client = OllamaClient()
-            models = await client.list_models()
-            result["ollama"] = [m.get("name", m.get("model", "")) for m in models]
-        except Exception:
-            result["ollama"] = []
-    else:
+    # Local LLM models — vLLM via shared-litellm (Ollama retired 2026-04-27).
+    # Legacy "ollama" key retained in response shape for back-compat with the
+    # frontend; values now reflect what vLLM is actually serving.
+    try:
+        import os
+        import httpx
+        vllm_url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{vllm_url}/models")
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                result["ollama"] = [m.get("id", "") for m in data]
+            else:
+                result["ollama"] = []
+    except Exception:
         result["ollama"] = []
 
     # Cloud providers — static known models
     result["gemini"] = [
-        "gemini-3.1-pro-preview",
-        "gemini-2.5-flash-preview-05-20",
-        "gemini-2.5-pro-preview-05-06",
-        "gemini-2.0-flash",
+        "gemini-3.1-pro",
+        "gemini-3.1-flash",
+        "gemini-3.1-flash-lite",
     ]
     result["openrouter"] = [
+        "google/gemini-3.1-flash",
+        "google/gemini-3.1-pro",
+        "anthropic/claude-haiku-4.5",
+        "anthropic/claude-sonnet-4-6",
         "meta-llama/llama-4-maverick",
         "meta-llama/llama-4-scout",
-        "anthropic/claude-sonnet-4",
-        "google/gemini-3.1-pro-preview",
         "deepseek/deepseek-r1",
     ]
     result["huggingface"] = [
@@ -260,10 +265,7 @@ async def available_models():
         "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     ]
     result["kimi"] = [
-        "kimi-k2.5",
-        "moonshot-v1-8k",
-        "moonshot-v1-32k",
-        "moonshot-v1-128k",
+        "kimi-k2.6",
     ]
 
     return {"models_by_provider": result}

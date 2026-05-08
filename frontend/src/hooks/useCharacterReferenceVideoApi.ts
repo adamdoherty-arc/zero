@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getAuthHeaders } from '@/lib/auth'
+import { getAuthHeaders, getToken } from '@/lib/auth'
 
 const API_URL = ''
 const BASE = '/api/character-content/reference-videos'
@@ -334,5 +334,7 @@ export function useDeleteReferenceVideo() {
 // ----------------------------------------------------------------------------
 
 export function getReferenceVideoFileUrl(id: string, kind: 'video' | 'thumbnail' | 'audio'): string {
-    return `${BASE}/${id}/file/${kind}`
+    const token = getToken()
+    const qs = token ? `?token=${encodeURIComponent(token)}` : ''
+    return `${BASE}/${id}/file/${kind}${qs}`
 }

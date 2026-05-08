@@ -1,9 +1,13 @@
-"""Meeting summarization with map-reduce for long transcripts."""
+"""Meeting summarization with map-reduce for long transcripts.
+
+Uses the UnifiedLLMClient so routing honors LOCAL_LLM_BACKEND (vllm or ollama)
+plus the budget fallback to Kimi / OpenRouter when the local backend fails.
+"""
 
 import json
 import structlog
 
-from app.infrastructure.ollama_client import get_ollama_client
+from app.infrastructure.unified_llm_client import get_unified_llm_client
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +59,35 @@ Respond with a JSON object:
   ],
   "decisions": ["<decision>", ...]
 }}
+"""
+
+_LIVE_TICK_SYSTEM = (
+    "You are a fast meeting note-taker. Update the running notes with anything "
+    "important from the latest chunk. Always respond with valid JSON only."
+)
+
+_LIVE_TICK_PROMPT = """\
+You are tracking a meeting in real time.
+
+Meeting title: {title}
+Running notes so far:
+---
+{running_notes}
+---
+
+Latest transcript chunk (last ~60 seconds):
+---
+{chunk}
+---
+
+Respond with a JSON object:
+{{
+  "running_notes_delta": ["<new bullet to add to running notes>", ...],
+  "new_action_items": [
+    {{"owner": "<person or 'Unassigned'>", "description": "<task>", "due": "<deadline or null>"}}
+  ]
+}}
+Only include items that are NEW since the running notes — do not repeat existing bullets.
 """
 
 _COMBINE_PROMPT = """\
@@ -126,14 +159,17 @@ class MeetingSummaryService:
         return await self._map_reduce(transcript_text, title)
 
     async def _single_pass(self, transcript: str, title: str) -> dict:
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         prompt = _SINGLE_PASS_PROMPT.format(title=title, transcript=transcript)
-        raw = await client.chat(prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1)
+        raw = await client.chat(
+            prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1,
+            task_type="summary",
+        )
         result = _parse_json_response(raw)
         return self._normalize(result)
 
     async def _map_reduce(self, transcript: str, title: str) -> dict:
-        client = get_ollama_client()
+        client = get_unified_llm_client()
         chunks = _split_transcript(transcript)
         total = len(chunks)
         logger.info("map_reduce_summarization", chunks=total)
@@ -141,7 +177,10 @@ class MeetingSummaryService:
         for i, chunk in enumerate(chunks, start=1):
             prompt = _CHUNK_SUMMARY_PROMPT.format(title=title, chunk_index=i, total_chunks=total, chunk=chunk)
             try:
-                raw = await client.chat(prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1)
+                raw = await client.chat(
+                    prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1,
+                    task_type="summary",
+                )
                 section_summaries.append(_parse_json_response(raw))
             except Exception as e:
                 logger.warning("chunk_summarization_failed", chunk=i, error=str(e))
@@ -151,9 +190,47 @@ class MeetingSummaryService:
             for i, s in enumerate(section_summaries, start=1)
         )
         reduce_prompt = _COMBINE_PROMPT.format(title=title, section_summaries=combined)
-        raw = await client.chat(reduce_prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1)
+        raw = await client.chat(
+            reduce_prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1,
+            task_type="summary",
+        )
         result = _parse_json_response(raw)
         return self._normalize(result)
+
+    async def live_tick(
+        self,
+        chunk_text: str,
+        running_notes: list[str],
+        meeting_title: str = "",
+    ) -> dict:
+        """Lightweight running-notes update for in-progress meetings.
+
+        Pulls a quick LLM call with the latest transcript chunk and the
+        accumulated running notes. Returns delta-only output so the caller can
+        append rather than re-render the world.
+        """
+        if not chunk_text.strip():
+            return {"running_notes_delta": [], "new_action_items": []}
+        client = get_unified_llm_client()
+        notes_blob = "\n".join(f"- {n}" for n in running_notes[-20:]) or "(none yet)"
+        prompt = _LIVE_TICK_PROMPT.format(
+            title=meeting_title or "Untitled Meeting",
+            running_notes=notes_blob,
+            chunk=chunk_text,
+        )
+        try:
+            raw = await client.chat(
+                prompt, system=_LIVE_TICK_SYSTEM, temperature=0.2,
+                task_type="summary",
+            )
+            data = _parse_json_response(raw)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("live_tick_failed", error=str(e))
+            return {"running_notes_delta": [], "new_action_items": []}
+        return {
+            "running_notes_delta": [str(x).strip() for x in data.get("running_notes_delta", []) if str(x).strip()],
+            "new_action_items": list(data.get("new_action_items", [])),
+        }
 
     @staticmethod
     def _normalize(result: dict) -> dict:

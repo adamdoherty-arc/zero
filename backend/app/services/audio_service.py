@@ -117,6 +117,20 @@ class AudioService:
         logger.info("whisper_model_loaded", model=model_size, device=device)
         return model
 
+    async def warmup(self, model_size: str) -> Dict[str, Any]:
+        """
+        Load a Whisper model into memory so the first voice turn isn't paying
+        a 9-10 s cold-start. Idempotent; returns {"model", "load_ms", "cached"}.
+        """
+        import time as _time
+        t0 = _time.monotonic()
+        cached = model_size in self._model_cache
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._get_model, model_size)
+        load_ms = int((_time.monotonic() - t0) * 1000)
+        logger.info("audio_warmup", model=model_size, load_ms=load_ms, cached=cached)
+        return {"model": model_size, "load_ms": load_ms, "cached": cached}
+
     def get_available_models(self) -> List[Dict[str, Any]]:
         """Get list of available Whisper models."""
         return [
@@ -253,16 +267,22 @@ class AudioService:
         self,
         file_content: bytes,
         filename: str,
-        model: WhisperModelEnum = WhisperModelEnum.BASE,
+        model: WhisperModelEnum | str = WhisperModelEnum.BASE,
         language: Optional[str] = None,
     ) -> TranscriptionResult:
         """
         Transcribe an uploaded audio file.
 
+        ``model`` accepts either a ``WhisperModelEnum`` or a raw size string
+        (``"tiny"``, ``"base"``, ``"small"``, ``"medium"``, ``"large-v3"``).
+        Strings that don't map to the enum are passed through directly to
+        faster-whisper; this lets the voice config pick any size without
+        having to extend the enum each time Whisper adds one.
+
         Args:
             file_content: Raw file bytes
             filename: Original filename
-            model: Whisper model size
+            model: Whisper model size (enum or string)
             language: Language code (auto-detect if None)
 
         Returns:
@@ -276,9 +296,19 @@ class AudioService:
         ext = Path(filename).suffix
         temp_path = self.audio_path / f"temp_{file_id}{ext}"
 
+        if isinstance(model, str):
+            model_size = model
+        else:
+            model_size = model.value
+
         try:
             temp_path.write_bytes(file_content)
-            result = await self.transcribe(str(temp_path), model, language)
+            loop = asyncio.get_event_loop()
+            t0 = time.time()
+            result = await loop.run_in_executor(
+                None, self._transcribe_sync, str(temp_path), model_size, language,
+            )
+            result.processing_time_seconds = round(time.time() - t0, 2)
             return result
         finally:
             # Clean up temp file

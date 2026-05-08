@@ -15,7 +15,6 @@ logger = structlog.get_logger()
 JOB_CATEGORIES = {
     "Briefing": ["morning_briefing", "midday_check", "evening_review"],
     "Email": ["gmail_check", "gmail_digest", "email_automation_check", "email_to_tasks"],
-    "Backup": ["backup_hourly", "backup_daily", "backup_weekly"],
     "Research": ["research_daily", "research_weekly_deep_dive", "rules_recalibration"],
     "Ecosystem": ["ecosystem_quick_sync", "ecosystem_full_sync", "ecosystem_execution_monitor", "ecosystem_lifecycle_check"],
     "Autonomous": ["autonomous_daily_orchestration", "autonomous_continuous_monitor", "autonomous_enhancement_cycle"],
@@ -24,7 +23,7 @@ JOB_CATEGORIES = {
     "Tasks": ["task_worker", "task_progress_check", "blocked_task_escalation", "smart_suggestions"],
     "Revenue": ["money_maker_cycle", "money_maker_weekly_report"],
     "Calendar": ["meeting_prep"],
-    "Resources": ["gpu_refresh", "reminder_check", "notion_bidirectional_sync", "backup_restore_test"],
+    "Resources": ["gpu_refresh", "reminder_check", "notion_bidirectional_sync"],
     "TikTok": ["tiktok_continuous_research", "tiktok_niche_deep_dive", "tiktok_approval_reminder", "tiktok_auto_content_pipeline", "tiktok_content_generation_check", "tiktok_performance_sync", "tiktok_pipeline_health", "tiktok_weekly_report"],
     "Predictions": ["prediction_market_sync", "prediction_price_snapshot", "prediction_bettor_discovery", "prediction_research", "prediction_push_to_ada", "prediction_quality_check"],
     "LLM": ["llm_budget_reset"],

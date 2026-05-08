@@ -28,6 +28,11 @@ No other text."""
 class EmailClassifier:
     """Ollama-based email classifier with keyword heuristic fallback."""
 
+    def __init__(self, cache_dir: str | None = None, model_name: str = "distilbert-base-uncased"):
+        # Kept for legacy tests/callers from the previous transformers-backed classifier.
+        self.cache_dir = cache_dir
+        self.model_name = model_name
+
     async def classify(self, subject: str, from_addr: str, body_preview: str) -> Tuple[str, float]:
         """
         Classify email into category with confidence score.
@@ -98,6 +103,17 @@ class EmailClassifier:
             return "important", 0.70
 
         return "normal", 0.5
+
+    def _map_to_email_category(
+        self,
+        sentiment: str,
+        subject: str,
+        from_addr: str,
+        body: str,
+    ) -> str:
+        """Compatibility wrapper around the keyword fallback."""
+        category, _confidence = self._keyword_classify(subject, from_addr, body)
+        return category
 
     async def classify_batch(self, emails: list) -> list:
         """Classify multiple emails."""

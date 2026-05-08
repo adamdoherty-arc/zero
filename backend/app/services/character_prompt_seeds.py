@@ -262,3 +262,68 @@ async def seed_character_prompt_variants() -> dict:
         errors=errors,
     )
     return {"inserted": inserted, "skipped": skipped, "errors": errors}
+
+
+CAROUSEL_V2_RHYTHM_NAME = "carousel_v2_rhythm"
+
+
+async def seed_carousel_v2_rhythm_variant() -> dict:
+    """Register the v2 rhythm carousel prompt and deactivate any older
+    active variants for the same task type so new generations use the
+    rhythm-spec prompt by default.
+
+    Idempotent: if a variant named carousel_v2_rhythm already exists, this
+    is a no-op. Safe to run on every startup.
+    """
+    from sqlalchemy import select, update
+    from app.infrastructure.database import get_session
+    from app.db.models import PromptVariantModel
+    # Lazy import to avoid any startup-order surprises.
+    from app.services.character_content_service import (
+        CAROUSEL_GENERATION_PROMPT,
+        CAROUSEL_SYSTEM_PROMPT,
+    )
+
+    svc = get_prompt_evolution_service()
+    task_type = "character_carousel_generation"
+
+    try:
+        async with get_session() as session:
+            existing = await session.execute(
+                select(PromptVariantModel).where(
+                    PromptVariantModel.task_type == task_type,
+                    PromptVariantModel.variant_name == CAROUSEL_V2_RHYTHM_NAME,
+                )
+            )
+            if existing.scalar_one_or_none():
+                return {"action": "skipped", "reason": "v2_rhythm_already_present"}
+
+            # Deactivate every other active variant for this task type so the
+            # newly registered v2 variant becomes the only active arm.
+            await session.execute(
+                update(PromptVariantModel)
+                .where(
+                    PromptVariantModel.task_type == task_type,
+                    PromptVariantModel.is_active == True,
+                )
+                .values(is_active=False)
+            )
+            await session.commit()
+
+        await svc.register_variant(
+            task_type=task_type,
+            variant_name=CAROUSEL_V2_RHYTHM_NAME,
+            prompt_template=CAROUSEL_GENERATION_PROMPT,
+            is_baseline=False,
+            parameters={
+                "system_prompt": CAROUSEL_SYSTEM_PROMPT,
+                "variables": ["name", "universe", "angle", "facts_text", "slide_count"],
+                "expected_output": "json_carousel_object",
+                "style": "rhythm_v2",
+            },
+        )
+        logger.info("carousel_v2_rhythm_registered", task_type=task_type)
+        return {"action": "registered", "variant_name": CAROUSEL_V2_RHYTHM_NAME}
+    except (SQLAlchemyError, ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+        logger.warning("carousel_v2_rhythm_seed_failed", error=str(e))
+        return {"action": "error", "error": str(e)}

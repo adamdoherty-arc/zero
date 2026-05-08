@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -95,6 +95,9 @@ export function ReferenceVideoDetailModal({ video, characters, onClose }: Props)
                             {video.status}
                         </Badge>
                     </DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Reference video details, transcript, and analysis.
+                    </DialogDescription>
                 </DialogHeader>
 
                 {video.status === 'failed' && video.error_message && (

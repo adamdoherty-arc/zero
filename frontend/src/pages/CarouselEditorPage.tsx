@@ -59,8 +59,7 @@ import { useToast } from '@/hooks/use-toast'
 // Local constants
 const MODEL_OPTIONS: Array<{ label: string; provider: string; model: string }> = [
     { label: 'Local Ollama', provider: 'ollama', model: 'gemma4:26b' },
-    { label: 'Kimi K2.5', provider: 'kimi', model: 'kimi-k2.5' },
-    { label: 'Kimi Lite', provider: 'kimi', model: 'moonshot-v1-32k' },
+    { label: 'Kimi K2.6', provider: 'kimi', model: 'kimi-k2.6' },
     { label: 'MiniMax M2.7', provider: 'minimax', model: 'minimax-m2.7' },
 ]
 const LAST_MODEL_KEY = 'zero.carousel.lastModel'

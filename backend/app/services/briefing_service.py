@@ -125,7 +125,7 @@ class BriefingService:
         calendar_summary = None
         try:
             calendar = get_calendar_service()
-            if calendar.has_valid_tokens():
+            if await calendar.has_valid_tokens():
                 schedule = await calendar.get_today_schedule()
                 if schedule.events:
                     calendar_items = []
@@ -233,6 +233,14 @@ class BriefingService:
         except Exception as e:
             logger.warning("briefing_overnight_activity_failed", error=str(e))
 
+        # "What you saw yesterday" — Phase 6 of the Meta-glasses / Reachy-camera plan.
+        # Rolls up any ambient-vision observations the scheduler wrote to the
+        # vault overnight.
+        try:
+            await self._add_sight_journal(sections)
+        except Exception as e:
+            logger.warning("briefing_sight_journal_failed", error=str(e))
+
         # Generate AI-powered suggestions via Ollama
         suggestions = await self._generate_ai_suggestions(
             sections, user_name, calendar_summary, task_summary, email_summary
@@ -336,6 +344,60 @@ class BriefingService:
         if not calendar_summary or "No events" in calendar_summary:
             suggestions.append("Today looks free - great time for focused work!")
         return suggestions
+
+    async def _add_sight_journal(self, sections: list):
+        """
+        Roll up ambient vision observations from the last 24h into a
+        BriefingSection. Each file in `/vault/00_Meta/_agent/vision/{date}/`
+        is one observation written by the scheduler tick.
+        """
+        from pathlib import Path
+        from app.infrastructure.config import get_settings
+
+        settings = get_settings()
+        vault_root = Path(getattr(settings, "vault_path", "/vault"))
+        today = datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+
+        candidates: list[Path] = []
+        for day in (today, yesterday):
+            day_dir = vault_root / "00_Meta" / "_agent" / "vision" / day.isoformat()
+            if day_dir.exists():
+                candidates.extend(sorted(day_dir.glob("*.md")))
+
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        items: list[str] = []
+        for p in candidates[-12:]:  # last 12 observations, newest-wins
+            try:
+                mtime = datetime.utcfromtimestamp(p.stat().st_mtime)
+                if mtime < cutoff:
+                    continue
+                # Extract just the "## Observation" caption — first non-empty
+                # line that isn't frontmatter / heading.
+                text = p.read_text(encoding="utf-8", errors="replace")
+                caption = ""
+                in_obs = False
+                for line in text.splitlines():
+                    s = line.strip()
+                    if s.startswith("## Observation"):
+                        in_obs = True
+                        continue
+                    if in_obs and s and not s.startswith("#"):
+                        caption = s
+                        break
+                if caption:
+                    items.append(f"👁️ {mtime.strftime('%H:%M')} — {caption[:140]}")
+            except Exception:
+                continue
+
+        if not items:
+            return
+        sections.append(BriefingSection(
+            title="What you saw",
+            icon="👁️",
+            items=items[-8:],
+            priority=5,
+        ))
 
     async def _add_overnight_activity(self, sections: list):
         """Add overnight autonomous orchestration activity to the briefing."""

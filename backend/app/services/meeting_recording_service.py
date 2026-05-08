@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,85 @@ from app.infrastructure.database import get_session
 logger = structlog.get_logger(__name__)
 
 _audio_capture = None
+
+
+def _host_agent_base() -> str | None:
+    url = get_settings().host_agent_url
+    return url.rstrip("/") if url else None
+
+
+async def start_recording_via_host_agent(
+    *,
+    meeting_id: str | None = None,
+    title: str | None = None,
+    source: str = "mixed",
+    mic_device_index: int | None = None,
+    system_device_index: int | None = None,
+) -> dict | None:
+    """Start a recording on the Zero Host Audio Agent.
+
+    Returns the host_agent JSON response, or None if ZERO_HOST_AGENT_URL is
+    unset (caller should fall back to in-process capture). Raises RuntimeError
+    on network failure or a non-2xx response.
+    """
+    base = _host_agent_base()
+    if not base:
+        return None
+    body: dict = {"source": source}
+    if meeting_id:
+        body["meeting_id"] = meeting_id
+    if title:
+        body["title"] = title
+    if mic_device_index is not None:
+        body["mic_device_index"] = mic_device_index
+    if system_device_index is not None:
+        body["system_device_index"] = system_device_index
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{base}/record/start", json=body)
+    except httpx.RequestError as e:
+        raise RuntimeError(f"host_agent unreachable at {base}: {e}") from e
+    if resp.status_code >= 400:
+        raise RuntimeError(f"host_agent {resp.status_code}: {resp.text}")
+    return resp.json() if resp.content else {}
+
+
+async def stop_recording_via_host_agent() -> dict | None:
+    """Stop the current recording on the Zero Host Audio Agent.
+
+    Returns the host_agent JSON response, or None if ZERO_HOST_AGENT_URL is
+    unset. Raises RuntimeError on failure.
+    """
+    base = _host_agent_base()
+    if not base:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(f"{base}/record/stop")
+    except httpx.RequestError as e:
+        raise RuntimeError(f"host_agent unreachable at {base}: {e}") from e
+    if resp.status_code >= 400:
+        raise RuntimeError(f"host_agent {resp.status_code}: {resp.text}")
+    return resp.json() if resp.content else {}
+
+
+async def get_recording_status_via_host_agent() -> dict | None:
+    """Fetch live recording status from the Zero Host Audio Agent.
+
+    Returns the host_agent JSON (with at minimum an `is_recording` bool), or
+    None if ZERO_HOST_AGENT_URL is unset or the agent is unreachable.
+    """
+    base = _host_agent_base()
+    if not base:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f"{base}/record/status")
+            if resp.status_code != 200:
+                return None
+            return resp.json() if resp.content else None
+    except httpx.RequestError:
+        return None
 
 
 def get_audio_capture(
@@ -78,7 +158,7 @@ async def start_recording(
     else:
         meeting = MeetingModel(
             id=uuid.uuid4().hex,
-            title=title or f"Recording {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            title=title or f"Recording {datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %H:%M')}",
             start_time=datetime.now(timezone.utc),
             status="recording",
         )
@@ -89,7 +169,7 @@ async def start_recording(
 
     recordings_dir = get_recordings_path()
     recordings_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
     filename = f"{meeting.id}_{timestamp}.wav"
     output_path = recordings_dir / filename
 
