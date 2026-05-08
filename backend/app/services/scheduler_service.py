@@ -13,7 +13,7 @@ All job executions are logged to PostgreSQL (scheduler_audit_log) for observabil
 """
 import asyncio
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List, Callable
 from functools import lru_cache
 import structlog
@@ -21,12 +21,188 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import select, func as sa_func
+from sqlalchemy import select, func as sa_func, case
 
 from app.infrastructure.database import get_session
-from app.db.models import SchedulerAuditLogModel
+from app.db.models import SchedulerAuditLogModel, ServiceConfigModel
 
 logger = structlog.get_logger(__name__)
+
+
+SCHEDULER_CONFIG_KEY = "scheduler_jobs"
+SCHEDULER_OVERRIDES_KEY = "enabled_overrides"
+DEFAULT_DISABLED_JOB_IDS = {"reachy_email_nudge"}
+DEFAULT_DISABLED_PREFIXES = ("tiktok_",)
+
+
+JOB_CATEGORIES = {
+    "Briefing": ["morning_briefing", "midday_check", "evening_review", "morning_digest_tick", "weekly_review_tick"],
+    "Email": ["gmail_check", "gmail_digest", "reachy_email_nudge", "email_automation_check", "email_to_tasks"],
+    "Calendar": ["calendar_check", "meeting_prep", "reachy_calendar_nudge", "reachy_meeting_auto_record", "reachy_meeting_auto_stop"],
+    "TikTok": [
+        "tiktok_shop_research",
+        "tiktok_shop_deep_research",
+        "tiktok_continuous_research",
+        "tiktok_niche_deep_dive",
+        "tiktok_niche_rotation",
+        "tiktok_approval_reminder",
+        "tiktok_auto_content_pipeline",
+        "tiktok_content_generation_check",
+        "tiktok_performance_sync",
+        "tiktok_pipeline_health",
+        "tiktok_reference_discovery",
+        "tiktok_weekly_report",
+        "tiktok_image_revalidation",
+        "tiktok_article_cleanup",
+    ],
+    "Meals": [
+        "meal_catalog_refresh",
+        "meal_promo_hunt",
+        "meal_shipment_scan",
+        "meal_discovery",
+        "meal_daily_digest",
+        "meal_signup_sweep",
+        "meal_vision_sweep",
+    ],
+    "Predictions": [
+        "prediction_market_sync",
+        "prediction_price_snapshot",
+        "prediction_bettor_discovery",
+        "prediction_research",
+        "prediction_push_to_ada",
+        "prediction_quality_check",
+    ],
+    "Autonomous": [
+        "autonomous_daily_orchestration",
+        "autonomous_continuous_monitor",
+        "autonomous_enhancement_cycle",
+        "autonomous_research_tick",
+        "autonomous_content_loop",
+    ],
+    "Enhancement": [
+        "continuous_enhancement_engine",
+        "daily_improvement_plan",
+        "daily_improvement_execute",
+        "daily_improvement_verify",
+        "enhancement_scan",
+        "legion_enhancement_sync",
+    ],
+    "Monitoring": [
+        "health_aggregation",
+        "qa_verification",
+        "disk_space_monitor",
+        "embedding_backfill",
+        "alerting_check",
+        "metrics_snapshot",
+        "approvals_expire_stale",
+        "drift_scan_tick",
+    ],
+    "Tasks": ["task_worker", "task_progress_check", "blocked_task_escalation", "smart_suggestions", "reminder_check"],
+    "Research": ["research_daily", "research_weekly_deep_dive", "rules_recalibration"],
+    "Second Brain": ["vault_reindex_tick", "vault_task_sync_tick", "morning_digest_tick", "weekly_review_tick", "drift_scan_tick"],
+    "Loops": ["loop_tick_5min", "loop_judge_15min", "loop_promote_hourly", "loop_crosspoll_30m", "loop_health_5min"],
+    "Company": [
+        "company_operator_monitor",
+        "company_agent_work",
+        "company_operator_overnight",
+        "company_operator_morning_brief",
+        "company_operator_evening_report",
+        "company_operator_weekly_review",
+        "company_prompt_eval_bridge",
+    ],
+    "Character Content": [
+        "character_research_refresh",
+        "character_research_retry",
+        "character_content_generation",
+        "character_content_gate",
+        "carousel_watchdog",
+        "character_performance_sync",
+        "character_auto_publish",
+        "character_content_learning",
+        "carousel_banned_hook_backfill",
+        "carousel_morning_briefing",
+        "carousel_evening_recap",
+        "character_reference_video_processor",
+        "character_reference_video_learning",
+        "character_reference_video_cleanup",
+        "carousel_reaudit",
+        "entity_research_deepen",
+        "character_image_cleanup",
+        "character_auto_approval",
+        "character_publish_backlog",
+        "character_discovery",
+        "character_gap_audit",
+        "character_hook_audit",
+        "character_discovery_refvideos",
+        "character_auto_research",
+        "character_final_review_backfill",
+    ],
+    "Media Content": ["media_auto_research", "media_content_generation", "media_release_prep"],
+    "Trend Intelligence": [
+        "trend_release_calendar_sync",
+        "trend_tvmaze_schedule",
+        "trend_reddit_pulse",
+        "trend_searxng_pulse",
+        "trend_linker",
+        "trend_scorer",
+        "trend_signal_cleanup",
+        "character_release_prep",
+        "media_release_prep",
+    ],
+    "Zero Brain": [
+        "brain_benchmark",
+        "brain_learning_cycle",
+        "brain_content_learn",
+        "brain_experiment_monitor",
+        "brain_prompt_evolve",
+        "brain_prompt_grade",
+        "brain_episodic_extract",
+        "brain_improvement",
+        "brain_reflection",
+        "brain_memory_cleanup",
+        "brain_prompt_breed",
+        "competitor_scrape",
+        "competitor_cleanup",
+        "character_hook_style_report",
+    ],
+    "Resources": ["gpu_refresh", "notion_bidirectional_sync", "llm_budget_reset"],
+    "Revenue": ["money_maker_cycle", "money_maker_weekly_report", "ai_company_idea_validation", "ai_company_daily_council", "ai_company_experiment_monitor"],
+}
+
+JOB_CATEGORY_PREFIXES = (
+    ("tiktok_", "TikTok"),
+    ("meal_", "Meals"),
+    ("prediction_", "Predictions"),
+    ("company_", "Company"),
+    ("character_", "Character Content"),
+    ("carousel_", "Character Content"),
+    ("media_", "Media Content"),
+    ("trend_", "Trend Intelligence"),
+    ("brain_", "Zero Brain"),
+    ("reachy_", "Reachy"),
+    ("vault_", "Second Brain"),
+    ("ai_company_", "Revenue"),
+    ("autonomous_", "Autonomous"),
+)
+
+
+def get_job_category(job_name: str) -> str:
+    for category, jobs in JOB_CATEGORIES.items():
+        if job_name in jobs:
+            return category
+    for prefix, category in JOB_CATEGORY_PREFIXES:
+        if job_name.startswith(prefix):
+            return category
+    return "Other"
+
+
+def get_default_job_enabled(job_name: str, config: Optional[Dict[str, Any]] = None) -> bool:
+    if job_name in DEFAULT_DISABLED_JOB_IDS:
+        return False
+    if any(job_name.startswith(prefix) for prefix in DEFAULT_DISABLED_PREFIXES):
+        return False
+    cfg = config if config is not None else DAILY_SCHEDULE.get(job_name, {})
+    return bool(cfg.get("enabled", True))
 
 
 def _is_account_quiet_now(account: dict) -> bool:
@@ -123,6 +299,21 @@ DAILY_SCHEDULE = {
     "reachy_meeting_auto_stop": {
         "cron": "* * * * *",  # Every minute
         "description": "Auto-stop a recording when its calendar event ends",
+        "enabled": True
+    },
+    "reachy_morning_briefing": {
+        "cron": "0 8 * * *",  # 8:00 AM daily
+        "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
+        "enabled": True
+    },
+    "reachy_evening_journal": {
+        "cron": "0 18 * * *",  # 6:00 PM daily
+        "description": "Wellness persona prompts a 3-question end-of-day reflection through Reachy and writes it to the vault",
+        "enabled": True
+    },
+    "reachy_ambient_heartbeat": {
+        "cron": "*/2 * * * *",  # Every 2 minutes — frequent enough to feel alive without being annoying
+        "description": "In ambient mode and only when idle, play a small low-key emotion (attentive/curious/thoughtful) so Reachy doesn't sit perfectly still",
         "enabled": True
     },
     "gmail_digest": {
@@ -532,6 +723,42 @@ DAILY_SCHEDULE = {
         "description": "Check running experiments, flag stale ones",
         "enabled": True
     },
+    # Zero Company Operator: ADA AI LLC 24/7 company manager
+    "company_operator_monitor": {
+        "cron": "*/15 * * * *",
+        "description": "Company Operator heartbeat only: blockers, approvals, and next steps snapshot",
+        "enabled": True,
+    },
+    "company_agent_work": {
+        "cron": "*/15 * * * *",
+        "description": "Company Agent Work loop: execute bounded internal/staged work and create Adam questions",
+        "enabled": True,
+    },
+    "company_operator_overnight": {
+        "cron": "0 1 * * *",
+        "description": "Company Operator overnight internal work block with approval gates",
+        "enabled": True,
+    },
+    "company_operator_morning_brief": {
+        "cron": "45 6 * * *",
+        "description": "Company Operator morning brief: today, blockers, approvals, formation status",
+        "enabled": True,
+    },
+    "company_operator_evening_report": {
+        "cron": "30 20 * * *",
+        "description": "Company Operator evening report: progress, stuck work, next approvals",
+        "enabled": True,
+    },
+    "company_operator_weekly_review": {
+        "cron": "30 16 * * 5",
+        "description": "Company Operator weekly company review",
+        "enabled": True,
+    },
+    "company_prompt_eval_bridge": {
+        "cron": "15 2 * * *",
+        "description": "Legion/Zero company prompt evaluation bridge",
+        "enabled": True,
+    },
     # Character Content
     "character_research_refresh": {
         "cron": "0 3 * * *",  # 3:00 AM daily
@@ -814,6 +1041,32 @@ DAILY_SCHEDULE = {
         "description": "Create next-month partitions for character_carousels (native Postgres partitioning)",
         "enabled": True
     },
+    # ====== Cross-project self-improvement loops (autoresearch) ======
+    "loop_tick_5min": {
+        "cron": "*/5 * * * *",
+        "description": "Cross-project loops: pick next-due loop and dispatch (Zero is orchestrator)",
+        "enabled": True,
+    },
+    "loop_judge_15min": {
+        "cron": "*/15 * * * *",
+        "description": "Cross-project loops: score recent runs via local Qwen judge",
+        "enabled": True,
+    },
+    "loop_promote_hourly": {
+        "cron": "0 * * * *",
+        "description": "Cross-project loops: canary -> active promotion (autoresearch policy)",
+        "enabled": True,
+    },
+    "loop_crosspoll_30m": {
+        "cron": "*/30 * * * *",
+        "description": "Cross-project loops: fanout learnings ADA <-> Legion <-> Zero",
+        "enabled": True,
+    },
+    "loop_health_5min": {
+        "cron": "*/5 * * * *",
+        "description": "Cross-project loops: replay buffer + Legion tripwire + circuit breaker telemetry",
+        "enabled": True,
+    },
 }
 
 
@@ -833,6 +1086,7 @@ class SchedulerService:
         self.scheduler = AsyncIOScheduler()
         self._running = False
         self._jobs: Dict[str, str] = {}  # job_name -> job_id
+        self._enabled_overrides: Dict[str, bool] = {}
 
     async def start(self):
         """Start the scheduler with all configured jobs."""
@@ -841,18 +1095,27 @@ class SchedulerService:
             return
 
         logger.info("scheduler_starting")
+        self._enabled_overrides = await self._load_enabled_overrides()
 
-        # Register all jobs
+        # Register every configured job. Disabled jobs are paused after the
+        # scheduler starts so they remain visible and controllable in the UI.
         for job_name, config in DAILY_SCHEDULE.items():
-            if config.get("enabled", True):
-                await self._register_job(job_name, config)
+            await self._register_job(job_name, config)
 
         self.scheduler.start()
         self._running = True
+        for job_name in list(self._jobs):
+            enabled = self._desired_enabled(job_name)
+            self._apply_runtime_enabled(job_name, enabled)
 
         logger.info(
             "scheduler_started",
-            jobs=list(self._jobs.keys())
+            jobs=list(self._jobs.keys()),
+            disabled=[
+                job_name
+                for job_name in self._jobs
+                if not self._desired_enabled(job_name)
+            ],
         )
 
     async def stop(self):
@@ -892,6 +1155,158 @@ class SchedulerService:
             job=job_name,
             cron=config["cron"]
         )
+
+    async def _load_enabled_overrides(self) -> Dict[str, bool]:
+        """Load persisted job enable/disable overrides."""
+        try:
+            async with get_session() as session:
+                row = await session.get(ServiceConfigModel, SCHEDULER_CONFIG_KEY)
+                config = row.config if row else {}
+                raw = (config or {}).get(SCHEDULER_OVERRIDES_KEY) or {}
+                return {str(k): bool(v) for k, v in raw.items()}
+        except Exception as e:
+            logger.warning("scheduler_config_load_failed", error=str(e))
+            return {}
+
+    async def _save_enabled_overrides(self) -> None:
+        """Persist the in-memory enabled-state overrides."""
+        try:
+            async with get_session() as session:
+                row = await session.get(ServiceConfigModel, SCHEDULER_CONFIG_KEY)
+                config = {SCHEDULER_OVERRIDES_KEY: dict(self._enabled_overrides)}
+                if row is None:
+                    session.add(ServiceConfigModel(service_name=SCHEDULER_CONFIG_KEY, config=config))
+                else:
+                    row.config = {**(row.config or {}), **config}
+                    row.updated_at = datetime.now(timezone.utc)
+        except Exception as e:
+            logger.error("scheduler_config_save_failed", error=str(e))
+            raise
+
+    def _desired_enabled(self, job_name: str) -> bool:
+        """Return persisted override if present, otherwise the code default."""
+        if job_name in self._enabled_overrides:
+            return bool(self._enabled_overrides[job_name])
+        if job_name in DAILY_SCHEDULE:
+            return get_default_job_enabled(job_name, DAILY_SCHEDULE[job_name])
+        return True
+
+    def _apply_runtime_enabled(self, job_name: str, enabled: bool) -> bool:
+        """Pause/resume a live APScheduler job. Returns False when not registered."""
+        job = self.scheduler.get_job(job_name)
+        if job is None:
+            return False
+        try:
+            if enabled:
+                self.scheduler.resume_job(job_name)
+            else:
+                self.scheduler.pause_job(job_name)
+            return True
+        except Exception as e:
+            logger.warning(
+                "scheduler_job_runtime_toggle_failed",
+                job=job_name,
+                enabled=enabled,
+                error=str(e),
+            )
+            return False
+
+    async def _after_disable_actions(self, job_name: str) -> None:
+        """Run side effects that should happen immediately when a job is stopped."""
+        if job_name != "reachy_email_nudge":
+            return
+        try:
+            from app.services.email_voice_session_service import get_email_voice_session_service
+
+            await get_email_voice_session_service().clear_silently(reason="scheduler_disabled")
+        except Exception as e:
+            logger.debug("email_voice_clear_on_disable_failed", error=str(e))
+
+    def _known_job_names(self) -> set[str]:
+        return set(DAILY_SCHEDULE) | {job.id for job in self.scheduler.get_jobs()}
+
+    def _runtime_job_lookup(self) -> Dict[str, Any]:
+        return {job.id: job for job in self.scheduler.get_jobs()}
+
+    @staticmethod
+    def _iso(dt: Optional[datetime]) -> Optional[str]:
+        return dt.isoformat() if dt else None
+
+    def _serialize_job(
+        self,
+        job_name: str,
+        job: Optional[Any],
+        stats: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        config = DAILY_SCHEDULE.get(job_name, {})
+        stats = stats or {}
+        next_run = getattr(job, "next_run_time", None) if job is not None else None
+        enabled = bool(job is not None and next_run is not None)
+        default_enabled = get_default_job_enabled(job_name, config) if job_name in DAILY_SCHEDULE else True
+        description = str(config.get("description") or (job.name if job is not None else job_name))
+        success = int(stats.get("success_count") or 0)
+        failures = int(stats.get("failure_count") or 0)
+        total = success + failures
+        health = "green"
+        if failures > 0 and total > 0:
+            health = "red" if (failures / total) > 0.3 else "yellow"
+        elif total == 0:
+            health = "gray"
+
+        return {
+            "id": job_name,
+            "name": job_name,
+            "display_name": description,
+            "description": description,
+            "category": get_job_category(job_name),
+            "schedule": str(config.get("cron") or ""),
+            "next_run": self._iso(next_run),
+            "enabled": enabled,
+            "default_enabled": default_enabled,
+            "configured": job_name in DAILY_SCHEDULE,
+            "registered": job is not None,
+            "controllable": job is not None,
+            "source": "configured" if job_name in DAILY_SCHEDULE else "runtime",
+            "health": health,
+            "total_runs": int(stats.get("total_runs") or 0),
+            "success_count": success,
+            "failure_count": failures,
+            "avg_duration_s": round(float(stats.get("avg_duration_s") or 0), 2),
+            "last_run": stats.get("last_run"),
+        }
+
+    async def get_recent_job_stats(self, hours: int = 24) -> Dict[str, Dict[str, Any]]:
+        """Aggregate recent scheduler audit stats by job name."""
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        try:
+            async with get_session() as session:
+                stmt = (
+                    select(
+                        SchedulerAuditLogModel.job_name,
+                        sa_func.count().label("total_runs"),
+                        sa_func.sum(case((SchedulerAuditLogModel.status == "completed", 1), else_=0)).label("success_count"),
+                        sa_func.sum(case((SchedulerAuditLogModel.status == "failed", 1), else_=0)).label("failure_count"),
+                        sa_func.avg(SchedulerAuditLogModel.duration_seconds).label("avg_duration"),
+                        sa_func.max(SchedulerAuditLogModel.started_at).label("last_run"),
+                    )
+                    .where(SchedulerAuditLogModel.started_at >= since)
+                    .group_by(SchedulerAuditLogModel.job_name)
+                )
+                rows = (await session.execute(stmt)).all()
+        except Exception as e:
+            logger.warning("scheduler_recent_stats_failed", error=str(e))
+            return {}
+
+        return {
+            row.job_name: {
+                "total_runs": row.total_runs or 0,
+                "success_count": row.success_count or 0,
+                "failure_count": row.failure_count or 0,
+                "avg_duration_s": round(row.avg_duration or 0, 2),
+                "last_run": row.last_run.isoformat() if row.last_run else None,
+            }
+            for row in rows
+        }
 
     async def _run_with_audit(self, job_name: str, handler: Callable):
         """Execute a handler and record the result in the audit log."""
@@ -1003,6 +1418,9 @@ class SchedulerService:
             "reachy_email_nudge": self._run_reachy_email_nudge,
             "reachy_meeting_auto_record": self._run_reachy_meeting_auto_record,
             "reachy_meeting_auto_stop": self._run_reachy_meeting_auto_stop,
+            "reachy_morning_briefing": self._run_reachy_morning_briefing,
+            "reachy_evening_journal": self._run_reachy_evening_journal,
+            "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
             "email_automation_check": self._run_email_automation_check,
             "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
@@ -1102,6 +1520,13 @@ class SchedulerService:
             "ai_company_idea_validation": self._run_ai_company_idea_validation,
             "ai_company_daily_council": self._run_ai_company_daily_council,
             "ai_company_experiment_monitor": self._run_ai_company_experiment_monitor,
+            "company_operator_monitor": self._run_company_operator_monitor,
+            "company_agent_work": self._run_company_agent_work,
+            "company_operator_overnight": self._run_company_operator_overnight,
+            "company_operator_morning_brief": self._run_company_operator_morning_brief,
+            "company_operator_evening_report": self._run_company_operator_evening_report,
+            "company_operator_weekly_review": self._run_company_operator_weekly_review,
+            "company_prompt_eval_bridge": self._run_company_prompt_eval_bridge,
             # Character Content
             "character_research_refresh": self._run_character_research_refresh,
             "character_research_retry": self._run_character_research_retry,
@@ -1163,6 +1588,12 @@ class SchedulerService:
             "swarm_calibration": self._run_swarm_calibration,
             "lore_ingestion": self._run_lore_ingestion,
             "carousel_partition_maintenance": self._run_carousel_partition_maintenance,
+            # Cross-project self-improvement loops (autoresearch)
+            "loop_tick_5min": self._run_loop_tick,
+            "loop_judge_15min": self._run_loop_judge,
+            "loop_promote_hourly": self._run_loop_promote,
+            "loop_crosspoll_30m": self._run_loop_crosspoll,
+            "loop_health_5min": self._run_loop_health,
         }
         return handlers.get(job_name)
 
@@ -1467,6 +1898,15 @@ Have a great evening!"""
     _reachy_last_email_nudge: float = 0.0
     _reachy_last_email_count: int = 0
 
+    def _reachy_realtime_session_active(self) -> bool:
+        """Avoid autonomous Reachy speech while the user has a live session."""
+        try:
+            from app.services.reachy_realtime.session import realtime_motion_snapshot
+            snap = realtime_motion_snapshot()
+            return int(snap.get("active_sessions") or 0) > 0
+        except Exception:
+            return False
+
     async def _run_reachy_calendar_nudge(self):
         """
         Every minute, look at the next hour of events. When an event is 10, 5, or
@@ -1474,6 +1914,9 @@ Have a great evening!"""
         through the Reachy speaker.
         """
         import time as _time
+        if self._reachy_realtime_session_active():
+            logger.debug("reachy_calendar_nudge_skipped", reason="realtime_session_active")
+            return
         try:
             from app.services.reachy_service import get_reachy_service
             reachy = get_reachy_service()
@@ -1550,6 +1993,9 @@ Have a great evening!"""
         Iterates accounts, skips ones currently in their configured quiet-hours
         window, and enqueues unread emails from the rest into the voice session.
         """
+        if self._reachy_realtime_session_active():
+            logger.debug("reachy_email_nudge_skipped", reason="realtime_session_active")
+            return
         try:
             from app.services.reachy_service import get_reachy_service
             from app.services.gmail_service import get_gmail_service
@@ -1752,6 +2198,151 @@ Have a great evening!"""
                     )
         except Exception as e:
             logger.debug("reachy_meeting_auto_stop_skipped", error=str(e))
+
+    async def _run_reachy_morning_briefing(self):
+        """Daily 8AM briefing through Reachy in the narrator persona.
+
+        Reads the day's calendar, top tasks, and inbox load, condenses through
+        the unified LLM as a 2-3 sentence brief, then speaks it via reachy.say.
+        Skips silently if Reachy daemon is unavailable, an active realtime
+        voice session is already running, or the user explicitly disabled
+        proactive nudges via the companion policy.
+        """
+        if self._reachy_realtime_session_active():
+            logger.debug("reachy_morning_briefing_skipped", reason="realtime_session_active")
+            return
+        try:
+            from app.services.reachy_service import get_reachy_service
+            from app.services.reachy_companion_service import get_reachy_companion_service
+            from app.services.reachy_context_service import build_context_hint
+
+            reachy = get_reachy_service()
+            if not await reachy.is_connected():
+                return
+            policy = get_reachy_companion_service().get_policy()
+            if not policy.proactive_enabled or policy.mode in {"focus", "meeting", "privacy", "sleep"}:
+                logger.debug(
+                    "reachy_morning_briefing_skipped",
+                    reason="policy_disallows",
+                    mode=policy.mode,
+                    proactive=policy.proactive_enabled,
+                )
+                return
+        except Exception as e:
+            logger.debug("reachy_morning_briefing_skipped", error=str(e))
+            return
+
+        try:
+            context = await build_context_hint("narrator")
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            llm = get_unified_llm_client()
+            prompt = (
+                "You are Zero speaking through Reachy as the narrator persona. "
+                "Give the user a calm 2-3 sentence morning briefing based on the "
+                "context below: the most important calendar event today, the most "
+                "important task, and one note. Speak like a thoughtful friend, "
+                "not a calendar bot. No greeting, no sign-off, just the brief.\n\n"
+                f"{context}"
+            )
+            text = (await llm.chat(
+                prompt=prompt,
+                task_type="voice_reply",
+                max_tokens=180,
+                temperature=0.6,
+            )).strip()
+            if not text:
+                return
+            try:
+                await reachy.play_emotion("curious1")
+            except Exception as e:
+                logger.debug("reachy_morning_briefing_emotion_failed", error=str(e))
+            await reachy.say(text)
+            logger.info("reachy_morning_briefing_spoken", chars=len(text))
+        except Exception as e:
+            logger.warning("reachy_morning_briefing_failed", error=str(e))
+
+    async def _run_reachy_evening_journal(self):
+        """6PM end-of-day reflection in the wellness persona.
+
+        Speaks the first journaling question through Reachy and leaves the
+        FloatingVoiceButton primed to capture the answer. Three questions
+        cycle on subsequent ticks within the same evening window. Writes any
+        captured answers to the vault under 00_Meta/_agent/journal/.
+        """
+        if self._reachy_realtime_session_active():
+            return
+        try:
+            from app.services.reachy_service import get_reachy_service
+            from app.services.reachy_companion_service import get_reachy_companion_service
+            reachy = get_reachy_service()
+            if not await reachy.is_connected():
+                return
+            policy = get_reachy_companion_service().get_policy()
+            if not policy.proactive_enabled or policy.mode in {"focus", "meeting", "privacy", "sleep"}:
+                return
+        except Exception as e:
+            logger.debug("reachy_evening_journal_skipped", error=str(e))
+            return
+
+        questions = [
+            "How did today go for you?",
+            "Was there anything that surprised you today?",
+            "One thing you want to remember from today?",
+        ]
+        idx = getattr(self, "_evening_journal_idx", 0) % len(questions)
+        self._evening_journal_idx = idx + 1
+        text = questions[idx]
+        try:
+            await reachy.play_emotion("understanding1")
+        except Exception as e:
+            logger.debug("reachy_evening_journal_emotion_failed", error=str(e))
+        try:
+            await reachy.say(text)
+            logger.info("reachy_evening_journal_prompt", question_idx=idx)
+        except Exception as e:
+            logger.debug("reachy_evening_journal_say_failed", error=str(e))
+
+    async def _run_reachy_ambient_heartbeat(self):
+        """Ambient idle gestures so Reachy doesn't sit perfectly still.
+
+        Runs only in ambient mode when no motion is currently active and
+        no realtime session is open. Picks a low-key emotion clip from a
+        curated subset (attentive/curious/thoughtful/serenity/relief) and
+        plays it through reachy.play_emotion. The 2-minute cadence is
+        deliberately sparse so the robot feels alive without being noisy.
+        """
+        if self._reachy_realtime_session_active():
+            return
+        try:
+            from app.services.reachy_service import get_reachy_service
+            from app.services.reachy_companion_service import get_reachy_companion_service
+            reachy = get_reachy_service()
+            if not await reachy.is_connected():
+                return
+            policy = get_reachy_companion_service().get_policy()
+            if policy.mode != "ambient" or not policy.body_motion_enabled:
+                return
+        except Exception as e:
+            logger.debug("reachy_ambient_heartbeat_skipped", error=str(e))
+            return
+
+        try:
+            moving_state = await reachy.is_moving()
+            running_uuids = moving_state.get("running") if isinstance(moving_state, dict) else None
+            if running_uuids:
+                return
+        except Exception as e:
+            logger.debug("reachy_ambient_heartbeat_running_check_failed", error=str(e))
+            return
+
+        import random
+        candidates = ["attentive1", "curious1", "thoughtful1", "serenity1", "relief1", "shy1"]
+        emotion = random.choice(candidates)
+        try:
+            await reachy.play_emotion(emotion)
+            logger.debug("reachy_ambient_heartbeat", emotion=emotion)
+        except Exception as e:
+            logger.debug("reachy_ambient_heartbeat_emotion_failed", error=str(e))
 
     async def _run_gmail_check(self):
         """Incremental Gmail sync — runs against EVERY connected account."""
@@ -3450,6 +4041,92 @@ Have a great evening!"""
         except Exception as e:
             logger.error("ai_company_experiment_monitor_failed", error=str(e))
 
+    async def _run_company_operator_monitor(self):
+        """Lightweight 24/7 company heartbeat and report snapshot."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().run_tick(
+                run_type="monitor",
+                requested_by="scheduler",
+            )
+            logger.info("company_operator_monitor_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_operator_monitor_failed", error=str(e))
+
+    async def _run_company_agent_work(self):
+        """Steady 24/7 company agent work loop for safe/staged internal execution."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().run_tick(
+                run_type="agent_work",
+                requested_by="scheduler",
+            )
+            logger.info(
+                "company_agent_work_done",
+                run_id=result.get("id"),
+                status=result.get("status"),
+                actions=len(result.get("actions") or []),
+            )
+        except Exception as e:
+            logger.error("company_agent_work_failed", error=str(e))
+
+    async def _run_company_operator_overnight(self):
+        """Overnight internal work block for formation and company operations."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().run_tick(
+                run_type="overnight",
+                requested_by="scheduler",
+            )
+            logger.info("company_operator_overnight_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_operator_overnight_failed", error=str(e))
+
+    async def _run_company_operator_morning_brief(self):
+        """Morning company brief for Zero, dashboard, and Reachy."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().generate_report(
+                report_type="morning_brief",
+                requested_by="scheduler",
+            )
+            logger.info("company_operator_morning_brief_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_operator_morning_brief_failed", error=str(e))
+
+    async def _run_company_operator_evening_report(self):
+        """Evening company progress report."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().generate_report(
+                report_type="evening_report",
+                requested_by="scheduler",
+            )
+            logger.info("company_operator_evening_report_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_operator_evening_report_failed", error=str(e))
+
+    async def _run_company_operator_weekly_review(self):
+        """Weekly company review: progress, drift, approvals, and next sprint."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().generate_report(
+                report_type="weekly_review",
+                requested_by="scheduler",
+            )
+            logger.info("company_operator_weekly_review_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_operator_weekly_review_failed", error=str(e))
+
+    async def _run_company_prompt_eval_bridge(self):
+        """Company prompt grading bridge for Legion/Zero prompt experiments."""
+        try:
+            from app.services.company_operator_service import get_company_operator_service
+            result = await get_company_operator_service().run_prompt_eval_bridge(limit=20)
+            logger.info("company_prompt_eval_bridge_done", run_id=result.get("id"), status=result.get("status"))
+        except Exception as e:
+            logger.error("company_prompt_eval_bridge_failed", error=str(e))
+
     # ============================================
     # CHARACTER CONTENT AUTOMATION
     # ============================================
@@ -5023,6 +5700,60 @@ Have a great evening!"""
     # MANUAL TRIGGERS
     # ============================================
 
+    async def set_job_enabled(self, job_name: str, enabled: bool) -> Dict[str, Any]:
+        """Persist and apply a single job's enabled state."""
+        if job_name not in self._known_job_names():
+            return {"success": False, "error": f"Unknown job: {job_name}"}
+
+        self._enabled_overrides[job_name] = bool(enabled)
+        await self._save_enabled_overrides()
+        applied = self._apply_runtime_enabled(job_name, bool(enabled))
+        if not enabled:
+            await self._after_disable_actions(job_name)
+
+        job = self.scheduler.get_job(job_name)
+        return {
+            "success": True,
+            "job_name": job_name,
+            "enabled": bool(enabled),
+            "applied": applied,
+            "job": self._serialize_job(job_name, job),
+        }
+
+    async def set_jobs_enabled(self, job_names: List[str], enabled: bool) -> Dict[str, Any]:
+        """Persist and apply a bulk enabled-state update."""
+        normalized = [str(name) for name in job_names if str(name).strip()]
+        unknown = [name for name in normalized if name not in self._known_job_names()]
+        if unknown:
+            return {
+                "success": False,
+                "error": f"Unknown job(s): {', '.join(unknown)}",
+                "unknown_jobs": unknown,
+            }
+
+        for job_name in normalized:
+            self._enabled_overrides[job_name] = bool(enabled)
+        await self._save_enabled_overrides()
+
+        updated = []
+        for job_name in normalized:
+            applied = self._apply_runtime_enabled(job_name, bool(enabled))
+            if not enabled:
+                await self._after_disable_actions(job_name)
+            updated.append({
+                "job_name": job_name,
+                "enabled": bool(enabled),
+                "applied": applied,
+                "job": self._serialize_job(job_name, self.scheduler.get_job(job_name)),
+            })
+
+        return {
+            "success": True,
+            "enabled": bool(enabled),
+            "updated": updated,
+            "count": len(updated),
+        }
+
     async def trigger_job(self, job_name: str) -> Dict[str, Any]:
         """Manually trigger a scheduled job (goes through audit log)."""
         handler = self._get_handler(job_name)
@@ -5036,19 +5767,34 @@ Have a great evening!"""
             return {"success": False, "error": str(e)}
 
     def get_status(self) -> Dict[str, Any]:
-        """Get scheduler status."""
-        jobs = []
-        for job in self.scheduler.get_jobs():
-            jobs.append({
-                "id": job.id,
-                "name": job.name,
-                "next_run": job.next_run_time.isoformat() if job.next_run_time else None
-            })
+        """Get a lightweight scheduler status snapshot without DB access."""
+        live = self._runtime_job_lookup()
+        names = sorted(set(DAILY_SCHEDULE) | set(live), key=lambda n: (get_job_category(n), n))
+        jobs = [self._serialize_job(name, live.get(name)) for name in names]
 
         return {
             "running": self._running,
             "jobs": jobs,
-            "job_count": len(jobs)
+            "job_count": len(live),
+            "total_jobs": len(jobs),
+            "enabled_jobs": len([job for job in jobs if job["enabled"]]),
+            "disabled_jobs": len([job for job in jobs if not job["enabled"]]),
+        }
+
+    async def get_status_detailed(self) -> Dict[str, Any]:
+        """Get scheduler status with audit-derived health and last-run data."""
+        live = self._runtime_job_lookup()
+        names = sorted(set(DAILY_SCHEDULE) | set(live), key=lambda n: (get_job_category(n), n))
+        stats = await self.get_recent_job_stats(hours=24)
+        jobs = [self._serialize_job(name, live.get(name), stats.get(name)) for name in names]
+
+        return {
+            "running": self._running,
+            "jobs": jobs,
+            "job_count": len(live),
+            "total_jobs": len(jobs),
+            "enabled_jobs": len([job for job in jobs if job["enabled"]]),
+            "disabled_jobs": len([job for job in jobs if not job["enabled"]]),
         }
 
     # ------------------------------------------------------------------
@@ -5086,6 +5832,137 @@ Have a great evening!"""
         svc = get_partition_maintenance_service()
         result = await svc.ensure_future_partitions()
         logger.info("scheduler_partition_maintenance", **result)
+
+    # ============================================
+    # Cross-project loops (autoresearch pattern)
+    # ============================================
+
+    async def _run_loop_tick(self):
+        """Pick the next-due enabled loop(s) and dispatch them serially.
+
+        Per the master plan: Zero is the orchestrator. This tick is the
+        heartbeat of the cross-project self-improvement substrate.
+        """
+        from app.services.loop_runner_service import get_loop_runner
+        runner = get_loop_runner()
+        results = await runner.run_due(max_runs=3)
+        logger.info("scheduler_loop_tick", dispatched=len(results))
+
+    async def _run_loop_judge(self):
+        """Score recent unscored runs via local Qwen judge (P2 wires the service)."""
+        try:
+            from app.services.loop_judge_service import get_loop_judge  # noqa: F401
+        except ImportError:
+            logger.debug("loop_judge_service_not_yet_available")
+            return
+        from app.services.loop_judge_service import get_loop_judge
+        judge = get_loop_judge()
+        result = await judge.score_recent_runs(limit=10)
+        logger.info("scheduler_loop_judge", **result)
+
+    async def _run_loop_promote(self):
+        """Evaluate canary -> active promotion (autoresearch policy). P2."""
+        try:
+            from app.services.loop_promotion_service import get_loop_promotion  # noqa: F401
+        except ImportError:
+            logger.debug("loop_promotion_service_not_yet_available")
+            return
+        from app.services.loop_promotion_service import get_loop_promotion
+        promo = get_loop_promotion()
+        result = await promo.evaluate_all()
+        logger.info("scheduler_loop_promote", **result)
+
+    async def _run_loop_crosspoll(self):
+        """Fanout learnings ADA <-> Legion <-> Zero. P3."""
+        try:
+            from app.services.loop_crosspoll_service import get_loop_crosspoll  # noqa: F401
+        except ImportError:
+            logger.debug("loop_crosspoll_service_not_yet_available")
+            return
+        from app.services.loop_crosspoll_service import get_loop_crosspoll
+        cp = get_loop_crosspoll()
+        result = await cp.fanout_pending(min_confidence=0.6, limit=20)
+        logger.info("scheduler_loop_crosspoll", **result)
+
+    async def _run_loop_health(self):
+        """Replay buffer flush + Legion fragility tripwire + stuck-run reaper."""
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select, update as sa_update
+        from app.db.models import LoopRunModel
+        from app.infrastructure.database import get_session
+        from app.services.loop_report_sink_client import get_loop_sink
+
+        # Reap runs that have been stuck in 'running' for >1h. This catches
+        # OpenCode daemon crashes mid-job, container restarts during a long
+        # LLM call, and any other path where mark_run_completed never fires.
+        async with get_session() as session:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+            stmt = sa_update(LoopRunModel).where(
+                LoopRunModel.status == "running",
+                LoopRunModel.started_at < cutoff,
+            ).values(
+                status="timeout",
+                ended_at=datetime.now(timezone.utc),
+                error="reaped: stuck in running > 1h",
+            ).execution_options(synchronize_session=False)
+            result = await session.execute(stmt)
+            await session.commit()
+            reaped = result.rowcount or 0
+            if reaped:
+                logger.warning("loop.reaped_stuck_runs", count=reaped)
+
+        sink = get_loop_sink()
+        replay = await sink.replay_buffer(max_batch=50)
+
+        # Legion fragility tripwire: track consecutive deep-health failures so
+        # we surface a vault alert if PromptEvaluatorAgent's global-on setting
+        # is amplifying instability. Operator (Adam) reverts via .env edit.
+        health = await sink.check_legion_health()
+        state = getattr(self, "_legion_health_state", {"consecutive_failures": 0})
+        if health.get("ok"):
+            if state.get("consecutive_failures", 0) >= 3:
+                logger.info("legion_health_recovered")
+            state = {"consecutive_failures": 0}
+        else:
+            state["consecutive_failures"] = state.get("consecutive_failures", 0) + 1
+            if state["consecutive_failures"] == 3:
+                logger.warning(
+                    "legion_health_tripwire",
+                    consecutive=state["consecutive_failures"],
+                    last_response=health,
+                )
+                # Best-effort vault alert; ignore failures.
+                try:
+                    from datetime import datetime, timezone
+                    from app.services.vault_writer_service import get_vault_writer
+                    vault = get_vault_writer()
+                    if vault.available():
+                        vault.write_agent_file(
+                            relative_path=f"00_Meta/_agent/loops/_alerts/{datetime.now(timezone.utc).strftime('%Y-%m-%d-%H%M%S')}-legion-tripwire.md",
+                            content=(
+                                "# Legion fragility tripwire\n\n"
+                                f"Legion `/health` returned non-2xx 3 times consecutively.\n\n"
+                                f"Last response: `{health}`\n\n"
+                                "Action: consider setting `ENABLE_PROMPT_EVALUATOR=false` in "
+                                "`C:\\code\\Legion\\.env` and restarting `legion-backend`. "
+                                "The PromptEvaluatorAgent is currently global-on per the "
+                                "user's Plan-mode decision.\n"
+                            ),
+                            source="loop_health_tripwire",
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("legion_tripwire_alert_write_failed", error=str(exc))
+
+        self._legion_health_state = state
+
+        logger.info(
+            "scheduler_loop_health",
+            breaker=sink.breaker_state,
+            buffered=sink.buffer_count(),
+            legion_ok=health.get("ok"),
+            legion_consecutive_failures=state.get("consecutive_failures", 0),
+            **replay,
+        )
 
 
 # ============================================
