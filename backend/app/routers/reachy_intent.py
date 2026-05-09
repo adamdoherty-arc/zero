@@ -23,11 +23,13 @@ import structlog
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
+
 router = APIRouter()
 logger = structlog.get_logger()
 
 
-HOST_AGENT_URL = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18794").rstrip("/")
+HOST_AGENT_URL = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796").rstrip("/")
 
 # Hard per-provider ceiling for voice chat. Without this a single stalled
 # Kimi/Gemini/vLLM call blocks the whole fallback chain (each provider's own
@@ -105,6 +107,43 @@ _EMAIL_PATTERNS = [
     r"\bcheck\s+(my\s+)?(email|inbox|mail)\b",
     r"\bwhat'?s?\s+in\s+my\s+inbox\b",
 ]
+_COMPANY_PATTERNS = [
+    r"\b(company|business)\s+(status|brief|report|dashboard)\b",
+    r"\b(doherty\s+applied\s+ai|company\s+os|zero\s+company)\b",
+    r"\bwhat\s+did\s+zero\s+do\s+overnight\b",
+    r"\b(overnight|morning)\s+(company\s+)?report\b",
+    r"\b(company|business)\s+(approvals?|blockers?|blocked|tasks?)\b",
+    r"\b(llc|formation|sunbiz|ein|duval|cpa)\s+(status|tasks?|checklist)\b",
+    r"\bwhat\s+should\s+i\s+work\s+on\s+today\b",
+]
+_ROBOT_WAKE_PATTERNS = [
+    r"\b(wake|start|turn\s+on)\b.{0,20}\b(reachy|robot|your\s+body)\b",
+    r"\b(reachy|robot)\b.{0,20}\b(wake\s+up|turn\s+on)\b",
+]
+_ROBOT_SLEEP_PATTERNS = [
+    r"\b(sleep|rest|stand\s+down|turn\s+off)\b.{0,20}\b(reachy|robot|your\s+body)\b",
+    r"\b(reachy|robot)\b.{0,20}\b(go\s+to\s+sleep|rest|turn\s+off)\b",
+]
+_FOCUS_START_PATTERNS = [
+    r"\b(start|begin)\b.{0,20}\b(focus|pomodoro|deep\s+work)\b",
+    r"\b(focus|pomodoro)\b.{0,20}\b(timer|block|session)\b",
+]
+_FOCUS_STOP_PATTERNS = [
+    r"\b(stop|end|cancel)\b.{0,20}\b(focus|pomodoro|deep\s+work)\b",
+]
+_AMBIENT_ON_PATTERNS = [
+    r"\b(turn|switch|set)\b.{0,20}\b(ambient|presence)\b.{0,20}\b(on|enable|start)\b",
+    r"\bbe\s+present\b",
+]
+_AMBIENT_OFF_PATTERNS = [
+    r"\b(turn|switch|set)\b.{0,20}\b(ambient|presence)\b.{0,20}\b(off|disable|stop)\b",
+    r"\bstay\s+still\b",
+]
+_ASSISTANT_ORCHESTRATION_HINTS = (
+    "task", "todo", "project", "schedule", "calendar", "email", "inbox",
+    "meeting", "recording", "note", "remember", "system", "health", "docker",
+    "company", "business", "llc", "formation",
+)
 
 
 def _match_any(text: str, patterns: list[str]) -> bool:
@@ -115,7 +154,7 @@ def _match_any(text: str, patterns: list[str]) -> bool:
 
 
 def classify_intent(text: str) -> str:
-    """Return one of: record_start, record_stop, calendar, email, chat."""
+    """Return one of the built-in Reachy command intents, or chat."""
     t = text.strip().lower()
     if _match_any(t, _RECORD_START_PATTERNS):
         return "record_start"
@@ -125,6 +164,20 @@ def classify_intent(text: str) -> str:
         return "calendar"
     if _match_any(t, _EMAIL_PATTERNS):
         return "email"
+    if _match_any(t, _COMPANY_PATTERNS):
+        return "company"
+    if _match_any(t, _ROBOT_WAKE_PATTERNS):
+        return "robot_wake"
+    if _match_any(t, _ROBOT_SLEEP_PATTERNS):
+        return "robot_sleep"
+    if _match_any(t, _FOCUS_START_PATTERNS):
+        return "focus_start"
+    if _match_any(t, _FOCUS_STOP_PATTERNS):
+        return "focus_stop"
+    if _match_any(t, _AMBIENT_ON_PATTERNS):
+        return "ambient_on"
+    if _match_any(t, _AMBIENT_OFF_PATTERNS):
+        return "ambient_off"
     return "chat"
 
 
@@ -268,6 +321,174 @@ async def _handle_email(text: str) -> IntentResponse:
     )
 
 
+async def _handle_company(text: str) -> IntentResponse:
+    try:
+        from app.services.company_operator_service import get_company_operator_service
+        result = await get_company_operator_service().spoken_company_summary(text)
+    except Exception as e:
+        logger.warning("reachy_intent_company_failed", error=str(e))
+        return IntentResponse(
+            response_text="I couldn't reach the company operator right now.",
+            intent="company",
+            took_action=False,
+        )
+    return IntentResponse(
+        response_text=str(result.get("response_text") or "Company status is unavailable."),
+        intent="company",
+        took_action=False,
+        detail=result,
+    )
+
+
+async def _handle_robot_wake(text: str) -> IntentResponse:
+    if not body_motion_allowed(surface="intent:robot_wake").get("allowed"):
+        return IntentResponse(
+            response_text="Reachy's body motion is locked off for safety.",
+            intent="robot_wake",
+            took_action=False,
+            detail=body_motion_locked_payload(surface="intent:robot_wake"),
+        )
+    try:
+        from app.services.reachy_service import get_reachy_service
+        result = await get_reachy_service().wake_up()
+    except Exception as e:
+        logger.warning("reachy_intent_robot_wake_failed", error=str(e))
+        return IntentResponse(
+            response_text="I couldn't wake the robot body.",
+            intent="robot_wake",
+            took_action=False,
+        )
+    if result.get("error"):
+        return IntentResponse(
+            response_text="Reachy's body is not available right now.",
+            intent="robot_wake",
+            took_action=False,
+            detail=result,
+        )
+    return IntentResponse(
+        response_text="Reachy is awake.",
+        intent="robot_wake",
+        took_action=True,
+        detail=result,
+    )
+
+
+async def _handle_robot_sleep(text: str) -> IntentResponse:
+    if not body_motion_allowed(surface="intent:robot_sleep").get("allowed"):
+        return IntentResponse(
+            response_text="Reachy's body motion is locked off for safety.",
+            intent="robot_sleep",
+            took_action=False,
+            detail=body_motion_locked_payload(surface="intent:robot_sleep"),
+        )
+    try:
+        from app.services.reachy_service import get_reachy_service
+        result = await get_reachy_service().goto_sleep()
+    except Exception as e:
+        logger.warning("reachy_intent_robot_sleep_failed", error=str(e))
+        return IntentResponse(
+            response_text="I couldn't put Reachy to sleep.",
+            intent="robot_sleep",
+            took_action=False,
+        )
+    if result.get("error"):
+        return IntentResponse(
+            response_text="Reachy's body is not available right now.",
+            intent="robot_sleep",
+            took_action=False,
+            detail=result,
+        )
+    return IntentResponse(
+        response_text="Reachy is resting.",
+        intent="robot_sleep",
+        took_action=True,
+        detail=result,
+    )
+
+
+def _extract_minutes(text: str, default: int = 25) -> int:
+    m = re.search(r"\b(\d{1,3})\s*(minutes?|mins?)\b", text, re.IGNORECASE)
+    if not m:
+        return default
+    return max(5, min(90, int(m.group(1))))
+
+
+async def _handle_focus_start(text: str) -> IntentResponse:
+    focus_minutes = _extract_minutes(text)
+    if not body_motion_allowed(surface="intent:focus_start").get("allowed"):
+        return IntentResponse(
+            response_text="Focus mode needs body motion, and Reachy's body motion is locked off for safety.",
+            intent="focus_start",
+            took_action=False,
+            detail=body_motion_locked_payload(surface="intent:focus_start"),
+        )
+    try:
+        from app.services.reachy_presence_service import get_reachy_presence_service
+        state = await get_reachy_presence_service().pomodoro_start(
+            focus_minutes=focus_minutes,
+            break_minutes=5,
+        )
+    except Exception as e:
+        logger.warning("reachy_intent_focus_start_failed", error=str(e))
+        return IntentResponse(
+            response_text="I couldn't start the focus timer.",
+            intent="focus_start",
+            took_action=False,
+        )
+    return IntentResponse(
+        response_text=f"Focus timer started for {focus_minutes} minutes.",
+        intent="focus_start",
+        took_action=True,
+        detail=state,
+    )
+
+
+async def _handle_focus_stop(text: str) -> IntentResponse:
+    try:
+        from app.services.reachy_presence_service import get_reachy_presence_service
+        state = await get_reachy_presence_service().pomodoro_stop()
+    except Exception as e:
+        logger.warning("reachy_intent_focus_stop_failed", error=str(e))
+        return IntentResponse(
+            response_text="I couldn't stop the focus timer.",
+            intent="focus_stop",
+            took_action=False,
+        )
+    return IntentResponse(
+        response_text="Focus timer stopped.",
+        intent="focus_stop",
+        took_action=True,
+        detail=state,
+    )
+
+
+async def _handle_ambient(enabled: bool) -> IntentResponse:
+    if enabled and not body_motion_allowed(surface="intent:ambient_on").get("allowed"):
+        return IntentResponse(
+            response_text="Ambient presence needs body motion, and Reachy's body motion is locked off for safety.",
+            intent="ambient_on",
+            took_action=False,
+            detail=body_motion_locked_payload(surface="intent:ambient_on"),
+        )
+    try:
+        from app.services.reachy_presence_service import get_reachy_presence_service
+        svc = get_reachy_presence_service()
+        state = svc.ambient_start() if enabled else svc.ambient_stop()
+    except Exception as e:
+        logger.warning("reachy_intent_ambient_failed", enabled=enabled, error=str(e))
+        return IntentResponse(
+            response_text="I couldn't change ambient presence.",
+            intent="ambient_on" if enabled else "ambient_off",
+            took_action=False,
+        )
+    return IntentResponse(
+        response_text="Ambient presence is on." if enabled else "Ambient presence is off.",
+        intent="ambient_on" if enabled else "ambient_off",
+        took_action=True,
+        detail=state,
+    )
+
+
 def _attr_or_key(obj, *names, default=None):
     for n in names:
         if hasattr(obj, n):
@@ -300,6 +521,39 @@ def _looks_like_nonsense(text: str) -> bool:
     return any(h in low for h in _NONSENSE_HINTS)
 
 
+async def _handle_zero_orchestration(text: str) -> IntentResponse | None:
+    try:
+        from app.services.orchestration_graph import invoke_orchestration
+        result = await asyncio.wait_for(
+            invoke_orchestration(
+                message=text,
+                thread_id="reachy_voice",
+                channel="reachy_voice",
+            ),
+            timeout=10.0,
+        )
+    except Exception as e:
+        logger.debug("reachy_zero_orchestration_fallback", error=str(e)[:200])
+        return None
+
+    spoken = str(result.get("result") or "").strip()
+    if not spoken:
+        return None
+    spoken = spoken.replace("**", "").replace("`", "").replace("\n", " ").strip()
+    if len(spoken) > 420:
+        spoken = spoken[:420].rsplit(". ", 1)[0].strip() + "."
+    return IntentResponse(
+        response_text=spoken,
+        intent="zero_assistant",
+        took_action=True,
+        detail={
+            "route": result.get("route"),
+            "thread_id": result.get("thread_id"),
+            "conversation_id": result.get("conversation_id"),
+        },
+    )
+
+
 async def _handle_chat(text: str) -> IntentResponse:
     """
     Fallback: open-ended chat.
@@ -315,6 +569,11 @@ async def _handle_chat(text: str) -> IntentResponse:
             intent="chat",
             took_action=False,
         )
+
+    if any(hint in text.lower() for hint in _ASSISTANT_ORCHESTRATION_HINTS):
+        routed = await _handle_zero_orchestration(text)
+        if routed is not None:
+            return routed
 
     from time import monotonic
 
@@ -537,15 +796,64 @@ async def handle_intent(request: IntentRequest):
     intent = classify_intent(text)
     logger.info("reachy_intent_received", text=text, intent=intent, source=request.source)
 
+    response: IntentResponse
     if intent == "record_start":
-        return await _handle_record_start(text)
-    if intent == "record_stop":
-        return await _handle_record_stop(text)
-    if intent == "calendar":
-        return await _handle_calendar(text)
-    if intent == "email":
-        return await _handle_email(text)
-    return await _handle_chat(text)
+        response = await _handle_record_start(text)
+    elif intent == "record_stop":
+        response = await _handle_record_stop(text)
+    elif intent == "calendar":
+        response = await _handle_calendar(text)
+    elif intent == "email":
+        response = await _handle_email(text)
+    elif intent == "company":
+        response = await _handle_company(text)
+    elif intent == "robot_wake":
+        response = await _handle_robot_wake(text)
+    elif intent == "robot_sleep":
+        response = await _handle_robot_sleep(text)
+    elif intent == "focus_start":
+        response = await _handle_focus_start(text)
+    elif intent == "focus_stop":
+        response = await _handle_focus_stop(text)
+    elif intent == "ambient_on":
+        response = await _handle_ambient(True)
+    elif intent == "ambient_off":
+        response = await _handle_ambient(False)
+    else:
+        response = await _handle_chat(text)
+
+    try:
+        from app.models.reachy_companion import CompanionEventCreate
+        from app.services.reachy_companion_service import get_reachy_companion_service
+
+        companion = get_reachy_companion_service()
+        companion.record_event(
+            CompanionEventCreate(
+                type="voice_heard",
+                source=request.source,
+                summary=f"Voice command: {intent}",
+                payload={
+                    "text": text,
+                    "intent": intent,
+                    "took_action": response.took_action,
+                },
+                importance=0.65 if response.took_action else 0.45,
+            )
+        )
+        if intent == "record_start" and response.took_action:
+            companion.record_event(
+                CompanionEventCreate(
+                    type="meeting_started",
+                    source=request.source,
+                    summary="Meeting recording started by voice.",
+                    payload=response.detail or {},
+                    importance=0.8,
+                )
+            )
+    except Exception as exc:
+        logger.debug("reachy_companion_voice_event_skipped", error=str(exc))
+
+    return response
 
 
 @router.get("/classify")
@@ -567,6 +875,7 @@ async def list_providers_endpoint():
     """Available chat providers for the voice fallback + the active one."""
     from app.services.reachy_chat_provider import (
         AVAILABLE_PROVIDERS,
+        DEFAULT_PROVIDER_ID,
         get_active_provider_id,
     )
     return {
@@ -629,10 +938,75 @@ async def _probe_single_provider(provider) -> "ProviderStatus":
     """Send a 1-token probe prompt to a single provider, measuring latency."""
     import time as _time
 
+    started = _time.monotonic()
+    if provider.provider in {"vllm", "ollama"}:
+        try:
+            from app.infrastructure.config import get_settings
+
+            settings = get_settings()
+            candidate_urls = [
+                getattr(settings, "vllm_chat_url", None),
+                getattr(settings, "vllm_chat_base_url", None),
+                "http://host.docker.internal:18800/v1",
+            ]
+            api_key = getattr(settings, "vllm_api_key", None) or "EMPTY"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            last_error = ""
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                for raw_url in dict.fromkeys(str(u).rstrip("/") for u in candidate_urls if u):
+                    try:
+                        resp = await client.get(f"{raw_url}/models", headers=headers)
+                        resp.raise_for_status()
+                        data = resp.json()
+                    except Exception as e:
+                        last_error = str(e)[:160]
+                        continue
+                    model_ids = {
+                        str(item.get("id") or item.get("model") or item.get("name"))
+                        for item in (data.get("data") or data.get("models") or [])
+                        if isinstance(item, dict)
+                    }
+                    ok = (
+                        not model_ids
+                        or provider.model in model_ids
+                        or f"vllm/{provider.model}" in model_ids
+                        or any(model_id.endswith(f"/{provider.model}") for model_id in model_ids)
+                    )
+                    if ok:
+                        elapsed_ms = int((_time.monotonic() - started) * 1000)
+                        return ProviderStatus(
+                            id=provider.id,
+                            label=provider.label,
+                            provider=provider.provider,
+                            model=provider.model,
+                            ok=True,
+                            latency_ms=elapsed_ms,
+                            checked_at=_time.time(),
+                        )
+                    last_error = f"{provider.model} not in /models"
+            return ProviderStatus(
+                id=provider.id,
+                label=provider.label,
+                provider=provider.provider,
+                model=provider.model,
+                ok=False,
+                error=last_error,
+                checked_at=_time.time(),
+            )
+        except Exception as e:
+            return ProviderStatus(
+                id=provider.id,
+                label=provider.label,
+                provider=provider.provider,
+                model=provider.model,
+                ok=False,
+                error=str(e)[:160],
+                checked_at=_time.time(),
+            )
+
     from app.infrastructure.unified_llm_client import get_unified_llm_client
 
     client = get_unified_llm_client()
-    started = _time.monotonic()
     try:
         await asyncio.wait_for(
             client.chat(
@@ -698,12 +1072,32 @@ async def providers_status():
         if cached is not None and (now - cached[0]) < _PROVIDERS_STATUS_CACHE_TTL:
             return cached[1]
 
-        results = await asyncio.gather(
-            *[_probe_single_provider(p) for p in AVAILABLE_PROVIDERS],
+        active_id = get_active_provider_id()
+        providers_by_id = {p.id: p for p in AVAILABLE_PROVIDERS}
+        providers_to_probe = [
+            p for p in AVAILABLE_PROVIDERS
+            if p.id == active_id or p.provider in {"vllm", "ollama"}
+        ]
+        probed = await asyncio.gather(
+            *[_probe_single_provider(p) for p in providers_to_probe],
             return_exceptions=False,
         )
+        results_by_id = {p.id: status for p, status in zip(providers_to_probe, probed)}
+        results = [
+            results_by_id.get(p.id)
+            or ProviderStatus(
+                id=p.id,
+                label=p.label,
+                provider=p.provider,
+                model=p.model,
+                ok=False,
+                error="not probed until selected",
+                checked_at=now,
+            )
+            for p in AVAILABLE_PROVIDERS
+        ]
         response = ProvidersStatusResponse(
-            active_id=get_active_provider_id(),
+            active_id=active_id if active_id in providers_by_id else DEFAULT_PROVIDER_ID,
             checked_at=now,
             providers=list(results),
         )

@@ -16,12 +16,31 @@ vi.mock('@/hooks/useMeetings', () => ({
   useMeetingSummary: vi.fn(() => ({ data: null, isPending: false })),
   useMeetingSpeakers: vi.fn(() => ({ data: [], isPending: false })),
   useMeetingSearch: vi.fn(() => ({ data: null, isPending: false })),
-  useStartRecording: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useStartRecording: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false })),
   useStopRecording: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useDeleteMeeting: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useCreateMeeting: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useGenerateSummary: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   useUpdateSpeakers: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useRecordingCapabilities: vi.fn(() => ({
+    data: { can_record: true, via: 'host' },
+    isPending: false,
+  })),
+  useAudioDevices: vi.fn(() => ({
+    data: { mic: [{ index: 0, name: 'Default microphone', is_reachy: false }] },
+    isPending: false,
+  })),
+  useReachyStatus: vi.fn(() => ({
+    data: { connected: false },
+    isPending: false,
+  })),
+  useMeetingPreferences: vi.fn(() => ({
+    data: { auto_record_all: false, auto_create_tasks_from_meetings: false },
+    isPending: false,
+  })),
+  useUpdateMeetingPreferences: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useVoiceprints: vi.fn(() => ({ data: [], isPending: false })),
+  useMeetingArtifactStats: vi.fn(() => ({ data: [], isPending: false })),
   meetingKeys: {
     all: ['meetings'],
     lists: () => ['meetings', 'list'],
@@ -38,6 +57,15 @@ vi.mock('@/hooks/useMeetings', () => ({
 vi.mock('@/hooks/useMeetingWebSocket', () => ({
   useMeetingRecordingWS: vi.fn(() => ({ isConnected: false, reconnect: vi.fn() })),
   useMeetingProcessingWS: vi.fn(() => ({ isConnected: false })),
+  useMeetingLiveTranscriptWS: vi.fn(() => ({ isConnected: false })),
+}))
+
+vi.mock('@/hooks/useCalendarApi', () => ({
+  useCalendarStatus: vi.fn(() => ({ data: { connected: false, last_sync: null }, isPending: false })),
+  useSyncCalendar: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false })),
+  useCalendarEvents: vi.fn(() => ({ data: [], isLoading: false })),
+  useMeetingFromEvent: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  fetchCalendarAuthUrl: vi.fn(async () => 'http://example.test/oauth'),
 }))
 
 vi.mock('@/store/meetingRecordingStore', () => ({
@@ -45,6 +73,7 @@ vi.mock('@/store/meetingRecordingStore', () => ({
     isRecording: false,
     durationSeconds: 0,
     audioLevels: null,
+    liveSegments: [],
   })),
 }))
 
@@ -69,7 +98,7 @@ describe('MeetingsPage', () => {
 
   it('renders the subtitle', () => {
     render(<MeetingsPage />)
-    expect(screen.getByText('Record, transcribe, and analyze your meetings')).toBeInTheDocument()
+    expect(screen.getByText(/Record, transcribe, summarise/i)).toBeInTheDocument()
   })
 
   it('renders status filter buttons', () => {
@@ -122,9 +151,9 @@ describe('MeetingsPage', () => {
 // ============================================================
 
 describe('MeetingSearchPage', () => {
-  it('renders the page heading', () => {
+  it('renders the search surface', () => {
     render(<MeetingSearchPage />)
-    expect(screen.getByText('Meeting Search')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Search transcripts, summaries, topics...')).toBeInTheDocument()
   })
 
   it('renders search input', () => {

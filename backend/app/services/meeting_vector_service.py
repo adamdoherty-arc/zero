@@ -1,4 +1,4 @@
-"""Meeting vector search using pgvector + Ollama nomic-embed-text."""
+"""Meeting vector search using pgvector + the shared embedding client."""
 
 from typing import Optional
 
@@ -7,7 +7,7 @@ from sqlalchemy import select, text, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import MeetingTranscriptSegmentModel, MeetingModel
-from app.infrastructure.config import get_settings
+from app.infrastructure.ollama_client import get_llm_client
 
 logger = structlog.get_logger(__name__)
 
@@ -16,19 +16,8 @@ class MeetingVectorService:
     """Embedding and vector search for meeting transcripts using pgvector."""
 
     async def embed_text(self, text_input: str) -> list[float]:
-        """Generate embedding for a single text using Ollama nomic-embed-text."""
-        settings = get_settings()
-        import httpx
-        base_url = settings.ollama_base_url.rstrip("/").replace("/v1", "")
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{base_url}/api/embed",
-                json={"model": settings.embedding_model, "input": text_input},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            # Ollama returns {"embeddings": [[...]]}
-            return data["embeddings"][0]
+        """Generate one embedding via the shared vLLM/LiteLLM route."""
+        return await get_llm_client().embed(text_input)
 
     async def embed_segments(self, meeting_id: str, segments: list[dict], db: AsyncSession) -> int:
         """Generate embeddings for transcript segments and store in DB."""

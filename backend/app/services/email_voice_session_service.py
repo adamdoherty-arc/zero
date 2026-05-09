@@ -42,6 +42,10 @@ DEFAULT_READER_VOICE = os.getenv("ZERO_REACHY_EMAIL_READER_VOICE", "en-GB-RyanNe
 # Per-state timeout. After this many seconds with no input, revert to idle.
 STATE_TIMEOUT_SECONDS = 60.0
 
+# Once an email has been announced, keep it out of the voice queue for long
+# enough that a timeout cannot make Reachy read it again on the next scheduler tick.
+ANNOUNCED_SUPPRESSION_SECONDS = 12 * 60 * 60
+
 # Soft cap on body characters spoken aloud. Longer bodies are summarised.
 BODY_SPEAK_CAP = 600
 
@@ -77,6 +81,7 @@ class EmailVoiceSessionService:
     def __init__(self) -> None:
         self._state: SessionState = "idle"
         self._queue: list[str] = []  # email_ids awaiting triage
+        self._announced_at: dict[str, datetime] = {}
         self._ctx = _SessionContext()
         self._lock = asyncio.Lock()
         self._reader_voice = DEFAULT_READER_VOICE
@@ -94,6 +99,7 @@ class EmailVoiceSessionService:
         return list(ALLOWED_INTENTS.get(self._state, []))
 
     def status(self) -> dict:
+        self._prune_announced()
         return {
             "state": self._state,
             "queue_length": len(self._queue),
@@ -102,13 +108,17 @@ class EmailVoiceSessionService:
             "active_subject": self._ctx.subject,
             "reader_voice": self._reader_voice,
             "last_state_change": self._ctx.last_state_change.isoformat(),
+            "suppressed_count": len(self._announced_at),
         }
 
     async def enqueue(self, email_ids: list[str]) -> int:
         """Push newly arrived email ids onto the triage queue. Returns added count."""
         async with self._lock:
+            self._prune_announced_locked()
             added = 0
             for eid in email_ids:
+                if eid in self._announced_at:
+                    continue
                 if eid not in self._queue and eid != self._ctx.email_id:
                     self._queue.append(eid)
                     added += 1
@@ -144,6 +154,19 @@ class EmailVoiceSessionService:
         if self._state == "awaiting_send_confirmation":
             return await self._on_send_confirmation(intent, raw_text)
         return {"handled": False, "reason": f"no active state ({self._state})"}
+
+    async def clear_silently(self, *, reason: str = "cleared") -> dict:
+        """Drop active and queued email voice prompts without speaking."""
+        async with self._lock:
+            active_email_id = self._ctx.email_id
+            cleared = len(self._queue) + (1 if self._state != "idle" and active_email_id else 0)
+            if active_email_id:
+                self._announced_at[active_email_id] = datetime.now(timezone.utc)
+            self._queue.clear()
+            self._state = "idle"
+            self._ctx = _SessionContext()
+        logger.info("email_voice_cleared", reason=reason, cleared=cleared)
+        return {"state": self._state, "cleared": cleared, "reason": reason}
 
     async def submit_reply_text(self, text: str) -> dict:
         """User dictated the substance of their reply. Draft, read back, await confirm."""
@@ -277,6 +300,8 @@ class EmailVoiceSessionService:
             thread_id=email.thread_id,
             in_reply_to_message_id=self._extract_rfc_message_id(email),
         )
+        async with self._lock:
+            self._announced_at[email_id] = datetime.now(timezone.utc)
         await self._set_state("awaiting_decision")
         await self._say(
             f"New email from {sender_label}. Subject: {subject}. Read or ignore?"
@@ -403,6 +428,22 @@ class EmailVoiceSessionService:
         if elapsed > STATE_TIMEOUT_SECONDS:
             logger.info("email_voice_state_timeout", state=self._state, elapsed=elapsed)
             await self._reset_to_idle(reason="timeout")
+
+    def _prune_announced(self) -> None:
+        try:
+            self._prune_announced_locked()
+        except Exception:
+            pass
+
+    def _prune_announced_locked(self) -> None:
+        cutoff = datetime.now(timezone.utc).timestamp() - ANNOUNCED_SUPPRESSION_SECONDS
+        stale = [
+            email_id
+            for email_id, announced_at in self._announced_at.items()
+            if announced_at.timestamp() < cutoff
+        ]
+        for email_id in stale:
+            self._announced_at.pop(email_id, None)
 
     async def _prepare_body_for_speech(self, body: str) -> str:
         """Return body suitable for TTS: trim whitespace, summarise if over the cap."""
