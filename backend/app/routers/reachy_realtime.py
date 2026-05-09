@@ -578,6 +578,52 @@ async def recover_realtime_session(reason: str = Body("manual", embed=True)):
     return {"ok": True, "recover": result, "assistant": status}
 
 
+@router.get("/local/status")
+async def local_status() -> dict[str, Any]:
+    """Probe the local realtime path so the LLM badge can show concrete
+    'Local — healthy / 28 ms' info instead of a static green dot.
+
+    Pings the local vLLM/llama.cpp chat endpoint at ``settings.vllm_chat_url``
+    with a 1.5 s timeout and returns ``{ok, latency_ms, error?}``. The probe
+    only loads the model list (no token generation) so it's cheap to call
+    every 20 s while Interactive Mode is open.
+    """
+    from app.infrastructure.config import get_settings
+    settings = get_settings()
+    base_url = settings.vllm_chat_url.rstrip("/")
+    api_key = settings.vllm_api_key or "EMPTY"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "EMPTY" else {}
+
+    started = asyncio.get_event_loop().time()
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(1.5, connect=0.5),
+            headers=headers,
+        ) as client:
+            r = await client.get(f"{base_url}/models")
+            if r.status_code != 200:
+                return {
+                    "ok": False,
+                    "latency_ms": int((asyncio.get_event_loop().time() - started) * 1000),
+                    "error": f"HTTP {r.status_code}",
+                    "endpoint": base_url,
+                }
+            data = (r.json() or {}).get("data") or []
+            return {
+                "ok": True,
+                "latency_ms": int((asyncio.get_event_loop().time() - started) * 1000),
+                "models_loaded": len(data),
+                "endpoint": base_url,
+            }
+    except Exception as e:
+        return {
+            "ok": False,
+            "latency_ms": int((asyncio.get_event_loop().time() - started) * 1000),
+            "error": f"{type(e).__name__}: {str(e)[:120]}",
+            "endpoint": base_url,
+        }
+
+
 @router.websocket("/ws")
 async def realtime_ws(ws: WebSocket) -> None:
     session = RealtimeSession(ws)
