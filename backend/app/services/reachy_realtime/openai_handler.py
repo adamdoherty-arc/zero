@@ -183,6 +183,8 @@ class OpenAIRealtimeHandler:
                 try:
                     self._ws = ws
                     await self._send_session_update()
+                    if not await self._await_session_update_ack():
+                        return
                     await self.tool_manager.start_up(callbacks=[self._on_tool_complete])
                     self._response_sender_task = asyncio.create_task(
                         self._response_sender_loop(),
@@ -251,8 +253,12 @@ class OpenAIRealtimeHandler:
     async def cancel_response(self) -> None:
         if not self._ws:
             return
+        if self._response_done_event.is_set():
+            logger.debug("openai_cancel_response_no_active_response")
+            return
         try:
             await self._ws.send(json.dumps({"type": "response.cancel"}))
+            self._response_done_event.set()
         except Exception as e:
             logger.debug("openai_cancel_response_dropped", error=str(e))
 
@@ -290,12 +296,20 @@ class OpenAIRealtimeHandler:
             # playback running for 10 s. Our persona prompt already asks for
             # 1-2 sentences; this is the enforcement layer. ~80 tokens ≈ 60
             # words ≈ ~18 s of speech max (usually cuts well before).
-            "max_response_output_tokens": 80,
+            "max_output_tokens": 80,
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcm", "rate": OPENAI_SAMPLE_RATE},
+                    "noise_reduction": {"type": "far_field"},
                     "transcription": {"model": "gpt-4o-transcribe", "language": "en"},
-                    "turn_detection": {"type": "server_vad", "interrupt_response": True},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.35,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 450,
+                        "create_response": True,
+                        "interrupt_response": True,
+                    },
                 },
                 "output": {
                     "format": {"type": "audio/pcm", "rate": OPENAI_SAMPLE_RATE},
@@ -308,6 +322,40 @@ class OpenAIRealtimeHandler:
         if self._ws:
             await self._ws.send(json.dumps({"type": "session.update", "session": session}))
         logger.info("openai_realtime_session_update", profile=self.profile_id, voice=self._voice(), tools=len(tool_specs))
+
+    async def _await_session_update_ack(self) -> bool:
+        """Wait for OpenAI to accept session.update before the UI shows ready."""
+        if self._ws is None:
+            return False
+        deadline_s = 8.0
+        while not self._stop.is_set():
+            try:
+                raw = await asyncio.wait_for(self._ws.recv(), timeout=deadline_s)
+            except asyncio.TimeoutError:
+                await self._emit_client({
+                    "type": "error",
+                    "message": "OpenAI realtime session configuration timed out before it became ready.",
+                })
+                return False
+            except websockets.ConnectionClosed as e:
+                await self._emit_client({"type": "error", "message": f"OpenAI websocket closed during setup: {e}"})
+                return False
+
+            try:
+                event = json.loads(raw)
+            except Exception:
+                continue
+
+            etype = event.get("type", "")
+            if etype == "session.updated":
+                return True
+            if etype == "error":
+                await self._handle_event(event)
+                return False
+            if etype == "session.created":
+                continue
+            await self._handle_event(event)
+        return False
 
     # -------------------- private: receive loop --------------------
 
@@ -349,9 +397,12 @@ class OpenAIRealtimeHandler:
                 await self._emit_client({"type": "usage", "cost_usd": cost, "cumulative_usd": self.cumulative_cost})
             return
 
-        if etype == "conversation.item.input_audio_transcription.delta":
+        if etype in (
+            "conversation.item.input_audio_transcription.delta",
+            "conversation.item.input_audio_transcription.partial",
+        ):
             item_id = event.get("item_id")
-            delta = event.get("delta") or ""
+            delta = event.get("delta") or event.get("transcript") or ""
             if item_id is None:
                 return
             if self._partial_item_id != item_id:
@@ -414,6 +465,9 @@ class OpenAIRealtimeHandler:
             msg = err.get("message", "unknown error")
             if code == "conversation_already_has_active_response":
                 self._last_response_rejected = True
+                return
+            if code in ("input_audio_buffer_commit_empty", "response_cancel_not_active"):
+                logger.debug("openai_realtime_benign_error", code=code, message=msg)
                 return
             logger.error("openai_realtime_error", code=code, message=msg)
             if code not in ("input_audio_buffer_commit_empty",):
@@ -523,12 +577,13 @@ class OpenAIRealtimeHandler:
         else:
             tool_result = {"error": "No result returned from tool execution"}
 
+        status = "failed" if isinstance(tool_result, dict) and tool_result.get("error") else note.status.value
         await self._emit_client({
             "type": "tool.end",
             "tool_name": note.tool_name,
             "call_id": note.id,
             "result": tool_result,
-            "status": note.status.value,
+            "status": status,
         })
 
         if self._ws is None:
@@ -561,7 +616,10 @@ class OpenAIRealtimeHandler:
                     }))
             if not note.is_idle_tool_call:
                 await self._safe_response_create({
-                    "instructions": "Use the tool result just returned and answer concisely in speech.",
+                    "instructions": (
+                        "Use the tool result just returned and answer concisely in spoken English. "
+                        "Do not say or output bracketed emotion tags, dance tags, JSON, or markdown."
+                    ),
                 })
         except websockets.ConnectionClosed:
             return

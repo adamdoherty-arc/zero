@@ -10,7 +10,7 @@ File shape:
     {
       "openai_api_key": "sk-...",
       "gemini_api_key": "AIza...",
-      "backend": "openai" | "gemini",
+      "backend": "local" | "openai" | "gemini",
       "model": "gpt-realtime",
       "voice": "cedar",
       "profile": "default",
@@ -23,6 +23,7 @@ written here overrides the env-sourced default for the next session.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -32,15 +33,17 @@ import structlog
 from app.infrastructure.config import get_settings
 from app.services.reachy_realtime.common import (
     BACKEND_GEMINI,
+    BACKEND_LOCAL,
     BACKEND_OPENAI,
-    DEFAULT_MODEL_BY_BACKEND,
-    DEFAULT_VOICE_BY_BACKEND,
     normalize_backend,
+    resolve_model,
+    resolve_voice,
 )
 
 logger = structlog.get_logger()
 
 _LOCK = threading.Lock()
+_BACKEND_USER_SELECTED_FIELD = "backend_user_selected"
 
 
 def _store_path() -> Path:
@@ -76,19 +79,99 @@ def _mask(key: str | None) -> str | None:
     return f"{key[:4]}…{key[-4:]}"
 
 
+def _configured_env_backend() -> str | None:
+    raw = os.getenv("ZERO_REACHY_REALTIME_BACKEND") or os.getenv("REACHY_REALTIME_BACKEND")
+    return normalize_backend(raw) if raw else None
+
+
+def _select_backend(
+    stored: dict[str, Any],
+    *,
+    settings_backend: str | None,
+    openai_key: str | None,
+    gemini_key: str | None,
+) -> tuple[str, str]:
+    """Choose a realtime backend without letting the old local default win."""
+    stored_backend = stored.get("backend")
+    if stored_backend and stored.get(_BACKEND_USER_SELECTED_FIELD):
+        return normalize_backend(str(stored_backend)), "stored"
+
+    env_backend = _configured_env_backend()
+    if env_backend:
+        return env_backend, "env"
+
+    if stored_backend:
+        legacy_backend = normalize_backend(str(stored_backend))
+        if (
+            (legacy_backend == BACKEND_OPENAI and openai_key)
+            or (legacy_backend == BACKEND_GEMINI and gemini_key)
+        ):
+            return legacy_backend, "stored_legacy"
+
+    if settings_backend and settings_backend != BACKEND_LOCAL:
+        return normalize_backend(settings_backend), "settings"
+
+    if openai_key:
+        return BACKEND_OPENAI, "auto_openai_key"
+    if gemini_key:
+        return BACKEND_GEMINI, "auto_gemini_key"
+    return BACKEND_LOCAL, "fallback_local"
+
+
+def _model_belongs_to_backend(backend: str, model: str | None) -> bool:
+    if not model or not model.strip():
+        return True
+    candidate = model.strip().lower()
+    if backend == BACKEND_OPENAI:
+        return candidate.startswith(("gpt-", "o"))
+    if backend == BACKEND_GEMINI:
+        return candidate.startswith("gemini")
+    if backend == BACKEND_LOCAL:
+        return not candidate.startswith(("gpt-", "gemini", "o"))
+    return False
+
+
 def load_config() -> dict[str, Any]:
     """Return the persisted config merged with Settings defaults."""
     with _LOCK:
         stored = _read()
     settings = get_settings()
-    backend = normalize_backend(stored.get("backend") or settings.reachy_realtime_backend)
+    openai_key = stored.get("openai_api_key") or settings.openai_api_key
+    gemini_key = stored.get("gemini_api_key") or settings.gemini_api_key
+    backend, backend_source = _select_backend(
+        stored,
+        settings_backend=settings.reachy_realtime_backend,
+        openai_key=openai_key,
+        gemini_key=gemini_key,
+    )
+    should_write_migration = (
+        backend_source.startswith("auto_")
+        and stored.get("backend") != backend
+        and not stored.get(_BACKEND_USER_SELECTED_FIELD)
+    )
+    raw_model = stored.get("model") or settings.reachy_realtime_model
+    if not _model_belongs_to_backend(backend, raw_model):
+        raw_model = None
+        should_write_migration = should_write_migration or not stored.get(_BACKEND_USER_SELECTED_FIELD)
+    if should_write_migration:
+        with _LOCK:
+            latest = _read()
+            if not latest.get(_BACKEND_USER_SELECTED_FIELD):
+                latest["backend"] = backend
+                latest["backend_auto_selected"] = True
+                if not _model_belongs_to_backend(backend, latest.get("model")):
+                    latest.pop("model", None)
+                _write(latest)
+    raw_voice = stored.get("voice") or settings.reachy_realtime_voice
     return {
-        "openai_api_key": stored.get("openai_api_key") or settings.openai_api_key,
-        "gemini_api_key": stored.get("gemini_api_key") or settings.gemini_api_key,
+        "openai_api_key": openai_key,
+        "gemini_api_key": gemini_key,
         "backend": backend,
-        "model": stored.get("model") or settings.reachy_realtime_model or DEFAULT_MODEL_BY_BACKEND[backend],
-        "voice": stored.get("voice") or settings.reachy_realtime_voice or DEFAULT_VOICE_BY_BACKEND[backend],
-        "profile": stored.get("profile") or settings.reachy_realtime_profile,
+        "backend_source": backend_source,
+        "backend_user_selected": bool(stored.get(_BACKEND_USER_SELECTED_FIELD)),
+        "model": resolve_model(backend, raw_model),
+        "voice": resolve_voice(backend, raw_voice),
+        "profile": stored.get("profile") or settings.reachy_realtime_profile or "companion",
         # Behavior knobs — consumed by the frontend InteractiveModeBar.
         # idle_timeout_min: auto-disconnect after N minutes of silence.
         # hotkey_enabled : whether Space toggles Interactive Mode globally.
@@ -113,7 +196,7 @@ def load_config_masked() -> dict[str, Any]:
 
 ALLOWED_FIELDS = {
     "openai_api_key", "gemini_api_key", "backend", "model", "voice", "profile",
-    "idle_timeout_min", "hotkey_enabled", "cost_cap_usd",
+    "idle_timeout_min", "hotkey_enabled", "cost_cap_usd", _BACKEND_USER_SELECTED_FIELD,
 }
 
 
@@ -187,6 +270,7 @@ def update_config(patch: dict[str, Any]) -> dict[str, Any]:
         clean[k] = v
     if "backend" in clean and clean["backend"] is not None:
         clean["backend"] = normalize_backend(clean["backend"])
+        clean[_BACKEND_USER_SELECTED_FIELD] = True
 
     with _LOCK:
         stored = _read()

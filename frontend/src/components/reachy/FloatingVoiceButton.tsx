@@ -19,10 +19,10 @@ interface ProvidersResponse {
 }
 
 interface RealtimeConfigHint {
-  backend: 'openai' | 'gemini'
+  backend: 'local' | 'openai' | 'gemini'
   has_openai_key: boolean
   has_gemini_key: boolean
-  preferred_backend: 'openai' | 'gemini' | null
+  preferred_backend: 'local' | 'openai' | 'gemini' | null
   realtime_available: boolean
   profile: string | null
   voice: string
@@ -280,6 +280,13 @@ export function FloatingVoiceButton() {
 
   // Toast realtime errors as they happen.
   useEffect(() => {
+    const staleBrowserMicError = Boolean(
+      voice.state === 'connected' &&
+        voice.inputSource === 'reachy' &&
+        voice.error &&
+        /microphone permission denied|computer mic permission/i.test(voice.error),
+    )
+    if (staleBrowserMicError) return
     if (voice.error) {
       toast({
         variant: 'destructive',
@@ -287,7 +294,7 @@ export function FloatingVoiceButton() {
         description: voice.error,
       })
     }
-  }, [voice.error])
+  }, [voice.error, voice.inputSource, voice.state])
 
   useEffect(() => {
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)

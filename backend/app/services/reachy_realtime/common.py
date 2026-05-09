@@ -46,7 +46,7 @@ GEMINI_AVAILABLE_VOICES: tuple[str, ...] = (
 LOCAL_AVAILABLE_VOICES: tuple[str, ...] = (
     "en-US-AriaNeural", "en-US-JennyNeural", "en-US-GuyNeural",
     "en-GB-RyanNeural", "en-GB-SoniaNeural",
-    "en_US-lessac-medium", "en_US-amy-medium",
+    "en_US-lessac-medium",
 )
 
 DEFAULT_VOICE_BY_BACKEND: dict[str, str] = {
@@ -55,20 +55,42 @@ DEFAULT_VOICE_BY_BACKEND: dict[str, str] = {
     BACKEND_LOCAL: "en-US-AriaNeural",
 }
 
+LEGACY_LOCAL_VOICE_FALLBACKS: dict[str, str] = {
+    # This was exposed in the local voice picker, but the Docker image only
+    # ships lessac. Passing it to Edge TTS makes local sessions text-only.
+    "en_us-amy-medium": "en-US-JennyNeural",
+}
+
 
 def normalize_backend(candidate: Optional[str]) -> str:
-    """Return the canonical backend string, defaulting to OpenAI."""
+    """Return a canonical backend string; invalid values become local fallback."""
     if not candidate:
-        return BACKEND_OPENAI
+        return BACKEND_LOCAL
     c = candidate.strip().lower()
-    return c if c in DEFAULT_MODEL_BY_BACKEND else BACKEND_OPENAI
+    return c if c in DEFAULT_MODEL_BY_BACKEND else BACKEND_LOCAL
 
 
 def resolve_model(backend: str, override: Optional[str]) -> str:
-    """Pick a model for the backend, preferring a non-empty override."""
+    """Pick a model for the backend, rejecting cross-backend stale overrides."""
     backend = normalize_backend(backend)
     if override and override.strip():
-        return override.strip()
+        candidate = override.strip()
+        cand_lower = candidate.lower()
+        valid = True
+        if backend == BACKEND_OPENAI:
+            valid = cand_lower.startswith(("gpt-", "o"))
+        elif backend == BACKEND_GEMINI:
+            valid = cand_lower.startswith("gemini")
+        elif backend == BACKEND_LOCAL:
+            valid = not cand_lower.startswith(("gpt-", "gemini", "o"))
+        if valid:
+            return candidate
+        logger.warning(
+            "realtime_model_rejected_cross_backend",
+            backend=backend,
+            candidate=candidate,
+            fallback=DEFAULT_MODEL_BY_BACKEND[backend],
+        )
     return DEFAULT_MODEL_BY_BACKEND[backend]
 
 
@@ -91,6 +113,14 @@ def resolve_voice(backend: str, override: Optional[str]) -> str:
             pool = GEMINI_AVAILABLE_VOICES
         else:
             cand_lower = candidate.lower()
+            if cand_lower in LEGACY_LOCAL_VOICE_FALLBACKS:
+                fallback = LEGACY_LOCAL_VOICE_FALLBACKS[cand_lower]
+                logger.warning(
+                    "local_voice_rejected_legacy_unavailable",
+                    candidate=candidate,
+                    fallback=fallback,
+                )
+                return fallback
             cross_pool: set[str] = {v.lower() for v in OPENAI_AVAILABLE_VOICES}
             cross_pool |= {v.lower() for v in GEMINI_AVAILABLE_VOICES}
             if cand_lower in cross_pool:

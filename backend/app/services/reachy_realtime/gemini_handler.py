@@ -375,12 +375,13 @@ class GeminiLiveHandler:
         else:
             tool_result = {"error": "No result returned from tool execution"}
 
+        status = "failed" if isinstance(tool_result, dict) and tool_result.get("error") else note.status.value
         await self._emit_client({
             "type": "tool.end",
             "tool_name": note.tool_name,
             "call_id": note.id,
             "result": tool_result,
-            "status": note.status.value,
+            "status": status,
         })
 
         if self._session is None:

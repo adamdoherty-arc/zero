@@ -276,6 +276,36 @@ _REALTIME_SHORT_REPLY_SUFFIX = (
 )
 
 
+_GESTURE_MARKER_SECTION_RE = re.compile(
+    r"\n+#{2,6}\s*GESTURE MARKERS\b.*?(?=\n+#{1,6}\s|\Z)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_INLINE_MOTION_MARKER_RE = re.compile(r"\[(?:emotion|dance):[^\]]+\]\s*", flags=re.IGNORECASE)
+
+_REALTIME_SPOKEN_SAFETY_SUFFIX = (
+    "\n\nHard realtime audio rules: Speak only in English unless the user "
+    "explicitly asks for another language. Never output or pronounce bracketed "
+    "stage directions, emotion tags, dance tags, SSML, JSON, markdown, or "
+    "language labels. If motion would help, use an available tool instead of "
+    "putting tags in spoken words."
+    "\n\nRobot motion rules: The UI state 'Body still' or 'Auto motion off' "
+    "only pauses autonomous idle wobble and expressive motion during speech. "
+    "It does not block explicit user-commanded robot actions. When the user "
+    "asks you to move, nod, look, wake, gesture, or play an emotion/dance, use "
+    "the movement tools directly unless system status says the robot body is "
+    "unavailable or a hardware fault is active. Do not ask to enable body "
+    "motion for a direct movement command; only change automatic body motion "
+    "when the user asks for ongoing idle/live body motion."
+)
+
+
+def _make_realtime_spoken_prompt(text: str) -> str:
+    """Make profile instructions safe for providers that synthesize speech."""
+    cleaned = _GESTURE_MARKER_SECTION_RE.sub("", text or "")
+    cleaned = _INLINE_MOTION_MARKER_RE.sub("", cleaned)
+    return cleaned.strip() + _REALTIME_SHORT_REPLY_SUFFIX + _REALTIME_SPOKEN_SAFETY_SUFFIX
+
+
 def resolve_instructions(profile_id: Optional[str]) -> str:
     """Resolve the full system prompt for a realtime session.
 
@@ -295,15 +325,15 @@ def resolve_instructions(profile_id: Optional[str]) -> str:
         from app.services.reachy_personas import get_persona
         if get_persona(prof.id) is not None:
             from app.services.reachy_memory_blocks import compose_system_prompt
-            return compose_system_prompt(
+            return _make_realtime_spoken_prompt(compose_system_prompt(
                 prof.id,
                 working_context="",
                 include_voice_suffix=False,
-            ) + _REALTIME_SHORT_REPLY_SUFFIX
+            ))
     except Exception as e:  # noqa: BLE001
         logger.debug("realtime_compose_fallback", error=str(e))
 
-    return (prof.instructions or "") + _REALTIME_SHORT_REPLY_SUFFIX
+    return _make_realtime_spoken_prompt(prof.instructions or "")
 
 
 def resolve_tools(profile_id: Optional[str]) -> tuple[str, ...]:

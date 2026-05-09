@@ -35,6 +35,7 @@ from app.services.reachy_realtime.common import (
     OPENAI_AVAILABLE_VOICES,
     normalize_backend,
 )
+from app.services.reachy_realtime import config_store
 from app.services.reachy_realtime.config_store import (
     claim_free_openai_key,
     load_config,
@@ -42,7 +43,7 @@ from app.services.reachy_realtime.config_store import (
     update_config,
 )
 from app.services.reachy_realtime.profiles import list_profiles, profile_to_dict
-from app.services.reachy_realtime.session import RealtimeSession
+from app.services.reachy_realtime.session import RealtimeSession, recover_all_realtime_sessions
 
 logger = structlog.get_logger()
 
@@ -68,24 +69,25 @@ def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
     and PUT /config returned partial configs that crashed the dialog when it
     tried to read ``cfg.default_voices['openai']``.
     """
-    current = cfg.get("backend")
+    current = normalize_backend(cfg.get("backend") or BACKEND_LOCAL)
     has_openai = bool(cfg.get("has_openai_key"))
     has_gemini = bool(cfg.get("has_gemini_key"))
+    explicit_backend = bool(cfg.get("backend_user_selected"))
     # Local backend is always "available" — the actual vLLM-up check
     # happens at session start so we don't probe on every config read.
     local_available = True
-    if current == BACKEND_OPENAI and has_openai:
+    if current == BACKEND_LOCAL and explicit_backend:
+        preferred = BACKEND_LOCAL
+    elif current == BACKEND_OPENAI and has_openai:
         preferred = BACKEND_OPENAI
     elif current == BACKEND_GEMINI and has_gemini:
         preferred = BACKEND_GEMINI
-    elif current == BACKEND_LOCAL:
-        preferred = BACKEND_LOCAL
-    elif has_gemini:  # gemini is cheaper, so that's the default fallback
-        preferred = BACKEND_GEMINI
     elif has_openai:
         preferred = BACKEND_OPENAI
+    elif has_gemini:
+        preferred = BACKEND_GEMINI
     else:
-        preferred = BACKEND_LOCAL  # local always works as last resort
+        preferred = BACKEND_LOCAL
     return {
         **cfg,
         "preferred_backend": preferred,
@@ -104,12 +106,12 @@ def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/config")
 async def get_config():
-    return _enriched_config(load_config_masked())
+    return _enriched_config(config_store.load_config_masked())
 
 
 @router.put("/config")
 async def put_config(payload: ConfigUpdate = Body(...)):
-    return _enriched_config(update_config(payload.model_dump(exclude_unset=True)))
+    return _enriched_config(config_store.update_config(payload.model_dump(exclude_unset=True)))
 
 
 @router.get("/models")
@@ -201,11 +203,11 @@ async def claim_free_key():
     personal API key. The key is a shared HF/Pollen-provisioned one with
     limited quota; treat it as a best-effort convenience, not a long-term key.
     """
-    result = claim_free_openai_key()
+    result = config_store.claim_free_openai_key()
     # Same shape as GET /config so the dialog can ``setCfg(result.config)``
     # without losing voices/default_voices/backends and crashing on the next
     # render.
-    result["config"] = _enriched_config(load_config_masked())
+    result["config"] = _enriched_config(config_store.load_config_masked())
     return result
 
 
@@ -388,7 +390,33 @@ async def voice_preview(payload: VoicePreviewRequest):
         # already understands. Render through the same TTS used during a live
         # session so the preview is byte-identical to what plays.
         try:
-            return await _edge_tts_preview(payload.voice, payload.voice, "local")
+            from app.services.reachy_realtime.local_handler import (
+                _is_edge_tts_voice,
+                _is_piper_voice,
+            )
+            from app.services.tts_service import get_tts_service
+
+            tts = get_tts_service()
+            voice_override = payload.voice if (
+                payload.voice.startswith("fish:") or _is_edge_tts_voice(payload.voice)
+            ) else None
+            if _is_piper_voice(payload.voice):
+                await tts.set_piper_voice(payload.voice)
+            audio_bytes, meta = await asyncio.wait_for(
+                tts.synthesize_with_meta(_PREVIEW_SAMPLE_TEXT, voice_override=voice_override),
+                timeout=8.0,
+            )
+            if not audio_bytes:
+                raise HTTPException(500, "TTS produced no audio")
+            return {
+                "audio_b64": base64.b64encode(audio_bytes).decode("ascii"),
+                "mime": "audio/wav",
+                "backend": "local",
+                "voice": payload.voice,
+                "actual_voice": meta.get("voice"),
+                "engine": meta.get("engine"),
+                "sample_text": _PREVIEW_SAMPLE_TEXT,
+            }
         except asyncio.TimeoutError:
             raise HTTPException(504, "TTS timed out")
         except HTTPException:
@@ -528,6 +556,23 @@ async def clear_companion_memory(user_id: str, persona_id: str):
     mem = get_reachy_memory_service()
     mem.clear(user_id, persona_id)
     return {"cleared": True, "user_id": user_id, "persona_id": persona_id}
+
+
+@router.post("/recover")
+async def recover_realtime_session(reason: str = Body("manual", embed=True)):
+    """Recover active realtime voice sessions without restarting Reachy."""
+    result = await recover_all_realtime_sessions(reason=reason or "manual")
+    try:
+        from app.routers.reachy import _assistant_status_payload
+        status = await _assistant_status_payload(actions=[{
+            "id": "realtime_recover",
+            "ok": True,
+            "detail": "Recovered active realtime voice session.",
+            "result": result,
+        }])
+    except Exception as e:
+        status = {"state": "degraded", "error": str(e)}
+    return {"ok": True, "recover": result, "assistant": status}
 
 
 @router.websocket("/ws")
