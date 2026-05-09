@@ -770,6 +770,58 @@ _SPECS: Dict[str, Dict[str, Any]] = {
             "required": ["task_id", "confirmed"],
         },
     },
+    "delegate_research": {
+        "type": "function",
+        "name": "delegate_research",
+        "description": "Spawn a researcher to investigate a question and bring back findings.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What to research."},
+            },
+            "required": ["query"],
+        },
+    },
+    "draft_email": {
+        "type": "function",
+        "name": "draft_email",
+        "description": "Compose an email draft for Adam to review and approve. Never sends directly.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account_id": {"type": "string", "description": "Gmail account scope (e.g. 'work' or 'personal'). Defaults to 'default'."},
+                "to": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+                "thread_id": {"type": "string"},
+            },
+            "required": ["to", "subject", "body"],
+        },
+    },
+    "bookkeeping_query": {
+        "type": "function",
+        "name": "bookkeeping_query",
+        "description": "Ask the ADA AI bookkeeper a question — revenue, expenses, taxes, pending drafts.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+            },
+            "required": ["question"],
+        },
+    },
+    "supervisor_dispatch": {
+        "type": "function",
+        "name": "supervisor_dispatch",
+        "description": "Hand the user's request to the supervisor agent which routes to the right sub-agent (email, calendar, company, research, bookkeeper, daily brief).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+            },
+            "required": ["text"],
+        },
+    },
 }
 
 
@@ -1276,6 +1328,66 @@ async def _company_update_task_confirmed(
     return {"status": "updated", "task": task.model_dump(mode="json"), "response_text": f"Updated company task: {task.title}."}
 
 
+async def _delegate_research(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return {"error": "missing query"}
+    try:
+        from app.services.supervisor_graph import get_supervisor
+        res = await get_supervisor().handle(query, persona_id=str((deps.extra or {}).get("profile_id") or "default"))
+        return {"response_text": res.spoken or "Researcher dispatched.", "intent": res.intent, "tool_calls": res.tool_calls}
+    except Exception as e:
+        return {"error": str(e), "response_text": "I couldn't reach the research supervisor."}
+
+
+async def _draft_email(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    to = str(args.get("to") or "").strip()
+    subject = str(args.get("subject") or "").strip()
+    body = str(args.get("body") or "").strip()
+    account_id = str(args.get("account_id") or "default").strip() or "default"
+    thread_id = args.get("thread_id")
+    if not to or not subject or not body:
+        return {"error": "to, subject, and body are required"}
+    try:
+        from app.services.email_draft_pool_service import get_email_draft_pool
+        d = await get_email_draft_pool().add_draft(
+            account_id=account_id, to=to, subject=subject, body=body,
+            thread_id=thread_id,
+            meta={"source": "reachy_realtime", "user_text": str((deps.extra or {}).get("latest_user_text") or "")},
+        )
+        return {
+            "response_text": f"I drafted a reply to {to}. Approve it from the drafts inbox or say 'send it'.",
+            "draft_id": d.id,
+            "account_id": d.account_id,
+        }
+    except Exception as e:
+        return {"error": str(e), "response_text": "I couldn't save the draft."}
+
+
+async def _bookkeeping_query(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    q = str(args.get("question") or "").strip()
+    if not q:
+        return {"error": "missing question"}
+    try:
+        from app.services.bookkeeper_service import get_bookkeeper_service
+        ans = await get_bookkeeper_service().answer_voice_question(q)
+        return {"response_text": ans}
+    except Exception as e:
+        return {"error": str(e), "response_text": "I can't reach the bookkeeper."}
+
+
+async def _supervisor_dispatch(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    text = str(args.get("text") or (deps.extra or {}).get("latest_user_text") or "").strip()
+    if not text:
+        return {"error": "missing text"}
+    try:
+        from app.services.supervisor_graph import get_supervisor
+        res = await get_supervisor().handle(text, persona_id=str((deps.extra or {}).get("profile_id") or "default"))
+        return {"response_text": res.spoken or "OK", "intent": res.intent, "tool_calls": res.tool_calls}
+    except Exception as e:
+        return {"error": str(e), "response_text": "Supervisor unavailable."}
+
+
 _HANDLERS: Dict[str, ToolHandler] = {
     "move_head": _move_head,
     "dance": _dance,
@@ -1307,6 +1419,10 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "company_blockers": _company_blockers,
     "company_create_task": _company_create_task,
     "company_update_task_confirmed": _company_update_task_confirmed,
+    "delegate_research": _delegate_research,
+    "draft_email": _draft_email,
+    "bookkeeping_query": _bookkeeping_query,
+    "supervisor_dispatch": _supervisor_dispatch,
 }
 
 

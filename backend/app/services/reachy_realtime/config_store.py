@@ -179,6 +179,10 @@ def load_config() -> dict[str, Any]:
         "idle_timeout_min": int(stored.get("idle_timeout_min") or 5),
         "hotkey_enabled": bool(stored.get("hotkey_enabled", True)),
         "cost_cap_usd": float(stored.get("cost_cap_usd") or 0),
+        # Realtime engine selector — persisted via update_config, surfaced
+        # so the frontend and the local handler can branch off it without
+        # re-reading the raw JSON.
+        "engine": stored.get("engine") or "legacy",
     }
 
 
@@ -197,6 +201,11 @@ def load_config_masked() -> dict[str, Any]:
 ALLOWED_FIELDS = {
     "openai_api_key", "gemini_api_key", "backend", "model", "voice", "profile",
     "idle_timeout_min", "hotkey_enabled", "cost_cap_usd", _BACKEND_USER_SELECTED_FIELD,
+    # Realtime engine selector: "legacy" (current hand-rolled pipeline) or
+    # "pipecat" (future Pipecat-backed bridge). The local handler honors this
+    # flag at session start; until the Pipecat bridge lands, "pipecat" is a
+    # no-op safety alias for legacy.
+    "engine",
 }
 
 

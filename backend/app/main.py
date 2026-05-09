@@ -40,6 +40,10 @@ from app.routers import (
     meals,
     loops,
     skills_proxy,
+    bookkeeper,
+    daily_brief,
+    turn_outcomes,
+    wake_presence,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -321,6 +325,78 @@ async def lifespan(app: FastAPI):
             get_ha_watcher().start()
         except Exception as e:
             logger.warning("Failed to start HA gesture watcher", error=str(e))
+
+        # Daily brief — composes the morning report and emails it. Runs at
+        # 07:00 server-local time. Hour overridable via ZERO_DAILY_BRIEF_HOUR.
+        try:
+            from app.services.scheduler_service import get_scheduler_service
+            from app.services.daily_brief_service import get_daily_brief_service
+            from app.services.digest_email_service import get_digest_email_service
+            sched = get_scheduler_service().scheduler
+            brief_hour = int(os.environ.get("ZERO_DAILY_BRIEF_HOUR", "7"))
+            brief_minute = int(os.environ.get("ZERO_DAILY_BRIEF_MINUTE", "0"))
+
+            async def _daily_brief_job() -> None:
+                try:
+                    payload = await get_daily_brief_service().compose_today()
+                    if os.environ.get("ZERO_DAILY_BRIEF_EMAIL", "1") not in ("0", "false", "no"):
+                        await get_digest_email_service().send(
+                            markdown=payload.markdown,
+                            subject=f"Daily brief — {payload.date}",
+                        )
+                except Exception as exc:
+                    logger.warning("daily_brief_job_failed", error=str(exc))
+
+            sched.add_job(
+                _daily_brief_job,
+                trigger="cron",
+                hour=brief_hour,
+                minute=brief_minute,
+                id="daily_brief_morning",
+                name="Daily brief composer + emailer",
+                replace_existing=True,
+            )
+            logger.info(
+                "Daily brief scheduled",
+                hour=brief_hour, minute=brief_minute,
+            )
+        except Exception as e:
+            logger.warning("Failed to schedule daily brief", error=str(e))
+
+        # Weekly reflection — drives the closed-loop learning. Sunday 22:00.
+        try:
+            from app.services.scheduler_service import get_scheduler_service
+            sched = get_scheduler_service().scheduler
+
+            async def _weekly_reflection_job() -> None:
+                try:
+                    from app.services.reflection_service import (
+                        get_reflection_service,
+                    )
+                    svc = get_reflection_service()
+                    runner = (
+                        getattr(svc, "run_weekly", None)
+                        or getattr(svc, "run", None)
+                    )
+                    if runner is None:
+                        return
+                    await runner()
+                except Exception as exc:
+                    logger.debug("weekly_reflection_failed", error=str(exc))
+
+            sched.add_job(
+                _weekly_reflection_job,
+                trigger="cron",
+                day_of_week="sun",
+                hour=22,
+                minute=0,
+                id="weekly_reflection",
+                name="Closed-loop weekly reflection",
+                replace_existing=True,
+            )
+            logger.info("Weekly reflection scheduled (Sun 22:00)")
+        except Exception as e:
+            logger.warning("Failed to schedule weekly reflection", error=str(e))
 
     # Auto-resume character research queue from persisted state
     try:
@@ -628,6 +704,10 @@ app.include_router(trend_intelligence.router)  # prefix in router
 app.include_router(employee.router, prefix="/api/employee", tags=["Employee Check-in"])
 app.include_router(loops.router)  # prefix + tags defined in router
 app.include_router(skills_proxy.router)  # /api/skills/* and /api/teams/* proxied to Legion
+app.include_router(bookkeeper.router, prefix="/api/bookkeeper", tags=["Bookkeeper (ADA AI)"])
+app.include_router(daily_brief.router, prefix="/api/daily-brief", tags=["Daily Brief"])
+app.include_router(turn_outcomes.router, prefix="/api/turn-outcomes", tags=["Turn Outcomes"])
+app.include_router(wake_presence.router, prefix="/api/wake-presence", tags=["Wake & Presence"])
 
 
 @app.get("/")

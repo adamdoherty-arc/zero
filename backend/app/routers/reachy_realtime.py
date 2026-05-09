@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import os
 from typing import Any
 
 import httpx
@@ -30,10 +31,14 @@ from app.services.reachy_realtime.common import (
     BACKEND_OPENAI,
     DEFAULT_MODEL_BY_BACKEND,
     DEFAULT_VOICE_BY_BACKEND,
+    ENGINE_LEGACY,
+    ENGINE_PIPECAT,
     GEMINI_AVAILABLE_VOICES,
     LOCAL_AVAILABLE_VOICES,
     OPENAI_AVAILABLE_VOICES,
+    REALTIME_ENGINES,
     normalize_backend,
+    normalize_engine,
 )
 from app.services.reachy_realtime import config_store
 from app.services.reachy_realtime.config_store import (
@@ -91,6 +96,9 @@ def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
             preferred = BACKEND_LOCAL
     else:
         preferred = BACKEND_LOCAL
+    engine = normalize_engine(
+        os.getenv("REACHY_REALTIME_ENGINE") or cfg.get("engine") or ENGINE_LEGACY
+    )
     return {
         **cfg,
         "preferred_backend": preferred,
@@ -104,6 +112,8 @@ def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
             BACKEND_GEMINI: list(GEMINI_AVAILABLE_VOICES),
             BACKEND_LOCAL: list(LOCAL_AVAILABLE_VOICES),
         },
+        "engine": engine,
+        "engines": list(REALTIME_ENGINES),
     }
 
 
@@ -115,6 +125,30 @@ async def get_config():
 @router.put("/config")
 async def put_config(payload: ConfigUpdate = Body(...)):
     return _enriched_config(config_store.update_config(payload.model_dump(exclude_unset=True)))
+
+
+class EngineUpdate(BaseModel):
+    engine: str = Field(..., description="legacy | pipecat")
+
+
+@router.get("/engine")
+async def get_engine():
+    """Return the currently selected realtime engine implementation."""
+    cfg = config_store.load_config_masked()
+    engine = normalize_engine(
+        os.getenv("REACHY_REALTIME_ENGINE") or cfg.get("engine") or ENGINE_LEGACY
+    )
+    return {"engine": engine, "engines": list(REALTIME_ENGINES)}
+
+
+@router.put("/engine")
+async def put_engine(payload: EngineUpdate = Body(...)):
+    """Update the realtime engine selection. `pipecat` is reserved for the
+    Pipecat-backed pipeline; until that bridge lands the local handler stays
+    in `legacy` mode regardless of this flag (no-op safety)."""
+    engine = normalize_engine(payload.engine)
+    config_store.update_config({"engine": engine})
+    return {"engine": engine, "engines": list(REALTIME_ENGINES)}
 
 
 @router.get("/models")

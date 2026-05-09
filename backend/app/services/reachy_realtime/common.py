@@ -42,12 +42,32 @@ GEMINI_AVAILABLE_VOICES: tuple[str, ...] = (
 
 # Edge-tts voices; piper voices (en_US-lessac-medium etc.) are accepted too
 # — the local handler hands the string straight to TTSService, which knows
-# both naming schemes and falls back gracefully.
+# both naming schemes and falls back gracefully. Kokoro/Sesame voices are
+# prefixed `kokoro:` / `sesame:` and route to their respective HTTP servers
+# when up.
 LOCAL_AVAILABLE_VOICES: tuple[str, ...] = (
     "en-US-AriaNeural", "en-US-JennyNeural", "en-US-GuyNeural",
     "en-GB-RyanNeural", "en-GB-SoniaNeural",
     "en_US-lessac-medium",
+    "kokoro:af_bella", "kokoro:af_sky", "kokoro:am_adam",
+    "sesame:default",
 )
+
+
+# Realtime engine flag — selects the underlying pipeline implementation.
+# `legacy` is the hand-rolled VAD/STT/TTS glue in local_handler.py.
+# `pipecat` is the (future) Pipecat-backed pipeline; left here so callers
+# and the frontend can flip between them once the Pipecat bridge lands.
+ENGINE_LEGACY = "legacy"
+ENGINE_PIPECAT = "pipecat"
+REALTIME_ENGINES: tuple[str, ...] = (ENGINE_LEGACY, ENGINE_PIPECAT)
+
+
+def normalize_engine(candidate: Optional[str]) -> str:
+    if not candidate:
+        return ENGINE_LEGACY
+    c = candidate.strip().lower()
+    return c if c in REALTIME_ENGINES else ENGINE_LEGACY
 
 DEFAULT_VOICE_BY_BACKEND: dict[str, str] = {
     BACKEND_OPENAI: "cedar",

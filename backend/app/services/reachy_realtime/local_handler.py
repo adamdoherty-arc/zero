@@ -129,7 +129,13 @@ INPUT_WARNING_MIN_INTERVAL_S = float(os.getenv("REACHY_LOCAL_INPUT_WARNING_INTER
 INPUT_WARNING_TRANSCRIPT_INTERVAL_S = float(
     os.getenv("REACHY_LOCAL_INPUT_WARNING_TRANSCRIPT_INTERVAL_S", "60")
 )
-STT_MODEL_NAME = os.getenv("REACHY_LOCAL_WHISPER_MODEL", "small.en").strip() or "small.en"
+# 2026-05-09: distil-large-v3 (~600MB faster-whisper) replaces small.en. It
+# handles speakerphone audio noticeably better and runs at >RT on the 5090.
+# Override with REACHY_LOCAL_WHISPER_MODEL if you need a smaller footprint.
+STT_MODEL_NAME = (
+    os.getenv("REACHY_LOCAL_WHISPER_MODEL", "distil-large-v3").strip()
+    or "distil-large-v3"
+)
 STT_ACTIVE_AUDIO_RMS = float(os.getenv("REACHY_LOCAL_STT_ACTIVE_AUDIO_RMS", "0.012"))
 STT_ACTIVE_AUDIO_PEAK = float(os.getenv("REACHY_LOCAL_STT_ACTIVE_AUDIO_PEAK", "0.08"))
 STT_LONG_SHORT_AUDIO_S = float(os.getenv("REACHY_LOCAL_STT_LONG_SHORT_AUDIO_S", "5.0"))
@@ -901,6 +907,26 @@ class LocalRealtimeHandler:
                 instructions = instructions.rstrip() + "\n\n" + block
         except Exception as e:
             logger.debug("reachy_memory_block_skipped", error=str(e))
+
+        # Memory facade — fan-in across all stores (mem0/episodic/user/blocks).
+        # Surface the persistent "always-on" context block here at session
+        # start so it doesn't have to be re-fetched on every turn. Per-turn
+        # recall happens just-in-time inside the LLM call.
+        try:
+            from app.services.memory_facade import get_memory_facade
+            facade = get_memory_facade()
+            seed_notes = await facade.recall(
+                f"profile:{self.profile_id} session start",
+                k=3,
+            )
+            if seed_notes:
+                seed_block = facade.format_for_system_prompt(
+                    seed_notes, max_chars=600
+                )
+                if seed_block:
+                    instructions = instructions.rstrip() + "\n\n" + seed_block
+        except Exception as e:
+            logger.debug("memory_facade_seed_skipped", error=str(e))
 
         # Disable Qwen3's reasoning-block emission for the voice loop. We
         # want short conversational replies, not chain-of-thought spoken

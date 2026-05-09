@@ -19,7 +19,23 @@ logger = structlog.get_logger()
 ENGINE_PIPER = "piper"
 ENGINE_EDGE = "edge-tts"
 ENGINE_FISH = "fish-speech"
+ENGINE_KOKORO = "kokoro"
+ENGINE_SESAME = "sesame"
 ENGINE_NONE = "none"
+
+# Kokoro-TTS HTTP server (OpenAI-compatible /v1/audio/speech). Run on the
+# host via e.g. `kokoro-fastapi` or the upstream demo. Voices that start
+# with `kokoro:` route here. Reference: https://github.com/hexgrad/kokoro
+_KOKORO_PREFIX = "kokoro:"
+_KOKORO_DEFAULT_URL = os.getenv("KOKORO_TTS_URL", "http://host.docker.internal:18803/v1")
+_KOKORO_TIMEOUT_S = float(os.getenv("KOKORO_TTS_TIMEOUT_S", "8"))
+_KOKORO_DEFAULT_VOICE = os.getenv("KOKORO_TTS_VOICE", "af_bella")
+
+# Sesame CSM realtime voice. Stretch backend; falls through to Kokoro/Edge
+# when not running. Voices prefixed `sesame:`.
+_SESAME_PREFIX = "sesame:"
+_SESAME_DEFAULT_URL = os.getenv("SESAME_CSM_URL", "http://host.docker.internal:18804/v1")
+_SESAME_TIMEOUT_S = float(os.getenv("SESAME_CSM_TIMEOUT_S", "10"))
 
 # Fish-Speech S2 Pro server (OpenAI-compatible /v1/audio/speech). Run on the
 # Windows host via:
@@ -36,6 +52,14 @@ _PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-.+")
 
 def _is_edge_tts_voice(voice: str) -> bool:
     return bool(_EDGE_TTS_VOICE_RE.match((voice or "").strip()))
+
+
+def _is_kokoro_voice(voice: str) -> bool:
+    return (voice or "").strip().startswith(_KOKORO_PREFIX)
+
+
+def _is_sesame_voice(voice: str) -> bool:
+    return (voice or "").strip().startswith(_SESAME_PREFIX)
 
 
 def _is_piper_voice(voice: str) -> bool:
@@ -139,6 +163,26 @@ class TTSService:
                     )
                     # Fall through to edge-tts so the voice loop never silently
                     # dies when the Fish-Speech server is offline.
+            if voice_override.startswith(_KOKORO_PREFIX):
+                try:
+                    audio = await self._synthesize_kokoro(text, voice_override)
+                    return audio, {"engine": ENGINE_KOKORO, "voice": voice_override}
+                except Exception as e:
+                    logger.warning(
+                        "kokoro_failed_falling_back",
+                        voice=voice_override,
+                        error=str(e),
+                    )
+            if voice_override.startswith(_SESAME_PREFIX):
+                try:
+                    audio = await self._synthesize_sesame(text, voice_override)
+                    return audio, {"engine": ENGINE_SESAME, "voice": voice_override}
+                except Exception as e:
+                    logger.warning(
+                        "sesame_failed_falling_back",
+                        voice=voice_override,
+                        error=str(e),
+                    )
             if _is_edge_tts_voice(voice_override):
                 try:
                     import edge_tts  # noqa: F401
@@ -386,6 +430,68 @@ class TTSService:
                 raise RuntimeError("fish-speech returned empty audio")
             return data
 
+    async def _synthesize_kokoro(self, text: str, voice: str) -> bytes:
+        """Call a local Kokoro-TTS server (e.g. kokoro-fastapi) via
+        OpenAI-compatible /v1/audio/speech. WAV bytes. Raises on failure.
+        """
+        try:
+            import httpx  # type: ignore
+        except ImportError as e:
+            raise RuntimeError(f"httpx required for Kokoro: {e}")
+
+        voice_id = (
+            voice[len(_KOKORO_PREFIX):]
+            if voice.startswith(_KOKORO_PREFIX)
+            else voice
+        ) or _KOKORO_DEFAULT_VOICE
+        payload = {
+            "model": "kokoro",
+            "input": text,
+            "voice": voice_id,
+            "response_format": "wav",
+        }
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_KOKORO_TIMEOUT_S, connect=2.0)
+        ) as c:
+            r = await c.post(f"{_KOKORO_DEFAULT_URL}/audio/speech", json=payload)
+            if r.status_code != 200:
+                raise RuntimeError(f"kokoro HTTP {r.status_code}: {r.text[:200]}")
+            data = r.content
+            if not data:
+                raise RuntimeError("kokoro returned empty audio")
+            return data
+
+    async def _synthesize_sesame(self, text: str, voice: str) -> bytes:
+        """Call a local Sesame CSM 1.x server via OpenAI-compatible
+        /v1/audio/speech. WAV bytes. Raises on failure.
+        """
+        try:
+            import httpx  # type: ignore
+        except ImportError as e:
+            raise RuntimeError(f"httpx required for Sesame: {e}")
+
+        voice_id = (
+            voice[len(_SESAME_PREFIX):]
+            if voice.startswith(_SESAME_PREFIX)
+            else voice
+        ) or "default"
+        payload = {
+            "model": "sesame-csm",
+            "input": text,
+            "voice": voice_id,
+            "response_format": "wav",
+        }
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(_SESAME_TIMEOUT_S, connect=2.0)
+        ) as c:
+            r = await c.post(f"{_SESAME_DEFAULT_URL}/audio/speech", json=payload)
+            if r.status_code != 200:
+                raise RuntimeError(f"sesame HTTP {r.status_code}: {r.text[:200]}")
+            data = r.content
+            if not data:
+                raise RuntimeError("sesame returned empty audio")
+            return data
+
     def get_status(self) -> dict:
         """Get TTS engine status."""
         return {
@@ -393,6 +499,9 @@ class TTSService:
             "engine": self._engine,
             "model": self._model_name if self._engine == ENGINE_PIPER else self._edge_voice,
             "available": self._engine != ENGINE_NONE,
+            "kokoro_url": _KOKORO_DEFAULT_URL,
+            "sesame_url": _SESAME_DEFAULT_URL,
+            "fish_url": _FISH_DEFAULT_URL,
         }
 
 
