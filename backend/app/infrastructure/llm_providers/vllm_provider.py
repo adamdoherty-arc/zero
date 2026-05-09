@@ -51,8 +51,13 @@ class VllmProvider(BaseLLMProvider):
         self._default_model = settings.vllm_chat_model
         api_key = settings.vllm_api_key or "EMPTY"
         headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "EMPTY" else {}
+        # Connect timeout 2s (was 10s): we serve voice latency-critical paths,
+        # and a stalled local container should fail-fast so the voice loop's
+        # asyncio.wait_for(20s) ceiling isn't fighting against a TCP backoff.
+        # Read timeout stays at settings.vllm_timeout (default 600s) so long
+        # batch jobs that legitimately stream for minutes still work.
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.vllm_timeout, connect=10.0),
+            timeout=httpx.Timeout(settings.vllm_timeout, connect=2.0),
             limits=httpx.Limits(max_connections=8, max_keepalive_connections=4),
             headers=headers,
         )
