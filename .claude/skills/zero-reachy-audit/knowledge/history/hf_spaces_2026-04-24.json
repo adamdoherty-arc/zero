@@ -1,0 +1,49 @@
+{
+  "fetched_at": "2026-04-24",
+  "endpoint": "https://huggingface.co/api/spaces?filter=reachy_mini_python_app&limit=500&full=true",
+  "total_returned": 40,
+  "top_20_by_likes": [
+    {"id": "itsMarco-G/reachy_phone_home", "likes": 349, "createdAt": "2026-02-03", "lastModified": "2026-02-13", "description": "Phone focus companion for Reachy Mini"},
+    {"id": "ravediamond/baby-reachy-mini-companion", "likes": 165, "createdAt": "2026-02-05", "lastModified": "2026-02-15", "description": "A fully local Reachy Mini AI Companion for babies and kids"},
+    {"id": "pollen-robotics/reachy_mini_conversation_app", "likes": 85, "createdAt": "2025-10-16", "lastModified": "2026-04-20", "description": "Talk with Reachy Mini!"},
+    {"id": "tomrikert/clawbody", "likes": 24, "createdAt": "2026-02-02", "lastModified": "2026-03-21", "description": "OpenClaw AI with robot body and face tracking"},
+    {"id": "8bitkick/reachy_mini_3d_web_viz", "likes": 24, "createdAt": "2025-10-19", "lastModified": "2026-02-13", "description": "See Reachy Mini live in your web browser"},
+    {"id": "mattdotvaughn/reachy_mini_language_tutor", "likes": 23, "createdAt": "2025-12-31", "lastModified": "2026-01-05", "description": "Practice languages with Reachy Mini!"},
+    {"id": "RemiFabre/marionette", "likes": 16, "createdAt": "2025-12-16", "lastModified": "2026-04-23", "description": "Manually guide Reachy Mini, capture motion + sound!"},
+    {"id": "RemiFabre/emotions", "likes": 14, "createdAt": "2025-12-11", "lastModified": "2026-02-25", "description": "The emotions of a little robot"},
+    {"id": "pollen-robotics/hand_tracker_v2", "likes": 12, "createdAt": "2025-12-04", "lastModified": "2026-02-04", "description": "Reachy Mini follows your hand!"},
+    {"id": "pollen-robotics/red_light_green_light", "likes": 12, "createdAt": "2025-07-04", "lastModified": "2026-01-21", "description": "Play Red light Green light with Reachy Mini!"},
+    {"id": "Boopster/reachy_mini_metronome", "likes": 11, "createdAt": "2025-12-12", "lastModified": "2025-12-12", "description": "A metronome app for Reachy Mini"},
+    {"id": "RemiFabre/Theremini", "likes": 9, "createdAt": "2025-11-27", "lastModified": "2025-12-16", "description": "Play Reachy Mini like a theremin"},
+    {"id": "pollen-robotics/reachy_mini_radio", "likes": 8, "createdAt": "2025-11-25", "lastModified": "2026-01-05", "description": "Listen to the radio with Reachy Mini!"},
+    {"id": "dlouapre/coding_lab", "likes": 8, "createdAt": "2025-12-09", "lastModified": "2025-12-15", "description": "Code yourself Reachy Mini's movements"},
+    {"id": "Boopster/reachy_mini_ukulele_tuner", "likes": 7, "createdAt": "2025-12-05", "lastModified": "2025-12-11", "description": "Reachy Mini Ukulele Tuner"},
+    {"id": "pollen-robotics/reachy_mini_clock", "likes": 7, "createdAt": "2025-11-24", "lastModified": "2025-12-16", "description": "Reachy Mini shows you the time with its antennas!"},
+    {"id": "chelleboyer/reachy_mini_remix", "likes": 7, "createdAt": "2025-12-13", "lastModified": "2025-12-14", "description": "Build dance sequences with tap-to-add blocks!"},
+    {"id": "Boopster/reachy_mini_danceml", "likes": 6, "createdAt": "2025-12-09", "lastModified": "2025-12-19", "description": "Voice-controlled movement SDK for Reachy Mini robot"},
+    {"id": "RemiFabre/SimpleDances", "likes": 6, "createdAt": "2025-12-11", "lastModified": "2026-03-10", "description": "Play Reachy Mini dances!"},
+    {"id": "dillera/reachy_mini_conversation_app", "likes": 6, "createdAt": "2025-12-17", "lastModified": "2025-12-24", "description": "Talk with Reachy Mini!"}
+  ],
+  "new_since_2026_04_23": [
+    "Arthurpaille/coquillehelloworld (1 like, last mod 2026-04-24)"
+  ],
+  "freshest_activity": [
+    {"id": "pollen-robotics/reachy_mini_conversation_app", "lastModified": "2026-04-20", "significance": "source of profiles/prompts library refactor"},
+    {"id": "RemiFabre/marionette", "lastModified": "2026-04-23", "significance": "motion + sound capture, harvest candidate for motion sequences"},
+    {"id": "backtoengineering/reachy_mini_object_detector", "lastModified": "2026-04-20", "significance": "head-tracking object detector, harvest candidate for meeting/vision"},
+    {"id": "Arthurpaille/coquillehelloworld", "lastModified": "2026-04-24", "significance": "tiny starter app, no description"}
+  ],
+  "harvest_candidates_new_this_run": [
+    {"id": "itsMarco-G/reachy_phone_home", "likes": 349, "rationale": "highest-rated community space; phone-as-focus-companion concept parallels email triage"},
+    {"id": "ravediamond/baby-reachy-mini-companion", "likes": 165, "rationale": "fully-local AI companion; design pattern for privacy-first/offline mode"},
+    {"id": "RemiFabre/marionette", "likes": 16, "rationale": "manual guide + motion+audio capture; adjacent to Zero's move recorder"},
+    {"id": "backtoengineering/reachy_mini_object_detector", "likes": 1, "rationale": "real-time object detection with head tracking; could enhance meeting + vision"}
+  ],
+  "already_in_zero_or_archived": [
+    "pollen-robotics/reachy_mini_conversation_app (UP-001 + UP-006 harvested, profiles/prompts just landed in-tree)",
+    "8bitkick/reachy_mini_3d_web_viz (UP-004, warm)",
+    "pollen-robotics/hand_tracker_v2 (partial via reachy_vision_service)",
+    "fcollonval/reachy_mini_wake_word (UP-003, scaffolded)",
+    "luisomoreau/hey_reachy_wake_word_detection (UP-003 alt)"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "fetched_at": "2026-04-24",
+  "endpoint": "https://api.github.com/users/pollen-robotics/repos?per_page=100&sort=updated",
+  "reachy_mini_named_repos": [
+    {"name": "reachy_mini_conversation_app", "stars": 193, "pushed_at": "2026-04-24T14:29:59Z", "default_branch": "main", "description": "Talk with Reachy Mini!"},
+    {"name": "reachy_mini", "stars": 1086, "pushed_at": "2026-04-24T12:03:48Z", "default_branch": "main", "description": "Reachy Mini's SDK"},
+    {"name": "reachy-mini-desktop-app", "stars": 71, "pushed_at": "2026-04-24T07:56:36Z", "default_branch": "develop", "description": null},
+    {"name": "reachy-mini-os", "stars": 13, "pushed_at": "2026-03-24T15:51:30Z", "default_branch": "develop", "description": "Build Reachy Mini OS image - based on RPi-Distro/pi-gen"},
+    {"name": "reachy_mini_stl_convexify", "stars": 10, "pushed_at": "2025-10-28T10:29:06Z", "default_branch": "main", "description": null}
+  ],
+  "other_recent_pollen_repos": [
+    {"name": "AmazingHand", "pushed_at": "2026-04-23"},
+    {"name": "gripette", "pushed_at": "2026-04-23"},
+    {"name": "lib_KiCAD", "pushed_at": "2026-04-16"},
+    {"name": "openarm_description", "pushed_at": "2026-04-16"}
+  ],
+  "activity_since_2026_04_23_audit": [
+    {"repo": "reachy_mini_conversation_app", "delta": "3 new pushes in last 24h; suspected origin of new profiles/ + prompts library refactor already seeping into Zero in-tree"},
+    {"repo": "reachy_mini", "delta": "1 push in last 24h; SDK still at v1.6.4 effective (check pyproject)"},
+    {"repo": "reachy-mini-desktop-app", "delta": "1 push in last 24h; we replaced it with headless host_agent supervisor"}
+  ],
+  "pinned_upstream_check_notes": {
+    "openwakeword": "no fetch this run",
+    "reachy_mini_toolbox": "no fetch this run; listed in reachy-apps/ mirror",
+    "fcollonval/reachy_mini_wake_word": "not fetched this run; last seen 2025-12-28"
+  }
+}

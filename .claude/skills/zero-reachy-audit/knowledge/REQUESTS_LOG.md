@@ -4,21 +4,45 @@ User-filed "I want Reachy to do X" items. Each entry has a lifecycle: `pending` 
 
 ## Open requests
 
+### REQ-002: Reachy meeting prep page + email voice triage
+- **Filed**: 2026-04-22
+- **Raw ask**: "I want reachy to start to prepare to record my meetings so it needs to pull from my calendar and build that out so I can see, also so I can add to it. Then I also want it to start reviewing my emails and let me know when one comes in and what to do with it, it will ask to read it or ignore, then if I say read it it will read it in a new voice. Also If I say delete or respond it should do that as well."
+- **State**: `integrated-awaiting-verify` (**2026-04-24**: 2 days in limbo, still **0/7** verification boxes; code remains uncommitted on working tree)
+- **Triage note 2026-04-24**: Primary driver of the Verification Debt metric added this audit. Recommended next action: run the 7-item checklist, decide pass/fail per item, and commit the REQ-002 slab (with the presence-service `datetime.now()` fix included) in a single focused session.
+- **Dimensions**: 5 (Meeting Mode), 2 (Voice & Conversation), 4 (Presence & Ambient)
+- **Plan**: `C:\Users\hadam\.claude\plans\i-want-reachy-to-moonlit-babbage.md`
+- **Workstreams**:
+  - **A — Meeting Prep**: `/reachy/meetings` page (`ReachyMeetingsPage.tsx`, `MeetingCard.tsx`, `AddEventDialog.tsx`, `useCalendarApi.ts`); `meeting_auto_recorder_service`; scheduler jobs `reachy_meeting_auto_record` + `reachy_meeting_auto_stop`; endpoints under `/api/meetings/`.
+  - **B — Email Voice Triage**: `voice_intent_router`; `email_voice_session_service` (FSM, 60s timeout); `voice_override` on `tts_service.synthesize` / `reachy.say` (reader voice `en-GB-RyanNeural`); `gmail_service.send_email()` + `trash_email()`; `voice_loop_service` short-circuit; `reachy_email.py` router.
+- **Decisions baked in**: reader voice = edge-tts `en-GB-RyanNeural`; delete = Gmail Trash; respond = confirm-then-send; 5-min poll; auto-record opt-in per event; parallel build.
+- **Non-blocker**: `gmail.modify` scope covers send + TRASH.
+- **Verification needed before → `verified`**:
+  - [ ] `/reachy/meetings` renders calendar events and accepts new event creation.
+  - [ ] Toggling Auto-record on a 2-min-future event triggers recording within ±60s; auto-stops at end_time.
+  - [ ] New email arrives → Reachy speaks "from X about Y, read or ignore?" within 5 min.
+  - [ ] "read" → body spoken in `en-GB-RyanNeural` (audibly different).
+  - [ ] "delete" → email lands in Gmail Trash.
+  - [ ] "respond" → spoken intent → LLM draft read back → "send" puts reply in Sent with correct `In-Reply-To`/`threadId`.
+  - [ ] 60s silence in any state reverts FSM to idle.
+- **Linked ideas**: II-007 (per-persona voice config), II-008 (Gmail Pub/Sub webhook), II-009 (respond-as-persona — cold), II-013 (persona-scoped tool grants — **new, depends on REQ-002 landing**), II-015 (wake-word → email triage — **new, depends on REQ-002 + host_agent**).
+- **Notes**: Filed via `/zero-reachy-audit --ask` 2026-04-22. Entered log as `integrated` because code shipped before next audit tick. 2nd audit (2026-04-23) found slab still uncommitted. 3rd audit (2026-04-24) finds it STILL uncommitted — primary Commit-Debt case.
+
 ### REQ-001: Deep-dive the Meeting Mode dimension
 - **Filed**: 2026-04-22
 - **Raw ask**: "I want to focus next on meetings, but I want to run that from a fresh prompt."
 - **State**: `planned`
 - **Dimension guess**: 5 (Meeting Mode)
-- **Current score**: C+ (78/100). Biggest sub-score deficit: coverage (65).
-- **Minimum delta**: see `handoffs/2026-04-22-meeting.md` — three priority gaps identified (speaker diarization, nod-on-highlight, persona-aware meeting).
-- **Blocker**: none — all prerequisite capabilities (DoA loop, persona swap, meeting recording pipeline) are already shipped.
+- **Current score (2026-04-24)**: B+ (88/100), down from 90. Biggest deficits: coverage 85 (diarization, nod-on-highlight, summary→gesture, persona-aware), freshness 85 (REQ-002 auto-record uncommitted).
+- **Triage note 2026-04-24**: `backtoengineering/reachy_mini_object_detector` (HF Space, updated 2026-04-20, new candidate) directly relevant to "look at who's raising their hand". `host_agent/live_transcription.py` (uncommitted) provides a WebSocket broadcast source — II-003 (nod-on-highlight) is now **structurally unblocked** and should be the first concrete task in the REQ-001 plan.
+- **Minimum delta**: see `handoffs/2026-04-22-meeting.md`.
+- **Blocker**: none — prerequisites (DoA loop, persona swap, recording pipeline, transcript broadcast) all shipped or in-tree.
 - **Fresh-prompt kickoff**: paste the block from `handoffs/2026-04-22-meeting.md` into a new Zero session.
-- **Linked ideas**: II-002 (meeting-mode persona swap), II-003 (nod on highlight), UP-005 (mediapipe migration — if meeting vision lands).
-- **Notes**: User confirmed this is the highest-priority capability investment as of 2026-04-22.
+- **Linked ideas**: II-002 (meeting-mode persona swap — warm), II-003 (nod on highlight — warm, structurally unblocked), UP-005 (MediaPipe), UP-010 (object detector — **new, hot**).
+- **Notes**: Highest-priority capability investment as of 2026-04-22. Still unstarted at 2026-04-24. Pair with REQ-002 verification session to amortise context.
 
 ## Archived / verified
 
-_(none yet — first audit.)_
+_(none yet.)_
 
 ## Lifecycle guide
 
@@ -28,21 +52,13 @@ _(none yet — first audit.)_
 | `researched` | Triaged; upstream + dependencies identified | Promotes when a code plan exists |
 | `planned` | Has a handoff doc or execution plan | User/claude action begins |
 | `integrated` | Code on `main`, smoke tests pass | Awaits verification on physical robot |
+| `integrated-awaiting-verify` | Code works in working-tree but not yet committed / physically tested | Transient; flags Verification Debt if > 48 h |
 | `verified` | Live-tested, committed, no regressions | Archive after 30 days |
 
-A request stuck in `pending` for >14 days triggers a nudge in the audit report (Backlog Debt metric).
+A request stuck in `pending` >14 days triggers Backlog Debt. A request stuck in `integrated-awaiting-verify` >48 h triggers Verification Debt (new 2026-04-24).
 
 ## How to file a new request
 
 ```
 /zero-reachy-audit --ask "I want Reachy to <thing>"
 ```
-
-The skill will:
-1. Append a `pending` entry here with a triage stub.
-2. Map it to a dimension.
-3. Scan upstream for anything that unlocks it (Phase 3).
-4. Identify the minimum code delta.
-5. Propose the next state (`researched` or `planned`).
-
-It will **not** write any code — that's a separate session. This log is a backlog, not an executor.

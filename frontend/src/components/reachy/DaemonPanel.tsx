@@ -20,7 +20,9 @@ import {
   useDaemonLogs,
   useDaemonStatus,
   useDaemonWatchdog,
+  useDockerStatus,
   useReachyStatus,
+  useRelink,
   useRetryHardwareScan,
   useRestartDaemon,
   useResetAudio,
@@ -84,6 +86,7 @@ export function DaemonPanel() {
   const [showLogs, setShowLogs] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const [userToggled, setUserToggled] = useState(false)
+  const [showHardwareFix, setShowHardwareFix] = useState(false)
 
   useEffect(() => {
     if (!userToggled && (!daemonConnected || (daemonConnected && !robotReady))) setIsOpen(true)
@@ -91,6 +94,7 @@ export function DaemonPanel() {
 
   const daemon = useDaemonStatus(isOpen ? 5_000 : 15_000)
   const watchdog = useDaemonWatchdog(isOpen ? 10_000 : 30_000)
+  const dockerStatus = useDockerStatus(isOpen ? 5_000 : 30_000)
   const logs = useDaemonLogs(200, showLogs, 3_000)
   const diagnostics = useDaemonDiagnostics(showDiagnostics)
 
@@ -100,6 +104,7 @@ export function DaemonPanel() {
   const retryScan = useRetryHardwareScan()
   const resetAudio = useResetAudio()
   const setWatchdog = useSetWatchdog()
+  const relink = useRelink()
   const { toast } = useToast()
 
   const supervisorReachable = daemon.status === 'success'
@@ -119,6 +124,20 @@ export function DaemonPanel() {
   )
   const shouldRetryScan = motorBusMissing || hardwareFaultActive || (daemonConnected && !robotReady)
   const watchdogEnabled = watchdog.data?.enabled ?? false
+
+  const dockerState = dockerStatus.data?.state ?? 'unknown'
+  const dockerReady = dockerState === 'ready'
+  const watchdogFailures = watchdog.data?.consecutive_failures ?? 0
+  // Surface Smart Re-link instead of Restart when there's a stuck/unhealthy
+  // condition the user would want to recover from. Specifically: the daemon
+  // is unreachable, Docker isn't ready, or the watchdog has accumulated
+  // failures (we don't want to require a hard restart in that case — the
+  // relink primitive figures out whether to wait or restart).
+  const smartRelinkApplies =
+    !daemonConnected ||
+    !dockerReady ||
+    watchdogFailures > 0 ||
+    !supervisorReachable
 
   const [lastAction, setLastAction] = useState<LastActionState>({ state: 'idle' })
 
@@ -146,8 +165,27 @@ export function DaemonPanel() {
       ? 'bg-yellow-500/10 border-yellow-500/30'
       : 'bg-red-500/10 border-red-500/30'
 
-  const recoveryLabel = shouldRetryScan ? 'Retry hardware scan' : 'Restart daemon'
-  const recoveryPending = shouldRetryScan ? retryScan.isPending : restart.isPending
+  // Recovery button precedence (top wins):
+  //   1. motor bus missing / hardware fault  -> Retry hardware scan
+  //   2. daemon offline OR Docker not ready  -> Smart Re-link (waits for
+  //      Docker, restarts daemon when Docker is up — replaces sticky failures)
+  //   3. otherwise                            -> Restart daemon (clean restart)
+  const useRelinkButton = !shouldRetryScan && smartRelinkApplies
+  const recoveryLabel = shouldRetryScan
+    ? 'Retry hardware scan'
+    : useRelinkButton
+      ? 'Smart Re-link'
+      : 'Restart daemon'
+  const recoveryPending = shouldRetryScan
+    ? retryScan.isPending
+    : useRelinkButton
+      ? relink.isPending
+      : restart.isPending
+  const recoveryTitle = shouldRetryScan
+    ? 'Restart the daemon once and refresh hardware status without enabling motion'
+    : useRelinkButton
+      ? 'Re-probe Docker, clear watchdog churn, and restart the daemon when the backend is ready'
+      : 'Restart the Reachy daemon'
   const describeRecovery = (r: unknown) => {
     if (shouldRetryScan) {
       const result = r as { detail?: string; ok?: boolean; assistant?: { robot_ready?: boolean; robot_detail?: string } }
@@ -157,8 +195,19 @@ export function DaemonPanel() {
           : result.assistant?.robot_detail ?? 'Hardware scan completed.'
       )
     }
+    if (useRelinkButton) {
+      const result = r as { action?: string; detail?: string }
+      return result.detail ?? (result.action === 'waiting'
+        ? 'Backend is still warming up. host_agent will keep checking and link automatically.'
+        : 'Backend is up; restarted the Reachy daemon.')
+    }
     const pid = (r as { pid?: number })?.pid
     return pid ? `new pid ${pid}` : 'restarted'
+  }
+  const invokeRecovery = () => {
+    if (shouldRetryScan) return retryScan.mutateAsync('daemon_panel')
+    if (useRelinkButton) return relink.mutateAsync()
+    return restart.mutateAsync()
   }
 
   return (
@@ -220,16 +269,61 @@ export function DaemonPanel() {
 
       {isOpen && (
         <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-4">
-          {!supervisorReachable && !daemon.isPending && (
-            <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-500/10 border border-yellow-500/30">
-              <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
-              <div className="text-xs text-yellow-200">
-                Host agent isn't responding. Repair the full Zero + Reachy startup
-                path with{' '}
-                <code className="bg-black/40 px-1 rounded">C:\code\zero\start-zero.bat</code>.
-              </div>
-            </div>
+          <BackendStatusRow status={dockerStatus.data} loading={dockerStatus.isLoading} />
+
+          {hardwareFaultActive && (
+            <HardwareFaultBanner
+              robotDetail={robotDetail ?? null}
+              hardwareFaultDetail={hardwareFaultSource?.detail ?? null}
+              hardwareIssues={hardwareRaw?.issues ?? []}
+              motorBusMissing={motorBusMissing}
+              showFix={showHardwareFix}
+              setShowFix={setShowHardwareFix}
+              onRetryScan={() =>
+                call(() => retryScan.mutateAsync('hardware_fault_banner'), 'Retry hardware scan', describeRecovery)
+              }
+              retryPending={retryScan.isPending}
+            />
           )}
+
+          {!supervisorReachable && !daemon.isPending && (() => {
+            // Distinguish "host_agent is actually down" from "host_agent is up
+            // but the daemon-probe inside supervisor.status() is taking too
+            // long." If /host/docker_status responded recently, host_agent is
+            // alive on :18796 and the right action is Smart Re-link, not
+            // running start-zero.bat.
+            const dockerSucceededRecently =
+              dockerStatus.status === 'success' && dockerStatus.data != null
+            const tone = dockerSucceededRecently
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-100'
+              : 'bg-red-500/10 border-red-500/30 text-red-100'
+            const title = dockerSucceededRecently
+              ? 'Reachy daemon probe is slow'
+              : "Host agent isn't responding"
+            const detail = dockerSucceededRecently
+              ? 'host_agent is reachable but its supervisor probe to the Reachy daemon is taking too long. Click Smart Re-link to refresh the link.'
+              : "host_agent on :18796 is unreachable. If this persists after a restart, repair via C:\\code\\zero\\start-zero.bat."
+            return (
+              <div className={`flex items-start justify-between gap-3 p-3 rounded-md border ${tone}`}>
+                <div className="flex items-start gap-2 min-w-0">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div className="text-xs">
+                    <div className="font-semibold">{title}</div>
+                    <div className="mt-0.5 opacity-90">{detail}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => call(() => relink.mutateAsync(), 'Smart Re-link', describeRecovery)}
+                  disabled={relink.isPending}
+                  className="shrink-0 rounded-md border border-current/40 bg-black/30 px-2.5 py-1.5 text-xs font-semibold hover:bg-black/50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`inline w-3.5 h-3.5 mr-1 ${relink.isPending ? 'animate-spin' : ''}`} />
+                  Smart Re-link
+                </button>
+              </div>
+            )
+          })()}
 
           {(() => {
             const cacheAge = (daemon.data as { cache_age_seconds?: number } | undefined)?.cache_age_seconds
@@ -298,20 +392,10 @@ export function DaemonPanel() {
           {supervisorReachable ? (
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() =>
-                call(
-                  () => shouldRetryScan ? retryScan.mutateAsync('daemon_panel') : restart.mutateAsync(),
-                  recoveryLabel,
-                  describeRecovery,
-                )
-              }
+              onClick={() => call(invokeRecovery, recoveryLabel, describeRecovery)}
               disabled={recoveryPending}
               className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 text-white bg-indigo-600/40 border-indigo-500/50"
-              title={
-                shouldRetryScan
-                  ? 'Restart the daemon once and refresh hardware status without enabling motion'
-                  : 'Restart the Reachy daemon'
-              }
+              title={recoveryTitle}
             >
               <RefreshCw className={`w-4 h-4 ${recoveryPending ? 'animate-spin' : ''}`} />
               {recoveryLabel}
@@ -453,6 +537,168 @@ export function DaemonPanel() {
             />
           )}
         </div>
+      )}
+    </div>
+  )
+}
+
+type DockerReadinessLike =
+  | {
+      state: 'unknown' | 'waiting' | 'ready' | 'unreachable'
+      last_check: string | null
+      last_ready: string | null
+      last_error: string | null
+      consecutive_failures: number
+      consecutive_ready: number
+      probe_count: number
+      next_probe_in_s: number
+      backend_url: string
+    }
+  | undefined
+
+function BackendStatusRow({
+  status,
+  loading,
+}: {
+  status: DockerReadinessLike
+  loading: boolean
+}) {
+  if (loading && !status) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-gray-400 px-3 py-2 rounded-md bg-gray-500/5 border border-gray-700">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        <span>Checking backend (Docker)…</span>
+      </div>
+    )
+  }
+  if (!status) return null
+  const tone =
+    status.state === 'ready'
+      ? { dot: 'bg-green-400', border: 'border-green-500/30', bg: 'bg-green-500/5', text: 'text-green-200' }
+      : status.state === 'unreachable'
+        ? { dot: 'bg-red-400', border: 'border-red-500/30', bg: 'bg-red-500/10', text: 'text-red-200' }
+        : { dot: 'bg-amber-400', border: 'border-amber-500/30', bg: 'bg-amber-500/10', text: 'text-amber-100' }
+  const label =
+    status.state === 'ready'
+      ? 'ready'
+      : status.state === 'unreachable'
+        ? 'unreachable'
+        : status.state === 'waiting'
+          ? 'waiting for Docker'
+          : 'unknown'
+  const subline =
+    status.state === 'ready'
+      ? `Docker backend reachable at ${status.backend_url}.`
+      : status.state === 'unreachable'
+        ? `host_agent has been unable to reach ${status.backend_url} for ${status.consecutive_failures} probes. Click Smart Re-link or check that Docker Desktop is running.`
+        : status.state === 'waiting'
+          ? `host_agent is polling ${status.backend_url} (next probe in ${Math.round(status.next_probe_in_s)}s). Reachy will link automatically once Docker is up.`
+          : `Awaiting first probe of ${status.backend_url}.`
+  return (
+    <div className={`flex items-start gap-2 px-3 py-2 rounded-md border ${tone.border} ${tone.bg}`}>
+      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 ${tone.dot}`} />
+      <div className={`text-xs ${tone.text}`}>
+        <div className="font-semibold">Backend (Docker) — {label}</div>
+        <div className="mt-0.5 text-[11px] opacity-80">{subline}</div>
+        {status.last_error && status.state !== 'ready' && (
+          <div className="mt-0.5 text-[11px] opacity-60 break-all">last error: {status.last_error}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function parseMotorFaultFromDetail(detail: string | null): { motor: string; errors: string } | null {
+  if (!detail) return null
+  // The daemon emits robot_detail strings like:
+  //   "Motor hardware fault: left_antenna: ['Overload Error']"
+  // or a comma-list of motors. Extract the first motor + its errors so we
+  // can headline it in the banner without dumping the whole noisy string.
+  const m = detail.match(/Motor[s]? hardware fault[:\s]+([\w_]+)\s*:\s*(\[[^\]]*\])/i)
+  if (!m) return null
+  return { motor: m[1], errors: m[2] }
+}
+
+function HardwareFaultBanner({
+  robotDetail,
+  hardwareFaultDetail,
+  hardwareIssues,
+  motorBusMissing,
+  showFix,
+  setShowFix,
+  onRetryScan,
+  retryPending,
+}: {
+  robotDetail: string | null
+  hardwareFaultDetail: string | null
+  hardwareIssues: HardwareIssueItem[]
+  motorBusMissing: boolean
+  showFix: boolean
+  setShowFix: (v: boolean) => void
+  onRetryScan: () => void
+  retryPending: boolean
+}) {
+  const parsed = parseMotorFaultFromDetail(robotDetail) ?? parseMotorFaultFromDetail(hardwareFaultDetail)
+  const headline = parsed
+    ? `Motor hardware fault: ${parsed.motor} ${parsed.errors}`
+    : motorBusMissing
+      ? 'Motor bus is missing — power/connector issue suspected'
+      : (robotDetail || hardwareFaultDetail || 'Hardware fault detected')
+
+  return (
+    <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2 min-w-0">
+          <XCircle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-red-100">Reachy hardware fault</div>
+            <div className="text-xs text-red-200 mt-0.5 break-words">{headline}</div>
+            <div className="text-[11px] text-red-300/80 mt-0.5">
+              Body motion is locked while this fault is active.
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRetryScan}
+          disabled={retryPending}
+          className="shrink-0 rounded-md border border-red-400/40 bg-black/30 px-2.5 py-1.5 text-xs font-semibold text-red-100 hover:bg-black/50 disabled:opacity-50"
+        >
+          <RefreshCw className={`inline w-3.5 h-3.5 mr-1 ${retryPending ? 'animate-spin' : ''}`} />
+          Retry hardware scan
+        </button>
+      </div>
+      <button
+        type="button"
+        onClick={() => setShowFix(!showFix)}
+        className="text-[11px] text-red-200 underline-offset-2 hover:underline"
+      >
+        {showFix ? 'Hide' : 'How to fix this'}
+      </button>
+      {showFix && (
+        <ol className="text-xs text-red-100 list-decimal list-inside space-y-1 pl-1">
+          <li>Power Reachy off completely (unplug the motor power supply).</li>
+          {parsed?.motor.includes('antenna') ? (
+            <li>
+              Inspect the <strong>{parsed.motor.replace('_', ' ')}</strong>: bent stem, hair/cable
+              caught at the base, loose 4-pin Dynamixel connector, or binding against the head shell.
+              Rotate the antenna by hand — it should turn freely with light resistance.
+            </li>
+          ) : motorBusMissing ? (
+            <li>Reconnect the motor power supply and the USB-to-serial bridge between Reachy and the host.</li>
+          ) : (
+            <li>Inspect the affected motor for mechanical jam, loose connector, or damaged wiring.</li>
+          )}
+          <li>Power back on and click <strong>Retry hardware scan</strong> above.</li>
+          <li>If the fault returns within 5 s, the joint is still bound or the servo gearbox is damaged. Repeat steps 1–3 or replace the assembly.</li>
+        </ol>
+      )}
+      {hardwareIssues.length > 0 && (
+        <ul className="text-[11px] text-red-200/80 space-y-0.5 pl-1">
+          {hardwareIssues.slice(0, 3).map((issue, i) => (
+            <li key={`${issue.id ?? i}`}>• {issue.title ?? issue.id}{issue.detail ? `: ${issue.detail}` : ''}</li>
+          ))}
+        </ul>
       )}
     </div>
   )

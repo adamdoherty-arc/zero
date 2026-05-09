@@ -24,10 +24,13 @@ import {
   ArrowLeftRight,
   Speaker,
   Eye,
+  CheckCircle2,
+  AlertTriangle,
+  Wrench,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
-import { useRealtimeVoice } from '@/hooks/useRealtimeVoice'
+import { useSharedRealtimeVoice } from '@/hooks/useSharedRealtimeVoice'
 import {
   useVolume,
   useSetVolume,
@@ -37,15 +40,26 @@ import {
   useWakeWordStatus,
   useCameraStatus,
   useLookAt,
+  useReachyAssistantStatus,
+  useActivateReachyAssistant,
+  useSettleReachyAssistant,
+  useRecoverReachyRealtime,
+  usePatchCompanionPolicy,
+  useReachyCompanionStatus,
+  type ReachyAssistantStep,
+  type ReachyAssistantActivity,
+  type ReachyMotionSource,
+  type ReachyBodyActivity,
+  type ReachyHardwareIssueStatus,
 } from '@/hooks/useReachyApi'
 
 /**
- * Three panels that round out the Reachy Management page so it surfaces
+ * Three panels that round out the Reachy Assistant page so it surfaces
  * every backend capability the user can actually drive from the UI:
  *
  *  - <InteractiveModeHero/>: page-level live-conversation toggle. Bigger
  *    than the TopBar pill — shows duration, cost, partial transcript, and
- *    an end-session button. Connects to the same useRealtimeVoice hook so
+ *    an end-session button. Connects through the shared realtime provider so
  *    starting from here ↔ TopBar is the same session.
  *  - <HardwarePanel/>: camera state, speaker + mic volume, wake-word mode,
  *    motor compliance, quick test-sound. All hit existing endpoints in
@@ -55,6 +69,7 @@ import {
  */
 
 type Backend = 'openai' | 'gemini' | 'local'
+type AssistantInputSource = 'reachy' | 'browser'
 
 interface RealtimeCfg {
   backend: Backend
@@ -86,8 +101,40 @@ const BACKEND_LABEL: Record<string, string> = {
 // backends. Local is always available (no key), so it sits at the end.
 const BACKEND_CYCLE: Backend[] = ['openai', 'gemini', 'local']
 
+const MIC_HEALTH_LABEL: Record<string, string> = {
+  ok: 'mic receiving',
+  no_signal: 'mic silent',
+  waiting_for_signal: 'mic opening',
+  waiting_for_speech: 'listening',
+  low_confidence: 'mic uncertain',
+  too_quiet: 'mic quiet',
+  audio_not_speech: 'noise only',
+  unknown: 'mic ready',
+}
+
+function formatLiveIssue(
+  stalledReason: string | null,
+  inputHealth: { last_error?: string | null; suggested_action?: string | null } | null,
+  outputHealth: { last_error?: string | null } | null,
+) {
+  if (inputHealth?.last_error) {
+    if (/no usable microphone stream|digital silence|no audio frames/i.test(inputHealth.last_error)) {
+      return 'Reachy mic is connected but sending silence/no frames. Use Computer mic, then replug or repair the Reachy audio device.'
+    }
+    return inputHealth.last_error
+  }
+  if (outputHealth?.last_error) return outputHealth.last_error
+  if (
+    stalledReason === 'reachy_mic_no_signal' ||
+    inputHealth?.suggested_action === 'switch_to_browser_mic'
+  ) {
+    return 'Reachy microphone is open but no speech signal is arriving. Switch to Computer mic.'
+  }
+  return stalledReason
+}
+
 // -------------------------------------------------------------------------
-// Interactive Mode hero (page-level, larger surface than the TopBar pill)
+// Robot Assistant hero (page-level, larger surface than the TopBar pill)
 // -------------------------------------------------------------------------
 
 export function InteractiveModeHero() {
@@ -97,15 +144,24 @@ export function InteractiveModeHero() {
   const [textInput, setTextInput] = useState('')
   const [showTranscript, setShowTranscript] = useState(false)
   const [swapping, setSwapping] = useState(false)
+  const [inputSource, setInputSource] = useState<AssistantInputSource>('browser')
+  const inputSourceChoiceRef = useRef<AssistantInputSource>('browser')
   const [models, setModels] = useState<Record<string, { id: string; label: string; description?: string }[]>>({})
   const [profiles, setProfiles] = useState<{ id: string; label: string }[]>([])
   const [savingCfg, setSavingCfg] = useState(false)
-  const voice = useRealtimeVoice()
+  const voice = useSharedRealtimeVoice()
   const startedAtRef = useRef<number | null>(null)
   const connectStartedAtRef = useRef<number | null>(null)
   const { data: speakerVol } = useVolume('speaker')
   const setSpeakerVol = useSetVolume('speaker')
   const lookAt = useLookAt()
+  const assistant = useReachyAssistantStatus(5_000)
+  const companion = useReachyCompanionStatus(5_000)
+  const activateAssistant = useActivateReachyAssistant()
+  const patchPolicy = usePatchCompanionPolicy()
+  const settleAssistant = useSettleReachyAssistant()
+  const recoverRealtime = useRecoverReachyRealtime()
+  const [quietMode, setQuietMode] = useState(false)
 
   const refreshCfg = async () => {
     try {
@@ -139,6 +195,11 @@ export function InteractiveModeHero() {
       })
       .catch(() => undefined)
   }, [])
+
+  const chooseInputSource = (source: AssistantInputSource) => {
+    inputSourceChoiceRef.current = source
+    setInputSource(source)
+  }
 
   // PUT /config helper used by the pre-start picker. Fire-and-forget; we
   // refresh the local cfg state from the server response so the picker
@@ -192,10 +253,149 @@ export function InteractiveModeHero() {
   }, [voice.state])
 
   const realtimeAvailable = Boolean(cfg?.realtime_available)
-  const effectiveBackend = cfg?.preferred_backend ?? cfg?.backend ?? 'gemini'
+  const effectiveBackend = cfg?.preferred_backend ?? cfg?.backend ?? 'local'
   const connected = voice.state === 'connected'
   const connecting = voice.state === 'connecting'
   const errored = voice.state === 'error'
+  const assistantState = assistant.data?.state ?? 'offline'
+  const repairRequired = assistantState === 'repair_required'
+  const bodyActivity = assistant.data?.body_activity ?? 'unknown'
+  const activeSources = assistant.data?.active_source_ids ?? []
+  const bodyMotionEnabled = voice.bodyMotion
+  const sessionPhase = voice.sessionPhase !== 'idle'
+    ? voice.sessionPhase
+    : assistant.data?.session_phase ?? 'idle'
+  const stalledReason = voice.stalledReason ?? assistant.data?.stalled_reason ?? null
+  const liveInputHealth = voice.inputHealth ?? assistant.data?.input_health ?? null
+  const liveOutputHealth = voice.outputHealth ?? assistant.data?.output_health ?? null
+  const liveIssueText = formatLiveIssue(stalledReason, liveInputHealth, liveOutputHealth)
+  const currentInputSource: AssistantInputSource =
+    connected || connecting
+      ? (voice.inputSource ??
+          (liveInputHealth?.source?.includes('reachy')
+            ? 'reachy'
+            : liveInputHealth?.source?.includes('browser')
+              ? 'browser'
+              : inputSource))
+      : inputSource
+  const reachyMicNeedsFallback =
+    stalledReason === 'reachy_mic_no_signal' ||
+    liveInputHealth?.suggested_action === 'switch_to_browser_mic'
+  const staleBrowserMicError = Boolean(
+    connected &&
+      currentInputSource === 'reachy' &&
+      voice.error &&
+      /microphone permission denied|computer mic permission/i.test(voice.error) &&
+      !reachyMicNeedsFallback &&
+      !/reachy microphone is silent/i.test(voice.error)
+  )
+  const connectedVoiceError =
+    voice.error && !staleBrowserMicError && voice.error !== liveIssueText ? voice.error : null
+  const browserMicUnavailable = Boolean(
+    connected &&
+      currentInputSource === 'browser' &&
+      ((voice.inputDevice &&
+        /computer microphone unavailable|microphone blocked/i.test(voice.inputDevice)) ||
+        (voice.error &&
+          /computer microphone unavailable|microphone permission|permission denied|allow microphone/i.test(
+            voice.error,
+          )))
+  )
+  const inputConfidence =
+    browserMicUnavailable || reachyMicNeedsFallback
+      ? 'no_signal'
+      : (liveInputHealth?.confidence_state ?? 'unknown')
+  const micLabel = browserMicUnavailable
+    ? 'mic blocked'
+    : inputConfidence === 'no_signal'
+    ? 'mic silent'
+    : !voice.inputReady
+    ? 'mic opening'
+    : (MIC_HEALTH_LABEL[inputConfidence] ?? 'mic ready')
+  const micTone =
+    inputConfidence === 'no_signal'
+      ? 'text-red-200 bg-red-500/15'
+      : inputConfidence === 'too_quiet' ||
+          inputConfidence === 'low_confidence' ||
+          inputConfidence === 'audio_not_speech'
+        ? 'text-amber-200 bg-amber-500/15'
+        : inputConfidence === 'ok'
+          ? 'text-emerald-300 bg-emerald-500/10'
+          : 'text-zinc-300 bg-zinc-800'
+  const showMicHealthDetail = Boolean(
+    connected &&
+      liveInputHealth &&
+      inputConfidence !== 'ok' &&
+      inputConfidence !== 'unknown' &&
+      (liveInputHealth.last_error || inputConfidence === 'no_signal' || liveInputHealth.empty_stt_count > 0),
+  )
+  const hardwareIssues = assistant.data?.hardware_issues
+  const hardwareFaultSource = assistant.data?.motion_sources?.find((source) => source.id === 'hardware_faults')
+  const hardwareFaultRaw = hardwareFaultSource?.raw as ReachyHardwareIssueStatus | undefined
+  const hardwarePowerIssue = Boolean(hardwareIssues?.power_issue || hardwareFaultRaw?.power_issue)
+  const firstHardwareFault = hardwareIssues?.faults?.[0] ?? hardwareFaultRaw?.faults?.[0]
+  const hardwareActiveFault = Boolean(
+    hardwareIssues?.active ||
+      hardwareFaultRaw?.active ||
+      activeSources.includes('hardware_faults'),
+  )
+  const hardwareStaleFault = Boolean(
+    firstHardwareFault &&
+      !hardwareActiveFault &&
+      !hardwarePowerIssue &&
+      (hardwareIssues?.stale || hardwareFaultRaw?.stale || firstHardwareFault.stale),
+  )
+  const hardwareUnavailable = hardwarePowerIssue || hardwareActiveFault
+  const companionPolicy = companion.data?.policy
+  const companionActions = companionPolicy?.allowed_actions ?? []
+  const companionBodyMotionEnabled = Boolean(
+    companionPolicy?.body_motion_enabled && companionActions.includes('body_motion'),
+  )
+  const bodyMotionAvailable = Boolean(
+    companionBodyMotionEnabled &&
+      assistant.data?.robot_ready &&
+      assistant.data?.body_control_mode === 'enabled' &&
+      !hardwareUnavailable,
+  )
+  const firstHardwareIssue = hardwareIssues?.issues?.[0] ?? hardwareFaultRaw?.issues?.[0]
+  const hardwareIssueTitle =
+    firstHardwareIssue?.title ??
+    (hardwarePowerIssue
+      ? 'Reachy motor bus is not detected'
+      : firstHardwareFault?.motor
+        ? hardwareStaleFault
+          ? `Previous Reachy motor overload: ${firstHardwareFault.motor}`
+          : `Reachy motor overload: ${firstHardwareFault.motor}`
+        : hardwareActiveFault
+          ? 'Reachy motor overload detected'
+          : null)
+  const hardwareIssueDetail =
+    firstHardwareIssue?.detail ??
+    firstHardwareIssue?.hint ??
+    (hardwarePowerIssue
+      ? 'USB and audio are visible, but the daemon cannot see the motors. Check Reachy motor power and the motor/power connector.'
+      : firstHardwareFault
+        ? hardwareStaleFault
+          ? `The daemon previously logged ${firstHardwareFault.error ?? 'a hardware fault'}${firstHardwareFault.count ? ` ${firstHardwareFault.count} times` : ''}. Inspect the actuator/linkage before retrying; Start Robot Assistant will retry the daemon carefully.`
+          : `The daemon logged ${firstHardwareFault.error ?? 'a hardware fault'}${firstHardwareFault.count ? ` ${firstHardwareFault.count} times` : ''}. Body motion is blocked until the actuator/linkage is checked and the robot is power-cycled.`
+      : null)
+  const bodyLabel: Record<string, string> = {
+    still: 'Body still',
+    moving: 'Body moving',
+    settling: 'Settling',
+    shaky: 'Body shaky',
+    unknown: hardwareUnavailable ? (hardwarePowerIssue ? 'Body unpowered' : 'Body protected') : 'Body unknown',
+  }
+  const bodyTint =
+    hardwareUnavailable
+      ? 'bg-amber-500/10 text-amber-100 border-amber-500/40'
+      : bodyActivity === 'still'
+      ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30'
+      : bodyActivity === 'moving'
+        ? 'bg-indigo-500/10 text-indigo-200 border-indigo-500/30'
+        : bodyActivity === 'shaky'
+          ? 'bg-red-500/10 text-red-200 border-red-500/40'
+          : 'bg-zinc-800/70 text-zinc-400 border-zinc-700'
 
   // Compute the next backend in the 3-way cycle that is actually available.
   // Local is always available (no key), so it always shows up.
@@ -231,22 +431,82 @@ export function InteractiveModeHero() {
 
   const startSession = async (overrideBackend?: Backend) => {
     if (!cfg) return
+    if (repairRequired) {
+      const command = assistant.data?.repair_command ?? 'C:\\code\\zero\\start-zero.bat'
+      try {
+        await navigator.clipboard.writeText(command)
+      } catch {
+        /* clipboard is best effort */
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Host agent needs repair',
+        description: command,
+      })
+      return
+    }
     const target = overrideBackend ?? (effectiveBackend as Backend)
     // Local doesn't need keys; only gate cloud backends.
     if (target !== 'local' && !realtimeAvailable) {
       toast({
         variant: 'destructive',
-        title: 'Interactive Mode needs an API key',
+        title: 'Robot Assistant needs an API key',
         description:
           'Add OpenAI or Gemini key, or swap to Local (vLLM) which runs on-device.',
       })
       return
     }
+    const shouldEnableBodyMotion = companionBodyMotionEnabled && !quietMode && !hardwareUnavailable
+    const activation = await activateAssistant.mutateAsync({
+      persona: cfg.profile || 'companion',
+      voice_mode: 'live',
+      enable_ambient: false,
+      start_daemon: true,
+      enable_body_motion: shouldEnableBodyMotion,
+      wake_robot: shouldEnableBodyMotion,
+    })
+    if (activation.state === 'repair_required') {
+      const command = activation.repair_command
+      try {
+        await navigator.clipboard.writeText(command)
+      } catch {
+        /* clipboard is best effort */
+      }
+      toast({
+        variant: 'destructive',
+        title: 'Run the Zero startup repair',
+        description: command,
+      })
+      return
+    }
+    const selectedInputSource = inputSourceChoiceRef.current
+    const sessionInputSource: AssistantInputSource =
+      selectedInputSource === 'reachy' ? 'reachy' : 'browser'
+    void refreshCfg()
     await voice.start({
       backend: target,
-      profile: cfg.profile,
+      profile: cfg.profile || 'companion',
       voice: cfg.voice,
       model: cfg.model,
+      body_motion: shouldEnableBodyMotion,
+      input_source: sessionInputSource,
+    })
+  }
+
+  const handleSettle = async () => {
+    voice.setBodyMotion(false)
+    const result = await settleAssistant.mutateAsync({
+      keep_motors_enabled: bodyMotionAvailable,
+      neutral_pose: 'skip',
+      reason: connected ? 'live_console' : 'user',
+    })
+    toast({
+      title: result.body_activity === 'shaky' ? 'Reachy settled, but jitter remains' : 'Reachy settled',
+      description:
+        result.active_source_ids.length > 0
+          ? `Still active: ${result.active_source_ids.join(', ')}`
+          : 'Body motion sources are clear.',
+      variant: result.body_activity === 'shaky' ? 'destructive' : 'default',
     })
   }
 
@@ -305,6 +565,89 @@ export function InteractiveModeHero() {
     await voice.cancel()
     await new Promise((r) => setTimeout(r, 50))
     await startSession()
+  }
+
+  const handleRecoverVoice = async () => {
+    await recoverRealtime.mutateAsync('console')
+    voice.cancelResponse()
+    toast({
+      title: 'Voice recovered',
+      description: 'Cleared the current response, speaker queue, and motion state.',
+    })
+  }
+
+  const handleSwitchMic = async () => {
+    const next: AssistantInputSource = currentInputSource === 'reachy' ? 'browser' : 'reachy'
+    if (connected) {
+      await voice.switchInputSource(next)
+    }
+    chooseInputSource(next)
+    toast({
+      title: next === 'browser' ? 'Using computer mic' : 'Using Reachy mic',
+      description: connected ? 'Live session kept open.' : 'Mic source will be used on next start.',
+    })
+  }
+
+  const handleQuietMode = () => {
+    const next = !quietMode
+    setQuietMode(next)
+    if (connected) {
+      voice.setMuted(next)
+      voice.setBodyMotion(false)
+    }
+  }
+
+  const handleAutoMotion = async () => {
+    if (!connected) return
+    const next = !bodyMotionEnabled
+    if (!next) {
+      voice.setBodyMotion(false)
+      return
+    }
+    if (hardwareUnavailable) {
+      toast({
+        variant: 'destructive',
+        title: hardwareIssueTitle ?? 'Body motion protected',
+        description: hardwareIssueDetail ?? 'Clear the hardware warning before enabling automatic motion.',
+      })
+      return
+    }
+    try {
+      if (companionPolicy && !companionBodyMotionEnabled) {
+        await patchPolicy.mutateAsync({
+          body_motion_enabled: true,
+          allowed_actions: Array.from(new Set([...companionActions, 'body_motion'])),
+        })
+      }
+      const activation = await activateAssistant.mutateAsync({
+        persona: cfg?.profile || 'companion',
+        voice_mode: 'live',
+        enable_ambient: false,
+        start_daemon: true,
+        enable_body_motion: true,
+        wake_robot: true,
+      })
+      const ready = Boolean(activation.robot_ready || activation.body_control_mode === 'enabled')
+      if (!ready) {
+        toast({
+          variant: 'destructive',
+          title: 'Body is not ready yet',
+          description: activation.robot_detail ?? 'Retry hardware scan, then enable body motion again.',
+        })
+        return
+      }
+      voice.setBodyMotion(true)
+      toast({
+        title: 'Automatic motion enabled',
+        description: 'Daemon, policy, and motor control are ready for this live session.',
+      })
+    } catch (err) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not enable automatic motion',
+        description: String(err),
+      })
+    }
   }
 
   const handleSendText = () => {
@@ -368,12 +711,12 @@ export function InteractiveModeHero() {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-zinc-100">
               {connected
-                ? 'Interactive Mode — live'
+                ? 'Robot Assistant - listening'
                 : connecting
-                  ? `Connecting… (${connectingSec}s)`
+                  ? `Opening ${inputSource === 'browser' ? 'computer mic' : 'Reachy mic'}… (${connectingSec}s)`
                   : errored
-                    ? 'Interactive Mode — error'
-                    : 'Interactive Mode'}
+                    ? 'Robot Assistant - error'
+                    : 'Robot Assistant'}
             </span>
             {connected && (
               <>
@@ -388,6 +731,14 @@ export function InteractiveModeHero() {
                 <span className="text-[10px] text-zinc-400 px-2 py-0.5 rounded bg-zinc-800">
                   via {BACKEND_LABEL[effectiveBackend] ?? effectiveBackend}
                 </span>
+                {voice.inputReady && (
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded ${micTone}`}
+                    title={liveInputHealth?.last_error ?? voice.inputDevice ?? 'Reachy microphone'}
+                  >
+                    {micLabel}
+                  </span>
+                )}
                 {voice.model && (
                   <span className="text-[10px] text-zinc-400 px-2 py-0.5 rounded bg-zinc-800">
                     {voice.model}
@@ -398,27 +749,57 @@ export function InteractiveModeHero() {
                     voice: {voice.voice}
                   </span>
                 )}
+                <span
+                  className={[
+                    'text-[10px] px-2 py-0.5 rounded',
+                    sessionPhase === 'stalled'
+                      ? 'text-red-200 bg-red-500/15'
+                      : sessionPhase === 'recovering'
+                        ? 'text-amber-200 bg-amber-500/15'
+                        : 'text-emerald-200 bg-emerald-500/10',
+                  ].join(' ')}
+                  title={liveIssueText ?? 'Live session phase'}
+                >
+                  {sessionPhase}
+                </span>
               </>
             )}
             {connecting && (
               <span className="text-[11px] text-amber-300/80">
-                via {BACKEND_LABEL[effectiveBackend] ?? effectiveBackend}
+                {inputSource === 'browser'
+                  ? 'Waiting for model and browser microphone.'
+                  : 'Waiting for model and Reachy microphone over host_agent.'}
               </span>
             )}
             {errored && voice.error && (
               <span className="text-[11px] text-red-300 truncate max-w-md">{voice.error}</span>
             )}
+            {connected && connectedVoiceError && (
+              <span className="text-[11px] text-amber-300 truncate max-w-xl">{connectedVoiceError}</span>
+            )}
             {!connected && !connecting && !errored && (
               <span className="text-[11px] text-zinc-500">
-                {realtimeAvailable
-                  ? `Tap to start a live conversation (${BACKEND_LABEL[effectiveBackend]})`
-                  : 'Add a key in voice settings to enable.'}
+                {repairRequired
+                  ? 'Host agent repair required before Reachy can speak.'
+                  : realtimeAvailable
+                    ? `One-click live assistant (${BACKEND_LABEL[effectiveBackend]})`
+                    : 'Add a key in voice settings to enable.'}
               </span>
             )}
           </div>
           {(partialTranscript || lastFullTurn) && connected && (
             <div className="text-xs text-zinc-300 italic mt-1.5 truncate">
               {partialTranscript ? `you: ${partialTranscript}…` : `${lastFullTurn}`}
+            </div>
+          )}
+          {connected && liveIssueText && (
+            <div className="text-[11px] text-amber-200 mt-1 truncate">
+              {liveIssueText}
+            </div>
+          )}
+          {showMicHealthDetail && liveInputHealth && (
+            <div className="text-[11px] text-zinc-400 mt-1 truncate">
+              Mic confidence: {liveInputHealth.confidence_state} - rms {liveInputHealth.rms.toFixed(5)} - peak {liveInputHealth.peak.toFixed(5)}
             </div>
           )}
         </div>
@@ -449,27 +830,103 @@ export function InteractiveModeHero() {
           </div>
         )}
 
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${bodyTint}`}
+            title={
+              activeSources.length
+                ? `Active motion sources: ${activeSources.join(', ')}`
+                : assistant.data?.pose_jitter?.available
+                  ? `Jitter head ${assistant.data.pose_jitter.head_delta_rad?.toFixed(3) ?? '0'} rad`
+                  : 'Body motion status'
+            }
+          >
+            {bodyActivity === 'shaky' ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+            {hardwareUnavailable
+              ? hardwarePowerIssue
+                ? 'Body unpowered'
+                : 'Body protected'
+              : bodyLabel[bodyActivity] ?? 'Body unknown'}
+          </span>
+
+          <button
+            type="button"
+            onClick={() => void handleSettle()}
+            disabled={settleAssistant.isPending || repairRequired || hardwareUnavailable}
+            className={[
+              'rounded-lg px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-1.5',
+              bodyActivity === 'shaky'
+                ? 'bg-red-600 hover:bg-red-500 text-white'
+                : 'bg-emerald-700/80 hover:bg-emerald-600 text-white',
+              settleAssistant.isPending || repairRequired || hardwareUnavailable ? 'opacity-50 cursor-not-allowed' : '',
+            ].join(' ')}
+            title={
+              hardwareUnavailable
+                ? 'Software motion is already stopped; restore motor power before settling the body'
+                : 'Stop body motion sources and return Reachy to a calm neutral pose'
+            }
+          >
+            {settleAssistant.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
+            Settle
+          </button>
+
         {/* Idle / connected / error: single primary toggle */}
         {!connecting && (
           <button
             type="button"
             onClick={() => void toggle()}
-            disabled={!realtimeAvailable && !connected}
+            disabled={activateAssistant.isPending || (!realtimeAvailable && !connected && !repairRequired)}
             className={[
               'shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
               connected
                 ? 'bg-red-600 hover:bg-red-500 text-white'
                 : errored
                   ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                  : repairRequired
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
                   : realtimeAvailable
                     ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed',
             ].join(' ')}
           >
-            {connected ? 'End session' : errored ? 'Retry' : 'Start'}
+            {activateAssistant.isPending
+              ? 'Starting...'
+              : connected
+                ? 'End session'
+                : repairRequired
+                  ? 'Copy repair command'
+                  : errored
+                    ? 'Retry'
+                    : 'Start Robot Assistant'}
           </button>
         )}
+        </div>
       </div>
+
+      <AssistantReadinessStrip
+        steps={assistant.data?.steps ?? []}
+        loading={assistant.isLoading || activateAssistant.isPending}
+        repairCommand={assistant.data?.repair_command}
+      />
+      {hardwareIssueTitle && (
+        <div className="border-t border-amber-700/40 bg-amber-950/25 px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 text-amber-200 mt-0.5" />
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-amber-100">{hardwareIssueTitle}</div>
+            {hardwareIssueDetail && (
+              <div className="text-xs text-amber-100/80 mt-0.5">{hardwareIssueDetail}</div>
+            )}
+          </div>
+        </div>
+      )}
+      <AssistantMotionStrip
+        bodyActivity={bodyActivity as ReachyBodyActivity}
+        sources={assistant.data?.motion_sources ?? []}
+        loading={assistant.isLoading || settleAssistant.isPending}
+        hardwareUnavailable={hardwareUnavailable}
+        hardwarePowerIssue={hardwarePowerIssue}
+      />
+      <AssistantActivityStrip activity={assistant.data?.recent_activity ?? []} />
 
       {/* ---- Pre-start picker: backend, model, voice, profile ---- */}
       {/* Only shown when off (not connecting / connected). Lets the user */}
@@ -515,6 +972,34 @@ export function InteractiveModeHero() {
           {/* Model picker — uses the catalog from /api/reachy/realtime/models */}
           {/* The local backend's catalog comes from LiteLLM at request time, */}
           {/* so it always reflects what's actually loadable. */}
+          <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider ml-2 mr-1">
+            Mic
+          </span>
+          {(['reachy', 'browser'] as AssistantInputSource[]).map((source) => {
+            const selected = inputSource === source
+            return (
+              <button
+                key={source}
+                type="button"
+                onClick={() => chooseInputSource(source)}
+                className={[
+                  'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5',
+                  selected
+                    ? 'bg-emerald-900/40 border-emerald-600 text-emerald-100'
+                    : 'bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800',
+                ].join(' ')}
+                title={
+                  source === 'reachy'
+                    ? 'Use the Reachy microphone'
+                    : 'Use this browser microphone'
+                }
+              >
+                <Mic className="w-3.5 h-3.5" />
+                {source === 'reachy' ? 'Reachy mic' : 'Computer mic'}
+              </button>
+            )
+          })}
+
           <select
             value={cfg.model || ''}
             disabled={savingCfg}
@@ -566,29 +1051,30 @@ export function InteractiveModeHero() {
         </div>
       )}
 
-      {/* ---- Row 2: cockpit controls (only when live) ---- */}
-      {connected && (
-        <div className="border-t border-emerald-700/30 px-4 py-3 flex flex-wrap items-center gap-2">
+      {/* ---- Row 2: cockpit controls ---- */}
+      <div className="border-t border-emerald-700/30 px-4 py-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => voice.toggleMute()}
+            disabled={!connected}
             className={[
-              'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5',
+              'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5 disabled:opacity-45 disabled:cursor-not-allowed',
               voice.muted
                 ? 'bg-amber-900/40 border-amber-700 text-amber-100'
                 : 'bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800',
             ].join(' ')}
-            title={voice.muted ? 'Mic muted — click to unmute' : 'Mute mic (session stays open)'}
+            title={connected ? (voice.muted ? 'Reachy mic muted - click to unmute' : 'Mute Reachy mic (session stays open)') : 'Start a session to control the live mic'}
           >
             {voice.muted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-            {voice.muted ? 'Muted' : 'Mic on'}
+            {!connected ? 'Mic standby' : voice.muted ? 'Muted' : micLabel}
           </button>
 
           <button
             type="button"
             onClick={() => voice.cancelResponse()}
-            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
-            title="Interrupt the assistant's current reply"
+            disabled={!connected}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-45 disabled:cursor-not-allowed flex items-center gap-1.5"
+            title={connected ? "Interrupt the assistant's current reply" : 'Start a session before interrupting a reply'}
           >
             <Hand className="w-3.5 h-3.5" />
             Interrupt
@@ -596,11 +1082,80 @@ export function InteractiveModeHero() {
 
           <button
             type="button"
+            onClick={() => void handleRecoverVoice()}
+            disabled={recoverRealtime.isPending}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-amber-950/40 border-amber-700/60 text-amber-100 hover:bg-amber-900/60 disabled:opacity-50 flex items-center gap-1.5"
+            title="Flush voice output, cancel the stuck turn, stop motion, and keep the session open"
+          >
+            {recoverRealtime.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+            Recover Voice
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleSwitchMic()}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
+            title="Switch between Reachy mic and computer mic without closing the session"
+          >
+            <Mic className="w-3.5 h-3.5" />
+            {currentInputSource === 'reachy' ? 'Computer mic' : 'Reachy mic'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleQuietMode}
+            className={[
+              'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5',
+              quietMode
+                ? 'bg-amber-900/40 border-amber-700 text-amber-100'
+                : 'bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800',
+            ].join(' ')}
+            title="Mute input and keep body motion off"
+          >
+            {quietMode ? <MicOff className="w-3.5 h-3.5" /> : <Ear className="w-3.5 h-3.5" />}
+            Quiet Mode
+          </button>
+
+          <Link
+            to="/reachy/voice-settings"
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
+            title="Tune companion personality and voice"
+          >
+            <Settings2 className="w-3.5 h-3.5" />
+            Personality
+          </Link>
+
+            <button
+              type="button"
+              onClick={() => void handleAutoMotion()}
+              disabled={!connected}
+            className={[
+              'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5 disabled:opacity-45 disabled:cursor-not-allowed',
+              bodyMotionEnabled
+                ? 'bg-amber-900/40 border-amber-700 text-amber-100'
+                : 'bg-emerald-900/30 border-emerald-700/60 text-emerald-100 hover:bg-emerald-900/50',
+            ].join(' ')}
+            title={
+              !connected
+                ? 'Start a session before enabling automatic body motion'
+                : bodyMotionEnabled
+                ? 'Pause automatic live head/body motion while keeping voice connected'
+                : 'Enable automatic live head/body motion for this session'
+            }
+          >
+            <Radio className="w-3.5 h-3.5" />
+            {bodyMotionEnabled ? 'Auto motion on' : 'Auto motion off'}
+          </button>
+
+          <button
+            type="button"
             onClick={() => void handleSwapBackend()}
-            disabled={swapping || !otherBackendKeyed}
+            disabled={!connected || swapping || !otherBackendKeyed}
             className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             title={
-              otherBackendKeyed
+              !connected
+                ? 'Start a session before swapping backend'
+                : otherBackendKeyed
                 ? `Hot-swap to ${BACKEND_LABEL[otherBackend]} (mic stays live)`
                 : `No ${BACKEND_LABEL[otherBackend]} key configured`
             }
@@ -612,8 +1167,9 @@ export function InteractiveModeHero() {
           <button
             type="button"
             onClick={() => void handleReset()}
-            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
-            title="End and immediately restart the session"
+            disabled={!connected}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-45 disabled:cursor-not-allowed flex items-center gap-1.5"
+            title={connected ? 'End and immediately restart the session' : 'Start a session before resetting voice'}
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Reset
@@ -622,8 +1178,9 @@ export function InteractiveModeHero() {
           <button
             type="button"
             onClick={() => void voice.stop()}
-            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-red-950/40 border-red-700/60 text-red-200 hover:bg-red-900/60 flex items-center gap-1.5"
-            title="Hard-stop the live session"
+            disabled={!connected}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-red-950/40 border-red-700/60 text-red-200 hover:bg-red-900/60 disabled:opacity-45 disabled:cursor-not-allowed flex items-center gap-1.5"
+            title={connected ? 'Hard-stop the live session' : 'No live session to stop'}
           >
             <Square className="w-3.5 h-3.5" />
             End
@@ -638,8 +1195,31 @@ export function InteractiveModeHero() {
             Settings
           </Link>
 
-          {/* Speaker sink — robot speaker is always on (host_agent stream); */}
-          {/* this toggle controls whether browser ALSO plays the audio. */}
+          <div
+            className={[
+              'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5',
+              voice.outputSink === 'reachy_speaker'
+                ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-100'
+                : voice.outputSink === 'unavailable'
+                  ? 'bg-amber-950/40 border-amber-700/60 text-amber-100'
+                  : 'bg-zinc-900/60 border-zinc-700 text-zinc-200',
+            ].join(' ')}
+            title={
+              voice.outputSink === 'reachy_speaker'
+                ? `Assistant voice is routed to ${voice.outputDevice ?? 'the Reachy speaker'}`
+                : voice.outputSink === 'unavailable'
+                  ? 'Reachy speaker stream did not start'
+                  : 'Waiting for Reachy speaker status'
+            }
+          >
+            <Speaker className="w-3.5 h-3.5" />
+            {voice.outputSink === 'reachy_speaker'
+              ? 'Robot speaker'
+              : voice.outputSink === 'unavailable'
+                ? 'Robot speaker unavailable'
+                : 'Robot speaker...'}
+          </div>
+
           <button
             type="button"
             onClick={() => voice.setLocalPlayback(!voice.localPlayback)}
@@ -651,12 +1231,12 @@ export function InteractiveModeHero() {
             ].join(' ')}
             title={
               voice.localPlayback
-                ? 'Audio plays on Reachy AND your PC. Click to silence PC.'
-                : 'Audio plays on Reachy only (recommended). Click to also play on PC.'
+                ? 'Computer speaker fallback is on. Click to silence browser audio.'
+                : 'Computer speaker is muted. Click only if the robot speaker is unavailable.'
             }
           >
             <Speaker className="w-3.5 h-3.5" />
-            {voice.localPlayback ? 'PC + Reachy' : 'Reachy only'}
+            {voice.localPlayback ? 'Computer on' : 'Computer muted'}
           </button>
 
           {/* Reachy speaker volume — controls the robot's own speaker via daemon. */}
@@ -682,7 +1262,7 @@ export function InteractiveModeHero() {
           {/* Look at the user / look ahead — quick gaze cues during conversation. */}
           <button
             type="button"
-            onClick={() => lookAt.mutate({ x: 0.5, y: 0, z: 0, duration: 0.6 })}
+            onClick={() => lookAt.mutate({ x: 0.85, y: 0, z: 0.28, duration: 0.6 })}
             className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
             title="Look at me (gaze toward camera)"
           >
@@ -711,12 +1291,13 @@ export function InteractiveModeHero() {
               type="text"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
+              disabled={!connected}
               placeholder="Type a message…"
-              className="rounded-md px-2.5 py-1.5 text-xs bg-zinc-900/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 w-48 md:w-64"
+              className="rounded-md px-2.5 py-1.5 text-xs bg-zinc-900/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 disabled:opacity-45 disabled:cursor-not-allowed w-48 md:w-64"
             />
             <button
               type="submit"
-              disabled={!textInput.trim()}
+              disabled={!connected || !textInput.trim()}
               className="rounded-md px-2 py-1.5 text-xs font-medium border bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-800 disabled:text-zinc-500 disabled:border-zinc-700 disabled:cursor-not-allowed border-indigo-500 text-white flex items-center gap-1"
               title="Send text turn"
             >
@@ -724,7 +1305,6 @@ export function InteractiveModeHero() {
             </button>
           </form>
         </div>
-      )}
 
       {/* ---- Row 3: transcript drawer (only when live) ---- */}
       {connected && (
@@ -738,7 +1318,11 @@ export function InteractiveModeHero() {
           </summary>
           <div className="mt-2 space-y-1 max-h-48 overflow-y-auto pb-1">
             {recentTurns.length === 0 ? (
-              <div className="text-[11px] text-zinc-500 italic">No turns yet — speak to Reachy.</div>
+              <div className="text-[11px] text-zinc-500 italic">
+                {inputConfidence === 'no_signal'
+                  ? 'No turns yet - Reachy mic is silent; computer mic fallback is starting.'
+                  : 'No turns yet - speak toward Reachy\'s mic or type a message.'}
+              </div>
             ) : (
               recentTurns.map((t) => (
                 <div key={t.id} className="text-xs text-zinc-200">
@@ -789,6 +1373,189 @@ export function InteractiveModeHero() {
 // Hardware panel — exposes endpoints that had no UI surface yet
 // -------------------------------------------------------------------------
 
+function AssistantReadinessStrip({
+  steps,
+  loading,
+  repairCommand,
+}: {
+  steps: ReachyAssistantStep[]
+  loading: boolean
+  repairCommand?: string
+}) {
+  const hasRepair = steps.some((step) => step.state === 'repair_required')
+  const firstAttention = steps.find((step) => step.state !== 'ready')
+  const tint: Record<ReachyAssistantStep['state'], string> = {
+    ready: 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30',
+    repair_required: 'bg-amber-500/10 text-amber-200 border-amber-500/40',
+    starting: 'bg-indigo-500/10 text-indigo-200 border-indigo-500/30',
+    degraded: 'bg-yellow-500/10 text-yellow-200 border-yellow-500/30',
+    offline: 'bg-zinc-800/70 text-zinc-400 border-zinc-700',
+  }
+  const iconFor = (state: ReachyAssistantStep['state']) => {
+    if (state === 'ready') return <CheckCircle2 className="w-3.5 h-3.5" />
+    if (state === 'repair_required') return <Wrench className="w-3.5 h-3.5" />
+    if (state === 'starting') return <Loader2 className="w-3.5 h-3.5 animate-spin" />
+    return <AlertTriangle className="w-3.5 h-3.5" />
+  }
+
+  return (
+    <div className="border-t border-zinc-800 px-4 py-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        {loading && steps.length === 0 && (
+          <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Checking assistant readiness...
+          </span>
+        )}
+        {steps.map((step) => (
+          <span
+            key={step.id}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${tint[step.state]}`}
+            title={step.detail}
+          >
+            {iconFor(step.state)}
+            {step.label}
+          </span>
+        ))}
+      </div>
+      {hasRepair && repairCommand && (
+        <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
+          <div className="font-semibold">Windows host agent is down.</div>
+          <code className="mt-1 block break-all rounded bg-black/30 px-2 py-1 text-amber-100">
+            {repairCommand}
+          </code>
+        </div>
+      )}
+      {!hasRepair && firstAttention && (
+        <div className="mt-2 rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-100">
+          <span className="font-semibold">{firstAttention.label}: </span>
+          {firstAttention.detail}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AssistantMotionStrip({
+  bodyActivity,
+  sources,
+  loading,
+  hardwareUnavailable,
+  hardwarePowerIssue,
+}: {
+  bodyActivity: ReachyBodyActivity
+  sources: ReachyMotionSource[]
+  loading: boolean
+  hardwareUnavailable: boolean
+  hardwarePowerIssue: boolean
+}) {
+  const active = sources.filter((source) => source.active && source.id !== 'motors')
+  const paused = sources.filter((source) => !source.active && source.id !== 'motors').slice(0, 4)
+  const motors = sources.find((source) => source.id === 'motors')
+  const summary =
+    hardwareUnavailable
+      ? hardwarePowerIssue ? 'Body unpowered' : 'Body protected'
+      : bodyActivity === 'still'
+      ? 'Still Ready'
+      : bodyActivity === 'shaky'
+        ? 'Needs Settle'
+        : bodyActivity === 'moving'
+          ? 'Motion Active'
+          : 'Checking Body'
+
+  return (
+    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2">
+      <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider mr-1">
+        Body
+      </span>
+      <span
+        className={[
+          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]',
+          hardwareUnavailable
+            ? 'bg-amber-500/10 text-amber-100 border-amber-500/35'
+            : bodyActivity === 'still'
+            ? 'bg-emerald-500/10 text-emerald-200 border-emerald-500/30'
+            : bodyActivity === 'shaky'
+              ? 'bg-red-500/10 text-red-200 border-red-500/40'
+              : bodyActivity === 'moving'
+                ? 'bg-indigo-500/10 text-indigo-200 border-indigo-500/30'
+                : 'bg-zinc-800/70 text-zinc-400 border-zinc-700',
+        ].join(' ')}
+      >
+        {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+        {summary}
+      </span>
+      {motors && !motors.active ? (
+        <span
+          className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/35 bg-amber-500/10 px-2.5 py-1 text-[11px] text-amber-100"
+          title={motors.detail}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Motors off
+        </span>
+      ) : null}
+      {active.length > 0 ? (
+        active.map((source) => (
+          <span
+            key={source.id}
+            className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-[11px] text-indigo-100"
+            title={source.detail}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            {source.label}
+          </span>
+        ))
+      ) : (
+        paused.map((source) => (
+          <span
+            key={source.id}
+            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/70 px-2.5 py-1 text-[11px] text-zinc-500"
+            title={source.detail}
+          >
+            {source.label}: off
+          </span>
+        ))
+      )}
+    </div>
+  )
+}
+
+function AssistantActivityStrip({ activity }: { activity: ReachyAssistantActivity[] }) {
+  const recent = activity.slice(0, 4)
+  if (recent.length === 0) return null
+
+  return (
+    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2">
+      <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider mr-1">
+        Activity
+      </span>
+      {recent.map((item) => {
+        const when = Number.isFinite(item.at)
+          ? new Date(item.at * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : ''
+
+        return (
+          <span
+            key={`${item.event}-${item.at}`}
+            className={[
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]',
+              item.ok
+                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-100'
+                : 'border-red-500/35 bg-red-500/10 text-red-100',
+            ].join(' ')}
+            title={item.detail}
+          >
+            {item.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+            {item.event}
+            {item.body_activity ? ` - ${item.body_activity}` : ''}
+            {when ? <span className="text-zinc-500">{when}</span> : null}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 export function HardwarePanel() {
   const { data: speakerVol } = useVolume('speaker')
   const { data: micVol } = useVolume('mic')
@@ -838,7 +1605,7 @@ export function HardwarePanel() {
             className="mt-2 w-full text-[11px] rounded-md border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-800 px-2 py-1 flex items-center justify-center gap-1.5 text-zinc-300"
           >
             <PlayCircle className="w-3 h-3" />
-            {testSound.isPending ? 'Playing…' : 'Test sound'}
+            {testSound.isPending ? 'Playing...' : 'Test sound'}
           </button>
         </div>
 
@@ -848,7 +1615,7 @@ export function HardwarePanel() {
             <Mic className="w-3.5 h-3.5 text-zinc-500" />
             <span className="text-xs text-zinc-200 font-medium">Microphone</span>
             <span className="ml-auto text-[10px] text-indigo-300 font-mono">
-              {micVol?.volume != null ? `${Math.round(micVol.volume)}%` : '—'}
+              {micVol?.volume != null ? `${Math.round(micVol.volume)}%` : '-'}
             </span>
           </div>
           <input
@@ -861,7 +1628,7 @@ export function HardwarePanel() {
             className="w-full accent-indigo-500"
           />
           <div className="text-[10px] text-zinc-500 mt-2">
-            Voice + wake-word listen on the Reachy Mini speakerphone mic.
+            Voice capture uses the Reachy Mini speakerphone mic.
           </div>
         </div>
 

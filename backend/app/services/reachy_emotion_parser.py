@@ -9,6 +9,10 @@ Marker grammar (case insensitive, whitespace tolerant):
     [dance:<name>]     — same, constrained to the dance library
     [motion:<name>]    — either library, name-resolved
     [look:x,y,z]       — point the head at a 3D target (meters)
+    [look_at:x,y]      — 2D normalized image coords (-1..1); compiled to a
+                         3D look point a fixed distance ahead so the LLM can
+                         glance at things in the camera frame without doing
+                         3D math
     [observe]          — Phase 5: "paying attention" beat (defaults to a
                          gentle head-lean toward a user-facing point); the
                          voice loop interprets it as `look:0.5,0,0.1`
@@ -24,7 +28,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-GestureKind = Literal["emotion", "dance", "motion", "look", "observe"]
+GestureKind = Literal["emotion", "dance", "motion", "look", "look_at", "observe"]
 
 
 @dataclass(frozen=True)
@@ -38,7 +42,8 @@ class GestureAction:
 
 _PATTERN = re.compile(
     # Two forms: "[observe]" (no colon payload) or "[kind:payload]".
-    r"\[\s*(?:(observe)|(emotion|dance|motion|look)\s*:\s*([^\]]+?))\s*\]",
+    # look_at must come BEFORE look in the alternation so the longer match wins.
+    r"\[\s*(?:(observe)|(emotion|dance|motion|look_at|look)\s*:\s*([^\]]+?))\s*\]",
     re.IGNORECASE,
 )
 
@@ -88,6 +93,19 @@ def action_to_motion_request(action: GestureAction) -> Optional[dict]:
         except ValueError:
             return None
         return {"kind": "look", "x": x, "y": y, "z": z}
+    if action.kind == "look_at":
+        parts = [p.strip() for p in action.payload.split(",")]
+        if len(parts) != 2:
+            return None
+        try:
+            nx, ny = (float(p) for p in parts)
+        except ValueError:
+            return None
+        nx = max(-1.0, min(1.0, nx))
+        ny = max(-1.0, min(1.0, ny))
+        # Normalized image coords -> 3D look point 0.6 m ahead. y is inverted
+        # so a positive ny (face is below center) maps to looking down.
+        return {"kind": "look", "x": 0.6, "y": -nx * 0.4, "z": -ny * 0.3}
     if action.kind == "observe":
         # "Paying attention" beat: gentle look toward a user-facing point.
         # Voice loop dispatches this as a `look` movement on the robot.

@@ -18,6 +18,7 @@ import {
   useDeleteSequence,
   useMotionLibrary,
   usePlaySequence,
+  useReachyCompanionStatus,
   useSequences,
   useUpdateSequence,
   type MotionSequence,
@@ -70,10 +71,12 @@ export function SequenceBuilder() {
   const del = useDeleteSequence()
   const play = usePlaySequence()
   const library = useMotionLibrary()
+  const companion = useReachyCompanionStatus()
   const { toast } = useToast()
 
   const [draft, setDraft] = useState<BuilderDraft | null>(null)
   const editing = draft?.id != null
+  const bodyMotionLocked = companion.data?.policy?.body_motion_enabled === false
 
   function openNew() {
     setDraft({ ...EMPTY_DRAFT, steps: [] })
@@ -158,6 +161,10 @@ export function SequenceBuilder() {
 
   async function handlePlayDraft() {
     if (!draft) return
+    if (bodyMotionLocked) {
+      toast({ title: 'Body motion locked', variant: 'destructive' })
+      return
+    }
     if (draft.steps.length === 0) {
       toast({ title: 'No steps to play', variant: 'destructive' })
       return
@@ -186,6 +193,10 @@ export function SequenceBuilder() {
   }
 
   async function handlePlaySaved(seq: MotionSequence) {
+    if (bodyMotionLocked) {
+      toast({ title: 'Body motion locked', variant: 'destructive' })
+      return
+    }
     try {
       await play.mutateAsync(seq.id)
       toast({ title: `Playing ${seq.name}` })
@@ -226,14 +237,15 @@ export function SequenceBuilder() {
       {seqs.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-3">
           {seqs.map((seq) => (
-            <SequenceCard
-              key={seq.id}
-              sequence={seq}
-              onPlay={() => handlePlaySaved(seq)}
-              onEdit={() => openEdit(seq)}
-              onDelete={() => handleDelete(seq)}
-              libraryClips={library.data?.clips}
-            />
+              <SequenceCard
+                key={seq.id}
+                sequence={seq}
+                onPlay={() => handlePlaySaved(seq)}
+                onEdit={() => openEdit(seq)}
+                onDelete={() => handleDelete(seq)}
+                libraryClips={library.data?.clips}
+                bodyMotionLocked={bodyMotionLocked}
+              />
           ))}
         </div>
       )}
@@ -244,11 +256,12 @@ export function SequenceBuilder() {
           onChange={setDraft}
           onClose={closeBuilder}
           onSave={handleSave}
-          onTestPlay={handlePlayDraft}
-          saving={create.isPending || update.isPending}
-          libraryClips={library.data?.clips ?? []}
-          editing={editing}
-        />
+        onTestPlay={handlePlayDraft}
+        saving={create.isPending || update.isPending}
+        libraryClips={library.data?.clips ?? []}
+        editing={editing}
+        bodyMotionLocked={bodyMotionLocked}
+      />
       )}
     </section>
   )
@@ -260,12 +273,14 @@ function SequenceCard({
   onEdit,
   onDelete,
   libraryClips,
+  bodyMotionLocked,
 }: {
   sequence: MotionSequence
   onPlay: () => void
   onEdit: () => void
   onDelete: () => void
   libraryClips: MotionClip[] | undefined
+  bodyMotionLocked: boolean
 }) {
   const durationMs = estimateDurationMs(sequence.steps, libraryClips)
   return (
@@ -291,8 +306,9 @@ function SequenceCard({
         <div className="flex flex-col gap-1">
           <button
             onClick={onPlay}
-            className="p-1.5 rounded hover:bg-white/5 text-green-400"
-            title="Play"
+            disabled={bodyMotionLocked}
+            className="p-1.5 rounded hover:bg-white/5 text-green-400 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={bodyMotionLocked ? 'Body motion is locked' : 'Play'}
           >
             <Play className="w-4 h-4" />
           </button>
@@ -325,6 +341,7 @@ function DraftEditor({
   saving,
   libraryClips,
   editing,
+  bodyMotionLocked,
 }: {
   draft: BuilderDraft
   onChange: (d: BuilderDraft) => void
@@ -334,6 +351,7 @@ function DraftEditor({
   saving: boolean
   libraryClips: MotionClip[]
   editing: boolean
+  bodyMotionLocked: boolean
 }) {
   const durationMs = estimateDurationMs(draft.steps, libraryClips)
 
@@ -432,7 +450,8 @@ function DraftEditor({
           </button>
           <button
             onClick={onTestPlay}
-            disabled={draft.steps.length === 0}
+            disabled={draft.steps.length === 0 || bodyMotionLocked}
+            title={bodyMotionLocked ? 'Body motion is locked' : 'Test play'}
             className="glass-card-hover px-3 py-1.5 text-xs flex items-center gap-1.5 text-green-400 disabled:opacity-40"
           >
             <Play className="w-3.5 h-3.5" /> Test play

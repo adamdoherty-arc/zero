@@ -61,7 +61,7 @@ _HARDWARE_FAULT_ACTIVE_WINDOW_S = 60 * 60
 _LAST_STATE_PROBE: dict[str, Any] | None = None
 _LAST_STATE_PROBE_AT: float = 0.0
 _STATE_PROBE_CACHE_TTL_S = 5.0
-_STATE_PROBE_FRESH_CACHE_S = 0.75
+_STATE_PROBE_FRESH_CACHE_S = float(os.getenv("ZERO_REACHY_STATE_PROBE_FRESH_SECONDS", "1.0"))
 _STATE_PROBE_STALE_CACHE_S = max(
     1.0,
     float(os.getenv("ZERO_REACHY_STATE_PROBE_STALE_SECONDS", "2.0")),
@@ -1727,7 +1727,7 @@ async def _assistant_status_payload(
         )
         if fast:
             state_probe, state_probe_reachable, state_probe_stale, state_probe_age = (
-                await _fast_state_probe(service, timeout=0.25)
+                await _fast_state_probe(service, timeout=0.5)
             )
         else:
             state_probe = await service.get_full_state(timeout=3.0, quiet=True)
@@ -2094,7 +2094,7 @@ async def motion_sources():
         state_probe = {}
     else:
         daemon_task = asyncio.create_task(_daemon_status_fast(service))
-        state_probe, state_probe_reachable, _, _ = await _fast_state_probe(service, timeout=0.25)
+        state_probe, state_probe_reachable, _, _ = await _fast_state_probe(service, timeout=0.6)
         daemon = await daemon_task
         if state_probe_reachable and not _daemon_api_reachable(daemon):
             daemon = _daemon_reachable_from_state(daemon, supervisor=supervisor)
@@ -2440,7 +2440,7 @@ async def get_status():
     # Body state is the source of truth. Supervisor/watchdog metadata is useful
     # diagnostics, but it must never sit on the UI status critical path.
     state_probe, state_probe_reachable, state_probe_stale, state_probe_age = (
-        await _fast_state_probe(service, timeout=0.25)
+        await _fast_state_probe(service, timeout=0.5)
     )
     daemon = await daemon_task
     if state_probe_reachable and not _daemon_api_reachable(daemon):
@@ -2696,6 +2696,29 @@ async def daemon_watchdog_set(request: DaemonWatchdogRequest):
     return await _host_agent_forward(
         "POST", "/daemon/watchdog", json=request.model_dump(), timeout=5.0,
     )
+
+
+@router.get("/host/docker_status")
+async def host_docker_status():
+    """Mirror of host_agent's Docker readiness probe.
+
+    Used by the Smart Re-link UI to colour the Backend (Docker) status row
+    and decide whether to render the relink button.
+    """
+    return await _host_agent_forward("GET", "/host/docker_status", timeout=3.0)
+
+
+@router.post("/daemon/relink")
+async def daemon_relink():
+    """Smart Re-link: re-probe Docker, clear watchdog churn, restart if up.
+
+    Returns one of two shapes:
+      * ``{action: "waiting", docker, watchdog, detail}`` when Docker is
+        still starting; host_agent will keep polling and link automatically.
+      * ``{action: "restarted", docker, daemon, watchdog, detail}`` when
+        Docker is ready and the daemon was restarted.
+    """
+    return await _host_agent_forward("POST", "/daemon/relink", timeout=45.0)
 
 
 # --- Movement ---

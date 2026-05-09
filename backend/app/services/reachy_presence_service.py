@@ -33,6 +33,8 @@ from typing import Optional
 
 import structlog
 
+from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
+
 logger = structlog.get_logger()
 
 
@@ -288,6 +290,13 @@ class ReachyPresenceService:
         }
 
     async def pomodoro_start(self, focus_minutes: int = 25, break_minutes: int = 5) -> dict:
+        if not body_motion_allowed(surface="presence:pomodoro_start").get("allowed"):
+            logger.info("reachy_pomodoro_start_blocked", reason="body_motion_locked")
+            self._pomodoro = PomodoroState()
+            return {
+                **self.pomodoro_state(),
+                **body_motion_locked_payload(surface="presence:pomodoro_start"),
+            }
         self._pomodoro = PomodoroState(
             active=True,
             phase="focus",
@@ -300,9 +309,11 @@ class ReachyPresenceService:
         logger.info("reachy_pomodoro_started", focus=focus_minutes, break_=break_minutes)
         return self.pomodoro_state()
 
-    async def pomodoro_stop(self) -> dict:
+    async def pomodoro_stop(self, *, play_ack: bool = True) -> dict:
+        was_active = self._pomodoro.active
         self._pomodoro = PomodoroState()
-        await self._play_safe("understanding1", kind="emotion")
+        if play_ack and was_active:
+            await self._play_safe("understanding1", kind="emotion")
         logger.info("reachy_pomodoro_stopped")
         return self.pomodoro_state()
 
@@ -418,6 +429,14 @@ class ReachyPresenceService:
 
         Idempotent — calling twice just refreshes the meeting id.
         """
+        if not body_motion_allowed(surface="presence:meeting_start").get("allowed"):
+            logger.info("reachy_meeting_mode_blocked", reason="body_motion_locked", meeting_id=meeting_id)
+            if self._meeting_mode:
+                await self.stop_meeting_mode(play_ack=False)
+            return {
+                **self.meeting_state(),
+                **body_motion_locked_payload(surface="presence:meeting_start"),
+            }
         self._meeting_id = meeting_id
         self._meeting_started_at = datetime.now(timezone.utc)
         if self._meeting_mode and self._meeting_task and not self._meeting_task.done():
@@ -445,7 +464,8 @@ class ReachyPresenceService:
         logger.info("reachy_meeting_mode_started", meeting_id=meeting_id)
         return self.meeting_state()
 
-    async def stop_meeting_mode(self) -> dict:
+    async def stop_meeting_mode(self, *, play_ack: bool = True) -> dict:
+        was_active = self._meeting_mode
         self._meeting_mode = False
         self._doa_available = False
         if self._meeting_task and not self._meeting_task.done():
@@ -455,8 +475,9 @@ class ReachyPresenceService:
             except (asyncio.CancelledError, Exception):
                 pass
         self._meeting_task = None
-        # Final ack — understanding2 = "I got it"
-        await self._play_safe("understanding2", kind="emotion")
+        if play_ack and was_active:
+            # Final ack — understanding2 = "I got it"
+            await self._play_safe("understanding2", kind="emotion")
 
         # Restore pre-meeting persona if we swapped.
         if self._pre_meeting_persona:
@@ -502,7 +523,11 @@ class ReachyPresenceService:
                     self._doa_available = isinstance(doa, dict) and "angle" in doa
                     angle = doa.get("angle") if isinstance(doa, dict) else None
                     speech = doa.get("speech_detected") if isinstance(doa, dict) else False
-                    if speech and isinstance(angle, (int, float)):
+                    if (
+                        speech
+                        and isinstance(angle, (int, float))
+                        and body_motion_allowed(surface="presence:meeting_look_at").get("allowed")
+                    ):
                         if last_angle is None or abs(angle - last_angle) > 0.15:
                             # Project onto unit-circle 1 m in front of the robot
                             x = math.cos(angle)
@@ -520,9 +545,10 @@ class ReachyPresenceService:
                 if now - last_attentive > ATTENTIVE_EVERY:
                     last_attentive = now
                     try:
-                        fidget = random.choice(MEETING_FIDGETS)
-                        await svc.play_emotion(fidget)
-                        self._last_gesture_at = datetime.now(timezone.utc)
+                        if body_motion_allowed(surface="presence:meeting_fidget").get("allowed"):
+                            fidget = random.choice(MEETING_FIDGETS)
+                            await svc.play_emotion(fidget)
+                            self._last_gesture_at = datetime.now(timezone.utc)
                     except Exception:
                         pass
 
@@ -534,6 +560,9 @@ class ReachyPresenceService:
 
     async def _play_safe(self, name: str, *, kind: str) -> None:
         """Play a clip but swallow errors so the scheduler stays clean."""
+        if not body_motion_allowed(surface=f"presence:{kind}:{name}").get("allowed"):
+            logger.debug("reachy_presence_play_blocked", clip=name, kind=kind, reason="body_motion_locked")
+            return
         try:
             from app.services.reachy_service import get_reachy_service
             svc = get_reachy_service()
@@ -588,6 +617,13 @@ class ReachyPresenceService:
 
     def ambient_start(self) -> dict:
         """Resume the autonomous-motion jobs (presence beat, idle watcher, hourly chime)."""
+        if not body_motion_allowed(surface="presence:ambient_start").get("allowed"):
+            logger.info("reachy_ambient_start_blocked", reason="body_motion_locked")
+            state = self.ambient_stop()
+            return {
+                **state,
+                **body_motion_locked_payload(surface="presence:ambient_start"),
+            }
         from app.services.scheduler_service import get_scheduler_service
         sched = get_scheduler_service().scheduler
         for jid in _AMBIENT_JOB_IDS:

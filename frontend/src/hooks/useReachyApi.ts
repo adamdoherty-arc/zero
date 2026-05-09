@@ -1592,6 +1592,63 @@ export function useSetWatchdog() {
   })
 }
 
+// ---- Docker readiness + Smart Re-link ----
+
+export type DockerReadinessState = 'unknown' | 'waiting' | 'ready' | 'unreachable'
+
+export interface DockerReadinessStatus {
+  state: DockerReadinessState
+  last_check: string | null
+  last_ready: string | null
+  last_error: string | null
+  consecutive_failures: number
+  consecutive_ready: number
+  probe_count: number
+  next_probe_in_s: number
+  backend_url: string
+}
+
+export interface RelinkResult {
+  action: 'waiting' | 'restarted'
+  detail: string
+  docker: DockerReadinessStatus
+  watchdog?: DaemonWatchdog
+  daemon?: Record<string, unknown>
+}
+
+export function useDockerStatus(pollMs = 5_000) {
+  return useQuery<DockerReadinessStatus>({
+    queryKey: [...reachyKeys.all, 'host', 'docker_status'] as const,
+    queryFn: () => fetchApi('/reachy/host/docker_status'),
+    refetchInterval: pollMs,
+    retry: false,
+  })
+}
+
+export function useRelink() {
+  const qc = useQueryClient()
+  const dockerKey = [...reachyKeys.all, 'host', 'docker_status'] as const
+  return useMutation<RelinkResult>({
+    mutationFn: () =>
+      fetchApi<RelinkResult>('/reachy/daemon/relink', { method: 'POST' }),
+    onSuccess: () => {
+      const invalidate = () => {
+        qc.invalidateQueries({ queryKey: dockerKey })
+        qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
+        qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
+        qc.invalidateQueries({ queryKey: reachyKeys.daemonDiagnostics() })
+        qc.invalidateQueries({ queryKey: reachyKeys.status() })
+        qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })
+      }
+      invalidate()
+      // Burst invalidation to match the 300/600/1100ms pattern used after
+      // motion mutations — gives the user fast visual confirmation without
+      // waiting for the next scheduled poll.
+      ;[300, 600, 1100].forEach((ms) => setTimeout(invalidate, ms))
+    },
+  })
+}
+
 // ---- User-defined motion sequences ----
 
 export interface SequenceStep {

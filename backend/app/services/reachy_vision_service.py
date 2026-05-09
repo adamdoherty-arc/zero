@@ -40,6 +40,7 @@ class ReachyVisionService:
 
     def __init__(self) -> None:
         self._hand_tracker = None
+        self._mp_face_detector = None
         self._face_cascade = None
 
     @classmethod
@@ -53,9 +54,18 @@ class ReachyVisionService:
     # ------------------------------------------------------------------
 
     def backend_status(self) -> dict:
+        mediapipe_face = self._try_import_mediapipe_face()
+        opencv = self._try_import_opencv()
         return {
             "hands": self._try_import_mediapipe(),
-            "face": self._try_import_opencv(),
+            "face": {
+                "available": bool(mediapipe_face.get("available") or opencv.get("available")),
+                "library": "mediapipe+opencv" if mediapipe_face.get("available") and opencv.get("available") else mediapipe_face.get("library") or opencv.get("library"),
+                "version": mediapipe_face.get("version") or opencv.get("version"),
+                "mediapipe": mediapipe_face,
+                "opencv": opencv,
+                "reason": None if mediapipe_face.get("available") or opencv.get("available") else opencv.get("reason") or mediapipe_face.get("reason"),
+            },
         }
 
     def _try_import_mediapipe(self) -> dict:
@@ -71,6 +81,14 @@ class ReachyVisionService:
             return {"available": True, "library": "opencv-python", "version": cv2.__version__}
         except Exception as e:
             return {"available": False, "reason": f"opencv-python not installed: {e}"}
+
+    def _try_import_mediapipe_face(self) -> dict:
+        try:
+            import mediapipe as mp  # type: ignore[import-not-found]
+            _ = mp.solutions.face_detection
+            return {"available": True, "library": "mediapipe-face-detection", "version": getattr(mp, "__version__", "?")}
+        except Exception as e:
+            return {"available": False, "reason": f"mediapipe face detection unavailable: {e}"}
 
     # ------------------------------------------------------------------
     # Detection entry points
@@ -238,6 +256,10 @@ class ReachyVisionService:
         }
 
     def _detect_faces(self, image_bytes: bytes) -> dict:
+        mp_result = self._detect_faces_mediapipe(image_bytes)
+        if mp_result.get("detections") or not mp_result.get("fallback_allowed", True):
+            return {key: value for key, value in mp_result.items() if key != "fallback_allowed"}
+
         try:
             import cv2  # type: ignore[import-not-found]
             import numpy as np
@@ -272,8 +294,60 @@ class ReachyVisionService:
         return {
             "available": True,
             "backend": "opencv",
+            "fallback_from": mp_result.get("backend") if mp_result.get("available") else None,
             "image_size": {"width": int(w), "height": int(h)},
             "detections": detections,
+        }
+
+    def _detect_faces_mediapipe(self, image_bytes: bytes) -> dict:
+        try:
+            import cv2  # type: ignore[import-not-found]
+            import mediapipe as mp  # type: ignore[import-not-found]
+            import numpy as np
+        except Exception as e:
+            return {
+                "available": False,
+                "reason": f"mediapipe face backend unavailable: {e}",
+                "detections": [],
+                "fallback_allowed": True,
+            }
+
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return {
+                "available": True,
+                "backend": "mediapipe_face_detection",
+                "detections": [],
+                "error": "decode_failed",
+                "fallback_allowed": False,
+            }
+
+        if self._mp_face_detector is None:
+            self._mp_face_detector = mp.solutions.face_detection.FaceDetection(
+                model_selection=1,
+                min_detection_confidence=0.35,
+            )
+
+        h, w = img.shape[:2]
+        results = self._mp_face_detector.process(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        detections: list[dict] = []
+        for det in results.detections or []:
+            box = det.location_data.relative_bounding_box
+            detections.append({
+                "kind": "face",
+                "x": max(0.0, min(1.0, float(box.xmin + box.width / 2))),
+                "y": max(0.0, min(1.0, float(box.ymin + box.height / 2))),
+                "width": max(0.0, min(1.0, float(box.width))),
+                "height": max(0.0, min(1.0, float(box.height))),
+                "confidence": float(det.score[0]) if det.score else 1.0,
+            })
+        return {
+            "available": True,
+            "backend": "mediapipe_face_detection",
+            "image_size": {"width": int(w), "height": int(h)},
+            "detections": detections,
+            "fallback_allowed": True,
         }
 
 

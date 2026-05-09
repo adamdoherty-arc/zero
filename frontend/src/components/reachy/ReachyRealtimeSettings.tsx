@@ -104,9 +104,9 @@ const BACKEND_META: Record<string, { label: string; model: string; tagline: stri
     cost: '~$0.05 per 10 min',
   },
   local: {
-    label: 'Local (vLLM)',
+    label: 'Local fallback',
     model: 'qwen3-chat',
-    tagline: 'Runs on your GPU. Free. Uncensored brains available for companion personas.',
+    tagline: 'Offline STT -> LLM -> TTS path. Useful fallback, not realtime.',
     cost: 'Free',
   },
 }
@@ -597,8 +597,8 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                     })}
                   </div>
                   <div className="text-[10px] text-zinc-500 mt-2 leading-tight">
-                    Abliterated MoE has refusal vectors removed. The persona
-                    system prompt is the only guardrail.
+                    Local fallback chains speech recognition, qwen3-chat, and
+                    TTS, so it is slower than provider-native realtime audio.
                   </div>
                 </div>
               )}

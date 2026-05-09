@@ -1,5 +1,6 @@
+import * as React from 'react'
 import { useMemo, useRef, useState } from 'react'
-import { Bot, Music, Sparkles, Play, Square, MoonStar, Sun, Search, UserRound, Mic, MicOff, Timer, Coffee, CalendarClock, Volume2, Loader2, Brain, Trash2, Star, Settings2, X } from 'lucide-react'
+import { Bot, Music, Sparkles, Play, Hand, MoonStar, Sun, Search, UserRound, Mic, MicOff, Timer, Coffee, CalendarClock, Volume2, Loader2, Brain, Trash2, Star, Settings2, X } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { Link } from 'react-router-dom'
 import { VoiceModelSettings } from '@/components/reachy/VoiceModelSettings'
@@ -16,7 +17,7 @@ import {
   useClearPersonaIntro,
   useSequences,
   useRecentMotions,
-  useStopMove,
+  useSettleReachyAssistant,
   useWakeUp,
   useGoToSleep,
   usePomodoroState,
@@ -29,12 +30,14 @@ import {
   useUserMemory,
   useAddMemoryNote,
   useDeleteMemoryNote,
+  useReachyCompanionStatus,
   type MotionClip,
   type MotionKind,
   type MemoryNote,
 } from '@/hooks/useReachyApi'
 import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 import { DaemonPanel } from '@/components/reachy/DaemonPanel'
+import { CompanionConsole } from '@/components/reachy/CompanionConsole'
 import { SequenceBuilder } from '@/components/reachy/SequenceBuilder'
 import {
   InteractiveModeHero,
@@ -45,15 +48,47 @@ import { useToast } from '@/hooks/use-toast'
 
 function ConnectionBadge() {
   const { data } = useReachyStatus()
-  const connected = data?.connected
+  const bodyConnected = data?.connected ?? false
+  const bodyReady = data?.robot_ready ?? bodyConnected
+  const daemonConnected = data?.daemon_connected ?? false
+  const mode = String(data?.body_control_mode ?? '').toLowerCase()
+  const bodyActivity = data?.body_activity
+  const hardwareFaultSource = data?.motion_sources?.find((source) => source.id === 'hardware_faults')
+  const hardwareFault = (data?.active_source_ids ?? []).includes('hardware_faults')
+  const hardwareFaultRaw = hardwareFaultSource?.raw as { faults?: unknown[]; stale?: boolean } | undefined
+  const staleHardwareFault = Boolean(!hardwareFault && hardwareFaultRaw?.stale && hardwareFaultRaw?.faults?.length)
+  const hardwareFaultDetail = hardwareFaultSource?.detail
+  const asleep = bodyConnected && !bodyReady && mode === 'disabled'
+  const label = hardwareFault
+    ? 'Hardware fault'
+    : staleHardwareFault
+      ? 'Previous fault'
+    : bodyActivity === 'shaky'
+      ? 'Needs Settle'
+      : bodyReady
+    ? 'Reachy ready'
+    : asleep
+      ? 'Reachy asleep'
+      : bodyConnected
+        ? 'Body not ready'
+        : daemonConnected
+          ? 'Daemon only'
+          : 'Reachy offline'
+  const tint = hardwareFault || bodyActivity === 'shaky'
+    ? 'bg-red-500/20 text-red-300'
+    : staleHardwareFault
+      ? 'bg-yellow-500/20 text-yellow-300'
+    : bodyReady
+    ? 'bg-green-500/20 text-green-400'
+    : asleep || daemonConnected
+      ? 'bg-yellow-500/20 text-yellow-300'
+      : 'bg-red-500/20 text-red-400'
   return (
     <span
-      className={`text-xs px-2 py-0.5 rounded-full ${
-        connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-      }`}
-      title={data?.base_url}
+      className={`text-xs px-2 py-0.5 rounded-full ${tint}`}
+      title={hardwareFaultDetail ?? data?.robot_detail ?? data?.base_url}
     >
-      {connected ? 'Reachy connected' : 'Reachy offline'}
+      {label}
     </span>
   )
 }
@@ -145,8 +180,8 @@ function ActiveStackRow({ models }: { models: ActiveModels | null | undefined })
   const { data: cfg } = useVoiceConfig()
   const stt = models?.stt?.model || cfg?.stt_model || '…'
   const sttProv = models?.stt?.provider || 'faster-whisper'
-  const llmProv = models?.llm?.provider || cfg?.llm.provider || '…'
-  const llmModel = models?.llm?.model || cfg?.llm.model || '…'
+  const llmProv = models?.llm?.provider || cfg?.llm?.provider || '…'
+  const llmModel = models?.llm?.model || cfg?.llm?.model || '…'
   const ttsProv = models?.tts?.provider || 'piper'
   const ttsModel = models?.tts?.model || cfg?.tts_voice || '…'
   const Chip = ({ label, value }: { label: string; value: string }) => (
@@ -174,6 +209,8 @@ function PushToTalk() {
   const abortRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<number | null>(null)
   const { toast } = useToast()
+  const companion = useReachyCompanionStatus()
+  const bodyMotionLocked = companion.data?.policy?.body_motion_enabled === false
 
   const recording = phase === 'recording'
   const busy = phase === 'stt' || phase === 'llm' || phase === 'tts'
@@ -181,10 +218,11 @@ function PushToTalk() {
   // Fire-and-forget listening-posture gesture when the user starts holding
   // the mic. Don't await — we don't want to block recording on robot latency.
   const fireListeningPosture = () => {
+    if (bodyMotionLocked) return
     fetch('/api/reachy/emotion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({ name: 'attentive1' }),
+      body: JSON.stringify({ emotion: 'attentive1' }),
     }).catch(() => undefined)
   }
 
@@ -632,20 +670,53 @@ function ClipCard({
 }
 
 const FAVORITE_CLIP_PREFIX = 'favorite clip: '
+type ReachyTab = 'console' | 'body' | 'automations' | 'library' | 'diagnostics'
+
+const REACHY_TABS: { id: ReachyTab; label: string }[] = [
+  { id: 'console', label: 'Console' },
+  { id: 'body', label: 'Body Controls' },
+  { id: 'automations', label: 'Automations' },
+  { id: 'library', label: 'Motion Library' },
+  { id: 'diagnostics', label: 'Diagnostics' },
+]
 
 export function ReachyMotionLibraryPage() {
   const [kindFilter, setKindFilter] = useState<MotionKind | 'all'>('all')
   const [q, setQ] = useState('')
+  const reachyStatusForTab = useReachyStatus()
+  // Default to the Diagnostics tab when the daemon is offline so the user
+  // lands directly on the recovery surface (DaemonPanel + Smart Re-link),
+  // not the empty Motion Library / Console.
+  const initialTab: ReachyTab =
+    reachyStatusForTab.data && reachyStatusForTab.data.daemon_connected === false
+      ? 'diagnostics'
+      : 'console'
+  const [activeTab, setActiveTab] = useState<ReachyTab>(initialTab)
+  const userPickedTabRef = React.useRef(false)
+  const setActiveTabUserPick = (tab: ReachyTab) => {
+    userPickedTabRef.current = true
+    setActiveTab(tab)
+  }
+  // If status loads after first render (initial query in flight), retarget
+  // once — but never override an explicit user pick.
+  React.useEffect(() => {
+    if (userPickedTabRef.current) return
+    if (reachyStatusForTab.data?.daemon_connected === false && activeTab !== 'diagnostics') {
+      setActiveTab('diagnostics')
+    }
+  }, [reachyStatusForTab.data?.daemon_connected, activeTab])
   const effectiveKind = kindFilter === 'all' ? undefined : kindFilter
   const { data, isLoading } = useMotionLibrary(effectiveKind)
   const play = usePlayMotion()
-  const stop = useStopMove()
+  const settle = useSettleReachyAssistant()
   const wakeUp = useWakeUp()
   const sleep = useGoToSleep()
+  const companion = useReachyCompanionStatus()
   const memory = useUserMemory()
   const addNote = useAddMemoryNote()
   const deleteNote = useDeleteMemoryNote()
   const { toast } = useToast()
+  const bodyMotionLocked = companion.data?.policy?.body_motion_enabled === false
 
   // Map clip name -> note id so we can toggle favorites. Notes stored as
   // preferences with text `favorite clip: <name>` are what Reachy ingests
@@ -700,6 +771,14 @@ export function ReachyMotionLibraryPage() {
   }, [data, q])
 
   const handlePlay = async (clip: MotionClip) => {
+    if (bodyMotionLocked) {
+      toast({
+        title: 'Body motion locked',
+        description: 'Unlock body motion in companion policy before playing clips.',
+        variant: 'destructive',
+      })
+      return
+    }
     try {
       const result = await play.mutateAsync({ name: clip.name, kind: clip.kind })
       if ((result as { error?: string })?.error) {
@@ -720,45 +799,70 @@ export function ReachyMotionLibraryPage() {
     }
   }
 
+  const handleSettle = async () => {
+    try {
+      const result = await settle.mutateAsync({
+        keep_motors_enabled: false,
+        neutral_pose: 'skip',
+        reason: 'body_tab',
+      })
+      toast({
+        title: result.body_activity === 'shaky' ? 'Reachy settled, but jitter remains' : 'Reachy settled',
+        description:
+          result.active_source_ids.length > 0
+            ? `Still active: ${result.active_source_ids.join(', ')}`
+            : 'Body motion sources are clear.',
+        variant: result.body_activity === 'shaky' ? 'destructive' : 'default',
+      })
+    } catch (err) {
+      toast({ title: 'Settle failed', description: String(err), variant: 'destructive' })
+    }
+  }
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+      <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-indigo-500/10">
             <Bot className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Reachy Management</h1>
+            <h1 className="text-2xl font-bold text-white">Reachy Assistant Console</h1>
             <p className="text-sm text-gray-400">
-              {data ? `${data.emotions} emotions · ${data.dances} dances · presence, voice, modes, hardware` : 'Loading catalog…'}
+              {data
+                ? 'Start a live assistant, keep the body calm, then open controls only when you need them.'
+                : 'Loading assistant console...'}
             </p>
           </div>
           <ConnectionBadge />
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => wakeUp.mutate()}
-            className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
-          >
-            <Sun className="w-4 h-4" /> Wake
-          </button>
-          <button
-            onClick={() => sleep.mutate()}
-            className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
-          >
-            <MoonStar className="w-4 h-4" /> Sleep
-          </button>
-          <button
-            onClick={() => stop.mutate()}
-            className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 text-red-400"
-          >
-            <Square className="w-4 h-4" /> Stop
-          </button>
+      </div>
+
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 mb-4 bg-gray-950/95 backdrop-blur border-y border-gray-800/80">
+        <div className="flex gap-2 overflow-x-auto">
+          {REACHY_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTabUserPick(tab.id)}
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm border transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-indigo-600/30 border-indigo-500 text-white'
+                  : 'bg-gray-900/40 border-gray-800 text-gray-400 hover:text-white hover:border-gray-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* === INTERACTIVE MODE === page-level live-conversation hero */}
+      {activeTab === 'console' && (
+        <>
+      <CompanionConsole />
+
+      {/* === INTERACTIVE MODE === live-conversation control */}
+      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-1">Live Conversation</div>
       <InteractiveModeHero />
 
       {/* === SUB-PAGES === quick nav to Teleop / Meetings / HA / Voice / Radio */}
@@ -767,7 +871,6 @@ export function ReachyMotionLibraryPage() {
 
       {/* === PRESENCE === daemon, persona, context */}
       <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Presence</div>
-      <DaemonPanel />
       <PersonaPicker />
       <ContextChips />
 
@@ -775,19 +878,83 @@ export function ReachyMotionLibraryPage() {
       <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Conversation</div>
       <PushToTalk />
       <MemoryCard />
+        </>
+      )}
 
+      {activeTab === 'automations' && (
+        <>
       {/* === MODES === pomodoro, meeting */}
       <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Modes</div>
       <ModesPanel />
+        </>
+      )}
 
+      {activeTab === 'body' && (
+        <>
       {/* === HARDWARE === volume, motors, wake-word, camera */}
       <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Hardware</div>
+      <div className="glass-card mb-5 p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold text-white">Body Safety</div>
+            <div className="text-xs text-gray-400">
+              {bodyMotionLocked
+                ? 'Body motion is locked. Voice, camera, and memory stay available.'
+                : 'Settle is the calm default. Wake and Sleep are explicit body actions.'}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void handleSettle()}
+              disabled={settle.isPending}
+              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 text-emerald-200 bg-emerald-700/40 border-emerald-600/50 disabled:opacity-50"
+            >
+              {settle.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
+              Settle
+            </button>
+            <button
+              onClick={() => wakeUp.mutate()}
+              disabled={bodyMotionLocked || wakeUp.isPending}
+              title={bodyMotionLocked ? 'Body motion is locked' : 'Wake Reachy'}
+              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
+            >
+              <Sun className="w-4 h-4" /> Wake
+            </button>
+            <button
+              onClick={() => sleep.mutate()}
+              disabled={bodyMotionLocked || sleep.isPending}
+              title={bodyMotionLocked ? 'Body motion is locked' : 'Sleep Reachy'}
+              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
+            >
+              <MoonStar className="w-4 h-4" /> Sleep
+            </button>
+          </div>
+        </div>
+      </div>
       <HardwarePanel />
+      <RecentMotionsStrip />
+        </>
+      )}
 
+      {activeTab === 'diagnostics' && (
+        <>
+      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Diagnostics</div>
+      <DaemonPanel />
+        </>
+      )}
+
+      {activeTab === 'library' && (
+        <>
       {/* === LIBRARY === recent activity, custom sequences, catalog */}
       <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Library</div>
       <RecentMotionsStrip />
       <SequenceBuilder />
+
+      {bodyMotionLocked && (
+        <div className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          Body motion is locked. Clips and sequences are saved, but playback stays disabled until the robot is physically stable.
+        </div>
+      )}
 
       <div className="flex items-center gap-3 mb-5 flex-wrap">
         <div className="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">
@@ -836,7 +1003,7 @@ export function ReachyMotionLibraryPage() {
                       key={`${clip.kind}-${clip.name}`}
                       clip={clip}
                       onPlay={() => handlePlay(clip)}
-                      busy={play.isPending}
+                      busy={play.isPending || bodyMotionLocked}
                       isFavorite={Boolean(favoriteNoteIdByClip[clip.name])}
                       onToggleFavorite={() => toggleFavorite(clip)}
                     />
@@ -849,6 +1016,8 @@ export function ReachyMotionLibraryPage() {
           )}
         </div>
       )}
+        </>
+      )}
     </div>
   )
 }
@@ -860,10 +1029,12 @@ function ModesPanel() {
   const meeting = useMeetingState()
   const startMeeting = useStartMeetingMode()
   const stopMeeting = useStopMeetingMode()
+  const companion = useReachyCompanionStatus()
   const { toast } = useToast()
 
   const pomoActive = pomo.data?.active ?? false
   const meetingActive = meeting.data?.active ?? false
+  const bodyMotionLocked = companion.data?.policy?.body_motion_enabled === false
   const [focusMin, setFocusMin] = useState(25)
   const [breakMin, setBreakMin] = useState(5)
 
@@ -919,7 +1090,8 @@ function ModesPanel() {
               </div>
               <button
                 onClick={() => startPomo.mutate({ focus_minutes: focusMin, break_minutes: breakMin })}
-                disabled={startPomo.isPending}
+                disabled={startPomo.isPending || bodyMotionLocked}
+                title={bodyMotionLocked ? 'Body motion is locked' : 'Start pomodoro gestures'}
                 className="w-full px-2 py-1 text-xs font-semibold bg-red-500/20 text-red-300 hover:bg-red-500/30 rounded"
               >
                 Start {focusMin}/{breakMin}
@@ -960,7 +1132,8 @@ function ModesPanel() {
                   try { await startMeeting.mutateAsync(undefined); toast({ title: 'Meeting mode on' }) }
                   catch (e) { toast({ title: 'Start failed', description: String(e), variant: 'destructive' }) }
                 }}
-                disabled={startMeeting.isPending}
+                disabled={startMeeting.isPending || bodyMotionLocked}
+                title={bodyMotionLocked ? 'Body motion is locked' : 'Start meeting mode'}
                 className="w-full px-2 py-1 text-xs font-semibold bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 rounded disabled:opacity-50"
               >
                 Start meeting mode

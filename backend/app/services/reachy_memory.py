@@ -116,15 +116,45 @@ class ReachyMemoryService:
         *,
         k: int = 5,
     ) -> list[str]:
-        """Top-k memories most relevant to the current user message. Returns
-        the raw memory text (no scores) so it can be inlined directly into
-        the system prompt."""
+        """Top-k memories most relevant to the current user message, weighted
+        by recency. Returns the raw memory text (no scores) so it can be
+        inlined directly into the system prompt.
+
+        Recency weighting multiplies cosine similarity by exp(-age_days/14),
+        so a 2-week-old memory roughly halves in priority versus a brand-new
+        one. Stops the model from quoting last-month conversations as if they
+        were today's."""
+        import math
+        from datetime import datetime, timezone
+
+        # Pull a wider pool than k so the recency multiplier has room to
+        # rerank — otherwise we'd just be re-ordering the same fixed top-k.
+        pool = max(k * 4, 16)
         results = await self._episodic.search(
             query=query,
             namespace=_namespace(user_id, persona_id),
-            limit=k,
+            limit=pool,
         )
-        return [r.memory.content for r in results if r.memory.content]
+        if not results:
+            return []
+        now = datetime.now(timezone.utc)
+        scored: list[tuple[float, str]] = []
+        for r in results:
+            content = (r.memory.content or "").strip()
+            if not content:
+                continue
+            similarity = float(getattr(r, "similarity", 0.0) or 0.0)
+            created_at = getattr(r.memory, "created_at", None)
+            if created_at is None:
+                age_days = 0.0
+            else:
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                age_days = max(0.0, (now - created_at).total_seconds() / 86400.0)
+            recency = math.exp(-age_days / 14.0)
+            scored.append((similarity * recency, content))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [content for _, content in scored[:k]]
 
     async def render_memory_block(
         self,

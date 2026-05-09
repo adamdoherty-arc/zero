@@ -208,7 +208,11 @@ async def _build_attention_line() -> Optional[str]:
     return mapping.get(label)
 
 
-async def build_context_debug(persona_id: str | None = None) -> dict:
+async def build_context_debug(
+    persona_id: str | None = None,
+    *,
+    include_sight: bool = True,
+) -> dict:
     """
     Structured version of build_context_hint for UI display. Returns a dict
     with every knob Reachy is aware of right now, so the frontend can render
@@ -279,10 +283,14 @@ async def build_context_debug(persona_id: str | None = None) -> dict:
         pass
 
     try:
-        sight = await _build_sight_line()
+        sight = await _build_sight_line() if include_sight else None
         if sight:
             # Strip leading "- You can see (via X): " prefix for a compact chip.
-            out["sight"] = sight.replace("- You can see", "").lstrip(" (").rstrip(".")
+            prefix = "- You can see (via "
+            if sight.startswith(prefix) and "): " in sight:
+                out["sight"] = sight.split("): ", 1)[1].rstrip(".")
+            else:
+                out["sight"] = sight.replace("- You can see", "").lstrip(" (").rstrip(".")
     except Exception:
         pass
 

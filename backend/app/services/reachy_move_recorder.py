@@ -38,6 +38,8 @@ from typing import Optional
 
 import structlog
 
+from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
+
 logger = structlog.get_logger()
 
 
@@ -98,6 +100,8 @@ class ReachyMoveRecorder:
     # ------------------------------------------------------------------
 
     async def start(self, *, library: str, name: str, description: str = "") -> dict:
+        if not body_motion_allowed(surface="move_recorder:start").get("allowed"):
+            return body_motion_locked_payload(surface="move_recorder:start")
         if self._state.active:
             return {"error": "recording_already_active", **self.status()}
         if not name.replace("_", "").replace("-", "").isalnum():
@@ -183,12 +187,13 @@ class ReachyMoveRecorder:
                 pass
         s.task = None
 
-        # Re-enable motors so the head doesn't flop
+        # Default to disabled after recording. Re-enabling torque has been the
+        # most dangerous post-recording transition on unstable hardware.
         try:
             from app.services.reachy_service import get_reachy_service
-            await get_reachy_service().set_motor_mode("enabled")
+            await get_reachy_service().set_motor_mode("disabled")
         except Exception as e:
-            logger.debug("reachy_record_reenable_failed", error=str(e))
+            logger.debug("reachy_record_motor_disable_failed", error=str(e))
 
         # Persist
         library_dir = USER_MOVES_ROOT / s.library
@@ -257,6 +262,8 @@ class ReachyMoveRecorder:
     # ------------------------------------------------------------------
 
     async def play(self, library: str, name: str) -> dict:
+        if not body_motion_allowed(surface=f"move_recorder:play:{library}/{name}").get("allowed"):
+            return body_motion_locked_payload(surface=f"move_recorder:play:{library}/{name}")
         path = USER_MOVES_ROOT / library / f"{name}.json"
         if not path.exists():
             return {"error": "not_found", "path": str(path)}
@@ -287,6 +294,9 @@ class ReachyMoveRecorder:
         last_sent = -math.inf
         try:
             for t, frame in zip(times, frames):
+                if not body_motion_allowed(surface="move_recorder:replay_loop").get("allowed"):
+                    logger.info("reachy_replay_blocked", reason="body_motion_locked")
+                    return
                 if time.monotonic() - last_sent < target_dt:
                     # still within a send window — sleep until the next frame time
                     pass

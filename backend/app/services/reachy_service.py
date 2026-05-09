@@ -55,6 +55,22 @@ import structlog
 # purpose — clears on process restart.
 _RECENT_MOTION_CAP = 20
 _recent_motions: Deque[dict] = deque(maxlen=_RECENT_MOTION_CAP)
+_DAEMON_REQUEST_CONCURRENCY = max(1, int(os.getenv("ZERO_REACHY_DAEMON_REQUEST_CONCURRENCY", "8")))
+_DAEMON_MAX_CONNECTIONS = max(
+    _DAEMON_REQUEST_CONCURRENCY + 4,
+    int(os.getenv("ZERO_REACHY_DAEMON_MAX_CONNECTIONS", "16")),
+)
+_daemon_request_semaphore = asyncio.Semaphore(_DAEMON_REQUEST_CONCURRENCY)
+
+NEUTRAL_HEAD_POSE: dict[str, float] = {
+    "x": 0.0,
+    "y": 0.0,
+    "z": 0.0,
+    "roll": 0.0,
+    "pitch": 0.0,
+    "yaw": 0.0,
+}
+NEUTRAL_ANTENNAS: tuple[float, float] = (0.0, 0.0)
 
 
 def _record_motion(name: str, kind: str, source: str = "direct") -> None:
@@ -70,6 +86,64 @@ def _record_motion(name: str, kind: str, source: str = "direct") -> None:
 
 def get_recent_motions(limit: int = 10) -> list[dict]:
     return list(_recent_motions)[: max(1, min(limit, _RECENT_MOTION_CAP))]
+
+
+def _extract_running_move_uuids(value: Any) -> list[str]:
+    """Collect daemon move UUIDs from the shapes returned by /api/move/running."""
+    found: list[str] = []
+
+    def _walk(node: Any) -> None:
+        if node is None:
+            return
+        if isinstance(node, str):
+            if node and node not in found:
+                found.append(node)
+            return
+        if isinstance(node, list):
+            for item in node:
+                _walk(item)
+            return
+        if isinstance(node, dict):
+            for key in ("uuid", "id", "move_uuid"):
+                val = node.get(key)
+                if isinstance(val, str) and val and val not in found:
+                    found.append(val)
+            for key in ("running", "moves", "active", "items", "value"):
+                if key in node:
+                    _walk(node.get(key))
+
+    _walk(value)
+    return found
+
+
+def _looks_like_robot_state(value: dict) -> bool:
+    if not isinstance(value, dict) or value.get("error"):
+        return False
+    return any(
+        key in value
+        for key in (
+            "head_pose",
+            "body_yaw",
+            "antenna_positions",
+            "antennas_position",
+            "control_mode",
+            "doa",
+        )
+    )
+
+
+def _looks_like_daemon_status(value: dict) -> bool:
+    if not isinstance(value, dict) or value.get("error") or value.get("connected") is False:
+        return False
+    return any(
+        key in value
+        for key in (
+            "backend_status",
+            "state",
+            "type",
+            "version",
+        )
+    )
 
 from app.services.reachy_motion_library import (
     ALL_CLIPS,
@@ -110,9 +184,20 @@ class ReachyService:
             or os.getenv("REACHY_API_URL")
             or DEFAULT_REACHY_URL
         ).rstrip("/")
+        self._host_agent_url = (
+            os.getenv("ZERO_HOST_AGENT_URL")
+            or os.getenv("HOST_AGENT_URL")
+            or "http://host.docker.internal:18796"
+        ).rstrip("/")
         self._client: Optional[httpx.AsyncClient] = None
         self._active_move_uuid: Optional[str] = None
         self._tts_sound_prefix = "zero_tts_"
+        self._daemon_status_cache: dict[str, Any] | None = None
+        self._daemon_status_cache_at = 0.0
+        self._daemon_status_cache_ttl_s = max(
+            0.0,
+            float(os.getenv("ZERO_REACHY_DAEMON_STATUS_CACHE_SECONDS", "1.0")),
+        )
 
     @classmethod
     def get_instance(cls) -> "ReachyService":
@@ -122,7 +207,14 @@ class ReachyService:
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=10.0)
+            self._client = httpx.AsyncClient(
+                timeout=10.0,
+                limits=httpx.Limits(
+                    max_connections=_DAEMON_MAX_CONNECTIONS,
+                    max_keepalive_connections=0,
+                ),
+                headers={"Connection": "close"},
+            )
         return self._client
 
     async def close(self) -> None:
@@ -143,6 +235,7 @@ class ReachyService:
         files: Optional[dict[str, Any]] = None,
         data: Optional[dict[str, Any]] = None,
         timeout: float = 10.0,
+        quiet: bool = False,
     ) -> dict:
         """
         Make a request to the daemon with graceful error handling. Returns the
@@ -152,21 +245,30 @@ class ReachyService:
         url = f"{self._base_url}{path}"
         try:
             client = self._get_client()
-            resp = await client.request(
+            request = client.request(
                 method,
                 url,
                 json=json,
                 params=params,
                 files=files,
                 data=data,
-                timeout=timeout,
+                timeout=httpx.Timeout(
+                    timeout,
+                    connect=min(timeout, 2.0),
+                    pool=min(timeout, 0.75),
+                ),
             )
+            async with _daemon_request_semaphore:
+                resp = await request
             resp.raise_for_status()
             if resp.headers.get("content-type", "").startswith("application/json"):
                 return resp.json()
             return {"ok": True, "content_type": resp.headers.get("content-type")}
         except httpx.ConnectError:
-            logger.warning("reachy_connection_failed", url=url)
+            if quiet:
+                logger.debug("reachy_connection_failed", url=url)
+            else:
+                logger.warning("reachy_connection_failed", url=url)
             return {"error": "Robot not connected", "connected": False}
         except httpx.HTTPStatusError as e:
             body = ""
@@ -174,12 +276,8 @@ class ReachyService:
                 body = e.response.text[:500]
             except Exception:
                 pass
-            logger.warning(
-                "reachy_request_failed",
-                url=url,
-                status=e.response.status_code,
-                body=body,
-            )
+            log = logger.debug if quiet else logger.warning
+            log("reachy_request_failed", url=url, status=e.response.status_code, body=body)
             return {
                 "error": f"Request failed: {e.response.status_code}",
                 "status": e.response.status_code,
@@ -187,21 +285,118 @@ class ReachyService:
                 "connected": True,
             }
         except Exception as e:
-            logger.error("reachy_request_error", url=url, error=str(e))
-            return {"error": str(e), "connected": False}
+            log = logger.debug if quiet else logger.error
+            error = str(e) or type(e).__name__
+            log("reachy_request_error", url=url, error=error, error_type=type(e).__name__)
+            return {"error": error, "connected": False}
+
+    async def _host_agent_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        timeout: float = 2.0,
+        quiet: bool = True,
+    ) -> dict:
+        """Short, isolated call to host_agent for supervisor-only fallbacks."""
+        if not self._host_agent_url:
+            return {"error": "host_agent not configured", "connected": False}
+        url = f"{self._host_agent_url}{path}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
+                headers={"Connection": "close"},
+            ) as client:
+                resp = await client.request(method, url)
+            resp.raise_for_status()
+            if resp.headers.get("content-type", "").startswith("application/json"):
+                return resp.json()
+            return {"ok": True, "content_type": resp.headers.get("content-type")}
+        except Exception as e:
+            log = logger.debug if quiet else logger.warning
+            error = str(e) or type(e).__name__
+            log("reachy_host_agent_request_error", url=url, error=error, error_type=type(e).__name__)
+            return {"error": error, "connected": False}
 
     # ------------------------------------------------------------------
     # Connection / status
     # ------------------------------------------------------------------
 
     async def is_connected(self) -> bool:
-        """True iff the daemon is reachable AND reports state == 'running'."""
-        res = await self._request("GET", "/api/daemon/status", timeout=3.0)
-        return res.get("state") == "running"
+        """True iff the daemon is running and the robot state API responds."""
+        state = await self.get_full_state(timeout=3.0)
+        return _looks_like_robot_state(state)
 
-    async def get_daemon_status(self) -> dict:
+    async def get_daemon_status(
+        self,
+        *,
+        timeout: float = 1.0,
+        supervisor_timeout: float = 0.75,
+        quiet: bool = False,
+    ) -> dict:
         """Raw /api/daemon/status body (version, state, backend_status, etc.)."""
-        return await self._request("GET", "/api/daemon/status", timeout=3.0)
+        if self._daemon_status_cache and self._daemon_status_cache_ttl_s > 0:
+            age = time.monotonic() - self._daemon_status_cache_at
+            if age <= self._daemon_status_cache_ttl_s:
+                cached = dict(self._daemon_status_cache)
+                cached["cached_recent"] = True
+                cached["cache_age_seconds"] = round(age, 3)
+                return cached
+
+        direct = await self._request("GET", "/api/daemon/status", timeout=timeout, quiet=quiet)
+        if _looks_like_daemon_status(direct):
+            payload = {
+                **direct,
+                "via": direct.get("via") or "direct",
+                "daemon_route": "direct",
+                "daemon_direct_reachable": True,
+                "status_stale": False,
+            }
+            self._daemon_status_cache = dict(payload)
+            self._daemon_status_cache_at = time.monotonic()
+            return payload
+
+        supervisor = await self._host_agent_request(
+            "GET",
+            "/daemon/status",
+            timeout=supervisor_timeout,
+            quiet=quiet,
+        )
+        if supervisor.get("running"):
+            backend_status = direct.get("backend_status") if isinstance(direct, dict) else None
+            if not isinstance(backend_status, dict):
+                backend_status = {
+                    "ready": None,
+                    "motor_control_mode": None,
+                    "detail": (
+                        "Daemon process is running under host_agent; direct "
+                        "status route is retrying."
+                    ),
+                }
+            payload = {
+                "type": "daemon_status",
+                "state": "running",
+                "connected": True,
+                "via": "host_agent_supervisor",
+                "daemon_route": "host_agent_supervisor",
+                "daemon_direct_reachable": False,
+                "status_stale": True,
+                "direct_error": direct.get("error") if isinstance(direct, dict) else None,
+                "supervisor": supervisor,
+                "backend_status": backend_status,
+            }
+            self._daemon_status_cache = dict(payload)
+            self._daemon_status_cache_at = time.monotonic()
+            return payload
+        return {
+            **(direct if isinstance(direct, dict) else {}),
+            "connected": False,
+            "via": "direct_error",
+            "daemon_route": "direct",
+            "daemon_direct_reachable": False,
+            "status_stale": True,
+        }
 
     async def health_check(self) -> dict:
         return await self._request("POST", "/health-check", timeout=3.0)
@@ -216,6 +411,8 @@ class ReachyService:
         with_head_joints: bool = False,
         with_target_head_pose: bool = False,
         use_pose_matrix: bool = False,
+        timeout: float = 10.0,
+        quiet: bool = False,
     ) -> dict:
         params = {
             "with_head_pose": with_head_pose,
@@ -226,7 +423,7 @@ class ReachyService:
             "with_target_head_pose": with_target_head_pose,
             "use_pose_matrix": use_pose_matrix,
         }
-        return await self._request("GET", "/api/state/full", params=params)
+        return await self._request("GET", "/api/state/full", params=params, timeout=timeout, quiet=quiet)
 
     async def get_doa(self) -> dict:
         """Direction-of-arrival: {angle: float (radians), speech_detected: bool}."""
@@ -238,7 +435,7 @@ class ReachyService:
 
     def get_status_info(self) -> dict:
         """Static config info (does not contact the robot)."""
-        return {"base_url": self._base_url}
+        return {"base_url": self._base_url, "host_agent_url": self._host_agent_url}
 
     # ------------------------------------------------------------------
     # Movement
@@ -303,10 +500,56 @@ class ReachyService:
         move_uuid = move_uuid or self._active_move_uuid
         if not move_uuid:
             return {"error": "no active move uuid to stop"}
-        return await self._request("POST", "/api/move/stop", json={"uuid": move_uuid})
+        result = await self._request("POST", "/api/move/stop", json={"uuid": move_uuid})
+        if "error" not in result and move_uuid == self._active_move_uuid:
+            self._active_move_uuid = None
+        return result
+
+    async def stop_all_moves(self) -> dict:
+        """Best-effort cancel for every daemon-reported motion source."""
+        running = await self.is_moving()
+        uuids = _extract_running_move_uuids(running)
+
+        # The daemon is the source of truth for active moves. ``_active_move_uuid``
+        # often points at a short neutral/goto move that already completed, and
+        # trying to stop that stale UUID produces a scary 500 even though the
+        # robot is still. Only fall back to the local UUID when the running-move
+        # probe itself failed.
+        running_probe_failed = isinstance(running, dict) and bool(running.get("error"))
+        if running_probe_failed and self._active_move_uuid and self._active_move_uuid not in uuids:
+            uuids.append(self._active_move_uuid)
+
+        stops: list[dict[str, Any]] = []
+        for uuid in uuids:
+            res = await self.stop_move(uuid)
+            stops.append({"uuid": uuid, "ok": "error" not in res, "result": res})
+
+        if not uuids:
+            self._active_move_uuid = None
+            return {
+                "ok": True,
+                "running": running,
+                "uuids": [],
+                "stops": [],
+                "detail": "No daemon move was running.",
+            }
+
+        ok = all(stop.get("ok") for stop in stops)
+        if ok:
+            self._active_move_uuid = None
+        return {"ok": ok, "running": running, "uuids": uuids, "stops": stops}
 
     async def is_moving(self) -> dict:
         return await self._request("GET", "/api/move/running")
+
+    async def settle_neutral(self, *, duration: float = 1.0) -> dict:
+        """Move to a calm neutral posture without playing a canned animation."""
+        return await self.goto(
+            head_pose=dict(NEUTRAL_HEAD_POSE),
+            antennas=NEUTRAL_ANTENNAS,
+            body_yaw=0.0,
+            duration=duration,
+        )
 
     async def wake_up(self) -> dict:
         return await self._request("POST", "/api/move/play/wake_up")
@@ -331,8 +574,19 @@ class ReachyService:
         duration: float = 1.0,
     ) -> dict:
         """Move head to a target orientation. Angles in degrees (converted)."""
+        state = await self.get_full_state(
+            with_body_yaw=False,
+            with_antenna_positions=False,
+            with_doa=False,
+            timeout=2.0,
+            quiet=True,
+        )
+        current_pose = state.get("head_pose") if isinstance(state, dict) else None
+        current_pose = current_pose if isinstance(current_pose, dict) else {}
         head_pose = {
-            "x": 0.0, "y": 0.0, "z": 0.0,
+            "x": float(current_pose.get("x", 0.0) or 0.0),
+            "y": float(current_pose.get("y", 0.0) or 0.0),
+            "z": float(current_pose.get("z", 0.0) or 0.0),
             "roll": math.radians(roll),
             "pitch": math.radians(pitch),
             "yaw": math.radians(yaw),
@@ -638,7 +892,7 @@ class ReachyService:
     # ------------------------------------------------------------------
     #
     # The daemon itself only exposes /api/camera/specs. Live frames are
-    # captured by the host_agent (on the Windows host, port 18794), which
+    # captured by the host_agent (on the Windows host), which
     # owns the USB device via OpenCV. Zero proxies the MJPEG stream and the
     # single-frame endpoint through its own API so browsers see a same-origin
     # URL — see backend/app/routers/reachy.py for the proxy routes.
@@ -666,7 +920,7 @@ class ReachyService:
         settings = get_settings()
         host_agent = (getattr(settings, "host_agent_url", None) or "").rstrip("/")
         if not host_agent:
-            host_agent = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18794").rstrip("/")
+            host_agent = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796").rstrip("/")
 
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:

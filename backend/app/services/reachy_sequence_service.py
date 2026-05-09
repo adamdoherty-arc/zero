@@ -251,6 +251,10 @@ class ReachySequenceService:
                 seq = await self.get_sequence(str(id_or_name))
         if not seq:
             return {"error": f"unknown sequence: {id_or_name}"}
+        from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
+
+        if not body_motion_allowed(surface=f"sequence:{seq.get('name') or id_or_name}").get("allowed"):
+            return body_motion_locked_payload(surface=f"sequence:{seq.get('name') or id_or_name}")
 
         results: list[dict[str, Any]] = []
         for idx, step_dict in enumerate(seq.get("steps", []) or []):

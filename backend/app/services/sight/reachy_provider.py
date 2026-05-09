@@ -3,7 +3,7 @@ ReachySightProvider — exposes the Reachy Mini's camera through the
 SightProvider interface by proxying host_agent's `/camera/*` endpoints.
 
 Zero-api runs in Docker and doesn't own the USB device; the host_agent
-(on the Windows host, port 18794) does. We read through it, which has
+(on the Windows host) does. We read through it, which has
 the nice side effect that the same camera feed is shared with the
 ReachyCameraViewer UI and the vision pipeline without duplicate hardware
 contention.

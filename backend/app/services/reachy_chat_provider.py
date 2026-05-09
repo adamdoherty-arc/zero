@@ -44,24 +44,17 @@ AVAILABLE_PROVIDERS: list[ChatProvider] = [
     ),
     ChatProvider(
         id="gemini-flash",
-        label="Gemini 3.1 Flash",
+        label="Gemini Flash Latest",
         provider="gemini",
-        model="gemini-3.1-flash",
-        description="Cheap + fast cloud model. Needs ZERO_GEMINI_API_KEY.",
+        model="gemini-flash-latest",
+        description="Cheap + fast cloud model through the current Gemini Flash alias. Needs ZERO_GEMINI_API_KEY.",
     ),
     ChatProvider(
         id="gemini-pro",
-        label="Gemini 3.1 Pro",
+        label="Gemini Latest",
         provider="gemini",
-        model="gemini-3.1-pro",
-        description="Smartest Gemini. Slower and pricier than Flash.",
-    ),
-    ChatProvider(
-        id="kimi-light",
-        label="Kimi Light",
-        provider="kimi",
-        model="moonshot-v1-32k",
-        description="Cheap Kimi. Good for short voice replies.",
+        model="gemini-latest",
+        description="Highest-quality Gemini alias. Slower and pricier than Flash.",
     ),
     ChatProvider(
         id="kimi-heavy",
@@ -72,7 +65,7 @@ AVAILABLE_PROVIDERS: list[ChatProvider] = [
     ),
 ]
 
-DEFAULT_PROVIDER_ID = "gemini-flash"
+DEFAULT_PROVIDER_ID = "vllm"
 
 
 def _state_path() -> Path:

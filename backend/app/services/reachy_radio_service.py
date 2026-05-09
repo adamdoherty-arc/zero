@@ -30,6 +30,8 @@ from typing import Optional
 
 import structlog
 
+from app.services.reachy_motion_policy import body_motion_allowed, body_motion_locked_payload
+
 logger = structlog.get_logger()
 
 
@@ -133,6 +135,8 @@ class ReachyRadioService:
         beats_per_dance: int = 8,
         dances: Optional[list[str]] = None,
     ) -> dict:
+        if not body_motion_allowed(surface="radio:start").get("allowed"):
+            return body_motion_locked_payload(surface="radio:start")
         if self._state.active:
             await self.stop()
         bpm = max(40.0, min(200.0, float(bpm)))
@@ -167,6 +171,11 @@ class ReachyRadioService:
         svc = get_reachy_service()
         try:
             while self._state.active:
+                if not body_motion_allowed(surface="radio:loop").get("allowed"):
+                    logger.info("reachy_radio_blocked", reason="body_motion_locked")
+                    self._state.active = False
+                    self._state.current_dance = None
+                    return
                 dance_duration_s = (self._state.beats_per_dance * 60.0) / max(1.0, self._state.bpm)
                 clip = random.choice(self._state.dances)
                 self._state.current_dance = clip
