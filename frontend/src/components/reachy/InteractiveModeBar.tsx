@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Mic, MicOff, Loader2, AlertCircle, Radio, X } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
-import { useRealtimeVoice } from '@/hooks/useRealtimeVoice'
+import { useSharedRealtimeVoice } from '@/hooks/useSharedRealtimeVoice'
 
 /**
  * Primary "Interactive Mode" toggle lives in the TopBar. One click puts
@@ -24,8 +24,8 @@ import { useRealtimeVoice } from '@/hooks/useRealtimeVoice'
  */
 
 interface RealtimeCfg {
-  backend: 'openai' | 'gemini'
-  preferred_backend: 'openai' | 'gemini' | null
+  backend: 'local' | 'openai' | 'gemini'
+  preferred_backend: 'local' | 'openai' | 'gemini' | null
   realtime_available: boolean
   has_openai_key: boolean
   has_gemini_key: boolean
@@ -40,6 +40,7 @@ interface RealtimeCfg {
 const POLL_ACTIVITY_MS = 10_000        // check idle every 10 s
 
 const BACKEND_LABELS: Record<string, string> = {
+  local: 'Local (vLLM)',
   openai: 'OpenAI Realtime',
   gemini: 'Gemini Live',
 }
@@ -48,7 +49,7 @@ export function InteractiveModeBar() {
   const [cfg, setCfg] = useState<RealtimeCfg | null>(null)
   const [durationSec, setDurationSec] = useState(0)
 
-  const voice = useRealtimeVoice()
+  const voice = useSharedRealtimeVoice()
   const connectStartedAtRef = useRef<number | null>(null)
   const lastActivityAtRef = useRef<number>(0)
 
@@ -118,7 +119,7 @@ export function InteractiveModeBar() {
   }, [voice.state, voice, cfg?.idle_timeout_min, cfg?.cost_cap_usd])
 
   const realtimeAvailable = Boolean(cfg?.realtime_available)
-  const effectiveBackend = cfg?.preferred_backend ?? cfg?.backend ?? 'gemini'
+  const effectiveBackend = cfg?.preferred_backend ?? cfg?.backend ?? 'local'
 
   const toggle = useCallback(async () => {
     if (!cfg) return
@@ -135,9 +136,8 @@ export function InteractiveModeBar() {
     if (!realtimeAvailable) {
       toast({
         variant: 'destructive',
-        title: 'Interactive Mode needs an API key',
-        description:
-          'Add an OpenAI or Gemini key via the LLM badge or realtime settings.',
+        title: 'Interactive Mode is unavailable',
+        description: 'Local realtime is failing to initialize. Check that vLLM is up at host.docker.internal:18800, then retry.',
       })
       return
     }
@@ -214,8 +214,8 @@ export function InteractiveModeBar() {
     : connected
       ? `Live via ${BACKEND_LABELS[effectiveBackend] ?? effectiveBackend}. Space or Esc to end.`
       : realtimeAvailable
-        ? `Start Interactive Mode (Space or Ctrl+Shift+J)`
-        : 'Add an OpenAI or Gemini key to enable'
+        ? `Start Interactive Mode (Space or Ctrl+Shift+J) — using ${BACKEND_LABELS[effectiveBackend] ?? effectiveBackend}`
+        : 'Local realtime is initializing — check vLLM is reachable'
 
   const fmtDuration = (s: number) => {
     const m = Math.floor(s / 60)

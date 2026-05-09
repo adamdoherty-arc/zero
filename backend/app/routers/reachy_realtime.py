@@ -76,16 +76,19 @@ def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
     # Local backend is always "available" — the actual vLLM-up check
     # happens at session start so we don't probe on every config read.
     local_available = True
-    if current == BACKEND_LOCAL and explicit_backend:
-        preferred = BACKEND_LOCAL
-    elif current == BACKEND_OPENAI and has_openai:
-        preferred = BACKEND_OPENAI
-    elif current == BACKEND_GEMINI and has_gemini:
-        preferred = BACKEND_GEMINI
-    elif has_openai:
-        preferred = BACKEND_OPENAI
-    elif has_gemini:
-        preferred = BACKEND_GEMINI
+    # Local-first policy: default to LOCAL unless the user has explicitly
+    # picked a cloud backend AND that backend's key is configured. Having
+    # an OpenAI/Gemini key sitting around is no longer enough to silently
+    # promote that backend to default — those are explicit-only choices
+    # surfaced through the LLM badge.
+    if explicit_backend:
+        if current == BACKEND_OPENAI and has_openai:
+            preferred = BACKEND_OPENAI
+        elif current == BACKEND_GEMINI and has_gemini:
+            preferred = BACKEND_GEMINI
+        else:
+            # Explicit cloud pick but key missing/revoked — fall back to local.
+            preferred = BACKEND_LOCAL
     else:
         preferred = BACKEND_LOCAL
     return {
