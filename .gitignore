@@ -73,5 +73,19 @@ host_agent/pip-install.log
 host_agent/host_agent.log
 host_agent/host_agent_startup.log
 
+# host_agent vendored binaries + machine-local overrides
+host_agent/bin/
+host_agent/*.local.yaml
+host_agent/*.local.yml
+
+# NSSM service migration artifacts (kept as scripts, not as runtime logs)
+nssm-stdout*.log
+nssm-stderr*.log
+
+# Loose screenshots from manual diagnostics
+reachy-*.png
+reachy_*.png
+
 # Recorded / cloned voice samples — don't commit user audio
 backend/voices/
+.gstack/

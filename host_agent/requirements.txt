@@ -22,10 +22,26 @@ edge-tts>=7.0
 # Wake-word + command transcription
 pvporcupine>=3.0
 faster-whisper>=1.1
+# openWakeWord: local ONNX keyword models (hey_jarvis, alexa, hey_mycroft,
+# hey_rhasspy). Preferred over whisper scanning because it's trained per
+# keyword and doesn't hallucinate "Thank you for watching" filler. Run
+# `python -c "import openwakeword; openwakeword.utils.download_models()"`
+# after install to fetch the bundled keyword models.
+openwakeword>=0.6.0
+# Fuzzy match for whisper wake-word fallback — tolerates "hey cero" / "hey sero"
+# mishearings without letting ambient TV dialogue through.
+rapidfuzz>=3.9
 
 # Loads c:\code\zero\.env so Picovoice + Postgres keys propagate from the
 # shared project env file into the host-agent process.
 python-dotenv>=1.0
+
+# Daemon supervisor diagnostics: host metrics + USB serial enumeration.
+psutil>=5.9
+pyserial>=3.5
+
+# Camera capture on the Windows host (DirectShow via cv2.VideoCapture).
+opencv-python>=4.10
 
 # Reachy Mini SDK — used by run_reachy_daemon.py / run_reachy_daemon.bat to
 # spawn a headless motion daemon on :8000 (same API the Tauri desktop app
