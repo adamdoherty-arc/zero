@@ -48,6 +48,16 @@ MUTATION_INSTRUCTIONS = [
     "2-5 word payoff line on every body slide. Keep the same variables and format.",
 ]
 
+COMPANY_MUTATION_INSTRUCTIONS = [
+    "Rewrite this company-agent prompt so the model completes safe internal work before asking Adam. "
+    "Add a strict budget of at most one blocking question with recommended_default, why_needed, and blocks_progress. "
+    "Preserve all variables and output format.",
+    "Rewrite this company-agent prompt to improve approval-gated autonomy. Require exact Adam action packets for legal, tax, finance, public/client, account, purchase, filing, DNS, email, credential, and live-trading steps. "
+    "Preserve all variables and output format.",
+    "Rewrite this company-agent prompt so task updates are concrete: Goal, Steps, Acceptance Criteria, Evidence/Links, Guardrail, and Adam Action. "
+    "Require self_improvement_notes and legion_prompt_feedback. Preserve all variables and output format.",
+]
+
 
 class PromptBreederService:
     def __init__(self) -> None:
@@ -79,6 +89,12 @@ class PromptBreederService:
             return None
         return cleaned[:8000]
 
+    @staticmethod
+    def _mutation_instructions_for(task_type: str) -> List[str]:
+        if str(task_type or "").startswith("company_"):
+            return COMPANY_MUTATION_INSTRUCTIONS
+        return MUTATION_INSTRUCTIONS
+
     async def breed_task_type(self, task_type: str) -> Dict[str, Any]:
         """Breed the top performers + retire the bottom. Returns summary."""
         async with get_session() as session:
@@ -109,9 +125,10 @@ class PromptBreederService:
             return {"task_type": task_type, "children_created": 0, "retired": 0, "reason": "no_parents"}
 
         children_created = 0
+        mutation_instructions = self._mutation_instructions_for(task_type)
         for parent in parents:
             for i in range(MUTATIONS_PER_PARENT):
-                hint = MUTATION_INSTRUCTIONS[i % len(MUTATION_INSTRUCTIONS)]
+                hint = mutation_instructions[i % len(mutation_instructions)]
                 mutated = await self._mutate(parent.prompt_template, hint)
                 if mutated is None or mutated.strip() == parent.prompt_template.strip():
                     continue

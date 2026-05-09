@@ -1,0 +1,41 @@
+[  786612ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  787625ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  789634ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1255396ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1256423ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1258436ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1262449ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1742774ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 2769879ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 2770896ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 2772906ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 3857459ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0
+[ 3858474ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 3860488ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 3864501ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 4639350ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 4640358ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 4642365ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 6381865ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 6382878ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 6384888ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 8106116ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 8107124ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 8109131ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 9852238ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 9853245ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 9855250ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11272821ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/assistant/notifications/count:0
+[11273838ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11287201ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11291218ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11891685ms] [ERROR] Failed to load resource: the server responded with a status of 504 (Gateway Time-out) @ http://localhost:5173/api/assistant/notifications/count:0
+[11953339ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11955350ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[11959368ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[13606406ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[13607422ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[13609428ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[13943740ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/assistant/notifications/count:0
+[13944778ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[13966336ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0

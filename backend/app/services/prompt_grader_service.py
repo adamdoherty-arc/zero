@@ -59,6 +59,15 @@ Return ONLY a JSON object with this exact shape:
 """
 
 
+COMPANY_JUDGE_APPENDIX = """
+Company-agent grading addendum:
+- Reward outputs that prepare concrete internal work before asking Adam.
+- Penalize generic questions, more than one question_for_adam item, or questions without a recommended_default and why_needed.
+- Penalize claims that legal filings, banking, purchases, public/client messages, account changes, tax/legal decisions, or live trades were executed.
+- Reward ADA AI LLC canonical facts, official-source evidence links, clear approval requests, task updates with acceptance criteria, and self_improvement_notes.
+"""
+
+
 def _truncate(text: Optional[str], limit: int) -> str:
     if not text:
         return ""
@@ -71,12 +80,14 @@ def _build_judge_prompt(run: PromptRun) -> str:
     system_part = _truncate(run.system_prompt, 1500)
     user_part = _truncate(run.user_prompt, 3500)
     resp_part = _truncate(run.response_text, 3500)
+    appendix = COMPANY_JUDGE_APPENDIX if str(run.task_type or "").startswith("company_") else ""
     return (
         f"TASK TYPE: {run.task_type}\n"
         f"SOURCE: {run.source}\n\n"
         f"--- SYSTEM PROMPT ---\n{system_part}\n\n"
         f"--- USER PROMPT ---\n{user_part}\n\n"
         f"--- LLM RESPONSE ---\n{resp_part}\n\n"
+        f"{appendix}\n\n"
         f"Grade the response now."
     )
 
@@ -92,10 +103,12 @@ class PromptGraderService:
 
     HEAVY_TASK_TYPES = {
         "character_content_review_final",
+        "company_operator_overnight",
+        "company_operator_dashboard_review",
     }
 
     def _pick_task_type(self, task_type: str) -> str:
-        if task_type in self.HEAVY_TASK_TYPES:
+        if task_type in self.HEAVY_TASK_TYPES or str(task_type or "").startswith("company_subagent_"):
             return "prompt_grading_heavy"
         return "prompt_grading"
 

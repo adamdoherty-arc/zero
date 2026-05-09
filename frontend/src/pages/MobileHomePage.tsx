@@ -7,9 +7,26 @@ import {
     ArrowRight,
     Loader2,
     Sparkles,
+    Bot,
+    Mic,
+    Lock,
+    MoonStar,
+    Hand,
+    CalendarClock,
+    Timer,
+    Eye,
+    Home as HomeIcon,
 } from 'lucide-react'
 import { useSmartReviewQueue } from '@/hooks/useCharacterContentApi'
 import { useReferenceVideos } from '@/hooks/useCharacterReferenceVideoApi'
+import {
+    type CompanionMode,
+    useCreateCompanionEvent,
+    useReachyCompanionStatus,
+    useSetCompanionMode,
+    useSettleReachyAssistant,
+} from '@/hooks/useReachyApi'
+import { useToast } from '@/hooks/use-toast'
 
 /**
  * Dashboard-style home surface for the installed PWA.
@@ -65,6 +82,101 @@ function StatCard({
     )
 }
 
+function ReachyQuickControls() {
+    const companion = useReachyCompanionStatus(7000)
+    const setMode = useSetCompanionMode()
+    const settle = useSettleReachyAssistant()
+    const createEvent = useCreateCompanionEvent()
+    const { toast } = useToast()
+    const mode = companion.data?.mode ?? 'ambient'
+    const next = companion.data?.next_suggested_action?.label ?? 'Reachy is checking local signals'
+
+    const switchMode = async (nextMode: CompanionMode) => {
+        try {
+            await setMode.mutateAsync({ mode: nextMode, reason: 'mobile' })
+            toast({ title: `Reachy: ${nextMode}` })
+        } catch (err) {
+            toast({ title: 'Reachy mode failed', description: String(err), variant: 'destructive' })
+        }
+    }
+
+    const notice = async () => {
+        try {
+            await createEvent.mutateAsync({
+                type: 'notice',
+                source: 'mobile',
+                summary: 'Mobile user asked what Reachy noticed.',
+                payload: { mode },
+                importance: 0.5,
+            })
+            toast({ title: 'Reachy noticed', description: next })
+        } catch (err) {
+            toast({ title: 'Could not ask Reachy', description: String(err), variant: 'destructive' })
+        }
+    }
+
+    const ActionButton = ({
+        icon: Icon,
+        label,
+        onClick,
+        active,
+        loading,
+    }: {
+        icon: React.ElementType
+        label: string
+        onClick: () => void
+        active?: boolean
+        loading?: boolean
+    }) => (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={loading}
+            className={`min-h-14 rounded-xl border px-3 py-2 text-sm font-semibold flex flex-col items-center justify-center gap-1 active:scale-[0.98] ${
+                active
+                    ? 'border-indigo-500/50 bg-indigo-500/20 text-white'
+                    : 'border-gray-800 bg-gray-900/70 text-gray-300'
+            } disabled:opacity-50`}
+        >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
+            {label}
+        </button>
+    )
+
+    return (
+        <section className="rounded-2xl border border-gray-800 bg-gray-900/80 p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-indigo-300">
+                        <Bot className="w-3.5 h-3.5" />
+                        Reachy
+                    </div>
+                    <h2 className="mt-1 text-lg font-bold text-white capitalize">{mode} mode</h2>
+                    <p className="mt-0.5 text-xs text-gray-400 line-clamp-2">{next}</p>
+                </div>
+                {companion.isLoading && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+            </div>
+
+            <div className="mt-4 grid grid-cols-4 gap-2">
+                <Link
+                    to="/reachy"
+                    className="min-h-14 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-100 flex flex-col items-center justify-center gap-1 active:scale-[0.98]"
+                >
+                    <Mic className="w-4 h-4" />
+                    Talk
+                </Link>
+                <ActionButton icon={Lock} label="Privacy" active={mode === 'privacy'} loading={setMode.isPending} onClick={() => void switchMode('privacy')} />
+                <ActionButton icon={MoonStar} label="Sleep" active={mode === 'sleep'} loading={setMode.isPending} onClick={() => void switchMode('sleep')} />
+                <ActionButton icon={Hand} label="Settle" loading={settle.isPending} onClick={() => void settle.mutateAsync({ reason: 'mobile' })} />
+                <ActionButton icon={CalendarClock} label="Meeting" active={mode === 'meeting'} loading={setMode.isPending} onClick={() => void switchMode('meeting')} />
+                <ActionButton icon={Timer} label="Focus" active={mode === 'focus'} loading={setMode.isPending} onClick={() => void switchMode('focus')} />
+                <ActionButton icon={HomeIcon} label="Ambient" active={mode === 'ambient'} loading={setMode.isPending} onClick={() => void switchMode('ambient')} />
+                <ActionButton icon={Eye} label="Notice" loading={createEvent.isPending} onClick={() => void notice()} />
+            </div>
+        </section>
+    )
+}
+
 export function MobileHomePage() {
     const { data: pendingCarousels, isLoading: loadingCarousels } = useSmartReviewQueue()
     const { data: pendingVideos, isLoading: loadingVideos } = useReferenceVideos({
@@ -105,6 +217,8 @@ export function MobileHomePage() {
                     </Link>
                 )}
             </section>
+
+            <ReachyQuickControls />
 
             {/* Stats */}
             <section className="grid grid-cols-2 gap-3">

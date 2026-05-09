@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getAuthHeaders } from '@/lib/auth'
-import type { SchedulerStatus, SchedulerAuditEntry, HealthReadyResponse } from '../types'
+import type {
+  SchedulerStatus,
+  SchedulerAuditEntry,
+  HealthReadyResponse,
+  SchedulerJobToggleResult,
+  SchedulerJobsToggleResult,
+} from '../types'
 
 const API_BASE = '/api'
 
@@ -56,6 +62,38 @@ export function useTriggerJob() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+    },
+  })
+}
+
+export function useSetSchedulerJobEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ jobName, enabled }: { jobName: string; enabled: boolean }) =>
+      fetchApi<SchedulerJobToggleResult>(`/system/scheduler/jobs/${jobName}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+      queryClient.invalidateQueries({ queryKey: ['execution'] })
+      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
+    },
+  })
+}
+
+export function useSetSchedulerJobsEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ jobNames, enabled }: { jobNames: string[]; enabled: boolean }) =>
+      fetchApi<SchedulerJobsToggleResult>('/system/scheduler/jobs', {
+        method: 'PATCH',
+        body: JSON.stringify({ job_names: jobNames, enabled }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+      queryClient.invalidateQueries({ queryKey: ['execution'] })
+      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
     },
   })
 }

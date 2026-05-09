@@ -1,0 +1,2 @@
+[     265ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ https://thumbs.worthpoint.com/zoom/images1/1/1014/02/darth-vader-star-wars-movie-poster_1_c21eedb5824e20c2b3a5908e2f038212.jpg:0
+[  120144ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0

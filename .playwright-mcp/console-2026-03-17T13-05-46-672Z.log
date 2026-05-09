@@ -1,0 +1,6 @@
+[       7ms] [WARNING] WebSocket connection to 'ws://localhost:18792/ws/meeting-recording' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/assets/index-B7XuriTf.js:866
+[    2440ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost/api/meetings/?limit=50:0
+[    5816ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost/api/meetings/?limit=50:0
+[   10171ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost/api/meetings/?limit=50:0
+[   16547ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://localhost/api/meetings/?limit=50:0
+[  150149ms] [ERROR] Failed to load resource: net::ERR_EMPTY_RESPONSE @ http://localhost:5173/api/assistant/notifications/count:0

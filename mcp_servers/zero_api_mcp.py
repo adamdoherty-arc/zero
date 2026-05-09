@@ -391,6 +391,97 @@ TOOLS = [
             "required": ["message"],
         },
     ),
+    types.Tool(
+        name="vault_search",
+        description="Hybrid BM25 + dense vector search over the indexed Obsidian vault. Returns top chunks with file paths and heading context. Use partitions=['reference'|'projects'|'journal'|'inbox'] to narrow — journal queries carry time-decay automatically.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural-language query"},
+                "partitions": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["reference", "projects", "journal", "inbox"]},
+                    "description": "Optional partition filter. Omit for all.",
+                },
+                "top_k": {"type": "integer", "default": 8, "minimum": 1, "maximum": 30},
+            },
+            "required": ["query"],
+        },
+    ),
+    types.Tool(
+        name="vault_get_file",
+        description="Fetch the concatenated content of a single vault note by path (e.g. '30_Efforts/34_Zero/README.md'). Returns frontmatter, tags, and reassembled body from indexed chunks.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Relative path inside the vault"},
+            },
+            "required": ["path"],
+        },
+    ),
+    types.Tool(
+        name="vault_propose_write",
+        description="Write a markdown file under the agent-owned 00_Meta/_agent/** namespace. Use for proposals + drafts the human can later promote. Never touches human-owned notes — for those, use the cyanheads Obsidian MCP.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "relative_path": {"type": "string", "description": "Relative path under 00_Meta/_agent/**"},
+                "content": {"type": "string"},
+                "source": {"type": "string", "default": "agent"},
+            },
+            "required": ["relative_path", "content"],
+        },
+    ),
+    types.Tool(
+        name="list_agent_approvals",
+        description="List Zero's agent tool-call approval queue (tier-based: read|write_local|write_external|financial). Use status='pending' to surface what's waiting on a decision.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "limit": {"type": "integer", "default": 20},
+            },
+        },
+    ),
+    # ---- Sight (wearable-agnostic vision) — Phase 6 ----
+    types.Tool(
+        name="list_sight_providers",
+        description="List every registered SightProvider (reachy, meta_rayban, …) with status: active, last_frame_ts, width/height, backend/extra. Use this to know whether ambient vision data is currently available.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="get_sight_frame",
+        description="Return the latest JPEG frame from a SightProvider as base64. Defaults to the active provider. Use this when you need to reason about what the user is currently seeing.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "description": "Provider id, e.g. 'reachy' or 'meta_rayban'. Omit to use active."},
+            },
+        },
+    ),
+    types.Tool(
+        name="describe_scene",
+        description="Run VLM scene description on the active (or specified) SightProvider's latest frame. Optional `question` is answered grounded in the image. Returns {caption, actionable, answer, detections, provider}.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string"},
+                "question": {"type": "string", "description": "Optional question to answer about the scene."},
+                "kind": {"type": "string", "enum": ["face", "hands"], "default": "face"},
+            },
+        },
+    ),
+    types.Tool(
+        name="recent_sight_observations",
+        description="Pull recent ambient-vision observations from the Obsidian vault (`00_Meta/_agent/vision/`). Use when the user asks 'what have I seen today' or 'summarize my day visually'.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "hours": {"type": "integer", "default": 24, "description": "Lookback window in hours."},
+                "limit": {"type": "integer", "default": 40},
+            },
+        },
+    ),
 ]
 
 
@@ -542,11 +633,115 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.T
                 body["params"] = args["params"]
             result = await _post("/api/workflows/trigger", body)
 
+        elif name == "vault_search":
+            body: dict[str, Any] = {"query": args["query"], "top_k": args.get("top_k", 8)}
+            if args.get("partitions"):
+                body["partitions"] = args["partitions"]
+            result = await _post("/api/vault/search", body)
+
+        elif name == "vault_get_file":
+            result = await _get("/api/vault/file", {"path": args["path"]})
+
+        elif name == "vault_propose_write":
+            result = await _post("/api/vault/propose", {
+                "relative_path": args["relative_path"],
+                "content": args["content"],
+                "source": args.get("source", "agent"),
+            })
+
+        elif name == "list_agent_approvals":
+            params = {}
+            if "status" in args:
+                params["status"] = args["status"]
+            if "limit" in args:
+                params["limit"] = args["limit"]
+            result = await _get("/api/agent-approvals", params or None)
+
         elif name == "invoke_orchestrator":
             body = {"message": args["message"]}
             if "thread_id" in args:
                 body["thread_id"] = args["thread_id"]
             result = await _post("/api/orchestrator/graph/invoke", body)
+
+        # ---- Sight tools (Phase 6) ----
+
+        elif name == "list_sight_providers":
+            result = await _get("/api/sight/providers")
+
+        elif name == "get_sight_frame":
+            provider_id = args.get("provider")
+            path = (
+                f"/api/sight/{provider_id}/frame.jpg"
+                if provider_id
+                else "/api/sight/active"  # active status; frame comes from /active-frame
+            )
+            # When no provider is specified, pull the active id first then fetch its frame.
+            if not provider_id:
+                import json as _json
+                status = await _get("/api/sight/active")
+                try:
+                    provider_id = _json.loads(status).get("provider")
+                except Exception:
+                    provider_id = None
+                if not provider_id:
+                    result = json.dumps({"error": "no active sight provider"}, indent=2)
+                else:
+                    path = f"/api/sight/{provider_id}/frame.jpg"
+            if provider_id:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.get(f"{API_URL}{path}", headers=_headers())
+                if resp.status_code >= 400:
+                    result = json.dumps({"error": f"frame fetch failed {resp.status_code}", "body": resp.text[:300]}, indent=2)
+                else:
+                    import base64 as _b64
+                    result = json.dumps({
+                        "provider": provider_id,
+                        "bytes": len(resp.content),
+                        "mime": resp.headers.get("content-type", "image/jpeg"),
+                        "b64": _b64.b64encode(resp.content).decode("ascii"),
+                    }, indent=2)
+
+        elif name == "describe_scene":
+            params: dict[str, Any] = {}
+            if args.get("provider"):
+                params["provider_id"] = args["provider"]
+            if args.get("kind"):
+                params["kind"] = args["kind"]
+            if args.get("question"):
+                params["question"] = args["question"]
+            # POST /reachy/vision/scene takes query params only.
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(
+                    f"{API_URL}/api/reachy/vision/scene",
+                    headers=_headers(),
+                    params=params,
+                )
+            if resp.status_code >= 400:
+                result = json.dumps({"error": f"scene failed {resp.status_code}", "body": resp.text[:300]}, indent=2)
+            else:
+                result = json.dumps(resp.json(), indent=2, default=str)
+
+        elif name == "recent_sight_observations":
+            hours = int(args.get("hours", 24))
+            limit = int(args.get("limit", 40))
+            # Use vault_search with a broad query scoped to the agent vision folder.
+            result = await _post(
+                "/api/vault/search",
+                {
+                    "query": "vision-observation",
+                    "top_k": limit,
+                    "partitions": ["_agent"],
+                },
+            )
+            # Callers can filter by date client-side; we pass `hours` through
+            # as context so the LLM knows the window asked for.
+            import json as _json
+            try:
+                parsed = _json.loads(result)
+                parsed["_window_hours"] = hours
+                result = json.dumps(parsed, indent=2, default=str)
+            except Exception:
+                pass
 
         else:
             return [types.TextContent(type="text", text=f"Unknown tool: {name}")]

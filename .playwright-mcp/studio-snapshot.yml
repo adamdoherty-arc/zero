@@ -1,0 +1,104 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]
+          - listitem [ref=e27]
+          - listitem [ref=e35]
+          - listitem [ref=e40]
+          - listitem [ref=e46]
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]
+          - listitem [ref=e59]
+          - listitem [ref=e67]
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]
+          - listitem [ref=e84]
+          - listitem [ref=e89]
+      - generic [ref=e102]:
+        - generic [ref=e103]: Meetings
+        - list [ref=e104]:
+          - listitem [ref=e105]
+          - listitem [ref=e111]
+      - generic [ref=e115]:
+        - generic [ref=e116]: AI Company
+        - list [ref=e117]:
+          - listitem [ref=e118]
+          - listitem [ref=e125]
+          - listitem [ref=e130]
+          - listitem [ref=e135]
+          - listitem [ref=e142]
+      - generic [ref=e157]:
+        - generic [ref=e158]: Automation
+        - list [ref=e159]:
+          - listitem [ref=e160]
+          - listitem [ref=e166]
+          - listitem [ref=e173]
+          - listitem [ref=e182]
+          - listitem [ref=e187]
+          - listitem [ref=e193]
+          - listitem [ref=e199]
+          - listitem [ref=e207]
+          - listitem [ref=e212]
+          - listitem [ref=e217]
+          - listitem [ref=e223]
+          - listitem [ref=e230]
+      - generic [ref=e237]:
+        - generic [ref=e238]: System
+        - list [ref=e239]:
+          - listitem [ref=e240]
+          - listitem [ref=e246]
+          - listitem [ref=e253]
+          - listitem [ref=e259]
+          - listitem [ref=e267]
+          - listitem [ref=e273]
+          - listitem [ref=e278]
+    - list [ref=e293]:
+      - listitem [ref=e294]:
+        - button "Zero v1.0" [ref=e295] [cursor=pointer]:
+          - generic [ref=e297]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e298]
+  - main [ref=e299]:
+    - generic [ref=e300]:
+      - button "Toggle Sidebar" [ref=e301] [cursor=pointer]:
+        - img
+        - generic [ref=e302]: Toggle Sidebar
+      - generic [ref=e303]:
+        - generic [ref=e304]: Zero
+        - generic [ref=e305]: /
+        - generic [ref=e306]: Character Content
+      - button "Search... Ctrl K" [ref=e307] [cursor=pointer]:
+        - img [ref=e308]
+        - generic [ref=e311]: Search...
+        - generic [ref=e312]:
+          - generic [ref=e313]: Ctrl
+          - text: K
+      - button "9+" [ref=e315] [cursor=pointer]:
+        - img [ref=e316]
+        - generic [ref=e319]: 9+
+    - main [ref=e320]:
+      - generic [ref=e321]:
+        - navigation "Character content sections" [ref=e322]:
+          - button "Characters" [ref=e323] [cursor=pointer]
+          - button "Reference Videos" [ref=e329] [cursor=pointer]
+          - button "Research Queue" [ref=e332] [cursor=pointer]
+          - button "Content Studio" [active] [ref=e336] [cursor=pointer]
+          - button "Review Queue" [ref=e339] [cursor=pointer]
+          - button "Inspiration" [ref=e343] [cursor=pointer]
+          - button "Analytics" [ref=e346] [cursor=pointer]
+          - button "Autopilot" [ref=e349] [cursor=pointer]
+        - generic [ref=e3498]:
+          - generic [ref=e3499]
+          - generic [ref=e3525]

@@ -4,6 +4,8 @@
 !.env.example
 google-oauth-credentials.json
 **/google-oauth-credentials.json
+client_secret*.json
+**/client_secret*.json
 
 # Runtime data & workspace
 workspace/

@@ -1,0 +1,1300 @@
+{
+  "project": "ada",
+  "run_started_at": "2026-05-08T23:37:55.204431Z",
+  "feature_count": 37,
+  "composite_score": 83.7,
+  "composite_simple": 82.9,
+  "prior_composite_weighted": 83.9,
+  "prior_composite_simple": 83.2,
+  "dimension_scores": {
+    "functional": 89.1,
+    "data": 77.2,
+    "integration": 82.6,
+    "ux_performance": 86.7,
+    "optimization": 82.6,
+    "competitive": 81.6
+  },
+  "feature_grades": [
+    {
+      "name": "prediction_markets",
+      "route": "/prediction-markets",
+      "score": 58.9,
+      "grade": "F",
+      "dimension_scores": {
+        "functional": 75,
+        "data": 0,
+        "integration": 78,
+        "ux_performance": 70,
+        "optimization": 75,
+        "competitive": 65
+      },
+      "issues": [
+        {
+          "severity": "P0",
+          "issue": "Service flagged disabled \u2014 endpoints return 503"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.4 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 0.0,
+        "data_pct": 0.0,
+        "avg_ms": 57
+      }
+    },
+    {
+      "name": "news",
+      "route": "/news",
+      "score": 64.6,
+      "grade": "D",
+      "dimension_scores": {
+        "functional": 78,
+        "data": 30,
+        "integration": 72,
+        "ux_performance": 78,
+        "optimization": 75,
+        "competitive": 55
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.9 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 143
+      }
+    },
+    {
+      "name": "documentation",
+      "route": "/documentation",
+      "score": 69.3,
+      "grade": "D",
+      "dimension_scores": {
+        "functional": 72,
+        "data": 68,
+        "integration": 62,
+        "ux_performance": 80,
+        "optimization": 78,
+        "competitive": 55
+      },
+      "issues": [],
+      "trend": "-1.4 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 0,
+        "ok_pct": 0.0,
+        "data_pct": 0.0,
+        "avg_ms": 0
+      }
+    },
+    {
+      "name": "comps_analysis",
+      "route": "/comps-analysis",
+      "score": 70.5,
+      "grade": "C-",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 25,
+        "integration": 85,
+        "ux_performance": 82,
+        "optimization": 88,
+        "competitive": 62
+      },
+      "issues": [
+        {
+          "severity": "P1",
+          "issue": "Live API returns errors despite endpoint existing (data layer broken)"
+        },
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+1.5 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 234
+      }
+    },
+    {
+      "name": "dcf_valuation",
+      "route": "/dcf-valuation",
+      "score": 73.8,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 30,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 88,
+        "competitive": 72
+      },
+      "issues": [
+        {
+          "severity": "P1",
+          "issue": "Live API returns errors despite endpoint existing (data layer broken)"
+        },
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "+1.5 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 0.0,
+        "data_pct": 0.0,
+        "avg_ms": 215
+      }
+    },
+    {
+      "name": "quant_lab",
+      "route": "/quant-lab",
+      "score": 75.8,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 82,
+        "data": 65,
+        "integration": 78,
+        "ux_performance": 80,
+        "optimization": 82,
+        "competitive": 65
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.2 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 4,
+        "ok_pct": 25.0,
+        "data_pct": 25.0,
+        "avg_ms": 99
+      }
+    },
+    {
+      "name": "premiums_scanner",
+      "route": "/scanner",
+      "score": 77.0,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 42,
+        "integration": 82,
+        "ux_performance": 85,
+        "optimization": 82,
+        "competitive": 82
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.0 vs last run",
+      "importance": 1.2,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 661
+      }
+    },
+    {
+      "name": "chart_analysis",
+      "route": "/chart-analysis",
+      "score": 78.8,
+      "grade": "C+",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 82,
+        "integration": 80,
+        "ux_performance": 78,
+        "optimization": 52,
+        "competitive": 82
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+1.6 vs last run",
+      "importance": 1.2,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 743
+      }
+    },
+    {
+      "name": "agent_dashboard",
+      "route": "/agent-dashboard",
+      "score": 78.8,
+      "grade": "C+",
+      "dimension_scores": {
+        "functional": 82,
+        "data": 78,
+        "integration": 72,
+        "ux_performance": 82,
+        "optimization": 80,
+        "competitive": 80
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.8 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 122
+      }
+    },
+    {
+      "name": "whale_intelligence",
+      "route": "/whale-intelligence",
+      "score": 80.2,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 73,
+        "integration": 80,
+        "ux_performance": 82,
+        "optimization": 68,
+        "competitive": 85
+      },
+      "issues": [
+        {
+          "severity": "P1",
+          "issue": "Live API returns errors despite endpoint existing (data layer broken)"
+        },
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.2 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 6,
+        "ok_pct": 33.0,
+        "data_pct": 17.0,
+        "avg_ms": 2432
+      }
+    },
+    {
+      "name": "options_intelligence",
+      "route": "/options-intelligence",
+      "score": 80.5,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 78,
+        "integration": 78,
+        "ux_performance": 82,
+        "optimization": 75,
+        "competitive": 82
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+0.2 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 54
+      }
+    },
+    {
+      "name": "screener",
+      "route": "/fundamental-screens",
+      "score": 81.5,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 65,
+        "integration": 82,
+        "ux_performance": 85,
+        "optimization": 85,
+        "competitive": 78
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+1.2 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 182
+      }
+    },
+    {
+      "name": "feature_quality",
+      "route": "/feature-quality",
+      "score": 81.5,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 85,
+        "integration": 72,
+        "ux_performance": 82,
+        "optimization": 88,
+        "competitive": 78
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-1.0 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 0.0,
+        "data_pct": 0.0,
+        "avg_ms": 36
+      }
+    },
+    {
+      "name": "enhancement",
+      "route": "/enhancement",
+      "score": 81.6,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 82,
+        "integration": 78,
+        "ux_performance": 82,
+        "optimization": 80,
+        "competitive": 80
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.4 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 45
+      }
+    },
+    {
+      "name": "advisor_track_record",
+      "route": "/advisor-track-record",
+      "score": 82.5,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 88,
+        "integration": 72,
+        "ux_performance": 85,
+        "optimization": 82,
+        "competitive": 75
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.8 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 124
+      }
+    },
+    {
+      "name": "system_hub",
+      "route": "/system-hub",
+      "score": 83.9,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 85,
+        "integration": 82,
+        "ux_performance": 88,
+        "optimization": 82,
+        "competitive": 78
+      },
+      "issues": [
+        {
+          "severity": "P0",
+          "issue": "NameError in /api/system/llm-health (llm_router.py:1195)"
+        },
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-1.7 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 6,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 205
+      }
+    },
+    {
+      "name": "tax_harvesting",
+      "route": "/tlh-workflow",
+      "score": 85.0,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 88,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 85,
+        "competitive": 72
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.0 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 1428
+      }
+    },
+    {
+      "name": "orchestration_manager",
+      "route": "/orchestration-manager",
+      "score": 85.1,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 82,
+        "integration": 78,
+        "ux_performance": 88,
+        "optimization": 92,
+        "competitive": 82
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.9 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 69
+      }
+    },
+    {
+      "name": "vol_analysis",
+      "route": "/vol-analysis",
+      "score": 85.3,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 82,
+        "integration": 88,
+        "ux_performance": 85,
+        "optimization": 88,
+        "competitive": 78
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+0.2 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 272
+      }
+    },
+    {
+      "name": "rules",
+      "route": "/rules",
+      "score": 85.8,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 88,
+        "integration": 75,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 85
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.8 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 7,
+        "ok_pct": 57.0,
+        "data_pct": 57.0,
+        "avg_ms": 264
+      }
+    },
+    {
+      "name": "settings",
+      "route": "/settings",
+      "score": 85.9,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 82,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 92,
+        "competitive": 80
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.1 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 4,
+        "ok_pct": 25.0,
+        "data_pct": 25.0,
+        "avg_ms": 60
+      }
+    },
+    {
+      "name": "etf_hub",
+      "route": "/etf-hub",
+      "score": 86.0,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 90,
+        "integration": 88,
+        "ux_performance": 87,
+        "optimization": 86,
+        "competitive": 68
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+0.1 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 6,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 953
+      }
+    },
+    {
+      "name": "paper_trading",
+      "route": "/paper-trading",
+      "score": 86.2,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 93,
+        "data": 85,
+        "integration": 72,
+        "ux_performance": 92,
+        "optimization": 90,
+        "competitive": 88
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-1.5 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 389
+      }
+    },
+    {
+      "name": "sprint_manager",
+      "route": "/sprint-manager",
+      "score": 86.7,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 88,
+        "integration": 78,
+        "ux_performance": 90,
+        "optimization": 85,
+        "competitive": 85
+      },
+      "issues": [],
+      "trend": "-0.7 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 396
+      }
+    },
+    {
+      "name": "rebalancing",
+      "route": "/rebalancing",
+      "score": 86.8,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 88,
+        "integration": 85,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 80
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+0.1 vs last run",
+      "importance": 0.7,
+      "section": "TOOLS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 223
+      }
+    },
+    {
+      "name": "ipo_calendar",
+      "route": "/ipo-hub",
+      "score": 87.2,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 88,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 78
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "+0.0 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 487
+      }
+    },
+    {
+      "name": "stock_detail",
+      "route": "/stocks/detail/:symbol",
+      "score": 87.5,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 89,
+        "data": 88,
+        "integration": 92,
+        "ux_performance": 88,
+        "optimization": 72,
+        "competitive": 88
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Avg backend latency > 5s"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.8 vs last run",
+      "importance": 1.2,
+      "section": "DEEP_LINK",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 5144
+      }
+    },
+    {
+      "name": "ask_ada",
+      "route": "/ask-ada",
+      "score": 87.9,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 90,
+        "integration": 82,
+        "ux_performance": 91,
+        "optimization": 75,
+        "competitive": 93
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.0 vs last run",
+      "importance": 1.5,
+      "section": "HOME",
+      "probe_summary": {
+        "endpoints": 7,
+        "ok_pct": 29.0,
+        "data_pct": 29.0,
+        "avg_ms": 862
+      }
+    },
+    {
+      "name": "markets",
+      "route": "/markets",
+      "score": 88.1,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 85,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 88
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "+0.2 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 56
+      }
+    },
+    {
+      "name": "qa_dashboard",
+      "route": "/qa",
+      "score": 88.6,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 88,
+        "integration": 82,
+        "ux_performance": 92,
+        "optimization": 88,
+        "competitive": 90
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        }
+      ],
+      "trend": "-0.6 vs last run",
+      "importance": 0.7,
+      "section": "SYSTEM",
+      "probe_summary": {
+        "endpoints": 4,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 84
+      }
+    },
+    {
+      "name": "trade_planner",
+      "route": "/trade-planner",
+      "score": 88.8,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 93,
+        "data": 82,
+        "integration": 90,
+        "ux_performance": 90,
+        "optimization": 88,
+        "competitive": 88
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.0 vs last run",
+      "importance": 1.5,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 7,
+        "ok_pct": 29.0,
+        "data_pct": 29.0,
+        "avg_ms": 2770
+      }
+    },
+    {
+      "name": "xtrades",
+      "route": "/xtrades",
+      "score": 88.8,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 85,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 88,
+        "competitive": 92
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "+0.0 vs last run",
+      "importance": 1.2,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 98
+      }
+    },
+    {
+      "name": "trade_intelligence",
+      "route": "/trade-intelligence",
+      "score": 89.6,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 90,
+        "integration": 78,
+        "ux_performance": 95,
+        "optimization": 88,
+        "competitive": 92
+      },
+      "issues": [],
+      "trend": "-1.0 vs last run",
+      "importance": 1.0,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 489
+      }
+    },
+    {
+      "name": "earnings_intelligence",
+      "route": "/earnings-intelligence",
+      "score": 90.2,
+      "grade": "A-",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 90,
+        "integration": 82,
+        "ux_performance": 92,
+        "optimization": 90,
+        "competitive": 92
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "-0.0 vs last run",
+      "importance": 1.2,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 616
+      }
+    },
+    {
+      "name": "alert_hub",
+      "route": "/alert-hub",
+      "score": 92.3,
+      "grade": "A-",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 88,
+        "integration": 95,
+        "ux_performance": 95,
+        "optimization": 85,
+        "competitive": 92
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "+0.0 vs last run",
+      "importance": 1.2,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 35
+      }
+    },
+    {
+      "name": "dashboard",
+      "route": "/",
+      "score": 93.4,
+      "grade": "A",
+      "dimension_scores": {
+        "functional": 96,
+        "data": 96,
+        "integration": 93,
+        "ux_performance": 94,
+        "optimization": 82,
+        "competitive": 93
+      },
+      "issues": [
+        {
+          "severity": "P2",
+          "issue": "Catalog endpoint paths drifted from openapi"
+        },
+        {
+          "severity": "P2",
+          "issue": "Less than 50% of probed endpoints return data"
+        }
+      ],
+      "trend": "+0.0 vs last run",
+      "importance": 1.5,
+      "section": "HOME",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 33.0,
+        "data_pct": 33.0,
+        "avg_ms": 406
+      }
+    },
+    {
+      "name": "portfolio",
+      "route": "/portfolio",
+      "score": 94.7,
+      "grade": "A",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 95,
+        "integration": 95,
+        "ux_performance": 95,
+        "optimization": 95,
+        "competitive": 92
+      },
+      "issues": [],
+      "trend": "+0.0 vs last run",
+      "importance": 1.5,
+      "section": "HUBS",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 67.0,
+        "data_pct": 67.0,
+        "avg_ms": 327
+      }
+    }
+  ],
+  "dead_features": [
+    {
+      "route": "/prediction-markets",
+      "feature": "prediction_markets",
+      "evidence": "/api/prediction-markets/markets and /bettors return 503 service_disabled. 5th consecutive audit (since 2026-04-03).",
+      "recommendation": "Re-enable service or add frontend _service_disabled handling. Consider removing from sidebar if no plan to enable."
+    }
+  ],
+  "duplications": [
+    {
+      "id": "quant_lab_vs_risk_dashboard",
+      "feature_a": "quant_lab",
+      "feature_b": "risk",
+      "overlap_pct": 40,
+      "shared_apis": [
+        "/api/risk/metrics/{symbol}",
+        "/api/risk/stress-test/{symbol}"
+      ],
+      "shared_concepts": [
+        "VaR (1d 95%, 1d 99%)",
+        "Kelly Criterion",
+        "Sharpe/Sortino",
+        "Stress testing"
+      ],
+      "recommendation": "Add cross-links. Quant Lab risk panel should deep-link to Risk Dashboard rather than duplicating UI.",
+      "detected": "2026-04-03",
+      "status": "active"
+    },
+    {
+      "id": "alert_rules_vs_smart_rules",
+      "feature_a": "alert_hub",
+      "feature_b": "rules",
+      "overlap_pct": 25,
+      "shared_apis": [],
+      "shared_concepts": [
+        "Rule CRUD",
+        "Rule templates",
+        "Rule evaluation"
+      ],
+      "recommendation": "MONITOR: Two routers (alert_rules.py /api/alert-rules, smart_rules.py /api/rules) both do rule CRUD. Different UIs serve different intents. Low priority.",
+      "detected": "2026-04-03",
+      "status": "monitoring"
+    }
+  ],
+  "top_recommendations": [
+    {
+      "rank": 1,
+      "severity": "P0",
+      "feature": "system_hub",
+      "action": "Fix NameError in backend/infrastructure/llm_router.py:1195 \u2014 `get_ollama_semaphore` is referenced 5+ times but only `get_vllm_semaphore` is defined. Rename function to `get_ollama_semaphore` (or add alias) to match call sites. Affects /api/system/llm-health.",
+      "effort": "S",
+      "impact": "+5 system_hub D1; restores llm-health observability"
+    },
+    {
+      "rank": 2,
+      "severity": "P0",
+      "feature": "platform_catalog",
+      "action": "31/37 features (84%) have stale endpoint paths in .claude/skills/platform-auditor/knowledge/feature_catalog.json. Run an auto-discovery pass against /openapi.json and rewrite catalog endpoints. Without this, every future audit produces noisy false negatives.",
+      "effort": "M",
+      "impact": "+5-10 to D1 false-negative reduction across audits"
+    },
+    {
+      "rank": 3,
+      "severity": "P0",
+      "feature": "prediction_markets",
+      "action": "Service disabled for 5th consecutive audit. Either ship the implementation or add frontend _service_disabled handling and remove from sidebar.",
+      "effort": "M",
+      "impact": "+30 score (F to B-)"
+    },
+    {
+      "rank": 4,
+      "severity": "P1",
+      "feature": "dcf_valuation",
+      "action": "/api/valuation/dcf/AAPL/summary returns 422 BUSINESS_LOGIC_ERROR \"No company profile found for AAPL\". Fundamentals data pipeline broken for 4+ audits. Verify FMP/Tiingo profile fetcher.",
+      "effort": "S",
+      "impact": "+15 dcf_valuation D2"
+    },
+    {
+      "rank": 5,
+      "severity": "P1",
+      "feature": "whale_intelligence",
+      "action": "Congressional-trades data source returns 403 (S3 bucket house-stock-watcher-data inaccessible). Find replacement or remove congressional sub-feature.",
+      "effort": "M",
+      "impact": "+5 whale_intelligence D2"
+    },
+    {
+      "rank": 6,
+      "severity": "P1",
+      "feature": "news",
+      "action": "Probe shows 50% of news endpoints fail. /api/news-hub/feed missing in catalog. Re-audit news router prefix and confirm /research/news/full NameError fix from prior audit.",
+      "effort": "S",
+      "impact": "+10 news score"
+    },
+    {
+      "rank": 7,
+      "severity": "P2",
+      "feature": "stock_detail",
+      "action": "/api/stocks/detail/AAPL probe averaged 7332ms (near 8s timeout). Add lazy loading on heavy fields (deep analysis, smart money) or cache-on-demand.",
+      "effort": "M",
+      "impact": "+5 stock_detail D4"
+    },
+    {
+      "rank": 8,
+      "severity": "P1",
+      "feature": "robinhood_auth",
+      "action": "Backend logs show device verification timing out and Robinhood sending SMS instead of push (recurrence of issue from 2026-04-09). May need pickle-token rotation per topics/robinhood-device-verification.md.",
+      "effort": "S",
+      "impact": "Restores live position sync"
+    }
+  ],
+  "system_findings": [
+    {
+      "severity": "P0",
+      "finding": "NameError in llm_router.py:1195 (get_ollama_semaphore unresolved; only get_vllm_semaphore defined). Causes /api/system/llm-health to 500."
+    },
+    {
+      "severity": "P0",
+      "finding": "Catalog drift: 31/37 features (84%) have stale endpoint paths in feature_catalog.json. Skill needs auto-discovery pass against openapi.json."
+    },
+    {
+      "severity": "P1",
+      "finding": "prediction_markets disabled (5th consecutive audit, since 2026-04-03)."
+    },
+    {
+      "severity": "P1",
+      "finding": "dcf_valuation data pipeline broken (5th audit; \"No company profile found\")."
+    },
+    {
+      "severity": "P1",
+      "finding": "comps_analysis returns data only on retry \u2014 original /api/comps-analysis/analyze 404s; correct prefix is /api/comps/{symbol}."
+    },
+    {
+      "severity": "P1",
+      "finding": "whale_intelligence: congressional-trades S3 source returns 403."
+    },
+    {
+      "severity": "P1",
+      "finding": "Robinhood auth: device verification timeout, Robinhood sending SMS instead of push (recurrence of 2026-04-09 issue)."
+    },
+    {
+      "severity": "P2",
+      "finding": "stock_detail backend latency 7-8s \u2014 near timeout; needs lazy loading."
+    }
+  ]
+}

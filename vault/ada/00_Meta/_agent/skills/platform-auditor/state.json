@@ -1,0 +1,48 @@
+{
+  "project": "ada",
+  "last_run": "2026-05-08T22-29-36_postfix",
+  "run_count": 6,
+  "composite_weighted": 84.4,
+  "composite_simple": 83.7,
+  "prior_run5_pre_fix_weighted": 83.7,
+  "prior_run5_pre_fix_simple": 82.9,
+  "prior_run4_weighted": 83.9,
+  "prior_run4_simple": 83.2,
+  "trend": "improving (+0.7 weighted vs Run 5 pre-fix, +0.5 vs Run 4 baseline)",
+  "feature_count": 37,
+  "dimension_weights": {
+    "functional": 0.25,
+    "data": 0.20,
+    "integration": 0.20,
+    "ux_performance": 0.15,
+    "optimization": 0.10,
+    "competitive": 0.10
+  },
+  "probe_health": {
+    "endpoints_total": 62,
+    "endpoints_ok_pct": 96,
+    "endpoints_with_data_pct": 95,
+    "prior_pre_fix_pct": 43
+  },
+  "p0_findings_resolved": [
+    "llm_router NameError (get_ollama_semaphore + KIMI_MODELS) — aliases added, instance attrs renamed",
+    "Catalog drift on 31/37 features — rebuilt from /openapi.json, 35 endpoints corrected",
+    "prediction_markets sidebar entry removed (service intentionally disabled by service_toggles)"
+  ],
+  "p1_findings_resolved": [
+    "dcf_valuation hard-fail on FMP rate-limit — now degrades gracefully with synthetic profile + Tradier fallback",
+    "congressional_trades 403 spam — caches empty response for 24h to stop hammering dead URL",
+    "Robinhood SMS regression resolved itself; user must set ROBINHOOD_TOTP for permanent fix"
+  ],
+  "open_p2_findings": [
+    "/api/flow-intelligence/dashboard times out at 8s",
+    "FMP free-tier rate-limit hit (degraded DCF/comps)",
+    "House Stock Watcher S3 source decommissioned; congressional trades empty until replacement",
+    "ROBINHOOD_TOTP unset — fresh logins still trigger SMS challenge",
+    "stock_detail historical 7-8s cold response (lazy loading needed)"
+  ],
+  "report_paths": {
+    "markdown": "runs/2026-05-08T22-29-36_postfix.md",
+    "json": "runs/2026-05-08T22-29-36_postfix.json"
+  }
+}

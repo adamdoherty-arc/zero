@@ -1,0 +1,2 @@
+[      14ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:18792/api/google/auth/start:0
+[      26ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:18792/favicon.ico:0

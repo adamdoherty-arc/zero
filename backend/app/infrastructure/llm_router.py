@@ -18,6 +18,7 @@ Supports:
 """
 
 import asyncio
+import os
 from datetime import date
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
@@ -31,6 +32,35 @@ from app.models.llm import LlmRouterConfig, ModelAssignment, parse_provider_mode
 logger = structlog.get_logger(__name__)
 
 CONFIG_FILE = "router_config.json"
+
+
+# Local backend toggle — flips every ollama ↔ vllm routing decision.
+# Cloud providers (gemini, kimi, minimax, openrouter, huggingface) are unaffected.
+_LOCAL_PROVIDERS = ("ollama", "vllm")
+
+
+def _active_local_backend() -> str:
+    """Read LOCAL_LLM_BACKEND env var at call time (not module import) so tests can monkeypatch."""
+    value = os.getenv("LOCAL_LLM_BACKEND", "").strip().lower()
+    return value if value in _LOCAL_PROVIDERS else ""
+
+
+def _apply_local_backend_remap(provider: str, model: str) -> Tuple[str, str]:
+    """
+    If LOCAL_LLM_BACKEND is set and this is a local-tier provider, rewrite it.
+
+    Examples (with LOCAL_LLM_BACKEND=vllm):
+      ("ollama", "qwen3.6:35b-a3b") → ("vllm", VLLM_CHAT_MODEL)
+      ("gemini", "gemini-3-pro")    → ("gemini", "gemini-3-pro")  (unchanged)
+    """
+    override = _active_local_backend()
+    if not override or provider not in _LOCAL_PROVIDERS or provider == override:
+        return provider, model
+
+    if override == "vllm":
+        return "vllm", os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")
+    # override == "ollama"
+    return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
 
 
 class LlmRouter:
@@ -85,6 +115,16 @@ class LlmRouter:
     # Multi-provider resolution
     # ------------------------------------------------------------------
 
+    # Default cross-provider fallback used when a task_type has no explicit
+    # fallback chain (or when the caller didn't pass a task_type at all).
+    # Ensures a circuit-breaker trip on the primary provider doesn't cascade
+    # into "All LLM providers failed" for every downstream job.
+    _DEFAULT_FALLBACKS: List[str] = [
+        "minimax/MiniMax-M2.7",
+        "kimi/kimi-k2.6",
+        "vllm/qwen3-chat",
+    ]
+
     def resolve_provider_model(
         self,
         task_type: Optional[str] = None,
@@ -97,10 +137,21 @@ class LlmRouter:
         model_spec, assignment = self.resolve_with_params(task_type)
         provider, model = parse_provider_model(model_spec)
 
-        fallbacks = []
+        # LOCAL_LLM_BACKEND override: rewrite local-tier picks to the active backend.
+        provider, model = _apply_local_backend_remap(provider, model)
+
+        fallbacks: List[Tuple[str, str]] = []
         if assignment and assignment.fallbacks:
             for fb_spec in assignment.fallbacks:
                 fb_provider, fb_model = parse_provider_model(fb_spec)
+                fb_provider, fb_model = _apply_local_backend_remap(fb_provider, fb_model)
+                fallbacks.append((fb_provider, fb_model))
+        else:
+            for fb_spec in self._DEFAULT_FALLBACKS:
+                fb_provider, fb_model = parse_provider_model(fb_spec)
+                fb_provider, fb_model = _apply_local_backend_remap(fb_provider, fb_model)
+                if fb_provider == provider and fb_model == model:
+                    continue  # don't fallback to the same primary
                 fallbacks.append((fb_provider, fb_model))
 
         return provider, model, fallbacks

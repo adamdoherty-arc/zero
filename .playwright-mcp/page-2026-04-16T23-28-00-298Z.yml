@@ -1,0 +1,9 @@
+- generic [active] [ref=e1]:
+  - img
+  - generic [ref=e56]:
+    - button [ref=e59] [cursor=pointer]:
+      - img [ref=e61]
+    - button [ref=e66] [cursor=pointer]:
+      - img [ref=e68]
+    - button "Log in" [ref=e73] [cursor=pointer]:
+      - generic [ref=e75]: Log in

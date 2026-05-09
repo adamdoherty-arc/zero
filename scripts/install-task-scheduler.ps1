@@ -1,27 +1,32 @@
-# Install Zero as a Windows Task Scheduler job for auto-start on boot
-# Run as Administrator: powershell -ExecutionPolicy Bypass -File install-task-scheduler.ps1
+# Install Zero as a Windows Task Scheduler job for auto-start at user logon.
+# This mirrors start-zero.ps1 so the task is repairable without admin rights.
+# Run: powershell -ExecutionPolicy Bypass -File scripts\install-task-scheduler.ps1
 
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $taskName = "Zero AI Auto-Start"
-$scriptPath = "C:\code\zero\start-zero.bat"
+$scriptPath = Join-Path $repoRoot "start-zero.bat"
 
 # Remove existing task if present
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
-# Create trigger: at startup with 60s delay
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$trigger.Delay = "PT60S"
+# Create trigger: at user logon. This avoids requiring an elevated principal
+# while still making Zero available after every normal Windows boot/login.
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 
 # Create action
-$action = New-ScheduledTaskAction -Execute $scriptPath -WorkingDirectory "C:\code\zero"
+$action = New-ScheduledTaskAction -Execute $scriptPath -WorkingDirectory $repoRoot
 
-# Settings: restart on failure, run whether user is logged in or not
+# Settings: retry aggressively and do not kill the long-running startup helper.
 $settings = New-ScheduledTaskSettingsSet `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 5) `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 0)
+    -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
+    -MultipleInstances IgnoreNew
+
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 
 # Register the task
 Register-ScheduledTask `
@@ -29,8 +34,10 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Action $action `
     -Settings $settings `
-    -RunLevel Highest `
-    -Description "Starts Zero AI stack (Docker containers) on boot"
+    -Principal $principal `
+    -Description "Starts Zero AI stack, repairs host_agent, and prepares Reachy assistant at logon." | Out-Null
+
+Enable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Task '$taskName' registered successfully."
-Write-Host "Zero will auto-start 60 seconds after boot with 3 retry attempts."
+Write-Host "Zero will auto-start when $env:USERNAME logs in, with 999 retry attempts."

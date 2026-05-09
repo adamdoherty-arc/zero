@@ -373,6 +373,44 @@ class TikTokApiClient:
         )
 
     # ============================================
+    # DISPLAY API v2 — VIDEO METRICS
+    # ============================================
+
+    async def query_video_metrics(
+        self, video_ids: List[str]
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Fetch per-video analytics from TikTok Display API v2.
+
+        Docs: https://developers.tiktok.com/doc/tiktok-api-v2-video-query/
+        Requires scope `video.list`. Batch-safe up to ~20 video_ids per call.
+        Returns a list of {id, view_count, like_count, comment_count,
+        share_count, create_time, share_url} dicts, or None on auth/circuit
+        failure. Missing video_ids are silently dropped by the upstream API.
+        """
+        if not video_ids:
+            return []
+        fields = (
+            "id,view_count,like_count,comment_count,share_count,"
+            "create_time,share_url"
+        )
+        resp = await self._api_request(
+            "POST",
+            f"/v2/video/query/?fields={urllib.parse.quote(fields)}",
+            json={"filters": {"video_ids": list(video_ids)[:20]}},
+        )
+        if not resp or not isinstance(resp, dict):
+            return None
+        if "error" in resp and resp.get("status"):
+            logger.warning(
+                "tiktok_video_query_error",
+                status=resp.get("status"),
+                sample=(resp.get("error") or "")[:200],
+            )
+            return None
+        data = (resp.get("data") or {}).get("videos")
+        return data if isinstance(data, list) else []
+
+    # ============================================
     # STATUS
     # ============================================
 

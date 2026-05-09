@@ -1,0 +1,601 @@
+# Blueprint for a world-class autonomous TikTok carousel system
+
+The fundamental redesign your tool needs is a shift from a monolithic Python script to a **durable, self-improving multi-agent system built around four hard guarantees**: every fact is grounded in a cited canon source, every image is verified by a vision model before it ever reaches a slide, every generation is scored against a rubric and stored as labeled training data, and every workflow step survives crashes via Temporal-backed durable execution. The biggest single reason your current "learning pipelines" don't learn is almost certainly a missing closed loop — generations are stored without per-axis rubric scores or engagement labels, so the optimizer has nothing to consume. Fix that loop first, fix image quality second (this is where the visible quality gap shows up most), and fix reliability third by moving workflow state out of in-memory Python into Temporal. Everything else compounds on top of those three foundations.
+
+The good news: your trivia/facts content already works, your hardware (RTX 5090, 32 GB Blackwell) is precisely the sweet spot for the recommended local model lineup, and your existing API access (TMDB, MiniMax M2.7, Kimi K2.6) maps cleanly onto a hybrid local/cloud architecture that costs roughly **$0.15–0.25 per published carousel** at production scale. The bad news: there's no shortcut. The system below is roughly six weeks of disciplined engineering, but at the end you have a content engine that produces 200–400 carousels/day, ships only what passes a multi-judge rubric, learns from real engagement, and recovers itself when any single component fails.
+
+---
+
+## Prioritized fix list (highest-leverage to lowest)
+
+The order matters — most of these unlock the next one. Do not skip ahead.
+
+1. **Schema and storage rebuild.** Without a Pydantic `Carousel` schema and a Postgres `generations` table that stores `(prompt_version, slides[], judge_scores{per-axis}, source_citations[], engagement_metrics)` per row, no learning loop is possible. This is the foundation everything else writes to.
+2. **Image quality pipeline.** The user's #2 and #3 complaints (bad image picks, too few images) are the most visible quality gap. Build the fan-out → CLIP → aesthetic → face-verification → VLM funnel before touching anything else cosmetic. This single change is what makes your output look professional.
+3. **Carousel design system.** Replace whatever Pillow scaffolding currently exists with a Jinja2 + Tailwind + Playwright template stack plus a Pillow/numpy color-grading pre-stage. This fixes complaint #1 (basic formatting).
+4. **Durable orchestration via Temporal.** Move every multi-step pipeline out of long-lived Python processes. This fixes complaint #6 (not dependable).
+5. **Rubric, judge jury, and golden set.** Build a 200-carousel hand-rated golden set, encode a 7-axis rubric, deploy a 3-judge cross-family panel (Qwen3-32B + Kimi K2.6 + MiniMax M2.7), and gate every prompt change behind a CI regression on the golden set. This makes complaint #5 (no learning) physically possible to fix.
+6. **DSPy GEPA prompt optimization.** Compile the Designer, Hook Writer, and Image Scorer modules weekly against engagement-weighted reward. Real prompt improvement begins here.
+7. **Engagement feedback ingestion.** Daily TikTok analytics poll, completion-rate-weighted reward, niche-relative z-scoring, posting-time confounding controlled via residual regression.
+8. **Contextual bandit over content choices.** Vowpal Wabbit `--cb_explore_adf` for hook style, slide count, design template, posting time.
+9. **DPO/SimPO LoRA on Qwen3-14B via Unsloth.** Only after ≥3,000 clean preference pairs accumulate. Quarterly base-model bake-off.
+
+---
+
+## End-to-end architecture
+
+The system is a Temporal workflow that walks each carousel through a deterministic pipeline. Every node calls activities that talk to local vLLM, cloud APIs, or external services. State lives in Postgres (relational + pgvector); generated assets live in MinIO + Cloudflare R2; vector memory of past carousels lives in Qdrant; LLM traces and judge scores live in Langfuse.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       TRIGGERS (Temporal cron)                      │
+│  • Trend ingest  • Release calendar  • Anniversary  • Manual queue  │
+└─────────────────────────────────┬───────────────────────────────────┘
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│             TEMPORAL WORKFLOW: generate_carousel(topic)             │
+│                                                                     │
+│  ① TopicSelector ── Qwen3-30B-A3B (local)                           │
+│       └ pgvector novelty filter (cos < 0.85 vs last 30 posts)       │
+│                                                                     │
+│  ② Researcher ──── MiniMax M2.7 long-ctx (cached system prompt)     │
+│       └ Hybrid RAG: BGE-M3 dense+sparse + RRF + bge-rerank-v2-m3    │
+│       └ Sources: Fandom MW API, Comic Vine, TMDB, IMDb GraphQL,     │
+│         Wikidata SPARQL, Reddit (PRAW + Arctic Shift), yt-dlp+      │
+│         faster-whisper transcripts                                  │
+│       └ Output: atomic_facts[] with (subject, predicate, object,    │
+│         source_url, source_quote, trust_tier 1-4)                   │
+│                                                                     │
+│  ③ FactVerifier ── Decompose draft claims → re-retrieve →           │
+│       NLI (DeBERTa-v3-MNLI) entailment check →                      │
+│       cross-source rule (≥2 Tier-1/2 OR 1 Tier-1) →                 │
+│       confidence score per claim → drop <0.7                        │
+│                                                                     │
+│  ④ ImageCurator ── Fan-out fetch (8 sources, async aiometer)        │
+│       └ TMDB stills/profiles + Fanart.tv characterart +             │
+│         Comic Vine + Marvel Dev API + Wikimedia +                   │
+│         Reddit top-month + Google CSE + Bing fallback               │
+│       └ ~300-500 candidates per character                           │
+│                                                                     │
+│  ⑤ ImageScorer ── 11-stage filter funnel:                           │
+│       • Stage 1: cheap CV filters (resolution, blur, aspect, dup)   │
+│       • Stage 2: pHash + dHash dedup via BK-tree                    │
+│       • Stage 3: CLIP relevance (ViT-H-14 or SigLIP-SO400M)         │
+│       • Stage 4: LAION aesthetic v2 + MANIQA / CLIP-IQA+            │
+│       • Stage 5: InsightFace ArcFace verify vs reference bank       │
+│       • Stage 6: Florence-2 watermark/text-overlay detection        │
+│       • Stage 7: CLIP-embedding semantic dedup (cos ≥ 0.94)         │
+│       • Stage 8: Qwen3-VL-32B-FP8 final JSON-schema verifier        │
+│       • Stage 9: composite z-score ranking                          │
+│       • Stage 10: Real-ESRGAN x4plus upscale + GFPGAN face refine   │
+│       • Stage 11: face-aware 9:16 smart crop (mediapipe + saliency) │
+│                                                                     │
+│  ⑥ Designer ────── Qwen3-30B-A3B (DSPy-compiled)                    │
+│       └ ToT for hooks (N=5 candidates, hook judge picks best)       │
+│       └ Voice file injected from voices/{property}.yml              │
+│       └ Structured output via Pydantic + xgrammar guided JSON       │
+│       └ 8-10-slide arc: HOOK→SETUP→BUILD→PIVOT→REVEAL→PAYOFF→       │
+│         CONNECTION→CTA                                              │
+│                                                                     │
+│  ⑦ Skeptic ─────── Kimi K2.6 (different family from drafter!)       │
+│       └ KEEP / REWRITE / KILL each atomic claim                     │
+│       └ trap categories: actor_swap, comic_vs_screen, fan_theory,   │
+│         retcon, made_up_easter_egg                                  │
+│                                                                     │
+│  ⑧ Reflexion loop ─ if QA composite < 7.5 AND revisions < 3:        │
+│       Reflector (Kimi K2.6) → state["reflections"] →                │
+│       Reviser → back to ⑦                                           │
+│                                                                     │
+│  ⑨ Render ───────── Pillow + numpy (LUT, vignette, grain) →         │
+│       Jinja2 + Tailwind + Playwright (per-slide screenshot)         │
+│       → 1080×1920 PNG/JPEG q88, sRGB-stripped, ≤300 KB each         │
+│                                                                     │
+│  ⑩ HumanReview ──── Temporal interrupt() → Slack approval button    │
+│       (skip for posts under quality-gate threshold)                 │
+│                                                                     │
+│  ⑪ Publisher ────── TikTok Content Posting API                      │
+│       /v2/post/publish/content/init/  media_type=PHOTO              │
+│       PULL_FROM_URL from your verified R2 domain                    │
+│       Idempotency key = sha256(carousel_id + image_hashes + caption)│
+│                                                                     │
+│  ⑫ AnalyticsLoop ── Cron every 6h × 48h, daily × 14d, weekly × 60d  │
+│       Pull: views, likes, completion_rate, shares, follows          │
+│       Compose niche-relative z-score reward                         │
+│       Write to learning.engagement_signals → DSPy trainset →        │
+│       weekly GEPA recompile, monthly DPO refresh                    │
+└─────────────────────────────────────────────────────────────────────┘
+
+INFRASTRUCTURE PLANE
+   ├ vLLM text server :8001 ── Qwen3-30B-A3B-AWQ
+   ├ vLLM VLM server :8002 ── Qwen3-VL-32B-Instruct-FP8 (time-sliced)
+   ├ Postgres ─ workflow state, generations, idempotency, golden set
+   ├ pgvector + Qdrant ─ topic memory, image embeddings, exemplars
+   ├ Redis ─ rate-limit token buckets, transient cache
+   ├ MinIO + Cloudflare R2 ─ generated images, masters, backups
+   ├ Temporal Server + UI ─ orchestration, durable execution
+   ├ Langfuse + ClickHouse ─ LLM traces, prompt registry, judge scores
+   ├ Prometheus + Grafana + Loki + Tempo ─ metrics/logs/traces
+   ├ DCGM exporter ─ RTX 5090 GPU telemetry
+   └ restic → Backblaze B2 ─ nightly encrypted backups
+
+CONTINUOUS LEARNING PLANE
+   ├ Bandit (Vowpal Wabbit) ─ real-time arm selection
+   ├ DSPy GEPA ─ weekly prompt optimization
+   ├ Unsloth + TRL ─ monthly DPO/SimPO LoRA on Qwen3-14B
+   └ Drift detectors (EWMA + CUSUM + MMD) ─ daily auto-rollback
+```
+
+---
+
+## 1. Image sourcing and quality — the highest-leverage fix
+
+The current tool's "bad image picks, too few pictures" complaint is the most visible quality gap and will be fixed by a single architectural change: **stop trusting any single source, and stop trusting any single signal**. Replace whatever the current selection logic is with an 11-stage cascading filter that fans out to 8 parallel sources, then aggressively prunes by progressively more expensive checks.
+
+### The source mix
+
+**TMDB remains your primary metadata + still source**, but use it correctly. The endpoints that matter are `/movie/{id}/images`, `/tv/{id}/images`, `/tv/{id}/season/{n}/episode/{e}/images` (the per-episode `stills[]` array is gold for character moments — Homelander on a balcony, Soldier Boy in costume), `/person/{id}/images` for actor headshots, and the `append_to_response=images&include_image_language=en,null` trick which fetches English-tagged plus untagged textless backdrops in one round-trip. The `/configuration` endpoint gives canonical size lists (cache for days). For carousel use, pull `original` for hero slides and `w1280` for backdrops.
+
+**Fanart.tv is what your tool is probably missing entirely** and is the single biggest unlock for character-cutout carousels. The `/tv/{thetvdb_id}` endpoint returns `characterart` — professionally clipped HD PNGs with alpha channel that drop directly onto colored carousel backgrounds with zero further processing. `clearart`, `hdmovielogo`, and `movieart` are similarly clean. Add a personal `client_key` to bypass throttling.
+
+**Comic Vine** for canonical Marvel/DC art (covers, character bios) at 200 req/hr/resource — non-commercial license caveat, treat outputs as transformative. **Marvel Developer API** is officially attribution-encumbered and capped at 3000 req/day; use it sparingly for canonical thumbnails. **Wikipedia/Wikimedia Commons** via `Special:FilePath/{filename}?width=1280` for free server-side resizes; check `extmetadata.LicenseShortName` because many character pages host non-free fair-use thumbnails.
+
+**Reddit via PRAW is the richest source for fan-curated HD scene captures**. Target top-of-month/year on `r/Marvel`, `r/DCcinematic`, `r/TheBoys`, `r/MarvelStudios`, `r/comicbookart`, plus character-specific subs (`r/Spiderman`, `r/Homelander`, `r/SoldierBoy`). Handle `is_gallery=True` posts via `gallery_data["items"]` + `media_metadata[mid]["s"]["u"]` (unescape `&amp;`). For original resolution, swap `preview.redd.it` host for `i.redd.it` and drop query params. Pushshift is research-only since 2023; replace with **Arctic Shift** (`https://arctic-shift.photon-reddit.com/api/`) for historical mining and **PullPush** as a fallback. The `BAScraper` async wrapper handles cooldowns across both.
+
+### The 11-stage filter funnel
+
+The funnel is strictly cost-ascending — every stage is more expensive than the last, so we prune cheaply first.
+
+**Stage 1 (cheap CV)** drops anything with `min(w,h) < 1080`, `cv2.Laplacian(...).var() < 100` (blurry), aspect outside {4:5, 9:16, 1:1, free-crop 16:9}, or NSFW flag from NudeNet. **Stage 2** runs `imagehash` 64-bit pHash + dHash through a BK-tree for sub-linear Hamming nearest-neighbor; collapse near-dupes at distance ≤6. **Stage 3** runs `open_clip` ViT-H-14 (`laion2b_s32b_b79k`) or SigLIP-SO400M; build a softmax over prompts like `["Tom Holland as Spider-Man in MCU", "Tobey Maguire Spider-Man 2002", "Andrew Garfield Spider-Man", "animated comic-style", "unrelated"]` — this is the critical filter that distinguishes wrong-actor or wrong-continuity images. Keep candidates where p(correct) > 0.55.
+
+**Stage 4** runs LAION aesthetic-predictor v2 (`shunk031/aesthetics-predictor-v2-sac-logos-ava1-l14-linearMSE` — CLIP ViT-L/14 + 4-layer MLP, scale 1–10, drop <5.0) plus **`pyiqa`** ensemble of `clipiqa+`, `maniqa`, `topiq_nr`, or `qualiclip+` (Jan 2025 SOTA on UGC). On RTX 5090 with FP16 batch 256, this throughputs ~5k img/s. **Stage 5** runs **InsightFace `buffalo_l`** (RetinaFace + ArcFace `w600k_r50`) for face verification against a per-actor reference embedding bank (avg 5–10 reference shots, cosine ≥0.40 = match, ≥0.55 = high-confidence). Critical for distinguishing Hulk versions (Bana/Norton/Ruffalo) or Spider-Men. License caveat: `buffalo_l` is non-commercial; for commercial use, switch to FaceNet-512 via DeepFace.
+
+**Stage 6** runs **Florence-2-large** with `<OPEN_VOCABULARY_DETECTION>` prompt `"watermark, logo, text overlay, getty images"` — drop or salvage via LaMa inpaint. **Stage 7** does CLIP-embedding cosine dedup (≥0.97 = same shot, ≥0.92 = same scene different crop). **Stage 8** is the final semantic verifier: a Qwen3-VL-32B-Instruct-FP8 call with `guided_json` returning `{character, actor, franchise, likeness 0–1, is_promotional_still, watermark, text_overlay, vertical_safe_crop_box}`. With FP8 on Blackwell Tensor Cores, you get 80–120 img/s at 384–448px visual tokens. **Stage 9** computes the composite z-score:
+
+```python
+score = (0.30 * z(aesthetic_v2) + 0.25 * z(clip_relevance)
+       + 0.15 * z(face_cosine) + 0.10 * z(maniqa)
+       + 0.10 * z(resolution_log) + 0.05 * z(vlm_likeness)
+       - 0.50 * watermark_flag - 0.30 * text_overlay_flag
+       - 0.20 * (1 - aspect_match))
+```
+
+Calibrate weights against a 200-image hand-labeled validation set per franchise.
+
+**Stage 10** upscales: **Real-ESRGAN x4plus** for live-action, **RealESRGAN_x4plus_anime_6B** for animated/comic art, **HAT-L** (`Real_HAT_GAN_SRx4.pth`) for hero slides where quality matters most. Add **GFPGAN** (`v1.4`, w=0.5 to preserve actor likeness) for face restoration on degraded screencaps. **Stage 11** does face-aware 9:16 smart cropping via mediapipe face detection with rule-of-thirds upper-third bias, falling back to `smartcrop.py` saliency for non-face content. Use **`rembg`** with the `birefnet-general` ONNX model and `alpha_matting=True` for character cutouts on custom backgrounds.
+
+**End-to-end throughput target on RTX 5090: ~50 characters/hour fully verified, or ~500/hour skipping the VLM stage.** Concurrency layout: vLLM Qwen3-VL-7B-Instruct FP8 ~12 GB on port 8000, CLIP ViT-H-14 + LAION MLP ~3 GB in-process, InsightFace ONNX ~1.5 GB, Real-ESRGAN + GFPGAN lazy-loaded ~6 GB peak, Florence-2 lazy ~3 GB, ~6 GB headroom for batched preprocessing.
+
+---
+
+## 2. Carousel design — programmatic cinematic polish
+
+The recommended stack is a **hybrid Pillow + Jinja2 + Tailwind + Playwright pipeline** with brand-kit tokenization. Pillow + numpy handles raw imagery (color grade via 3D LUT, halftone, vignette, film grain, character cutout); Jinja2 + Tailwind + Playwright handles layout, typography, glassmorphism, comic borders, arrow callouts. The split gives pixel-level filter control where it matters and declarative designer-friendly templating where layout matters.
+
+### Format choices
+
+Design at **1080×1920 (9:16)** as the canonical canvas. The effective creative safe rectangle is roughly **800×1380 px biased upper-left of center**, leaving ~140–200 px top reserve (username pill, dynamic island), ~120–164 px right (icon column), 300–400 px bottom (caption, sound ticker, progress bar), 60–120 px left. **Keep the hook headline above the bottom 60% line** — viral analyses are unanimous on this. Use 4:5 (1080×1350) only if you publish overwhelmingly text-heavy listicles where the natural blank space below hosts the caption without occluding design.
+
+Image count sweet spot is **5–10 slides for general engagement, 7–12 for deep-dive formats**, with drop-off accelerating above 12. Marvel/DC/The Boys "Top X" / "Easter Eggs" trivia content historically performs at 8–10 slides: hook + 6–8 payoff + CTA. Carousels enjoy a structural algorithmic boost — TikTok cites 2.9× more comments, 1.9× more likes, 2.6× more shares vs video for photo posts.
+
+Per-image targets: **JPEG q88 for photographic hero slides, PNG for text-heavy slides** (avoids halo around glyphs after JPEG quantization). Strip ICC profiles other than sRGB. Per-image practical cap ~300 KB; total carousel ≤500 MB.
+
+### Brand-kit tokenization
+
+Codify a `BrandKit` dataclass with primary/secondary/accent/bg colors, font tokens (Druk Wide Bold for hooks, Anton for headlines, Inter for body, Bangers for comic accents), type scale (108pt hook → 64pt headline → 40pt sub → 28pt body → 20pt caption), spacing scale, and a 3D LUT path. Define `KITS = {"mcu": ..., "dceu": ..., "the_boys": ..., "snyderverse": ..., "stranger_things": ...}`. Apply per-property color grades via `pillow-lut`:
+
+```python
+from pillow_lut import load_cube_file
+teal_orange = load_cube_file("luts/mcu_teal_orange.cube")  # MCU default
+snyder      = load_cube_file("luts/snyder_blue.cube")       # crushed blacks
+boys_grade  = load_cube_file("luts/desat_red_punch.cube")   # red hero pop
+graded = Image.open("frame.jpg").filter(teal_orange)
+```
+
+For dynamic per-image color matching, extract the dominant palette via `colorthief`, `Pylette`, or scikit-learn KMeans on a 200×200 thumbnail, then drive a vertical gradient overlay (transparent top → near-opaque dark bottom) tinted with the hero color. Always maintain at least 7:1 contrast on text — outline strokes (6–10 px), tight+broad stacked drop shadows, solid color blocks (yellow tape, red brand pill), or glassmorphism panels (`backdrop-filter: blur(18px) saturate(160%); background: rgba(20,20,20,.45); border: 1px solid rgba(255,255,255,.12)`).
+
+### Slide template patterns
+
+Encode 9 reusable Jinja2 templates: `hook.html` (full-bleed character + 70% bottom gradient + 96–120pt Druk all-caps + numbered badge), `fact.html` (image left 55% + text column right 45%), `fact_overlay.html` (full-bleed + bottom card), `comparison.html` (50/50 split + VS divider), `quote.html` (desaturated background + giant Bangers quotation marks), `reveal_blur.html` (cliffhanger blur → next-slide reveal), `easter_egg.html` (still + magenta circle + arrow callout + bottom card), `tier.html` (S/A/B/C tier rows with character chips), `cta.html` (character "pointing" cutout + follow CTA).
+
+Each template binds to a `Slide` Pydantic model. Render via a persistent Playwright Chromium context with `--font-render-hinting=none`, `device_scale_factor=1`, and an `await page.evaluate("document.fonts.ready")` to wait for Google Fonts. At ~1 s/slide × 4 workers, 500 slides finish in ~2 minutes on a 4-core machine. **Self-hosted Playwright vs Bannerbear/Placid economics**: at ~1,500 generations/month, in-house breaks even; at carousel-pipeline volumes (~3,000+ slides/month), in-house costs ~$21/mo on a $20 VPS + Cloudflare R2 vs $99–$499/mo on Bannerbear. In-house wins on cost AND on cinematic ceiling (LUTs, halftone, comic effects don't exist in API templates).
+
+### Cinematic polish
+
+Apply as a Pillow + numpy post-composition pass on the rendered slide: 3D LUT color grade, film grain (pre-rendered plate, screen-blend at 6–8% opacity), chromatic aberration (R-shift +2px / B-shift −2px masked by radial gradient so it only shows at edges), light leaks (corner radial gradients, screen-blend at 25–40%), vignette (radial alpha mask, multiply blend), bloom on key elements (Iron Man arc reactor, Homelander eyes — mask, blur, screen-blend). For comic treatments use `np.kron` halftone masks + threshold, or SVG `<filter>` with `feTurbulence` + `feColorMatrix` inside the HTML stage.
+
+---
+
+## 3. Content research and grounding — your existing strength, systematized
+
+Treat the LLM as a **stylist over verified facts**, not a knowledge source. Every published claim must trace to a chunk ID; every chunk must come from a tiered source ledger; every draft must pass an adversarial skeptic before render.
+
+### Tiered source ledger
+
+**Tier 1 (canon, structured)** — Fandom MediaWiki API at `https://<wiki>.fandom.com/api.php` (serial, ≤1 req/sec/wiki, real User-Agent, parse with `mwparserfromhell` to extract infobox templates and `code.strip_code()` for plaintext). Target wikis: `marvelcinematicuniverse.fandom.com`, `dcextendeduniverse.fandom.com`, `the-boys.fandom.com`, plus per-show wikis. Comic Vine for canonical comic bios. TMDB v3 for movie/episode metadata. TVDB v4 for long-running show episode detail. Wikipedia REST + Wikidata SPARQL (`https://query.wikidata.org/sparql`) for cross-property entity linking.
+
+**Tier 2 (semi-structured)** — IMDb GraphQL endpoint (`https://api.graphql.imdb.com/`) for `trivia`, `goofs`, `crazyCredits`, `quotes`, `connections` per title — these are the gold standard for film trivia and are extremely TikTok-able. Box Office Mojo and The-Numbers for production data. MCU Exchange and Easter Egg databases as structured but flagged.
+
+**Tier 3 (community signal — for ideation only, never as ground truth)** — Reddit via PRAW for topic seeds. TikTok Creative Center scrape for trends. YouTube transcripts via `yt-dlp --write-auto-sub` for autoasr or `yt-dlp --extract-audio` + **`faster-whisper large-v3-turbo`** locally on the 5090 (~10× realtime) for production interviews — director commentaries and Kevin Feige panels are an under-mined source.
+
+**Tier 4 (news, carefully)** — Variety, THR, CBR, Screen Rant. Flag and require cross-confirmation; CBR/Screen Rant in particular have inaccuracy reputations.
+
+Each crawled artifact lands in MinIO as `{source}/{entity_type}/{entity_id}/{revision_ts}.{ext}` plus a parsed `.jsonl` of atomic facts: `(subject, predicate, object, source_url, source_quote, trust_tier, fetched_at)`. Atomic facts are the unit of grounding.
+
+### RAG architecture
+
+**Vector DB: Qdrant** (primary) + **Postgres/pgvector** (metadata + KG mirror). Qdrant wins for filtered hybrid search with rich payload conditions (`property=MCU AND character=Loki AND tier<=2`), native sparse + dense + multi-vector storage, and built-in RRF fusion in the `Query` API. Stay on pgvector if your corpus stays under 10M chunks and you already run Postgres; pgvectorscale's StreamingDiskANN hits 471 QPS @99% recall on 50M vectors and may be sufficient for a long time.
+
+**Embedding stack: BGE-M3** (568M, dense + sparse + ColBERT multi-vector in one model, pairs natively with Qdrant hybrid mode) as primary, with **Qwen3-Embedding-4B** as a higher-quality re-embed pass on the curated canon corpus. Avoid NV-Embed-v2 despite strong MTEB scores — research/non-commercial license.
+
+**Hybrid search is non-negotiable**: BGE-M3 sparse for proper-noun matching (character codenames, episode titles like "Herogasm"), BGE-M3 dense for semantic intent, RRF fusion (k=60) to merge, **bge-reranker-v2-m3** (568M, Apache 2.0) cross-encoder over top-200 → top-8 to LLM. For ambiguous queries multi-query expansion with a Qwen3-4B paraphraser yields ~15% recall lift.
+
+**Chunking: late chunking + section-aware**. Late chunking (Günther et al., arXiv 2409.04701) embeds the entire article first with a long-context embedder, then mean-pools segments — pronouns ("his next appearance...") embed with their proper antecedent, which is huge for character pages. Layer this with section-aware splits at `==Section==` headers via mwparserfromhell, sentence-split with `wtpsplit` to ≤512 tokens, and parent-document retrieval (index small chunks, return the parent section to the LLM).
+
+**Knowledge graph augmentation**: worth it for this use case because the highest-engagement trivia is multi-hop relational ("the actor who played X also played Y"). Use **Neo4j Community + `neo4j-graphrag` SimpleKGPipeline** with a constrained schema (Character, Actor, Film, TVSeries, Episode, Comic, with PORTRAYED_BY, APPEARS_IN, FIRST_APPEARANCE, ADAPTED_FROM, KILLED_BY relationships). Run nightly extraction on new wiki revisions. Query path: Text2Cypher retriever for 2-hop questions, fallback to vector RAG otherwise. Postgres + Apache AGE is a free Neo4j-equivalent if you want one fewer service.
+
+### Hallucination prevention — defense in depth
+
+**Citation-grounded generation**: every sentence must end with `[chunk_id:N]` or `[fact_id:N]`; a regex post-processor strips uncited sentences. **Atomic-claim verifier (Self-RAG / FactScore-style)**: drafter writes carousel → Pydantic decompose into atomic claims → re-retrieve top-5 → NLI check (DeBERTa-v3-MNLI or bge-m3-nli) returns `{supported, contradicted, neutral}` with supporting span → drop or rewrite. **Cross-source rule**: every published fact requires ≥2 Tier-1/2 sources OR a single Tier-1. **CRAG triage**: classify each chunk `{Correct, Incorrect, Ambiguous}` — Ambiguous escalates to MiniMax-M2.7's BrowseComp-style web-search loop.
+
+**Domain-specific trap regression suite** — known hallucination categories for character content: actor swaps (Hulk: Bana → Norton → Ruffalo; Rhodey: Howard → Cheadle), movie misattribution, made-up Easter eggs, cross-universe confusion (MCU Quicksilver vs X-Men Quicksilver, Joker Phillips/Leto/Phoenix), The Boys comic vs show divergences (Homelander's parentage, Black Noir's identity differ wildly), DCEU vs DCU (Gunn era) continuity. Maintain an `ActorRoleCanon` table keyed by `(character, film_id)`.
+
+**Adversarial Skeptic agent** — second LLM pass run with a deliberately different model family from the drafter (drafter = local Qwen3, skeptic = cloud Kimi K2.6) to avoid shared blind spots. Prompt: *"You are a hostile, pedantic continuity expert. For each atomic claim output: claim, supporting quote (or null), trap_category (actor_swap | movie_misattribution | comic_vs_screen | fan_theory | retcon | made_up_easter_egg | null), verdict (KEEP | REWRITE | KILL), rewrite_suggestion. Bias toward KILL when uncertain — comments will be brutal."* Verdicts are applied programmatically.
+
+### Voice files
+
+Per-property YAML in git, mounted as system-prompt fragments. The Boys: edgy, irreverent, dark-comic; allow "shit/damn/hell" but no f-bomb on slide 1 (TikTok softens reach); flavor lexicon `["supe", "compound V", "Vought", "Christ on a cracker"]`; forbidden: hopeful platitudes, "with great power..." MCU: mainstream-excited, family-friendly, hopeful, Whedon-cadence quips OK. Snyderverse: mythic, weighty, biblical/Homeric register; vocabulary like "covenant", "ascension", "godhood". DC (Gunn era): playful, character-driven, irreverent without nihilism. Game of Thrones / HOTD: prestige, archaisms, House sigil literacy. Stranger Things: 80s-coded warmth, Spielberg/King refs, never ironic. The voice file is the ONLY thing that mutates between drafter calls for different properties — A/B testable, version-controlled.
+
+### Carousel arc — encoded as Pydantic schema
+
+Hard structure: Slide 1 HOOK (≤12 words, contradiction/curiosity gap), Slide 2 SETUP (orient stakes), Slides 3–4 BUILD (escalating specificity), Slide 5 PIVOT ("but here's where it gets weird..."), Slides 6–8 REVEALS (one fact per slide), Slide 9 PAYOFF (biggest single fact), Slide 10 CONNECTION (tie back to hook OR cross-property Easter egg), Slide 11 CTA. Each slide ends with a `transition_to_next` cliffhanger phrase. Pacing: one fact per slide, ≤22 words on screen — multi-beat slides tank swipe-through.
+
+Hook patterns that survive the 1-second swipe-or-bounce: contradiction ("Homelander wasn't supposed to be the villain"), hidden-detail ("There's a frame in *Endgame* nobody noticed for 3 years"), number ("7 things The Boys S4 stole from the comics"), identity ("The actor who played [X] almost played [Y]"), false-belief ("You think you know how Loki died. You don't"), receipt ("[Director] said this on the commentary track"), cliffhanger transitions between slides ("...but slide 4 is where it gets dark"). **Avoid "you won't believe..."** — penalized by viewers and by TikTok's content-quality classifier as of late-2025 carousel ranking updates.
+
+---
+
+## 4. LLM orchestration and model selection
+
+### Framework: LangGraph + DSPy + Pydantic
+
+**LangGraph wins for the carousel pipeline** for four concrete reasons. First, durable execution with Postgres checkpointer means a crashed worker resumes at the last successful node instead of restarting the workflow — non-negotiable for 10-step carousel pipelines with cloud API calls. Second, native human-in-the-loop via `interrupt()` and `Command` resume handles the Slack approval gate without blocking processes. Third, cycles are first-class for the actor↔evaluator↔reflector Reflexion loop. Fourth, time travel lets you fork from any checkpoint to A/B test alternative critic prompts on the same draft. The `langgraph-reflection` helper provides `create_reflection_graph(assistant_graph, judge_graph)` out-of-the-box.
+
+**DSPy as a peer, not a replacement** — DSPy modules wrap individual LangGraph nodes (Hook Writer, Trivia Generator, Image Scorer) so each prompt is auto-optimized via MIPROv2 or GEPA against a metric, but graph orchestration, persistence, retries, and HITL stay in LangGraph. **Pydantic v2** for every cross-node payload. **Instructor** for cloud APIs (`instructor.from_openai(client)` patches with `response_model=CarouselDraft` and auto-retry on validation failure). **vLLM `guided_json`** with xgrammar backend for local — production winner for structured outputs with negligible per-token overhead after FSM compile.
+
+CrewAI is fast to prototype but rigid and token-expensive. Pydantic AI is excellent for type-safe single agents inside FastAPI services but multi-agent orchestration is manual. AutoGen/AG2 is shrinking in production references — "seriously evaluate migration" per 2026 framework decision guides.
+
+### Local model lineup on RTX 5090 (32 GB)
+
+The 5090 is enough for a quality 30–32B text model with reasonable context **but not enough** to co-host a 32B text + 32B VLM simultaneously. The recommended pattern is **two vLLM servers, time-sliced**:
+
+| Role | Model | Quant | VRAM | Throughput |
+|---|---|---|---|---|
+| Text workhorse | **Qwen3-30B-A3B** (MoE, 3B active) | AWQ-int4 | ~17 GB | 100+ tok/s |
+| Hero text | **Qwen3-32B dense** | AWQ-int4 | ~19 GB | 30–50 tok/s |
+| Vision | **Qwen3-VL-32B-Instruct-FP8** | FP8 | ~32 GB | 10–25 tok/s |
+| Vision (batch) | **Qwen3-VL-30B-A3B** | FP8 | ~20 GB | high throughput |
+| Pre-filter | **Florence-2-large** | FP16 | ~3 GB | 100s qps |
+
+Qwen3-30B-A3B is the **default workhorse** — only 3B active params per token gives blazing speed and the lowest contention with the VLM, while quality on Arena-Hard (91.0) sits within 3 points of the dense 32B (93.8). Use the dense 32B only for high-stakes prose where 3× the latency is acceptable. **Qwen3-VL-32B-Instruct-FP8 (Oct 2025 release)** is best-in-class at this size for character recognition and aesthetic reasoning; FP8 metrics are "nearly identical to BF16" per Qwen.
+
+vLLM tuning that matters on Blackwell:
+
+```bash
+vllm serve Qwen/Qwen3-30B-A3B-AWQ \
+  --max-model-len 65536 --gpu-memory-utilization 0.85 \
+  --enable-prefix-caching --enable-chunked-prefill \
+  --max-num-seqs 32 --reasoning-parser deepseek_r1 \
+  --speculative-config '{"model":"Qwen/Qwen3-0.6B","num_speculative_tokens":4}' \
+  --port 8001
+```
+
+Prefix caching is the single biggest perf win — system prompts + research blob are reused across all N slide generations, expect 3–5× TTFT reduction. Speculative decoding with a 0.6B draft model gives 1.5–2× throughput on templated outputs (slide copy follows tight schema). FP4/NVFP4 is native on Blackwell sm_120 and is preferred for Llama 3.3 70B if you ever go that route (~22 GB at NVFP4); Qwen variants prefer FP8 per official guidance.
+
+Don't bother with Qwen2.5-VL-72B (won't fit on 32 GB AWQ ~38 GB), Qwen3-235B-A22B (117 GB minimum even at INT4), or Mistral Large 3 (123B, API only). Llama 3.3 70B NVFP4 is technically possible but tight; KV-cache eats remaining VRAM at long context.
+
+### Cloud routing matrix
+
+| Task | Route to | Why |
+|---|---|---|
+| Bulk slide copy, hooks, alt-text | **Local Qwen3-30B-A3B** | Cheapest, fastest, sufficient |
+| Image scoring (90% case) | **Local Qwen3-VL-32B-FP8** | ~$0.001/batch electricity vs $0.50–$2.00 cloud |
+| Image scoring (ambiguous edge) | **Kimi K2.6 vision** | Native MoonViT-3D, strongest multimodal |
+| Research over single article (<32k) | Local Qwen3-30B-A3B | Fits in context |
+| Research over wiki sub-graph (60–180k) | **MiniMax M2.7** | 200K ctx + $0.059/M cached input + $0.30/M input / $1.20/M output |
+| Hard agentic tool-use chain | **Kimi K2.6** thinking mode | SOTA agentic stability, 262K ctx, 300-subagent swarm capability |
+| QA review / fact-check | **Kimi K2.6** with `enable_thinking=True` | Best reasoning |
+| Adversarial Skeptic | **Kimi K2.6** (different family from drafter) | Avoids shared blind spots |
+| Vision: trailer-frame analysis | Local Qwen3-VL OR Kimi K2.6 multimodal | Privacy + cost |
+| Premium escalation (top 5%) | Claude Opus 4.6 / GPT-5.2 | Reserved budget |
+
+MiniMax M2.7 (Mar 2026) sits at 230B/10B-active MoE, 200K context (NOT the 1M sometimes claimed — that's M1, a different model), 50 on Artificial Analysis Intelligence Index, SWE-Pro 56.22%. Strengths: end-to-end agentic harnesses (Skill.md, MCP), multi-step tool calling stability, planning, interleaved thinking, very cheap cached input. Kimi K2.6 (early 2026 GA) is 1T MoE / 32B active / 384 experts, 262K context, native multimodal via MoonViT, SWE-Bench Pro 58.6%, Agent Swarm Mode for parallel verification. Best-in-class agentic tool use among open weights.
+
+Implement a `model_router(task_type, budget, context_size) → ModelClient` Pydantic AI agent inside a LangGraph node. Cache routing decisions per topic. Per-carousel cloud spend cap (~$0.05); above that, route back to local with relaxed retrieval thresholds.
+
+### Cost per carousel at production scale
+
+Local compute ~$0.05 (electricity, 5090 at 450W × ~10 min). Cloud (Kimi K2.6 QA/critic ~30K in / 15K out + MiniMax M2.7 research ~60K cached + 10K out): ~$0.10–0.20. **Total ~$0.15–0.25 per carousel.** Throughput ~10–20 carousels/hour with one 5090 + cloud calls in parallel, bottlenecked by image scoring (50 candidates × ~3s = 2 min) and HITL latency. At 200–400 carousels/day with async Slack approval, monthly cost lands around $1,000–$3,000.
+
+### Reflexion loop in LangGraph
+
+Three modules: Actor (Designer node, generates draft), Evaluator (QAReviewer node, scores against rubric, returns reward + reasons), Self-Reflector (converts evaluator feedback into verbal reinforcement stored in `state["reflections"]`). Reflection from trial N is concatenated to the Actor's prompt at trial N+1.
+
+```python
+def route_after_qa(state):
+    if state["qa_report"].composite >= 7.5: return END
+    if state["revision_count"] >= 3: return "human_review"
+    return "reflect"
+
+builder.add_conditional_edges("qa", route_after_qa)
+builder.add_edge("reflect", "design")
+graph = builder.compile(checkpointer=postgres_checkpointer)
+```
+
+Cap reflections at last 5 entries with periodic compression; sanitize tool outputs against prompt injection (HTML strip, length cap); meta-evaluate the evaluator monthly against held-out human-rated carousels to catch reflection-poisoning where a buggy evaluator steers actor away from already-correct output. Layer **Tree of Thoughts** for hooks specifically: generate N=5 hook candidates in parallel, hook judge picks top 1 — hooks are short so this is cheap.
+
+---
+
+## 5. Self-improving learning loop — the single most important section
+
+The user's complaint that the system "doesn't get better despite learning pipelines" is the most common pathology in 2025–2026 LLM systems. It almost always means **the system has logging, not learning**. A system genuinely learns only when a closed loop changes one of three things: prompts (DSPy/GEPA), retrieved exemplars (RAG memory), or weights (LoRA/DPO). Any "feedback loop" that doesn't measurably mutate one of those over time is observability theater.
+
+### The four required components
+
+A real learning system requires all four — skipping any earlier step makes every later step train on noise. **(1) Scored generations** — every output gets a per-axis rubric score AND an engagement label. **(2) An optimizer** — gradient (LoRA/DPO), evolutionary (GEPA), bandit (VW), or Bayesian (MIPROv2) that consumes (input, output, score) tuples. **(3) A deployment gate** — a 200-carousel hand-rated golden set that gates every prompt or weight change behind a CI regression check. **(4) A drift detector** — EWMA + CUSUM + embedding-MMD that triggers automated rollback when output quality degrades.
+
+### Rubric and judge jury
+
+Seven axes, each 1–5 Likert (recent research shows 0–5 has highest LLM-human ICC; 0–10 is the worst): **hook strength** (weight 0.30 — does it stop the scroll?), **fact accuracy** (0.25), **image relevance** (0.15 — VLM aggregated), **narrative arc** (0.20), **design polish** (0.10), **on-brand voice**, **novelty** (nearest-neighbor distance in embedding store vs last 30 posts).
+
+For each axis, write rubric prompts with explicit anchor descriptions for scores 1, 4, 7, 10 following the **Prometheus-Vision** pattern (boosts agreement with humans by 0.4 Pearson ρ). Use **absolute scoring** for the inline production critic loop (simple thresholds drive routing); use **pairwise comparison** for DSPy training data curation and A/B tests of two designs (lower calibration variance per Yan 2024–25 research). **Always run pairwise in both orders** (swap-symmetry) and only accept a winner if both orders agree.
+
+**Cross-family judge jury** is non-negotiable to dodge self-enhancement bias. Three judges:
+- **Kimi K2.6** (strong reasoning) on `fact_accuracy`, `narrative_arc`
+- **MiniMax M2.7** (cheap, fast, agentic) on `hook_strength`, `design_polish`  
+- **Local Qwen3-32B** with Prometheus-Eval rubric on `image_relevance`, `voice`, `novelty`
+
+Aggregate via **Bradley-Terry weighted by per-judge reliability** (recent BT-aggregation research arXiv 2602.16610 beats simple averaging when judges have different κ). Self-consistency: sample n=3 per judge at temp=0.3, take median.
+
+### Calibration and drift detection
+
+Maintain a **200-carousel golden set** hand-rated by you (or 2–3 humans, take median + κ). Spread across all properties. Include adversarial edge cases. Refresh quarterly with 10–20% replacement. Periodically compute **Cohen's κ between each judge and human consensus**: κ > 0.8 is the bar, κ > 0.6 is workable, anything < 0.4 means you're learning on noise. Track inter-judge κ; alert when it drops (judge drift, vendor model swap-out). Track **`corr(judge_score, engagement_z_score)`** over rolling windows — if it drops below 0.3, the judge has decoupled from reality.
+
+Drift detectors:
+- **Output-distribution drift**: embed every generated carousel; maintain rolling 14-day reference; daily MMD or Jensen-Shannon vs reference.
+- **Per-axis judge-score drift**: EWMA control chart (α=0.2, alert when |S_t − μ_baseline| > 3σ/√n) for medium shifts; CUSUM (Page 1954) for small persistent shifts.
+- **Engagement-vs-judge correlation**: Pearson/Spearman tracked weekly.
+
+Alert → automatic canary rollback. Every prompt version in the registry has a `last_known_good` flag; rollback flips active pointer, opens a P1, halts auto-publishing for the affected niche.
+
+### Prompt evolution — DSPy GEPA as primary, MIPROv2 as baseline
+
+**GEPA (Agrawal et al., arXiv 2507.19457, v2 Feb 2026)** is the 2026 default — reflective/evolutionary optimizer where the LLM reads its own trajectory, writes natural-language critique, mutates the prompt, and maintains a Pareto frontier over multiple objectives. Reports **35× fewer rollouts than GRPO** and +10% over MIPROv2 on AIME-2025. Best when textual feedback is rich (judge rationales) — wire your judges to emit `{score, feedback}` per slide.
+
+Sequence:
+- **Week 0 (cold-start)**: BootstrapFewShot to seed each stage with 4–8 self-generated demos.
+- **Week 1+ (continuous)**: weekly GEPA over the full DSPy program, using judge-jury composite + textual rationales as metric.
+- **Monthly**: MIPROv2 medium auto-mode for joint demo/instruction Bayesian search as baseline; promote whichever wins on holdout golden set.
+
+Prompt registry in **Langfuse Prompt Management** (or Postgres `prompt_versions`) with `prompt_text`, `parent_id`, `optimizer`, `golden_set_score`, `live_win_rate`, `engagement_lift`, `created_at`, `status`. Mind: don't over-optimize creative writing — GEPA/MIPROv2 will converge to a few effective patterns and reduce diversity. Mitigate with a `diversity_penalty` term in the metric or maintain 2–3 separately-compiled hook writers and round-robin them.
+
+### Contextual bandits for production decisions
+
+Each generation involves choices framed as bandit arms with shared context features (`niche`, `recent_engagement_trend`, `audience_demographics`, `hour_of_day`, `weekday`):
+
+| Decision | Arms | Algorithm |
+|---|---|---|
+| Topic angle | 5–20 candidates | LinUCB / VW `--cb_explore_adf` |
+| Hook style | curiosity gap, contrarian, listicle, story, stat-shock, ... | Thompson over Beta |
+| Slide count | {6,7,8,9,10} | Thompson |
+| Design template | template registry (~30 entries) | LinUCB |
+| Image source mix | TMDB-heavy, Fanart-heavy, Reddit-heavy, balanced | LinUCB |
+| Posting time slot | (weekday × hour) | Thompson Beta-Binomial |
+
+Vowpal Wabbit:
+```bash
+vw --cb_explore_adf --cover 5 --epsilon 0.05 --cb_type dr -q :: \
+   --rnd 3 --rnd_alpha 0.1 --rnd_invlambda 1e-3 -d events.dat
+```
+
+`--cb_type dr` is doubly robust counterfactual reward estimator — unbiased even with logging-policy mismatch. `--cover 5` Online Cover algorithm beat all alternatives in JMLR 18-863. **Always keep a 5–10% epsilon-floor for exploration** so a winner doesn't starve out new candidates. Re-introduce arms not pulled in 30 days back to the active pool with reset confidence.
+
+### Engagement-feedback RL loop
+
+TikTok analytics ingestion pulls every 6h × 48h, daily × 14d, weekly × 60d via Display API + headless TikTok Studio scrape (creator analytics like completion rate aren't on the public API). Composite reward, all niche-cohort z-scored:
+
+```
+r = 0.40 * z(completion_rate)        # CRITICAL for carousels — top FYP signal
+  + 0.20 * z(saves_per_view)
+  + 0.15 * z(shares_per_view)
+  + 0.10 * z(comments_per_view)
+  + 0.10 * z(follows_per_view)
+  + 0.05 * z(likes_per_view)
+```
+
+Time-decay normalization: fit exponential growth `views(t) = V_∞ × (1 − e^(−λt))` per niche, estimate V_∞ from partial data; OR freeze reward at t=7d and t=30d, never train on rewards from posts <48h old. **Confounder controls**: regress engagement on `posting_hour + day_of_week + hashtag_age + follower_count + topic_trendiness`, use the **residual** as the cleaner reward. Inverse-propensity-weighted reward when bandit logs propensity (VW `--cb_type dr` does this natively). Within-bucket A/B testing: ≥30 posts per arm before declaring a winner via Welch's t-test or Mann-Whitney for non-normal completion rates.
+
+### RAG memory — episodic + semantic
+
+Store every generation in `pgvector` with full record (prompt → output → judge scores → engagement → embeddings). At inference, retrieve **top-5 positive exemplars** (same niche, completion_rate > p75, judge_total > 8/10) **and top-2 negative exemplars** (same niche, completion_rate < p25, with `failure_annotation` text). The negative-exemplar trick is what genuinely prevents repeated mistakes — inject as `<bad_example>...</bad_example>` blocks. Models that see explicit failure traces stop reproducing them within 2–3 cycles (matches Mem0/LangMem 2025 reports).
+
+**Mem0 layered on pgvector** for semantic memory (brand style facts, audience preferences, "the audience hates clickbait ending with '...you won't believe!'"). Run a nightly **belief-extraction job** (Letta-style sleep-time agent) that converts the day's wins/losses into 5–20 short rules and pushes them to Mem0. **LanceDB** for image embeddings (zero-server, columnar, fast NN on visual style — correlate completion rate with image style cluster, feed back to image curation).
+
+### Fine-tuning — when worth it
+
+**Don't fine-tune until ≥1,000 high-quality preference pairs** with engagement-grounded labels, AND you've exhausted prompt optimization. Below that, prompts + RAG dominate. Above ~5,000 pairs, DPO clearly wins. Don't fine-tune when brand voice or audience is shifting >20%/month, or when engagement labels are confounded by posting time/hashtag changes you haven't disentangled.
+
+Sequence on **Qwen3-14B via Unsloth** (RTX 5090 supports full Blackwell path via Unsloth's Docker image; LoRA bf16 fits comfortably, QLoRA on Qwen3-32B fits tight at ~28 GB with `gradient_checkpointing="unsloth"` for 30% VRAM saving):
+1. **SFT pass** at 500+ top-decile carousels (text only).
+2. **KTO** at 1k–3k labeled (binary thumbs up/down works — TikTok engagement is naturally pointwise).
+3. **SimPO** at 3k+ labeled pairs (reference-free, adds margin term to Bradley-Terry, outperforms DPO 3.8–6.4 pts on AlpacaEval LC per Meng et al.).
+4. **ORPO** at 10k+ for one-shot SFT+preference.
+
+Qwen3-14B QLoRA at rank=16 trains in ~4–8h on a 5090 with ~10k examples.
+
+### Cadence
+
+| Frequency | Job |
+|---|---|
+| Per generation | Judge ensemble (synchronous), bandit arm selection, exemplar retrieval |
+| Every 6h | TikTok analytics poll, EWMA/CUSUM update |
+| Nightly | Re-run judge jury on day's outputs, refresh Mem0 belief consolidation, embedding drift check |
+| Weekly | GEPA prompt optimization, bandit policy refresh, A/B report |
+| Monthly | DPO/SimPO LoRA refresh on accumulated preference pairs, judge re-calibration vs golden set |
+| Quarterly | Golden-set refresh (10–20% replacement), base model bake-off, full architecture review |
+
+### Anti-patterns — what's likely wrong with the current tool
+
+In rough order of frequency: generations stored without scores; judge runs but score never fed back; hardcoded prompts in source control with no version registry; single 1–10 score instead of per-axis rubric; biased judges (position, verbosity, self-enhancement); optimizing on proxy metrics that don't correlate with engagement; no regression test before deploying changes; engagement signal not normalized for posting-time/hashtag/audience-growth confounders; no exploration floor (bandit converges within a week, can't recover from drift); memory store with no negative examples; fine-tuning too early (200 examples → DPO → overfits on noise → gets worse); silent API model swap-outs invisible without drift detector; single judge of single model family (self-enhancement bias floors improvement); no human override channel for the most-valuable training signal; optimizing in isolation per stage instead of end-to-end DSPy program (improvements don't compound — exactly what GEPA was designed for).
+
+---
+
+## 6. Production reliability and 24/7 operation
+
+### Orchestration: Temporal
+
+For an AI content pipeline, the right orchestrator is the one that survives a crashed vLLM, a TMDB 502, and a 3 AM disk-full event without losing state. **Temporal wins** because durable execution means a single carousel run (10+ steps with external API calls) restarts at the failed step rather than the beginning. Per-step retry policies, heartbeats, exponential backoff with jitter all native. `workflow.sleep(timedelta(hours=4))` for "post 4 hours after generation" survives restarts.
+
+The catch: workflow code must be deterministic — no `random`, `time.time()`, or direct API calls in workflow code; everything wrapped in `@activity.defn`. Self-host Temporal Server + Postgres in Docker (~1 GB RAM combined). Prefect 3 is the runner-up if you refuse the determinism constraint; lowest friction Python decorator API but weaker mid-task recovery.
+
+**Two task queues for bulkhead isolation**: `gpu-pool` (workers pinned to RTX 5090, `max_concurrent_activities=1`, running vLLM client calls and image pipelines) and `io-pool` (20–50 concurrent async workers for TMDB/Reddit/Fanart/TikTok HTTP). A TMDB outage cannot starve GPU work and vice versa.
+
+### Resilience patterns
+
+**Retries: `stamina` (built on `tenacity`)** — Hynek Schlawack's opinionated wrapper bakes in jittered exponential backoff, async support, structlog/Prometheus instrumentation, and test-mode disabling. Tenacity is fine but easy to misconfigure (NEVER bare `@retry()` — infinite default retries). Inside Temporal activities, prefer the native `RetryPolicy` (stored in history) with `non_retryable_error_types=["AuthError", "ContentPolicyError"]`.
+
+**Circuit breakers: `purgatory` (async) or `pybreaker` (sync)**. Wrap each external dependency. After N failures within a window, the breaker opens and fails fast — no thundering herd against downed TMDB.
+
+**Bulkheads**: separate `httpx.AsyncClient` per upstream with bounded `Semaphore`. **Graceful degradation chains**: image source TMDB → Fanart.tv → Comic Vine → cached archive; LLM Kimi → local Qwen → templated fallback so the pipeline never blocks; image gen MiniMax → local SDXL/FLUX → curated stock. **Idempotency keys**: every external mutating call gets `sha256(carousel_id + image_hashes + caption_hash)`; check `(idem_key → publish_id)` table before TikTok publish; makes Temporal's at-least-once execution safe.
+
+### Rate-limit budgets
+
+Token-bucket per (api, key, scope) in Redis. Local: `aiolimiter.AsyncLimiter`; cross-process: Redis Lua script or `limits` library. Concrete budgets: TMDB 30 req/s (conservative under 50 limit), Comic Vine 1 req/s + 200/hr, Reddit OAuth 100/min, Fanart 2/s, Marvel 0.03/s (3000/day), TikTok Content Posting API 6 RPM per access token. Daily `api_usage` table tracks `(api, date, request_count, token_count, cost_usd)`; **hard-stop the pipeline when `cost_usd >= daily_cap`** — prevents a runaway loop from burning your monthly budget overnight.
+
+### Observability stack
+
+Prometheus + Grafana (scraping Temporal, vLLM `/metrics`, NVIDIA DCGM exporter for GPU telemetry, Postgres exporter, Redis exporter). OpenTelemetry tracing exported to self-hosted Tempo or Jaeger — single trace = whole carousel, you'll see the exact span where it stalled. **structlog + JSON to Loki** (loguru is fine for ergonomics but structlog produces queryable structured logs). **Sentry** for error capture. **Langfuse self-hosted (MIT, ClickHouse-backed)** for LLM observability — recommended over LangSmith because self-hostable without enterprise license, framework-agnostic, free tier generous. Phoenix (Arize) is the alternative if you want OpenTelemetry-native single-Docker simplicity.
+
+Alert routing: **Alertmanager → ntfy.sh (push to phone, free) + Discord webhook (per-channel by severity) + Healthchecks.io for "did the daily cron run?" passive heartbeats**. Do not email.
+
+Critical Grafana panels: per-pipeline-stage success rate (Temporal `temporal_workflow_completed/failed` by `WorkflowType`), token spend/day per provider (custom counter `llm_tokens_total{provider,model,kind}`), queue depth, GPU SM utilization + VRAM + power + temperature (DCGM), posts published/day per account, completion rate distribution, SLO burn-rate alerts.
+
+### Health checks
+
+Liveness (HTTP 200 on `/livez` → container restart on failure) vs readiness (DB ping, vLLM `/health`, Redis ping, TikTok token not expired → traffic paused but container not restarted). **Synthetic transactions**: a separate Temporal cron runs hourly `synthetic_carousel_dryrun` (full pipeline with `publish=False`, asserts each stage produced output, posts green/red to Healthchecks.io) — catches "TMDB schema changed" or "Qwen returned empty" before real posts fail. **TikTok auth**: background activity every 6h calls `oauth/token/refresh/`. Access token is 24h, refresh token 365d; proactive refresh is mandatory.
+
+### Container layout
+
+**Docker Compose is correct for one RTX 5090.** k3s only when a second GPU node arrives. Stack: `vllm` (text), `vllm-vision` (time-sliced), `postgres`, `redis`, `qdrant`, `minio`, `temporal` + `temporal-ui`, `prometheus`, `grafana`, `tempo`, `loki`, `promtail`, `langfuse` + `clickhouse`, `app-worker-gpu`, `app-worker-io`, `app-scheduler`. Pin vLLM tag known to carry Blackwell (sm_120) kernels. `restart: unless-stopped` + Docker healthcheck → automatic container restart on crash. Watchdog Temporal workflow: if `/metrics` shows `vllm:num_requests_running` stuck >5 min while queue depth >0, signal restart. `PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512` reduces fragmentation. Model warmup: 3 dummy completions before marking ready.
+
+**Backups**: `pg_dump --format=custom` nightly via cron → `restic` to Backblaze B2 (encrypted, deduped). MinIO via restic snapshot or B2 bucket replication. Qdrant via API snapshots. **Test restore quarterly** — else you don't have backups, you have hopes. `restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune`.
+
+**Secrets**: Infisical (self-hosted, OSS, secret rotation hooks, audit logs) or Doppler (SaaS, ergonomic, free tier). Vault is overkill at this scale. `.env` chmod 600 with `pydantic-settings` is the bare minimum.
+
+---
+
+## 7. TikTok-specific optimization
+
+### Publishing — official API path
+
+**Use the official TikTok Content Posting API.** Carousels (Photo Mode) ARE supported via `/v2/post/publish/content/init/` with `media_type=PHOTO` and `post_mode=DIRECT_POST` or `MEDIA_UPLOAD`. Some third-party blogs incorrectly claim carousels aren't supported — the docs are explicit.
+
+```json
+POST https://open.tiktokapis.com/v2/post/publish/content/init/
+{
+  "post_info": {
+    "title": "your hook (≤90 chars visible before fold)",
+    "description": "long caption with #hashtags",
+    "privacy_level": "PUBLIC_TO_EVERYONE",
+    "disable_comment": false
+  },
+  "source_info": {
+    "source": "PULL_FROM_URL",
+    "photo_cover_index": 0,
+    "photo_images": ["https://yourdomain.com/img1.webp", "..."]
+  },
+  "post_mode": "DIRECT_POST",
+  "media_type": "PHOTO"
+}
+```
+
+`PULL_FROM_URL` requires **domain verification** in the TikTok developer portal — host on R2/B2 with a CNAME to your verified domain. Image specs: JPEG or WebP (PNG not directly supported by API), 1080×1920 9:16, up to 35 images, total ≤500 MB, individual <100 KB for fast load. Direct Post requires `video.publish` scope plus audited app for `PUBLIC_TO_EVERYONE`. **Plan 2–4 weeks for the audit pipeline** — this is the long pole. Pre-audit, content forced to `SELF_ONLY` (private). Document and start the process immediately. While waiting, bridge through Zernio or Metricool API (they wrap the official API with their own approved app — eat their margin temporarily).
+
+**Unofficial methods**: `TikTokApi` (David Teather, MIT, v7.3.x as of 2026) is excellent for **read** ops (trending, hashtag search) via Playwright + `ms_token` cookie — use for trend ingestion only, **never for posting**. Selenium/Playwright upload automation violates §3 of Developer ToS for write operations and risks account bans (TikTok actively fingerprints automation, CAPTCHAs eventually block). Mobile device farms (Appium + real phones) are unnecessary for single-account pipelines.
+
+### Posting time
+
+2026 cross-source consensus for US-heavy pop-culture audiences: best general windows 6–10 AM and 7–11 PM audience-local; mid-morning to early afternoon weekdays underperforms. **Best slot for entertainment/pop-culture: Tue–Thu 10–11 AM ET; Sun 8–9 AM ET** (Hopper HQ, Buffer, IQFluence, SocialPilot — all 2026). Critical algorithmic mechanic: TikTok serves first to a 200–500 user seed audience; engagement % in the first ~60 min determines tier-up. **If the seed is asleep, you're cooked.**
+
+Per-account learning: bin engagement by `(weekday, hour_local)` over last 60 days; score candidate slots via `expected_engagement_rate × novelty_factor × seasonality(release_window)`; Thompson Sampling Beta-Binomial per slot, ε=10% exploration, refit weekly. Cold start uses global priors. **Per-day cap 1–3 posts with 3-hour minimum gap** (TikTok internally pits your own posts against each other). For Marvel/DC/The Boys specifically: schedule within 0–6 hours of an episode airing, trailer drop, or news beat — **trending recency dominates time-of-day**. "Hot release" override bypasses normal scheduling.
+
+### Hashtags — 3-3-3 stack
+
+2026 consensus: **3–5 hashtags is the sweet spot, max ~9**, anything over 10 is discounted by the algorithm. `#fyp`/`#foryoupage` are no longer reach drivers — every compliant video is FYP-eligible by default. Topic-specific tags act as tiebreakers.
+
+The 3-3-3 stack:
+- **Broad (3)**: `#marvel`, `#dccomics`, `#theboystv` (or `#movietok`, `#tvtok`)
+- **Niche (3)**: `#marveltrivia`, `#dccinematic`, `#mcutheories`, `#theboysseason5`
+- **Ultra-niche (3, <100K posts)**: `#mcurewatch`, `#whatifmcu`, `#xmen97`, `#daredevilbornagain`
+
+**Trending sources**: Creative Center scrape (Playwright, region-filtered hourly), Pentos for sound velocity, Reddit hot+rising cross-reference, Google Trends via `pytrends`. Per-carousel automation: spaCy-extract proper nouns from the script → expand via `entity → hashtag` dict + `tiktok_search` autocomplete → score by `(estimated_post_count, recent_breakout_score)` → pick 1 broad + 2–3 niche + 2–3 ultra-niche. **Rotate 2–3 per post across the week** (looks spammy otherwise). Validate each tag isn't shadow-banned via Playwright check ahead of publish.
+
+### Captions — 2026 formula
+
+Limits: 2,200 characters (4,000 sometimes cited; honor 2,200 as safe). Only ~80–100 chars visible before the "more" fold. Algorithm reads captions for keywords (TikTok SEO is real and increasingly Google-like).
+
+Carousel formula:
+```
+[HOOK ≤80 chars: question/shock/"Did you know..."]
+[CONTEXT 1–2 lines: who/what/property]
+[VALUE/TRIVIA SUMMARY 2–4 lines: expand carousel reveals]
+[ENGAGEMENT PROMPT: explicit question + 👇 emoji]
+[KEYWORDS: natural sentence with character names, property, season/episode]
+[HASHTAGS: 5–9, separate block]
+```
+
+Length sweet spot: 150–500 chars for organic engagement, 800–1,500 for keyword-driven SEO ranking. Patterns that work for trivia/pop-culture: "You missed this in [property]…" (curiosity gap), "Ranking every [X] from worst to best" (implicit list promise), question hook → carousel answers → final-slide CTA "Save this for [next watch]" or "Comment your hot take." Emojis 1–3 strategic. **No line breaks via API** — use periods/emojis as separators.
+
+### Music — silent carousels are dead
+
+Carousels CAN and SHOULD have music. Silent carousels significantly underperform. **Recommend a Creator (Personal) account, NOT Business**, so trending pop tracks remain available — most viral entertainment carousels use trending pop. Business accounts are limited to TikTok's 1M+ pre-cleared Commercial Music Library.
+
+Music selection via API is constrained — Photo Mode music is generally selected in-app. Workarounds: **Upload mode (`MEDIA_UPLOAD`)** sends as draft; a human or Appium script finalizes. Some unofficial publishers (Metricool, Zernio) expose "Top 100 trending songs" pickers via internal endpoints not in public docs. Maintain a curated library of 30–50 sounds tagged `(tone, music_id, last_seen_trending)`; refresh weekly from Creative Center; tone classifier on script picks 3 candidates; pick most-trending unused in last 7 days. Tone mapping: MCU → orchestral cinematic builds, upbeat pop; The Boys → industrial/synth/darker rap; DC → cinematic darker electronic; trivia → upbeat playful trending.
+
+### Trending detection
+
+TikTok Creative Center Playwright-scrape (hashtag + sound trends, region-filtered, hourly). Reddit PRAW hot+rising every 30 min. Google Trends `pytrends` daily for property names. TMDB schedule endpoints for upcoming films/episodes. **Pre-schedule timely carousels 24–48h before known drops** — single biggest engagement lever in this niche. A topic is "hot" if it appears in ≥2 of {Creative Center, Reddit rising, Google Trends rising, X trends}; sum normalized z-scores; top 3 each morning enter the carousel queue.
+
+### Engagement ingestion
+
+Display API gives `views, likes, comments, shares` on `/v2/video/list/`. Creator analytics like avg watch time, completion rate, follows-from-video are NOT on the public API — they live in TikTok Studio. Options: TikTok for Business / Marketing API (commercial-music constraint), headless TikTok Studio scrape (fragile, ToS-borderline, only path to completion rate without Business API), or third-party (Pentos, Exolyt, Sociality.io, Metricool).
+
+Daily pull at 03:00 local + 1-hour-after-publish quick pull. Store in `tiktok_post_metrics` partitioned by date with: `post_id, published_at, caption_hash, hashtag_set, sound_id, slot, views, unique_views, for_you_pct, likes, comments, shares, saves, avg_swipe_depth, completion_rate, slides_viewed_p50/p90, profile_visits, follows_from_video`. **Optimize ruthlessly for completion rate** — single biggest signal carousel algorithm uses.
+
+### Compliance
+
+Studio character images carry copyright; mitigate via fair-use defense (commentary, criticism, transformative trivia overlay), multi-source composites rather than single high-res studio stills, photographer/studio credit small footer (doesn't confer license but reduces takedowns), Fanart.tv community art when available. Music: never use copyrighted music outside CML on Business accounts; on Personal accounts organic posts have broader access but mute risk. AI disclosure: TikTok requires AI-generated label for realistic AI scenes — comply for diffusion-supplemented images. Three takedowns can permaban — keep a backup account warming in parallel, never reupload flagged content.
+
+---
+
+## 8. Six-week build sequence
+
+**Week 1 — foundation.** Pydantic schemas (`Carousel`, `Slide`, `Source`, `ImageScore`, `CarouselRubric`). vLLM serving Qwen3-30B-A3B-AWQ on port 8001. Postgres + pgvector + Redis + MinIO in Docker Compose. Temporal Server. LangGraph skeleton with 4 nodes (TopicSelector, Researcher, Designer-stub, Publisher-stub) and PostgresSaver checkpointer. Trace everything to Langfuse from day one.
+
+**Week 2 — image quality.** vLLM Qwen3-VL-32B-Instruct-FP8 on port 8002 (time-sliced via systemd unit toggles). Florence-2 + InsightFace + open_clip ViT-H-14 + LAION aesthetic v2 + pyiqa loaded. The 11-stage funnel implemented as Temporal activities. Real-ESRGAN + GFPGAN integrated. Fan-out fetcher (TMDB + Fanart + Comic Vine + Reddit + Wikimedia) with `aiometer` concurrency caps and `tenacity` retries.
+
+**Week 3 — content grounding.** Fandom MediaWiki API ingestion with `mwparserfromhell`. Comic Vine + IMDb GraphQL trivia + Wikidata SPARQL. Qdrant + BGE-M3 hybrid index. Section-aware late chunking. bge-reranker-v2-m3 reranking. Atomic-fact extraction → trust-tiered ledger in Postgres. Citation-grounded drafter prompts; NLI atomic-claim verifier; cross-source rule.
+
+**Week 4 — multi-agent + Reflexion.** QAReviewer (Kimi K2.6 thinking mode). Skeptic agent (Kimi K2.6 with hostile-continuity-expert prompt). LangGraph Reflexion loop with `state["reflections"]` and `revision_count` cap of 3. HumanReview interrupt() + Slack approval webhook. Voice files in `voices/*.yml` — MCU, DCEU, The Boys, Snyderverse, DC-Gunn, GoT/HOTD, Stranger Things.
+
+**Week 5 — design pipeline + publishing.** Pillow + numpy LUT/vignette/grain pre-stage. Jinja2 + Tailwind + Playwright Chromium with persistent context. 9 slide templates (hook, fact, fact_overlay, comparison, quote, reveal_blur, easter_egg, tier, cta). Brand kit token system. TikTok Content Posting API integration with idempotency keys. Domain verification on R2.
+
+**Week 6 — learning + hardening.** 200-carousel golden set hand-rated. 7-axis rubric implemented. 3-judge cross-family jury (Qwen3-32B + Kimi K2.6 + MiniMax M2.7). DSPy GEPA weekly compile. TikTok analytics ingestion cron (every 6h × 48h, daily × 14d). Vowpal Wabbit `--cb_explore_adf --cover 5 --cb_type dr` bandit. Drift detectors (EWMA + CUSUM + MMD). Drift-triggered automated rollback. Prometheus/Grafana/Loki/Tempo wired. Synthetic-transaction hourly health check. Restic→B2 nightly backup. Schema-strict msgpack mode. Postgres TTL job for old workflow checkpoints. CI gate on golden set blocks any prompt or LoRA change that regresses composite score within 95% CI.
+
+After Week 6, the system runs continuously. DPO/SimPO LoRA on Qwen3-14B via Unsloth becomes worth doing once 3,000+ clean preference pairs accumulate (typically months 2–3 of operation). Quarterly base-model bake-off against Qwen3.5 / Llama 4 / Gemma 4 successors.
+
+---
+
+## What world-class output looks like
+
+A world-class Marvel/DC/The Boys carousel reads as **a five-second cinematic film still that happens to contain 8–10 perfectly-paced revelations**, not a slideshow of stock images. Slide 1 is a face-filling character close-up under a 7:1-contrast 96–120pt Druk Wide hook of ≤12 words, with a numbered badge, brand color grade matching the property's signature look (MCU teal-and-orange, Snyderverse crushed-blue, The Boys desaturated-with-blood-red), film grain, light vignette, subtle chromatic aberration at corners. Every interior slide has one fact in ≤22 words, an image that has passed CLIP relevance + LAION aesthetic + face verification + watermark detection + VLM final check, and an end-of-slide cliffhanger transition. The penultimate slide pays off the strongest single fact. The last slide is a character cutout (rembg + birefnet-general) over a brand-color block with a follow CTA.
+
+Every claim cites an atomic fact whose source is logged with trust tier and quote span. Every image's selection is logged with composite z-score, CLIP relevance softmax, face cosine vs reference bank, and VLM rationale. Every published carousel has a per-axis judge score from three different model families and a 30-day engagement curve attached. Every prompt that produced it is versioned in Langfuse with a win-rate, golden-set score, and live engagement lift. Every workflow step has a Temporal history that can be replayed deterministically. When something breaks at 3 AM, an EWMA alert fires to your phone, the canary rolls back to last known good, and the synthetic transaction at the next hour confirms recovery — without you waking up. **That is what a dependable, self-improving content engine looks like in 2026.**

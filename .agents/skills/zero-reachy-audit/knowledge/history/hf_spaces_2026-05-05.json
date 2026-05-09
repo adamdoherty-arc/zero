@@ -1,0 +1,16 @@
+{
+  "fetched_at": "2026-05-05T15:50:00Z",
+  "source": "https://huggingface.co/api/spaces?filter=reachy_mini_python_app&limit=500&full=true",
+  "total": 205,
+  "top": [
+    {"id": "itsMarco-G/reachy_phone_home", "likes": 351, "lastModified": "2026-04-29T14:48:44.000Z"},
+    {"id": "d10g/f1commentator", "likes": 202, "lastModified": "2026-02-15T19:53:41.000Z"},
+    {"id": "ravediamond/baby-reachy-mini-companion", "likes": 166, "lastModified": "2026-02-15T08:09:56.000Z"},
+    {"id": "panny247/hello_world", "likes": 101, "lastModified": "2026-02-16T12:25:53.000Z"},
+    {"id": "pollen-robotics/reachy_mini_conversation_app", "likes": 91, "lastModified": "2026-05-05T14:44:27.000Z"},
+    {"id": "yozkut/judgy_reachy_no_phone", "likes": 31, "lastModified": "2026-05-02T02:06:32.000Z"},
+    {"id": "8bitkick/reachy_mini_3d_web_viz", "likes": 25, "lastModified": "2026-02-13T09:23:36.000Z"},
+    {"id": "djhui5710/reachy_mini_home_assistant", "likes": 20, "lastModified": "2026-05-05T13:12:05.000Z"},
+    {"id": "RemiFabre/marionette", "likes": 18, "lastModified": "2026-04-23T13:53:36.000Z"}
+  ]
+}

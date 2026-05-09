@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "project": "legion",
+  "last_run": "2026-05-09T04-27-52Z",
+  "previous_runs": [
+    "2026-05-08T21-28-54Z",
+    "2026-05-08T23-40-19Z",
+    "2026-05-09T02-42-04Z",
+    "2026-05-09T03-40-56Z"
+  ],
+  "last_composite": 95.0,
+  "composite_history": [67.5, 77.4, 89.5, 92.8, 95.0],
+  "composite_total_delta": 27.5,
+  "last_dimension_scores": {
+    "functional": 97,
+    "integration": 97,
+    "data": 95,
+    "competitive": 80,
+    "dead": 95,
+    "duplication": 100
+  },
+  "honest_short_work_ceiling": 97,
+  "ceiling_explanation": "Reaching 100 needs 1-2 weeks of feature work: real SWE-bench harness (competitive), backfill agent_executions (data), more telemetry wiring (integration). Refactor + small features alone caps near 97.",
+  "remediation_history": [
+    {"sprint_id": 838, "name": "Audit-Remediation-02", "summary": "wire project_grades + agent_executions + Builder banner"},
+    {"sprint_id": 869, "name": "Audit-Remediation-03", "summary": "service consolidation 174 -> 96 root files"},
+    {"sprint_id": 896, "name": "Audit-Remediation-04", "summary": "consolidation 96 -> 80 + product_features seed + extra agent telemetry"},
+    {"sprint_id": 906, "name": "Audit-Remediation-05", "summary": "ship Benchmarks dashboard + LLM percentiles endpoint to move competitive parity 60 -> 80"}
+  ],
+  "feature_inventory_snapshot": {
+    "feature_count": 29,
+    "new_pages_run5": ["/benchmarks"],
+    "new_endpoints_run5": ["/api/benchmarks/overview", "/api/benchmarks/leaderboard", "/api/llm-console/percentiles"]
+  },
+  "live_signals": {
+    "sprints_total_legion": 110,
+    "sprints_done_all_time": 91,
+    "sprints_24h": 25,
+    "legion_pass_rate_30d_pct": 91.9,
+    "legion_leaderboard_rank": 1,
+    "llm_p50_ms": 7785,
+    "llm_p95_ms": 34345,
+    "agentic_loops_running": 2,
+    "root_service_files": 80
+  },
+  "next_run_targets": [
+    "decide whether to invest in real SWE-bench harness for competitive 80 -> 100",
+    "wire AgentExecution into critique/advance_task nodes for integration 97 -> 100",
+    "consider backfilling agent_executions retroactively for data 95 -> 100"
+  ]
+}

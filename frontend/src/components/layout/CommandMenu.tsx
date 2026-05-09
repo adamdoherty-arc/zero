@@ -1,20 +1,5 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import {
-  LayoutDashboard,
-  Kanban,
-  ListTodo,
-  FolderGit2,
-  Users,
-  Mail,
-  Calendar,
-  Brain,
-  Workflow,
-  Settings,
-  Search,
-  BarChart3,
-  Cog,
-} from 'lucide-react'
 
 import {
   CommandDialog,
@@ -25,27 +10,12 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import { allNavItems } from '@/config/navigation'
 
 interface CommandMenuProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
-
-const pages = [
-  { label: 'Dashboard', href: '/', icon: LayoutDashboard, group: 'Navigation' },
-  { label: 'Sprint Board', href: '/board', icon: Kanban, group: 'Navigation' },
-  { label: 'Sprints', href: '/sprints', icon: ListTodo, group: 'Navigation' },
-  { label: 'Projects', href: '/projects', icon: FolderGit2, group: 'Navigation' },
-  { label: 'CRM', href: '/crm', icon: Users, group: 'Navigation' },
-  { label: 'Email', href: '/email', icon: Mail, group: 'Productivity' },
-  { label: 'Calendar', href: '/calendar', icon: Calendar, group: 'Productivity' },
-  { label: 'Knowledge Base', href: '/knowledge', icon: Brain, group: 'Productivity' },
-  { label: 'Workflows', href: '/workflows', icon: Workflow, group: 'Automation' },
-  { label: 'Orchestrator', href: '/orchestrator', icon: Settings, group: 'Automation' },
-  { label: 'Research', href: '/research', icon: Search, group: 'Automation' },
-  { label: 'Analytics', href: '/analytics', icon: BarChart3, group: 'System' },
-  { label: 'Settings', href: '/settings', icon: Cog, group: 'System' },
-]
 
 export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
   const navigate = useNavigate()
@@ -66,7 +36,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
     onOpenChange(false)
   }
 
-  const groups = [...new Set(pages.map((p) => p.group))]
+  const groups = [...new Set(allNavItems.map((p) => p.group))]
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -77,7 +47,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
           <div key={group}>
             {i > 0 && <CommandSeparator />}
             <CommandGroup heading={group}>
-              {pages
+              {allNavItems
                 .filter((p) => p.group === group)
                 .map((page) => (
                   <CommandItem

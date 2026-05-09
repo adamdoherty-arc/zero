@@ -9,18 +9,20 @@ interface TaskDetailModalProps {
   onClose: () => void
 }
 
-const STATUS_OPTIONS: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'testing', 'done', 'blocked']
+const STATUS_OPTIONS: TaskStatus[] = ['backlog', 'todo', 'on_hold', 'in_progress', 'review', 'testing', 'done', 'blocked', 'archived']
 const CATEGORY_OPTIONS: TaskCategory[] = ['bug', 'feature', 'enhancement', 'chore', 'documentation']
 const PRIORITY_OPTIONS: TaskPriority[] = ['critical', 'high', 'medium', 'low']
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
   backlog: 'bg-gray-500',
   todo: 'bg-blue-500',
+  on_hold: 'bg-amber-500',
   in_progress: 'bg-yellow-500',
   review: 'bg-purple-500',
   testing: 'bg-orange-500',
   done: 'bg-green-500',
   blocked: 'bg-red-500',
+  archived: 'bg-slate-500',
 }
 
 export function TaskDetailModal({ task, isOpen, onClose }: TaskDetailModalProps) {

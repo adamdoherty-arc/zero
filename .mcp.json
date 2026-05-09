@@ -18,13 +18,37 @@
         "MEMORY_DB_PATH": "C:\\code\\zero\\workspace\\memory\\claude-memory.db"
       }
     },
-    "zero-api": {
+    "zero-mcp": {
       "command": "python",
       "args": ["C:\\code\\zero\\mcp_servers\\zero_api_mcp.py"]
+    },
+    "zero-company": {
+      "command": "python",
+      "args": ["C:\\code\\zero\\mcp_servers\\zero_company_mcp.py"]
+    },
+    "legion-mcp": {
+      "command": "python",
+      "args": ["C:\\code\\Legion\\mcp_servers\\legion_mcp.py"]
+    },
+    "ada-mcp": {
+      "command": "python",
+      "args": ["C:\\code\\ADA\\mcp_servers\\ada_mcp.py"]
     },
     "kimi-llm": {
       "command": "python",
       "args": ["C:\\code\\zero\\mcp_servers\\kimi_mcp.py"]
+    },
+    "cyanheads-obsidian": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@cyanheads/obsidian-mcp-server"],
+      "env": {
+        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
+        "OBSIDIAN_BASE_URL": "https://127.0.0.1:27124"
+      }
+    },
+    "postgres-mcp": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-postgres", "postgresql://zero:zero_dev@localhost:5434/zero"]
     }
   }
 }

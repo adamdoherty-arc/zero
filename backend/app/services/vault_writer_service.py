@@ -139,6 +139,114 @@ class VaultWriterService:
         }
 
     # ------------------------------------------------------------------
+    # Loop run output (cross-project self-improvement framework)
+    # ------------------------------------------------------------------
+
+    def write_loop_run(
+        self,
+        *,
+        loop_name: str,
+        run_id: int,
+        owner_project: str,
+        runner_kind: str,
+        status: str,
+        started_at: datetime,
+        ended_at: Optional[datetime] = None,
+        duration_s: Optional[float] = None,
+        judge_score: Optional[float] = None,
+        variant_label: Optional[str] = None,
+        cost_tokens: Optional[int] = None,
+        output: str = "",
+        error: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Write one loop run as a markdown report under 00_Meta/_agent/loops/<name>/runs/.
+
+        Durable visibility: this file persists even if Zero, Legion, and Postgres
+        are all down. The /loops UI renders these via vault retrieval when the DB
+        is available; the user can also browse them directly in Obsidian.
+        """
+        ts = started_at.strftime("%Y-%m-%d-%H%M%S") if started_at else _today_str()
+        safe_name = _slug(loop_name, max_len=80)
+        relative = f"00_Meta/_agent/loops/{safe_name}/runs/{ts}.md"
+
+        header = [
+            "---",
+            f"id: loop-run-{run_id}",
+            "type: loop_run",
+            "partition: personal",
+            f"loop: {loop_name}",
+            f"loop_run_id: {run_id}",
+            f"owner_project: {owner_project}",
+            f"runner_kind: {runner_kind}",
+            f"status: {status}",
+            f"started_at: {started_at.isoformat() if started_at else ''}",
+        ]
+        if ended_at:
+            header.append(f"ended_at: {ended_at.isoformat()}")
+        if duration_s is not None:
+            header.append(f"duration_s: {duration_s:.2f}")
+        if judge_score is not None:
+            header.append(f"judge_score: {judge_score:.2f}")
+        if variant_label:
+            header.append(f"variant: {variant_label}")
+        if cost_tokens is not None:
+            header.append(f"cost_tokens: {cost_tokens}")
+        header.extend([
+            "agent_writable: []",
+            "tags: [loop, agent, auto]",
+            "---",
+            "",
+            f"# Loop run — {loop_name} #{run_id}",
+            "",
+            f"**Status:** `{status}`",
+            "",
+        ])
+        if error:
+            header.extend(["## Error", "", "```", error.strip(), "```", ""])
+        if output:
+            header.extend(["## Output", "", output.strip(), ""])
+
+        body = "\n".join(header)
+        return self.write_agent_file(
+            relative_path=relative,
+            content=body,
+            source=f"loop:{loop_name}",
+            run_id=str(run_id),
+            overwrite=True,
+        )
+
+    def write_loop_index_entry(
+        self,
+        *,
+        loop_name: str,
+        run_id: int,
+        status: str,
+        judge_score: Optional[float],
+        started_at: datetime,
+        relative_path: str,
+    ) -> None:
+        """Append one line to today's loop index for a roll-up view."""
+        if not self.available():
+            return
+        today = _today_str()
+        index_rel = f"00_Meta/_agent/loops/_index/{today}.md"
+        target = self._resolve_safe(index_rel)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        score_s = f"{judge_score:.1f}" if judge_score is not None else "  - "
+        line = (
+            f"- {started_at.strftime('%H:%M:%S')} "
+            f"`{status:>8}` score={score_s} "
+            f"[{loop_name}#{run_id}](../{loop_name.replace(' ', '-')}/runs/{started_at.strftime('%Y-%m-%d-%H%M%S')}.md)"
+        )
+        if not target.exists():
+            target.write_text(
+                f"# Loop runs — {today}\n\nOne line per run. Newest at bottom.\n\n",
+                encoding="utf-8",
+            )
+        with target.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    # ------------------------------------------------------------------
     # Research output
     # ------------------------------------------------------------------
 

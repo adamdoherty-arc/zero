@@ -13,7 +13,7 @@ from functools import lru_cache
 
 import aiohttp
 import structlog
-from PIL import ImageFile
+from PIL import Image, ImageFile, UnidentifiedImageError
 
 # Validator reads only the first 64KB of each image to keep HEAD+GET fast.
 # PIL's default is strict: `img.load()` raises OSError on any truncated payload,
@@ -1731,7 +1731,6 @@ class ImageSourceService:
                         return result
                     chunk = await resp.content.read(65536)
 
-            from PIL import Image
             img = Image.open(io.BytesIO(chunk))
             img.load()
             result["width"] = img.width
@@ -1762,7 +1761,14 @@ class ImageSourceService:
                 result["centered_score"] = signals.get("centered_score", 0.0)
             except (ValueError, OSError, ImportError):
                 pass
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+        except (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            Image.DecompressionBombError,
+            OSError,
+            UnidentifiedImageError,
+            ValueError,
+        ):
             pass
         return result
 

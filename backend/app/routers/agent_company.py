@@ -12,6 +12,7 @@ from app.models.agent_company import (
     AgentRole, AgentTask, AgentTaskCreate, AiCompanyStats,
 )
 from app.services.agent_company_service import get_agent_company_service
+from app.services.company_context_service import get_company_context_service
 
 router = APIRouter(prefix="/api/company", tags=["ai-company"], dependencies=[Depends(require_auth)])
 
@@ -102,3 +103,21 @@ async def execute_subtasks(parent_id: str):
 async def get_stats():
     svc = get_agent_company_service()
     return await svc.get_stats()
+
+
+# ------------------------------------------------------------------
+# Company OS Docs / Context
+# ------------------------------------------------------------------
+
+@router.get("/docs-index")
+async def docs_index():
+    """List migrated Company OS docs now canonical inside Zero."""
+    svc = get_company_context_service()
+    return svc.list_docs()
+
+
+@router.get("/operating-context")
+async def operating_context():
+    """Return retrieval-friendly context for Zero company reports."""
+    svc = get_company_context_service()
+    return svc.operating_context()

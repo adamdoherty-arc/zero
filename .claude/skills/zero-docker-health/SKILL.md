@@ -1,7 +1,9 @@
 ---
 name: "zero-docker-health"
-description: "Infrastructure-level Docker health audit with auto-fix for the Zero platform. 4-phase execution: Learn, Diagnose (18 parallel checks), Auto-Fix (severity-tiered), Self-Learn."
+description: "[DEPRECATED — use docker-health (global) with --project=zero] Infrastructure-level Docker health audit with auto-fix for the Zero platform. 4-phase execution: Learn, Diagnose (18 parallel checks), Auto-Fix (severity-tiered), Self-Learn."
 version: "1.0.0"
+deprecated: true
+superseded_by: "docker-health"
 metadata:
   zero:
     category: "operations"

@@ -1,0 +1,940 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+          - listitem [ref=e102]:
+            - link "Meals" [ref=e103] [cursor=pointer]:
+              - /url: /meals
+              - img [ref=e104]
+              - generic [ref=e107]: Meals
+      - generic [ref=e108]:
+        - generic [ref=e109]: Meetings
+        - list [ref=e110]:
+          - listitem [ref=e111]:
+            - link "Meetings" [ref=e112] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e113]
+              - generic [ref=e116]: Meetings
+          - listitem [ref=e117]:
+            - link "Meeting Search" [ref=e118] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e119]
+              - generic [ref=e120]: Meeting Search
+      - generic [ref=e121]:
+        - generic [ref=e122]: AI Company
+        - list [ref=e123]:
+          - listitem [ref=e124]:
+            - link "Company" [ref=e125] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e126]
+              - generic [ref=e130]: Company
+          - listitem [ref=e131]:
+            - link "Experiment Lab" [ref=e132] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e133]
+              - generic [ref=e135]: Experiment Lab
+          - listitem [ref=e136]:
+            - link "Council Room" [ref=e137] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e138]
+              - generic [ref=e142]: Council Room
+          - listitem [ref=e143]:
+            - link "Brain" [ref=e144] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e145]
+              - generic [ref=e157]: Brain
+          - listitem [ref=e158]:
+            - link "Employee" [ref=e159] [cursor=pointer]:
+              - /url: /employee
+              - img [ref=e160]
+              - generic [ref=e163]: Employee
+          - listitem [ref=e164]:
+            - link "Reachy" [ref=e165] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e166]
+              - generic [ref=e169]: Reachy
+          - listitem [ref=e170]:
+            - link "Teleop" [ref=e171] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e172]
+              - generic [ref=e174]: Teleop
+          - listitem [ref=e175]:
+            - link "Reachy Meetings" [ref=e176] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e177]
+              - generic [ref=e181]: Reachy Meetings
+          - listitem [ref=e182]:
+            - link "Reachy + HA" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e184]
+              - generic [ref=e187]: Reachy + HA
+      - generic [ref=e188]:
+        - generic [ref=e189]: Automation
+        - list [ref=e190]:
+          - listitem [ref=e191]:
+            - link "Agent Tasks" [ref=e192] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e193]
+              - generic [ref=e196]: Agent Tasks
+          - listitem [ref=e197]:
+            - link "Workflows" [ref=e198] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e199]
+              - generic [ref=e203]: Workflows
+          - listitem [ref=e204]:
+            - link "Gateway" [ref=e205] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e206]
+              - generic [ref=e212]: Gateway
+          - listitem [ref=e213]:
+            - link "Money Maker" [ref=e214] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e215]
+              - generic [ref=e217]: Money Maker
+          - listitem [ref=e218]:
+            - link "Research" [ref=e219] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e220]
+              - generic [ref=e223]: Research
+          - listitem [ref=e224]:
+            - link "TikTok Shop" [ref=e225] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e226]
+              - generic [ref=e229]: TikTok Shop
+          - listitem [ref=e230]:
+            - link "Characters" [ref=e231] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e232]
+              - generic [ref=e237]: Characters
+          - listitem [ref=e238]:
+            - link "Character Autopilot" [ref=e239] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e240]
+              - generic [ref=e242]: Character Autopilot
+          - listitem [ref=e243]:
+            - link "Content Agent" [ref=e244] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e245]
+              - generic [ref=e247]: Content Agent
+          - listitem [ref=e248]:
+            - link "Predictions" [ref=e249] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e250]
+              - generic [ref=e253]: Predictions
+          - listitem [ref=e254]:
+            - link "LLC Guide" [ref=e255] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e256]
+              - generic [ref=e260]: LLC Guide
+          - listitem [ref=e261]:
+            - link "Visual Workflows" [ref=e262] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e263]
+              - generic [ref=e267]: Visual Workflows
+      - generic [ref=e268]:
+        - generic [ref=e269]: System
+        - list [ref=e270]:
+          - listitem [ref=e271]:
+            - link "Exec Dashboard" [ref=e272] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e273]
+              - generic [ref=e276]: Exec Dashboard
+          - listitem [ref=e277]:
+            - link "Outcomes" [ref=e278] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e279]
+              - generic [ref=e283]: Outcomes
+          - listitem [ref=e284]:
+            - link "System Health" [ref=e285] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e286]
+              - generic [ref=e289]: System Health
+          - listitem [ref=e290]:
+            - link "Architecture" [ref=e291] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e292]
+              - generic [ref=e297]: Architecture
+          - listitem [ref=e298]:
+            - link "QA" [ref=e299] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e300]
+              - generic [ref=e303]: QA
+          - listitem [ref=e304]:
+            - link "Analytics" [ref=e305] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e306]
+              - generic [ref=e308]: Analytics
+          - listitem [ref=e309]:
+            - link "Settings" [ref=e310] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e311]
+              - generic [ref=e322]: Settings
+    - list [ref=e324]:
+      - listitem [ref=e325]:
+        - button "Zero v1.0" [ref=e326] [cursor=pointer]:
+          - generic [ref=e328]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e329]
+  - main [ref=e330]:
+    - generic [ref=e331]:
+      - button "Toggle Sidebar" [ref=e332] [cursor=pointer]:
+        - img
+        - generic [ref=e333]: Toggle Sidebar
+      - generic [ref=e334]:
+        - generic [ref=e335]: Zero
+        - generic [ref=e336]: /
+        - generic [ref=e337]: Zero
+      - button "Search... Ctrl K" [ref=e338] [cursor=pointer]:
+        - img [ref=e339]
+        - generic [ref=e342]: Search...
+        - generic [ref=e343]:
+          - generic [ref=e344]: Ctrl
+          - text: K
+      - button "9+" [ref=e346] [cursor=pointer]:
+        - img [ref=e347]
+        - generic [ref=e350]: 9+
+    - main [ref=e351]:
+      - generic [ref=e352]:
+        - generic [ref=e353]:
+          - generic [ref=e354]:
+            - heading "Meal Manager" [level=1] [ref=e355]:
+              - img [ref=e356]
+              - text: Meal Manager
+            - paragraph [ref=e359]: Catalog, promo stacking, shipment tracking, best-price discovery.
+          - generic [ref=e360]:
+            - button "Scan email" [ref=e361] [cursor=pointer]:
+              - img [ref=e362]
+              - text: Scan email
+            - button "Hunt promos" [ref=e365] [cursor=pointer]:
+              - img [ref=e366]
+              - text: Hunt promos
+            - button "Refresh catalog" [ref=e368] [cursor=pointer]:
+              - img [ref=e369]
+              - text: Refresh catalog
+        - generic [ref=e374]:
+          - generic [ref=e376]:
+            - img [ref=e378]
+            - generic [ref=e381]:
+              - generic [ref=e382]: Services
+              - generic [ref=e383]: 25/25
+              - generic [ref=e384]: tracked
+          - generic [ref=e386]:
+            - img [ref=e388]
+            - generic [ref=e391]:
+              - generic [ref=e392]: Cheapest / meal
+              - generic [ref=e393]: $2.75
+              - generic [ref=e394]: Magic Spoon
+          - generic [ref=e396]:
+            - img [ref=e398]
+            - generic [ref=e401]:
+              - generic [ref=e402]: Active promos
+              - generic [ref=e403]: "0"
+              - generic [ref=e404]: never
+          - generic [ref=e406]:
+            - img [ref=e408]
+            - generic [ref=e410]:
+              - generic [ref=e411]: Card offers
+              - generic [ref=e412]: "0"
+          - generic [ref=e414]:
+            - img [ref=e416]
+            - generic [ref=e420]:
+              - generic [ref=e421]: Portal offers
+              - generic [ref=e422]: "0"
+          - generic [ref=e424]:
+            - img [ref=e426]
+            - generic [ref=e431]:
+              - generic [ref=e432]: In transit
+              - generic [ref=e433]: "0"
+              - generic [ref=e434]: never
+        - generic [ref=e435]:
+          - button "Overview" [ref=e436] [cursor=pointer]
+          - button "Services 25" [active] [ref=e437] [cursor=pointer]:
+            - text: Services
+            - generic [ref=e438]: "25"
+          - button "Cheapest" [ref=e439] [cursor=pointer]
+          - button "Promos" [ref=e440] [cursor=pointer]
+          - button "Card offers" [ref=e441] [cursor=pointer]
+          - button "Portals" [ref=e442] [cursor=pointer]
+          - button "Shipments" [ref=e443] [cursor=pointer]
+        - generic [ref=e465]:
+          - generic [ref=e466]:
+            - generic [ref=e468]:
+              - heading "Blue Apron" [level=3] [ref=e469]
+              - generic [ref=e470]: meal kit · tracked
+            - paragraph [ref=e471]: Meal kits with premium wine pairings.
+            - generic [ref=e472]:
+              - link "Site ↗" [ref=e473] [cursor=pointer]:
+                - /url: https://www.blueapron.com/
+              - link "Menu ↗" [ref=e474] [cursor=pointer]:
+                - /url: https://www.blueapron.com/menu
+              - link "Coupons ↗" [ref=e475] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/blueapron.com
+              - link "Rakuten ↗" [ref=e476] [cursor=pointer]:
+                - /url: https://www.rakuten.com/blue-apron.com
+            - generic [ref=e477]:
+              - generic [ref=e478]:
+                - generic [ref=e479]: Base / meal
+                - generic [ref=e480]: $9.99
+              - generic [ref=e481]:
+                - generic [ref=e482]: After stack
+                - generic [ref=e483]: $9.99/meal
+            - generic [ref=e484]:
+              - generic [ref=e485]: meal-kit
+              - generic [ref=e486]: premium
+          - generic [ref=e487]:
+            - generic [ref=e489]:
+              - heading "Clean Eatz Kitchen" [level=3] [ref=e490]
+              - generic [ref=e491]: prepared · tracked
+            - paragraph [ref=e492]: Weight-loss and macro-aligned prepared meals.
+            - generic [ref=e493]:
+              - link "Site ↗" [ref=e494] [cursor=pointer]:
+                - /url: https://cleaneatzkitchen.com/
+              - link "Menu ↗" [ref=e495] [cursor=pointer]:
+                - /url: https://cleaneatzkitchen.com/collections/all-meals
+              - link "Coupons ↗" [ref=e496] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/cleaneatzkitchen.com
+              - link "Rakuten ↗" [ref=e497] [cursor=pointer]:
+                - /url: https://www.rakuten.com/clean-eatz-kitchen.com
+            - generic [ref=e498]:
+              - generic [ref=e499]:
+                - generic [ref=e500]: Base / meal
+                - generic [ref=e501]: $8.49
+              - generic [ref=e502]:
+                - generic [ref=e503]: After stack
+                - generic [ref=e504]: $8.49/meal
+            - generic [ref=e505]:
+              - generic [ref=e506]: prepared
+              - generic [ref=e507]: weight-loss
+          - generic [ref=e508]:
+            - generic [ref=e510]:
+              - heading "CookUnity" [level=3] [ref=e511]
+              - generic [ref=e512]: prepared · tracked
+            - paragraph [ref=e513]: Chef-crafted prepared meals, premium tier. Rotating weekly menu.
+            - generic [ref=e514]:
+              - link "Site ↗" [ref=e515] [cursor=pointer]:
+                - /url: https://www.cookunity.com/
+              - link "Menu ↗" [ref=e516] [cursor=pointer]:
+                - /url: https://www.cookunity.com/menu
+              - link "Coupons ↗" [ref=e517] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/cookunity.com
+              - link "Rakuten ↗" [ref=e518] [cursor=pointer]:
+                - /url: https://www.rakuten.com/cookunity.com
+            - generic [ref=e519]:
+              - generic [ref=e520]:
+                - generic [ref=e521]: Base / meal
+                - generic [ref=e522]: $13.49
+              - generic [ref=e523]:
+                - generic [ref=e524]: After stack
+                - generic [ref=e525]: $13.49/meal
+            - generic [ref=e526]:
+              - generic [ref=e527]: prepared
+              - generic [ref=e528]: premium
+              - generic [ref=e529]: chef
+          - generic [ref=e530]:
+            - generic [ref=e532]:
+              - heading "Daily Harvest" [level=3] [ref=e533]
+              - generic [ref=e534]: frozen · tracked
+            - paragraph [ref=e535]: Frozen smoothies, bowls, and plant-based meals.
+            - generic [ref=e536]:
+              - link "Site ↗" [ref=e537] [cursor=pointer]:
+                - /url: https://www.daily-harvest.com/
+              - link "Menu ↗" [ref=e538] [cursor=pointer]:
+                - /url: https://www.daily-harvest.com/menu
+              - link "Coupons ↗" [ref=e539] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/dailyharvest.com
+              - link "Rakuten ↗" [ref=e540] [cursor=pointer]:
+                - /url: https://www.rakuten.com/daily-harvest.com
+            - generic [ref=e541]:
+              - generic [ref=e542]:
+                - generic [ref=e543]: Base / meal
+                - generic [ref=e544]: $8.99
+              - generic [ref=e545]:
+                - generic [ref=e546]: After stack
+                - generic [ref=e547]: $8.99/meal
+            - generic [ref=e548]:
+              - generic [ref=e549]: frozen
+              - generic [ref=e550]: plant-based
+          - generic [ref=e551]:
+            - generic [ref=e553]:
+              - heading "Dinnerly" [level=3] [ref=e554]
+              - generic [ref=e555]: meal kit · tracked
+            - paragraph [ref=e556]: Cheapest meal kit in the US, owned by Marley Spoon.
+            - generic [ref=e557]:
+              - link "Site ↗" [ref=e558] [cursor=pointer]:
+                - /url: https://dinnerly.com/
+              - link "Menu ↗" [ref=e559] [cursor=pointer]:
+                - /url: https://dinnerly.com/menu
+              - link "Coupons ↗" [ref=e560] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/dinnerly.com
+              - link "Rakuten ↗" [ref=e561] [cursor=pointer]:
+                - /url: https://www.rakuten.com/dinnerly.com
+            - generic [ref=e562]:
+              - generic [ref=e563]:
+                - generic [ref=e564]: Base / meal
+                - generic [ref=e565]: $4.99
+              - generic [ref=e566]:
+                - generic [ref=e567]: After stack
+                - generic [ref=e568]: $4.99/meal
+            - generic [ref=e569]:
+              - generic [ref=e570]: meal-kit
+              - generic [ref=e571]: budget
+          - generic [ref=e572]:
+            - generic [ref=e574]:
+              - heading "EveryPlate" [level=3] [ref=e575]
+              - generic [ref=e576]: meal kit · tracked
+            - paragraph [ref=e577]: Budget meal kits, owned by HelloFresh.
+            - generic [ref=e578]:
+              - link "Site ↗" [ref=e579] [cursor=pointer]:
+                - /url: https://www.everyplate.com/
+              - link "Menu ↗" [ref=e580] [cursor=pointer]:
+                - /url: https://www.everyplate.com/plans
+              - link "Coupons ↗" [ref=e581] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/everyplate.com
+              - link "Rakuten ↗" [ref=e582] [cursor=pointer]:
+                - /url: https://www.rakuten.com/everyplate.com
+            - generic [ref=e583]:
+              - generic [ref=e584]:
+                - generic [ref=e585]: Base / meal
+                - generic [ref=e586]: $5.99
+              - generic [ref=e587]:
+                - generic [ref=e588]: After stack
+                - generic [ref=e589]: $5.99/meal
+            - generic [ref=e590]:
+              - generic [ref=e591]: meal-kit
+              - generic [ref=e592]: budget
+          - generic [ref=e593]:
+            - generic [ref=e595]:
+              - heading "Factor" [level=3] [ref=e596]
+              - generic [ref=e597]: prepared · tracked
+            - paragraph [ref=e598]: Fresh never frozen prepared meals, owned by HelloFresh.
+            - generic [ref=e599]:
+              - link "Site ↗" [ref=e600] [cursor=pointer]:
+                - /url: https://www.factor75.com/
+              - link "Menu ↗" [ref=e601] [cursor=pointer]:
+                - /url: https://www.factor75.com/menu
+              - link "Coupons ↗" [ref=e602] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/factor.com
+              - link "Rakuten ↗" [ref=e603] [cursor=pointer]:
+                - /url: https://www.rakuten.com/factor.com
+            - generic [ref=e604]:
+              - generic [ref=e605]:
+                - generic [ref=e606]: Base / meal
+                - generic [ref=e607]: $12.99
+              - generic [ref=e608]:
+                - generic [ref=e609]: After stack
+                - generic [ref=e610]: $12.99/meal
+            - generic [ref=e611]:
+              - generic [ref=e612]: prepared
+              - generic [ref=e613]: low-carb
+              - generic [ref=e614]: keto
+          - generic [ref=e615]:
+            - generic [ref=e617]:
+              - heading "FlexPro Meals" [level=3] [ref=e618]
+              - generic [ref=e619]: prepared · tracked
+            - paragraph [ref=e620]: High-protein fitness-focused prepared meals.
+            - generic [ref=e621]:
+              - link "Site ↗" [ref=e622] [cursor=pointer]:
+                - /url: https://flexpromeals.com/
+              - link "Menu ↗" [ref=e623] [cursor=pointer]:
+                - /url: https://flexpromeals.com/meals
+              - link "Coupons ↗" [ref=e624] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/flexpromeals.com
+              - link "Rakuten ↗" [ref=e625] [cursor=pointer]:
+                - /url: https://www.rakuten.com/flexpro-meals.com
+            - generic [ref=e626]:
+              - generic [ref=e627]:
+                - generic [ref=e628]: Base / meal
+                - generic [ref=e629]: $9.99
+              - generic [ref=e630]:
+                - generic [ref=e631]: After stack
+                - generic [ref=e632]: $9.99/meal
+            - generic [ref=e633]:
+              - generic [ref=e634]: prepared
+              - generic [ref=e635]: high-protein
+              - generic [ref=e636]: fitness
+          - generic [ref=e637]:
+            - generic [ref=e639]:
+              - heading "Freshly" [level=3] [ref=e640]
+              - generic [ref=e641]: prepared · tracked
+            - paragraph [ref=e642]: Prepared single-serving meals (Nestle-owned).
+            - generic [ref=e643]:
+              - link "Site ↗" [ref=e644] [cursor=pointer]:
+                - /url: https://www.freshly.com/
+              - link "Menu ↗" [ref=e645] [cursor=pointer]:
+                - /url: https://www.freshly.com/menu
+              - link "Coupons ↗" [ref=e646] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/freshly.com
+              - link "Rakuten ↗" [ref=e647] [cursor=pointer]:
+                - /url: https://www.rakuten.com/freshly.com
+            - generic [ref=e648]:
+              - generic [ref=e649]:
+                - generic [ref=e650]: Base / meal
+                - generic [ref=e651]: $9.99
+              - generic [ref=e652]:
+                - generic [ref=e653]: After stack
+                - generic [ref=e654]: $9.99/meal
+            - generic [ref=e656]: prepared
+          - generic [ref=e657]:
+            - generic [ref=e659]:
+              - heading "Gobble" [level=3] [ref=e660]
+              - generic [ref=e661]: meal kit · tracked
+            - paragraph [ref=e662]: 15-minute meal kits with pre-prepped ingredients.
+            - generic [ref=e663]:
+              - link "Site ↗" [ref=e664] [cursor=pointer]:
+                - /url: https://www.gobble.com/
+              - link "Menu ↗" [ref=e665] [cursor=pointer]:
+                - /url: https://www.gobble.com/menu
+              - link "Coupons ↗" [ref=e666] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/gobble.com
+              - link "Rakuten ↗" [ref=e667] [cursor=pointer]:
+                - /url: https://www.rakuten.com/gobble.com
+            - generic [ref=e668]:
+              - generic [ref=e669]:
+                - generic [ref=e670]: Base / meal
+                - generic [ref=e671]: $11.99
+              - generic [ref=e672]:
+                - generic [ref=e673]: After stack
+                - generic [ref=e674]: $11.99/meal
+            - generic [ref=e675]:
+              - generic [ref=e676]: meal-kit
+              - generic [ref=e677]: fast
+          - generic [ref=e678]:
+            - generic [ref=e680]:
+              - heading "Green Chef" [level=3] [ref=e681]
+              - generic [ref=e682]: meal kit · tracked
+            - paragraph [ref=e683]: USDA-organic meal kits, keto/paleo/vegan friendly.
+            - generic [ref=e684]:
+              - link "Site ↗" [ref=e685] [cursor=pointer]:
+                - /url: https://www.greenchef.com/
+              - link "Menu ↗" [ref=e686] [cursor=pointer]:
+                - /url: https://www.greenchef.com/menu
+              - link "Coupons ↗" [ref=e687] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/greenchef.com
+              - link "Rakuten ↗" [ref=e688] [cursor=pointer]:
+                - /url: https://www.rakuten.com/green-chef.com
+            - generic [ref=e689]:
+              - generic [ref=e690]:
+                - generic [ref=e691]: Base / meal
+                - generic [ref=e692]: $11.99
+              - generic [ref=e693]:
+                - generic [ref=e694]: After stack
+                - generic [ref=e695]: $11.99/meal
+            - generic [ref=e696]:
+              - generic [ref=e697]: meal-kit
+              - generic [ref=e698]: organic
+              - generic [ref=e699]: keto
+              - generic [ref=e700]: paleo
+          - generic [ref=e701]:
+            - generic [ref=e703]:
+              - heading "HelloFresh" [level=3] [ref=e704]
+              - generic [ref=e705]: meal kit · tracked
+            - paragraph [ref=e706]: Market-leader meal kits. Recipes with pre-portioned ingredients.
+            - generic [ref=e707]:
+              - link "Site ↗" [ref=e708] [cursor=pointer]:
+                - /url: https://www.hellofresh.com/
+              - link "Menu ↗" [ref=e709] [cursor=pointer]:
+                - /url: https://www.hellofresh.com/recipes/menus
+              - link "Coupons ↗" [ref=e710] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/hellofresh.com
+              - link "Rakuten ↗" [ref=e711] [cursor=pointer]:
+                - /url: https://www.rakuten.com/hellofresh.com
+            - generic [ref=e712]:
+              - generic [ref=e713]:
+                - generic [ref=e714]: Base / meal
+                - generic [ref=e715]: $10.99
+              - generic [ref=e716]:
+                - generic [ref=e717]: After stack
+                - generic [ref=e718]: $10.99/meal
+            - generic [ref=e719]:
+              - generic [ref=e720]: meal-kit
+              - generic [ref=e721]: family
+          - generic [ref=e722]:
+            - generic [ref=e724]:
+              - heading "Home Chef" [level=3] [ref=e725]
+              - generic [ref=e726]: meal kit · tracked
+            - paragraph [ref=e727]: Flexible meal kits with oven-ready options.
+            - generic [ref=e728]:
+              - link "Site ↗" [ref=e729] [cursor=pointer]:
+                - /url: https://www.homechef.com/
+              - link "Menu ↗" [ref=e730] [cursor=pointer]:
+                - /url: https://www.homechef.com/our-menu
+              - link "Coupons ↗" [ref=e731] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/homechef.com
+              - link "Rakuten ↗" [ref=e732] [cursor=pointer]:
+                - /url: https://www.rakuten.com/home-chef.com
+            - generic [ref=e733]:
+              - generic [ref=e734]:
+                - generic [ref=e735]: Base / meal
+                - generic [ref=e736]: $9.99
+              - generic [ref=e737]:
+                - generic [ref=e738]: After stack
+                - generic [ref=e739]: $9.99/meal
+            - generic [ref=e740]:
+              - generic [ref=e741]: meal-kit
+              - generic [ref=e742]: flexible
+          - generic [ref=e743]:
+            - generic [ref=e745]:
+              - heading "HungryRoot" [level=3] [ref=e746]
+              - generic [ref=e747]: grocery · tracked
+            - paragraph [ref=e748]: AI-personalized groceries + recipes combo service.
+            - generic [ref=e749]:
+              - link "Site ↗" [ref=e750] [cursor=pointer]:
+                - /url: https://www.hungryroot.com/
+              - link "Menu ↗" [ref=e751] [cursor=pointer]:
+                - /url: https://www.hungryroot.com/shop
+              - link "Coupons ↗" [ref=e752] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/hungryroot.com
+              - link "Rakuten ↗" [ref=e753] [cursor=pointer]:
+                - /url: https://www.rakuten.com/hungryroot.com
+            - generic [ref=e754]:
+              - generic [ref=e755]:
+                - generic [ref=e756]: Base / meal
+                - generic [ref=e757]: $8.99
+              - generic [ref=e758]:
+                - generic [ref=e759]: After stack
+                - generic [ref=e760]: $8.99/meal
+            - generic [ref=e761]:
+              - generic [ref=e762]: grocery
+              - generic [ref=e763]: personalized
+          - generic [ref=e764]:
+            - generic [ref=e766]:
+              - heading "Ice Age Meals" [level=3] [ref=e767]
+              - generic [ref=e768]: frozen · tracked
+            - paragraph [ref=e769]: Frozen paleo prepared meals with premium meat.
+            - generic [ref=e770]:
+              - link "Site ↗" [ref=e771] [cursor=pointer]:
+                - /url: https://iceagemeals.com/
+              - link "Menu ↗" [ref=e772] [cursor=pointer]:
+                - /url: https://iceagemeals.com/collections/all
+              - link "Coupons ↗" [ref=e773] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/iceagemeals.com
+              - link "Rakuten ↗" [ref=e774] [cursor=pointer]:
+                - /url: https://www.rakuten.com/ice-age-meals.com
+            - generic [ref=e775]:
+              - generic [ref=e776]:
+                - generic [ref=e777]: Base / meal
+                - generic [ref=e778]: $13.99
+              - generic [ref=e779]:
+                - generic [ref=e780]: After stack
+                - generic [ref=e781]: $13.99/meal
+            - generic [ref=e782]:
+              - generic [ref=e783]: frozen
+              - generic [ref=e784]: paleo
+          - generic [ref=e785]:
+            - generic [ref=e787]:
+              - heading "Magic Spoon" [level=3] [ref=e788]
+              - generic [ref=e789]: subscription box · tracked
+            - paragraph [ref=e790]: High-protein low-carb cereal. Often stacks with Rakuten.
+            - generic [ref=e791]:
+              - link "Site ↗" [ref=e792] [cursor=pointer]:
+                - /url: https://magicspoon.com/
+              - link "Menu ↗" [ref=e793] [cursor=pointer]:
+                - /url: https://magicspoon.com/collections/all
+              - link "Coupons ↗" [ref=e794] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/magicspoon.com
+              - link "Rakuten ↗" [ref=e795] [cursor=pointer]:
+                - /url: https://www.rakuten.com/magic-spoon.com
+            - generic [ref=e796]:
+              - generic [ref=e797]:
+                - generic [ref=e798]: Base / meal
+                - generic [ref=e799]: $2.75
+              - generic [ref=e800]:
+                - generic [ref=e801]: After stack
+                - generic [ref=e802]: $2.75/meal
+            - generic [ref=e803]:
+              - generic [ref=e804]: breakfast
+              - generic [ref=e805]: high-protein
+          - generic [ref=e806]:
+            - generic [ref=e808]:
+              - heading "Marley Spoon" [level=3] [ref=e809]
+              - generic [ref=e810]: meal kit · tracked
+            - paragraph [ref=e811]: Martha Stewart meal kits.
+            - generic [ref=e812]:
+              - link "Site ↗" [ref=e813] [cursor=pointer]:
+                - /url: https://marleyspoon.com/
+              - link "Menu ↗" [ref=e814] [cursor=pointer]:
+                - /url: https://marleyspoon.com/menu
+              - link "Coupons ↗" [ref=e815] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/marleyspoon.com
+              - link "Rakuten ↗" [ref=e816] [cursor=pointer]:
+                - /url: https://www.rakuten.com/marley-spoon.com
+            - generic [ref=e817]:
+              - generic [ref=e818]:
+                - generic [ref=e819]: Base / meal
+                - generic [ref=e820]: $9.99
+              - generic [ref=e821]:
+                - generic [ref=e822]: After stack
+                - generic [ref=e823]: $9.99/meal
+            - generic [ref=e825]: meal-kit
+          - generic [ref=e826]:
+            - generic [ref=e828]:
+              - heading "MealPro" [level=3] [ref=e829]
+              - generic [ref=e830]: prepared · tracked
+            - paragraph [ref=e831]: Customizable macros prepared meals.
+            - generic [ref=e832]:
+              - link "Site ↗" [ref=e833] [cursor=pointer]:
+                - /url: https://mealpro.net/
+              - link "Menu ↗" [ref=e834] [cursor=pointer]:
+                - /url: https://mealpro.net/meals
+              - link "Coupons ↗" [ref=e835] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/mealpro.com
+              - link "Rakuten ↗" [ref=e836] [cursor=pointer]:
+                - /url: https://www.rakuten.com/mealpro.com
+            - generic [ref=e837]:
+              - generic [ref=e838]:
+                - generic [ref=e839]: Base / meal
+                - generic [ref=e840]: $11.99
+              - generic [ref=e841]:
+                - generic [ref=e842]: After stack
+                - generic [ref=e843]: $11.99/meal
+            - generic [ref=e844]:
+              - generic [ref=e845]: prepared
+              - generic [ref=e846]: macros
+          - generic [ref=e847]:
+            - generic [ref=e849]:
+              - heading "Mosaic Foods" [level=3] [ref=e850]
+              - generic [ref=e851]: frozen · tracked
+            - paragraph [ref=e852]: Frozen family-size and single-serve plant-based meals.
+            - generic [ref=e853]:
+              - link "Site ↗" [ref=e854] [cursor=pointer]:
+                - /url: https://www.mosaicfoods.com/
+              - link "Menu ↗" [ref=e855] [cursor=pointer]:
+                - /url: https://www.mosaicfoods.com/menu
+              - link "Coupons ↗" [ref=e856] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/mosaicfoods.com
+              - link "Rakuten ↗" [ref=e857] [cursor=pointer]:
+                - /url: https://www.rakuten.com/mosaic-foods.com
+            - generic [ref=e858]:
+              - generic [ref=e859]:
+                - generic [ref=e860]: Base / meal
+                - generic [ref=e861]: $7.99
+              - generic [ref=e862]:
+                - generic [ref=e863]: After stack
+                - generic [ref=e864]: $7.99/meal
+            - generic [ref=e865]:
+              - generic [ref=e866]: frozen
+              - generic [ref=e867]: plant-based
+              - generic [ref=e868]: family
+          - generic [ref=e869]:
+            - generic [ref=e871]:
+              - heading "Purple Carrot" [level=3] [ref=e872]
+              - generic [ref=e873]: meal kit · tracked
+            - paragraph [ref=e874]: Plant-based meal kits and prepared meals.
+            - generic [ref=e875]:
+              - link "Site ↗" [ref=e876] [cursor=pointer]:
+                - /url: https://www.purplecarrot.com/
+              - link "Menu ↗" [ref=e877] [cursor=pointer]:
+                - /url: https://www.purplecarrot.com/menu
+              - link "Coupons ↗" [ref=e878] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/purplecarrot.com
+              - link "Rakuten ↗" [ref=e879] [cursor=pointer]:
+                - /url: https://www.rakuten.com/purple-carrot.com
+            - generic [ref=e880]:
+              - generic [ref=e881]:
+                - generic [ref=e882]: Base / meal
+                - generic [ref=e883]: $11.99
+              - generic [ref=e884]:
+                - generic [ref=e885]: After stack
+                - generic [ref=e886]: $11.99/meal
+            - generic [ref=e887]:
+              - generic [ref=e888]: meal-kit
+              - generic [ref=e889]: plant-based
+              - generic [ref=e890]: vegan
+          - generic [ref=e891]:
+            - generic [ref=e893]:
+              - heading "Snap Kitchen" [level=3] [ref=e894]
+              - generic [ref=e895]: prepared · tracked
+            - paragraph [ref=e896]: Texas-based fresh prepared meals, keto and paleo options.
+            - generic [ref=e897]:
+              - link "Site ↗" [ref=e898] [cursor=pointer]:
+                - /url: https://www.snapkitchen.com/
+              - link "Menu ↗" [ref=e899] [cursor=pointer]:
+                - /url: https://www.snapkitchen.com/menu
+              - link "Coupons ↗" [ref=e900] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/snapkitchen.com
+              - link "Rakuten ↗" [ref=e901] [cursor=pointer]:
+                - /url: https://www.rakuten.com/snap-kitchen.com
+            - generic [ref=e902]:
+              - generic [ref=e903]:
+                - generic [ref=e904]: Base / meal
+                - generic [ref=e905]: $11.49
+              - generic [ref=e906]:
+                - generic [ref=e907]: After stack
+                - generic [ref=e908]: $11.49/meal
+            - generic [ref=e909]:
+              - generic [ref=e910]: prepared
+              - generic [ref=e911]: keto
+              - generic [ref=e912]: paleo
+          - generic [ref=e913]:
+            - generic [ref=e915]:
+              - heading "Sunbasket" [level=3] [ref=e916]
+              - generic [ref=e917]: meal kit · tracked
+            - paragraph [ref=e918]: Organic ingredient meal kits.
+            - generic [ref=e919]:
+              - link "Site ↗" [ref=e920] [cursor=pointer]:
+                - /url: https://sunbasket.com/
+              - link "Menu ↗" [ref=e921] [cursor=pointer]:
+                - /url: https://sunbasket.com/menu
+              - link "Coupons ↗" [ref=e922] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/sunbasket.com
+              - link "Rakuten ↗" [ref=e923] [cursor=pointer]:
+                - /url: https://www.rakuten.com/sunbasket.com
+            - generic [ref=e924]:
+              - generic [ref=e925]:
+                - generic [ref=e926]: Base / meal
+                - generic [ref=e927]: $10.99
+              - generic [ref=e928]:
+                - generic [ref=e929]: After stack
+                - generic [ref=e930]: $10.99/meal
+            - generic [ref=e931]:
+              - generic [ref=e932]: meal-kit
+              - generic [ref=e933]: organic
+          - generic [ref=e934]:
+            - generic [ref=e936]:
+              - heading "Territory Foods" [level=3] [ref=e937]
+              - generic [ref=e938]: prepared · tracked
+            - paragraph [ref=e939]: Chef-curated prepared meals, Whole30/paleo friendly.
+            - generic [ref=e940]:
+              - link "Site ↗" [ref=e941] [cursor=pointer]:
+                - /url: https://www.territoryfoods.com/
+              - link "Menu ↗" [ref=e942] [cursor=pointer]:
+                - /url: https://www.territoryfoods.com/menu
+              - link "Coupons ↗" [ref=e943] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/territoryfoods.com
+              - link "Rakuten ↗" [ref=e944] [cursor=pointer]:
+                - /url: https://www.rakuten.com/territory-foods.com
+            - generic [ref=e945]:
+              - generic [ref=e946]:
+                - generic [ref=e947]: Base / meal
+                - generic [ref=e948]: $13.95
+              - generic [ref=e949]:
+                - generic [ref=e950]: After stack
+                - generic [ref=e951]: $13.95/meal
+            - generic [ref=e952]:
+              - generic [ref=e953]: prepared
+              - generic [ref=e954]: whole30
+              - generic [ref=e955]: paleo
+          - generic [ref=e956]:
+            - generic [ref=e958]:
+              - heading "Thistle" [level=3] [ref=e959]
+              - generic [ref=e960]: prepared · tracked
+            - paragraph [ref=e961]: Plant-forward prepared meals and juices (West Coast).
+            - generic [ref=e962]:
+              - link "Site ↗" [ref=e963] [cursor=pointer]:
+                - /url: https://www.thistle.co/
+              - link "Menu ↗" [ref=e964] [cursor=pointer]:
+                - /url: https://www.thistle.co/menu
+              - link "Coupons ↗" [ref=e965] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/thistle.com
+              - link "Rakuten ↗" [ref=e966] [cursor=pointer]:
+                - /url: https://www.rakuten.com/thistle.com
+            - generic [ref=e967]:
+              - generic [ref=e968]:
+                - generic [ref=e969]: Base / meal
+                - generic [ref=e970]: $13.95
+              - generic [ref=e971]:
+                - generic [ref=e972]: After stack
+                - generic [ref=e973]: $13.95/meal
+            - generic [ref=e974]:
+              - generic [ref=e975]: prepared
+              - generic [ref=e976]: plant-based
+          - generic [ref=e977]:
+            - generic [ref=e979]:
+              - heading "Trifecta" [level=3] [ref=e980]
+              - generic [ref=e981]: prepared · tracked
+            - paragraph [ref=e982]: Organic prepared meals for athletes and macro tracking.
+            - generic [ref=e983]:
+              - link "Site ↗" [ref=e984] [cursor=pointer]:
+                - /url: https://www.trifectanutrition.com/
+              - link "Menu ↗" [ref=e985] [cursor=pointer]:
+                - /url: https://www.trifectanutrition.com/meals
+              - link "Coupons ↗" [ref=e986] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/trifecta.com
+              - link "Rakuten ↗" [ref=e987] [cursor=pointer]:
+                - /url: https://www.rakuten.com/trifecta.com
+            - generic [ref=e988]:
+              - generic [ref=e989]:
+                - generic [ref=e990]: Base / meal
+                - generic [ref=e991]: $15.12
+              - generic [ref=e992]:
+                - generic [ref=e993]: After stack
+                - generic [ref=e994]: $15.12/meal
+            - generic [ref=e995]:
+              - generic [ref=e996]: prepared
+              - generic [ref=e997]: organic
+              - generic [ref=e998]: macro
+              - generic [ref=e999]: fitness
+  - button "Voice settings" [ref=e456] [cursor=pointer]:
+    - img [ref=e457]
+  - button "Start recording a voice command" [ref=e460] [cursor=pointer]:
+    - img [ref=e461]

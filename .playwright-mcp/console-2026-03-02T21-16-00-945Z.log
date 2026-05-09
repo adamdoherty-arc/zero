@@ -1,0 +1,12 @@
+[ 1084135ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1084135ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/dashboard:0
+[ 1084135ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/timeline?hours=24:0
+[ 1085143ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1085143ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/dashboard:0
+[ 1085143ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/timeline?hours=24:0
+[ 1818323ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/dashboard:0
+[ 1987487ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1988489ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1990505ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[ 1990604ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/dashboard:0
+[ 1990832ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/system/scheduler/timeline?hours=24:0

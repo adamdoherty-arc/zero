@@ -1,0 +1,1304 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+          - listitem [ref=e102]:
+            - link "Meals" [ref=e103] [cursor=pointer]:
+              - /url: /meals
+              - img [ref=e104]
+              - generic [ref=e107]: Meals
+      - generic [ref=e108]:
+        - generic [ref=e109]: Meetings
+        - list [ref=e110]:
+          - listitem [ref=e111]:
+            - link "Meetings" [ref=e112] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e113]
+              - generic [ref=e116]: Meetings
+          - listitem [ref=e117]:
+            - link "Meeting Search" [ref=e118] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e119]
+              - generic [ref=e120]: Meeting Search
+      - generic [ref=e121]:
+        - generic [ref=e122]: AI Company
+        - list [ref=e123]:
+          - listitem [ref=e124]:
+            - link "Company" [ref=e125] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e126]
+              - generic [ref=e130]: Company
+          - listitem [ref=e131]:
+            - link "Experiment Lab" [ref=e132] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e133]
+              - generic [ref=e135]: Experiment Lab
+          - listitem [ref=e136]:
+            - link "Council Room" [ref=e137] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e138]
+              - generic [ref=e142]: Council Room
+          - listitem [ref=e143]:
+            - link "Brain" [ref=e144] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e145]
+              - generic [ref=e157]: Brain
+          - listitem [ref=e158]:
+            - link "Employee" [ref=e159] [cursor=pointer]:
+              - /url: /employee
+              - img [ref=e160]
+              - generic [ref=e163]: Employee
+          - listitem [ref=e164]:
+            - link "Reachy" [ref=e165] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e166]
+              - generic [ref=e169]: Reachy
+          - listitem [ref=e170]:
+            - link "Teleop" [ref=e171] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e172]
+              - generic [ref=e174]: Teleop
+          - listitem [ref=e175]:
+            - link "Reachy Meetings" [ref=e176] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e177]
+              - generic [ref=e181]: Reachy Meetings
+          - listitem [ref=e182]:
+            - link "Reachy + HA" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e184]
+              - generic [ref=e187]: Reachy + HA
+      - generic [ref=e188]:
+        - generic [ref=e189]: Automation
+        - list [ref=e190]:
+          - listitem [ref=e191]:
+            - link "Agent Tasks" [ref=e192] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e193]
+              - generic [ref=e196]: Agent Tasks
+          - listitem [ref=e197]:
+            - link "Workflows" [ref=e198] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e199]
+              - generic [ref=e203]: Workflows
+          - listitem [ref=e204]:
+            - link "Gateway" [ref=e205] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e206]
+              - generic [ref=e212]: Gateway
+          - listitem [ref=e213]:
+            - link "Money Maker" [ref=e214] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e215]
+              - generic [ref=e217]: Money Maker
+          - listitem [ref=e218]:
+            - link "Research" [ref=e219] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e220]
+              - generic [ref=e223]: Research
+          - listitem [ref=e224]:
+            - link "TikTok Shop" [ref=e225] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e226]
+              - generic [ref=e229]: TikTok Shop
+          - listitem [ref=e230]:
+            - link "Characters" [ref=e231] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e232]
+              - generic [ref=e237]: Characters
+          - listitem [ref=e238]:
+            - link "Character Autopilot" [ref=e239] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e240]
+              - generic [ref=e242]: Character Autopilot
+          - listitem [ref=e243]:
+            - link "Content Agent" [ref=e244] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e245]
+              - generic [ref=e247]: Content Agent
+          - listitem [ref=e248]:
+            - link "Predictions" [ref=e249] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e250]
+              - generic [ref=e253]: Predictions
+          - listitem [ref=e254]:
+            - link "LLC Guide" [ref=e255] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e256]
+              - generic [ref=e260]: LLC Guide
+          - listitem [ref=e261]:
+            - link "Visual Workflows" [ref=e262] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e263]
+              - generic [ref=e267]: Visual Workflows
+      - generic [ref=e268]:
+        - generic [ref=e269]: System
+        - list [ref=e270]:
+          - listitem [ref=e271]:
+            - link "Exec Dashboard" [ref=e272] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e273]
+              - generic [ref=e276]: Exec Dashboard
+          - listitem [ref=e277]:
+            - link "Outcomes" [ref=e278] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e279]
+              - generic [ref=e283]: Outcomes
+          - listitem [ref=e284]:
+            - link "System Health" [ref=e285] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e286]
+              - generic [ref=e289]: System Health
+          - listitem [ref=e290]:
+            - link "Architecture" [ref=e291] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e292]
+              - generic [ref=e297]: Architecture
+          - listitem [ref=e298]:
+            - link "QA" [ref=e299] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e300]
+              - generic [ref=e303]: QA
+          - listitem [ref=e304]:
+            - link "Analytics" [ref=e305] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e306]
+              - generic [ref=e308]: Analytics
+          - listitem [ref=e309]:
+            - link "Settings" [ref=e310] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e311]
+              - generic [ref=e322]: Settings
+    - list [ref=e324]:
+      - listitem [ref=e325]:
+        - button "Zero v1.0" [ref=e326] [cursor=pointer]:
+          - generic [ref=e328]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e329]
+  - main [ref=e330]:
+    - generic [ref=e331]:
+      - button "Toggle Sidebar" [ref=e332] [cursor=pointer]:
+        - img
+        - generic [ref=e333]: Toggle Sidebar
+      - generic [ref=e334]:
+        - generic [ref=e335]: Zero
+        - generic [ref=e336]: /
+        - generic [ref=e337]: Zero
+      - button "Search... Ctrl K" [ref=e338] [cursor=pointer]:
+        - img [ref=e339]
+        - generic [ref=e342]: Search...
+        - generic [ref=e343]:
+          - generic [ref=e344]: Ctrl
+          - text: K
+      - button "9+" [ref=e346] [cursor=pointer]:
+        - img [ref=e347]
+        - generic [ref=e350]: 9+
+    - main [ref=e351]:
+      - generic [ref=e352]:
+        - generic [ref=e353]:
+          - generic [ref=e354]:
+            - heading "Meal Manager" [level=1] [ref=e355]:
+              - img [ref=e356]
+              - text: Meal Manager
+            - paragraph [ref=e359]: Catalog, promo stacking, shipment tracking, best-price discovery.
+          - generic [ref=e360]:
+            - button "Scan email" [ref=e361] [cursor=pointer]:
+              - img [ref=e362]
+              - text: Scan email
+            - button "Hunt promos" [ref=e365] [cursor=pointer]:
+              - img [ref=e366]
+              - text: Hunt promos
+            - button "Refresh catalog" [ref=e368] [cursor=pointer]:
+              - img [ref=e369]
+              - text: Refresh catalog
+        - generic [ref=e374]:
+          - generic [ref=e376]:
+            - img [ref=e378]
+            - generic [ref=e381]:
+              - generic [ref=e382]: Services
+              - generic [ref=e383]: 25/25
+              - generic [ref=e384]: tracked
+          - generic [ref=e386]:
+            - img [ref=e388]
+            - generic [ref=e391]:
+              - generic [ref=e392]: Cheapest / meal
+              - generic [ref=e393]: $1.76
+              - generic [ref=e394]: Magic Spoon
+          - generic [ref=e396]:
+            - img [ref=e398]
+            - generic [ref=e401]:
+              - generic [ref=e402]: Active promos
+              - generic [ref=e403]: "39"
+              - generic [ref=e404]: just now
+          - generic [ref=e406]:
+            - img [ref=e408]
+            - generic [ref=e410]:
+              - generic [ref=e411]: Card offers
+              - generic [ref=e412]: "0"
+          - generic [ref=e414]:
+            - img [ref=e416]
+            - generic [ref=e420]:
+              - generic [ref=e421]: Portal offers
+              - generic [ref=e422]: "50"
+          - generic [ref=e424]:
+            - img [ref=e426]
+            - generic [ref=e431]:
+              - generic [ref=e432]: In transit
+              - generic [ref=e433]: "1"
+              - generic [ref=e434]: just now
+        - generic [ref=e435]:
+          - button "Overview" [ref=e436] [cursor=pointer]
+          - button "Services 25" [ref=e437] [cursor=pointer]:
+            - text: Services
+            - generic [ref=e438]: "25"
+          - button "Cheapest" [ref=e439] [cursor=pointer]
+          - button "Promos 39" [ref=e440] [cursor=pointer]:
+            - text: Promos
+            - generic [ref=e441]: "39"
+          - button "Card offers" [ref=e442] [cursor=pointer]
+          - button "Portals 50" [ref=e443] [cursor=pointer]:
+            - text: Portals
+            - generic [ref=e444]: "50"
+          - button "Shipments 2" [ref=e445] [cursor=pointer]:
+            - text: Shipments
+            - generic [ref=e446]: "2"
+        - generic [ref=e522]:
+          - generic [ref=e523]:
+            - generic [ref=e524]:
+              - generic [ref=e525]:
+                - heading "Blue Apron" [level=3] [ref=e526]
+                - generic [ref=e527]: meal kit · tracked
+              - button "📅 OFF" [active] [ref=e1398] [cursor=pointer]
+            - paragraph [ref=e529]: Meal kits with premium wine pairings.
+            - generic [ref=e530]:
+              - link "Site ↗" [ref=e531] [cursor=pointer]:
+                - /url: https://www.blueapron.com/
+              - link "Menu ↗" [ref=e532] [cursor=pointer]:
+                - /url: https://www.blueapron.com/menu
+              - link "Coupons ↗" [ref=e533] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/blueapron.com
+              - link "Rakuten ↗" [ref=e534] [cursor=pointer]:
+                - /url: https://www.rakuten.com/blue-apron.com
+            - generic [ref=e535]:
+              - generic [ref=e536]:
+                - generic [ref=e537]: Base / meal
+                - generic [ref=e538]: $9.99
+              - generic [ref=e539]:
+                - generic [ref=e540]: After stack
+                - generic [ref=e541]: $5.36/meal
+            - generic [ref=e542]:
+              - generic [ref=e543]: Top promos
+              - generic [ref=e544]:
+                - generic [ref=e545]:
+                  - code [ref=e546]: (auto)
+                  - generic [ref=e547]: 35% off
+                  - generic [ref=e548]: couponfollow
+                - generic [ref=e549]:
+                  - code [ref=e550]: WELCOME25
+                  - generic [ref=e551]: $25 off
+                  - generic [ref=e552]: direct
+              - generic [ref=e553]: Blue Apron Coupons | 35% Off April 2026 Promo Codes Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides Mo
+            - generic [ref=e554]:
+              - generic [ref=e555]: Cashback
+              - generic [ref=e556]:
+                - generic [ref=e557]: "topcashback: 8.0%"
+                - generic [ref=e558]: "rakuten: 2.5%"
+            - generic [ref=e559]:
+              - generic [ref=e560]: meal-kit
+              - generic [ref=e561]: premium
+          - generic [ref=e562]:
+            - generic [ref=e563]:
+              - generic [ref=e564]:
+                - heading "Clean Eatz Kitchen" [level=3] [ref=e565]
+                - generic [ref=e566]: prepared · tracked
+              - button "📅 ON" [ref=e567] [cursor=pointer]
+            - paragraph [ref=e568]: Weight-loss and macro-aligned prepared meals.
+            - generic [ref=e569]:
+              - link "Site ↗" [ref=e570] [cursor=pointer]:
+                - /url: https://cleaneatzkitchen.com/
+              - link "Menu ↗" [ref=e571] [cursor=pointer]:
+                - /url: https://cleaneatzkitchen.com/collections/all-meals
+              - link "Coupons ↗" [ref=e572] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/cleaneatzkitchen.com
+              - link "Rakuten ↗" [ref=e573] [cursor=pointer]:
+                - /url: https://www.rakuten.com/clean-eatz-kitchen.com
+            - generic [ref=e574]:
+              - generic [ref=e575]:
+                - generic [ref=e576]: Base / meal
+                - generic [ref=e577]: $8.49
+              - generic [ref=e578]:
+                - generic [ref=e579]: After stack
+                - generic [ref=e580]: $7.81/meal
+            - generic [ref=e581]:
+              - generic [ref=e582]: Top promos
+              - generic [ref=e584]:
+                - code [ref=e585]: (auto)
+                - generic [ref=e586]: Free ship
+                - generic [ref=e587]: direct
+              - generic [ref=e588]: Welcome Back - We’ve Upgraded Your Experience 🎉More meals, built-in discounts, and Free Shipping are now LIVE! [Read about our new experience here](https://cleaneatzkitchen.com/pages/new-site-ordering
+            - generic [ref=e589]:
+              - generic [ref=e590]: Cashback
+              - generic [ref=e591]:
+                - generic [ref=e592]: "topcashback: 8.0%"
+                - generic [ref=e593]: "rakuten: 2.5%"
+            - generic [ref=e594]:
+              - generic [ref=e595]: prepared
+              - generic [ref=e596]: weight-loss
+          - generic [ref=e597]:
+            - generic [ref=e598]:
+              - generic [ref=e599]:
+                - heading "CookUnity" [level=3] [ref=e600]
+                - generic [ref=e601]: prepared · tracked
+              - button "📅 ON" [ref=e602] [cursor=pointer]
+            - paragraph [ref=e603]: Chef-crafted prepared meals, premium tier. Rotating weekly menu.
+            - generic [ref=e604]:
+              - link "Site ↗" [ref=e605] [cursor=pointer]:
+                - /url: https://www.cookunity.com/
+              - link "Menu ↗" [ref=e606] [cursor=pointer]:
+                - /url: https://www.cookunity.com/menu
+              - link "Coupons ↗" [ref=e607] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/cookunity.com
+              - link "Rakuten ↗" [ref=e608] [cursor=pointer]:
+                - /url: https://www.rakuten.com/cookunity.com
+            - generic [ref=e609]:
+              - generic [ref=e610]:
+                - generic [ref=e611]: Base / meal
+                - generic [ref=e612]: $13.49
+              - generic [ref=e613]:
+                - generic [ref=e614]: After stack
+                - generic [ref=e615]: $4.59/meal
+            - generic [ref=e616]:
+              - generic [ref=e617]: Top promos
+              - generic [ref=e618]:
+                - generic [ref=e619]:
+                  - code [ref=e620]: (auto)
+                  - generic [ref=e621]: 85% off
+                  - generic [ref=e622]: couponfollow
+                - generic [ref=e623]:
+                  - code [ref=e624]: (auto)
+                  - generic [ref=e625]: 60% off
+                  - generic [ref=e626]: couponfollow
+                - generic [ref=e627]:
+                  - code [ref=e628]: (auto)
+                  - generic [ref=e629]: 50% off
+                  - generic [ref=e630]: couponfollow
+              - generic [ref=e631]: Meals for Just $8.50 (GOVX Discount)
+            - generic [ref=e632]:
+              - generic [ref=e633]: Cashback
+              - generic [ref=e634]:
+                - generic [ref=e635]: "rakuten: 15.0%"
+                - generic [ref=e636]: "topcashback: 8.0%"
+            - generic [ref=e637]:
+              - generic [ref=e638]: prepared
+              - generic [ref=e639]: premium
+              - generic [ref=e640]: chef
+          - generic [ref=e641]:
+            - generic [ref=e642]:
+              - generic [ref=e643]:
+                - heading "Daily Harvest" [level=3] [ref=e644]
+                - generic [ref=e645]: frozen · tracked
+              - button "📅 ON" [ref=e646] [cursor=pointer]
+            - paragraph [ref=e647]: Frozen smoothies, bowls, and plant-based meals.
+            - generic [ref=e648]:
+              - link "Site ↗" [ref=e649] [cursor=pointer]:
+                - /url: https://www.daily-harvest.com/
+              - link "Menu ↗" [ref=e650] [cursor=pointer]:
+                - /url: https://www.daily-harvest.com/menu
+              - link "Coupons ↗" [ref=e651] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/dailyharvest.com
+              - link "Rakuten ↗" [ref=e652] [cursor=pointer]:
+                - /url: https://www.rakuten.com/daily-harvest.com
+            - generic [ref=e653]:
+              - generic [ref=e654]:
+                - generic [ref=e655]: Base / meal
+                - generic [ref=e656]: $8.99
+              - generic [ref=e657]:
+                - generic [ref=e658]: After stack
+                - generic [ref=e659]: $7.28/meal
+            - generic [ref=e660]:
+              - generic [ref=e661]: Top promos
+              - generic [ref=e662]:
+                - generic [ref=e663]:
+                  - code [ref=e664]: (auto)
+                  - generic [ref=e665]: 10% off
+                  - generic [ref=e666]: direct
+                - generic [ref=e667]:
+                  - code [ref=e668]: (auto)
+                  - generic [ref=e669]: Free ship
+                  - generic [ref=e670]: direct
+              - generic [ref=e671]: Organic Smoothies, Oat Bowls &amp; Elixirs | Daily Harvest Skip to content Spend your HSA/FSA dollars! Shop Now 10% off subscription purchases of $100+! Spend your HSA/FSA dollars! Shop Now Free shipp
+            - generic [ref=e672]:
+              - generic [ref=e673]: Cashback
+              - generic [ref=e674]:
+                - generic [ref=e675]: "rakuten: 10.0%"
+                - generic [ref=e676]: "topcashback: 8.0%"
+            - generic [ref=e677]:
+              - generic [ref=e678]: frozen
+              - generic [ref=e679]: plant-based
+          - generic [ref=e680]:
+            - generic [ref=e681]:
+              - generic [ref=e682]:
+                - heading "Dinnerly" [level=3] [ref=e683]
+                - generic [ref=e684]: meal kit · tracked
+              - button "📅 ON" [ref=e685] [cursor=pointer]
+            - paragraph [ref=e686]: Cheapest meal kit in the US, owned by Marley Spoon.
+            - generic [ref=e687]:
+              - link "Site ↗" [ref=e688] [cursor=pointer]:
+                - /url: https://dinnerly.com/
+              - link "Menu ↗" [ref=e689] [cursor=pointer]:
+                - /url: https://dinnerly.com/menu
+              - link "Coupons ↗" [ref=e690] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/dinnerly.com
+              - link "Rakuten ↗" [ref=e691] [cursor=pointer]:
+                - /url: https://www.rakuten.com/dinnerly.com
+            - generic [ref=e692]:
+              - generic [ref=e693]:
+                - generic [ref=e694]: Base / meal
+                - generic [ref=e695]: $4.99
+              - generic [ref=e696]:
+                - generic [ref=e697]: After stack
+                - generic [ref=e698]: $2.29/meal
+            - generic [ref=e699]:
+              - generic [ref=e700]: Top promos
+              - generic [ref=e702]:
+                - code [ref=e703]: (auto)
+                - generic [ref=e704]: 50% off
+                - generic [ref=e705]: couponfollow
+              - generic [ref=e706]: Dinnerly Promo Codes | 50% Off April 2026 Coupons Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides More
+            - generic [ref=e707]:
+              - generic [ref=e708]: Cashback
+              - generic [ref=e709]:
+                - generic [ref=e710]: "topcashback: 8.0%"
+                - generic [ref=e711]: "rakuten: 2.5%"
+            - generic [ref=e712]:
+              - generic [ref=e713]: meal-kit
+              - generic [ref=e714]: budget
+          - generic [ref=e715]:
+            - generic [ref=e716]:
+              - generic [ref=e717]:
+                - heading "EveryPlate" [level=3] [ref=e718]
+                - generic [ref=e719]: meal kit · tracked
+              - button "📅 ON" [ref=e720] [cursor=pointer]
+            - paragraph [ref=e721]: Budget meal kits, owned by HelloFresh.
+            - generic [ref=e722]:
+              - link "Site ↗" [ref=e723] [cursor=pointer]:
+                - /url: https://www.everyplate.com/
+              - link "Menu ↗" [ref=e724] [cursor=pointer]:
+                - /url: https://www.everyplate.com/plans
+              - link "Coupons ↗" [ref=e725] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/everyplate.com
+              - link "Rakuten ↗" [ref=e726] [cursor=pointer]:
+                - /url: https://www.rakuten.com/everyplate.com
+            - generic [ref=e727]:
+              - generic [ref=e728]:
+                - generic [ref=e729]: Base / meal
+                - generic [ref=e730]: $5.99
+              - generic [ref=e731]:
+                - generic [ref=e732]: After stack
+                - generic [ref=e733]: $4.18/meal
+            - generic [ref=e734]:
+              - generic [ref=e735]: Top promos
+              - generic [ref=e736]:
+                - generic [ref=e737]:
+                  - code [ref=e738]: (auto)
+                  - generic [ref=e739]: 10% off
+                  - generic [ref=e740]: direct
+                - generic [ref=e741]:
+                  - code [ref=e742]: (auto)
+                  - generic [ref=e743]: 10% off
+                  - generic [ref=e744]: couponfollow
+                - generic [ref=e745]:
+                  - code [ref=e746]: (auto)
+                  - generic [ref=e747]: $2.99 off
+                  - generic [ref=e748]: direct
+              - generic [ref=e749]: 10% off next month
+            - generic [ref=e750]:
+              - generic [ref=e751]: Cashback
+              - generic [ref=e752]:
+                - generic [ref=e753]: "rakuten: 22.5%"
+                - generic [ref=e754]: "topcashback: 8.0%"
+            - generic [ref=e755]:
+              - generic [ref=e756]: meal-kit
+              - generic [ref=e757]: budget
+          - generic [ref=e758]:
+            - generic [ref=e759]:
+              - generic [ref=e760]:
+                - heading "Factor" [level=3] [ref=e761]
+                - generic [ref=e762]: prepared · tracked
+              - button "📅 ON" [ref=e763] [cursor=pointer]
+            - paragraph [ref=e764]: Fresh never frozen prepared meals, owned by HelloFresh.
+            - generic [ref=e765]:
+              - link "Site ↗" [ref=e766] [cursor=pointer]:
+                - /url: https://www.factor75.com/
+              - link "Menu ↗" [ref=e767] [cursor=pointer]:
+                - /url: https://www.factor75.com/menu
+              - link "Coupons ↗" [ref=e768] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/factor.com
+              - link "Rakuten ↗" [ref=e769] [cursor=pointer]:
+                - /url: https://www.rakuten.com/factor.com
+            - generic [ref=e770]:
+              - generic [ref=e771]:
+                - generic [ref=e772]: Base / meal
+                - generic [ref=e773]: $12.99
+              - generic [ref=e774]:
+                - generic [ref=e775]: After stack
+                - generic [ref=e776]: $4.42/meal
+            - generic [ref=e777]:
+              - generic [ref=e778]: Top promos
+              - generic [ref=e779]:
+                - generic [ref=e780]:
+                  - code [ref=e781]: 0FJ
+                  - generic [ref=e782]: $130 off
+                  - generic [ref=e783]: couponfollow
+                - generic [ref=e784]:
+                  - code [ref=e785]: 0FG
+                  - generic [ref=e786]: 50% off
+                  - generic [ref=e787]: couponfollow
+                - generic [ref=e788]:
+                  - code [ref=e789]: (auto)
+                  - generic [ref=e790]: 50% off
+                  - generic [ref=e791]: direct
+              - generic [ref=e792]: $130 Off + Free Breakfast for 1 Year
+            - generic [ref=e793]:
+              - generic [ref=e794]: Cashback
+              - generic [ref=e795]:
+                - generic [ref=e796]: "rakuten: 15.0%"
+                - generic [ref=e797]: "topcashback: 8.0%"
+            - generic [ref=e798]:
+              - generic [ref=e799]: prepared
+              - generic [ref=e800]: low-carb
+              - generic [ref=e801]: keto
+          - generic [ref=e802]:
+            - generic [ref=e803]:
+              - generic [ref=e804]:
+                - heading "FlexPro Meals" [level=3] [ref=e805]
+                - generic [ref=e806]: prepared · tracked
+              - button "📅 ON" [ref=e807] [cursor=pointer]
+            - paragraph [ref=e808]: High-protein fitness-focused prepared meals.
+            - generic [ref=e809]:
+              - link "Site ↗" [ref=e810] [cursor=pointer]:
+                - /url: https://flexpromeals.com/
+              - link "Menu ↗" [ref=e811] [cursor=pointer]:
+                - /url: https://flexpromeals.com/meals
+              - link "Coupons ↗" [ref=e812] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/flexpromeals.com
+              - link "Rakuten ↗" [ref=e813] [cursor=pointer]:
+                - /url: https://www.rakuten.com/flexpro-meals.com
+            - generic [ref=e814]:
+              - generic [ref=e815]:
+                - generic [ref=e816]: Base / meal
+                - generic [ref=e817]: $9.99
+              - generic [ref=e818]:
+                - generic [ref=e819]: After stack
+                - generic [ref=e820]: $9.19/meal
+            - generic [ref=e821]:
+              - generic [ref=e822]: Top promos
+              - generic [ref=e824]:
+                - code [ref=e825]: FREESHIP50
+                - generic [ref=e826]: Free ship
+                - generic [ref=e827]: direct
+              - generic [ref=e828]: Free shipping on your first box
+            - generic [ref=e829]:
+              - generic [ref=e830]: Cashback
+              - generic [ref=e831]:
+                - generic [ref=e832]: "topcashback: 8.0%"
+                - generic [ref=e833]: "rakuten: 2.5%"
+            - generic [ref=e834]:
+              - generic [ref=e835]: prepared
+              - generic [ref=e836]: high-protein
+              - generic [ref=e837]: fitness
+          - generic [ref=e838]:
+            - generic [ref=e839]:
+              - generic [ref=e840]:
+                - heading "Freshly" [level=3] [ref=e841]
+                - generic [ref=e842]: prepared · tracked
+              - button "📅 ON" [ref=e843] [cursor=pointer]
+            - paragraph [ref=e844]: Prepared single-serving meals (Nestle-owned).
+            - generic [ref=e845]:
+              - link "Site ↗" [ref=e846] [cursor=pointer]:
+                - /url: https://www.freshly.com/
+              - link "Menu ↗" [ref=e847] [cursor=pointer]:
+                - /url: https://www.freshly.com/menu
+              - link "Coupons ↗" [ref=e848] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/freshly.com
+              - link "Rakuten ↗" [ref=e849] [cursor=pointer]:
+                - /url: https://www.rakuten.com/freshly.com
+            - generic [ref=e850]:
+              - generic [ref=e851]:
+                - generic [ref=e852]: Base / meal
+                - generic [ref=e853]: $9.99
+              - generic [ref=e854]:
+                - generic [ref=e855]: After stack
+                - generic [ref=e856]: $8.99/meal
+            - generic [ref=e857]:
+              - generic [ref=e858]: Cashback
+              - generic [ref=e859]:
+                - generic [ref=e860]: "rakuten: 10.0%"
+                - generic [ref=e861]: "topcashback: 8.0%"
+            - generic [ref=e863]: prepared
+          - generic [ref=e864]:
+            - generic [ref=e865]:
+              - generic [ref=e866]:
+                - heading "Gobble" [level=3] [ref=e867]
+                - generic [ref=e868]: meal kit · tracked
+              - button "📅 ON" [ref=e869] [cursor=pointer]
+            - paragraph [ref=e870]: 15-minute meal kits with pre-prepped ingredients.
+            - generic [ref=e871]:
+              - link "Site ↗" [ref=e872] [cursor=pointer]:
+                - /url: https://www.gobble.com/
+              - link "Menu ↗" [ref=e873] [cursor=pointer]:
+                - /url: https://www.gobble.com/menu
+              - link "Coupons ↗" [ref=e874] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/gobble.com
+              - link "Rakuten ↗" [ref=e875] [cursor=pointer]:
+                - /url: https://www.rakuten.com/gobble.com
+            - generic [ref=e876]:
+              - generic [ref=e877]:
+                - generic [ref=e878]: Base / meal
+                - generic [ref=e879]: $11.99
+              - generic [ref=e880]:
+                - generic [ref=e881]: After stack
+                - generic [ref=e882]: $3.72/meal
+            - generic [ref=e883]:
+              - generic [ref=e884]: Top promos
+              - generic [ref=e886]:
+                - code [ref=e887]: (auto)
+                - generic [ref=e888]: 75% off
+                - generic [ref=e889]: couponfollow
+              - generic [ref=e890]: Gobble Promo Codes | $100 Off April 2026 Coupon Codes Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides
+            - generic [ref=e891]:
+              - generic [ref=e892]: Cashback
+              - generic [ref=e893]:
+                - generic [ref=e894]: "rakuten: 22.5%"
+                - generic [ref=e895]: "topcashback: 8.0%"
+            - generic [ref=e896]:
+              - generic [ref=e897]: meal-kit
+              - generic [ref=e898]: fast
+          - generic [ref=e899]:
+            - generic [ref=e900]:
+              - generic [ref=e901]:
+                - heading "Green Chef" [level=3] [ref=e902]
+                - generic [ref=e903]: meal kit · tracked
+              - button "📅 ON" [ref=e904] [cursor=pointer]
+            - paragraph [ref=e905]: USDA-organic meal kits, keto/paleo/vegan friendly.
+            - generic [ref=e906]:
+              - link "Site ↗" [ref=e907] [cursor=pointer]:
+                - /url: https://www.greenchef.com/
+              - link "Menu ↗" [ref=e908] [cursor=pointer]:
+                - /url: https://www.greenchef.com/menu
+              - link "Coupons ↗" [ref=e909] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/greenchef.com
+              - link "Rakuten ↗" [ref=e910] [cursor=pointer]:
+                - /url: https://www.rakuten.com/green-chef.com
+            - generic [ref=e911]:
+              - generic [ref=e912]:
+                - generic [ref=e913]: Base / meal
+                - generic [ref=e914]: $11.99
+              - generic [ref=e915]:
+                - generic [ref=e916]: After stack
+                - generic [ref=e917]: $5.52/meal
+            - generic [ref=e918]:
+              - generic [ref=e919]: Top promos
+              - generic [ref=e920]:
+                - generic [ref=e921]:
+                  - code [ref=e922]: (auto)
+                  - generic [ref=e923]: 50% off
+                  - generic [ref=e924]: direct
+                - generic [ref=e925]:
+                  - code [ref=e926]: C50
+                  - generic [ref=e927]: 50% off
+                  - generic [ref=e928]: couponfollow
+              - generic [ref=e929]: 50% off first box, 20% off two months
+            - generic [ref=e930]:
+              - generic [ref=e931]: Cashback
+              - generic [ref=e932]:
+                - generic [ref=e933]: "topcashback: 8.0%"
+                - generic [ref=e934]: "rakuten: 2.5%"
+            - generic [ref=e935]:
+              - generic [ref=e936]: meal-kit
+              - generic [ref=e937]: organic
+              - generic [ref=e938]: keto
+              - generic [ref=e939]: paleo
+          - generic [ref=e940]:
+            - generic [ref=e941]:
+              - generic [ref=e942]:
+                - heading "HelloFresh" [level=3] [ref=e943]
+                - generic [ref=e944]: meal kit · tracked
+              - button "📅 ON" [ref=e945] [cursor=pointer]
+            - paragraph [ref=e946]: Market-leader meal kits. Recipes with pre-portioned ingredients.
+            - generic [ref=e947]:
+              - link "Site ↗" [ref=e948] [cursor=pointer]:
+                - /url: https://www.hellofresh.com/
+              - link "Menu ↗" [ref=e949] [cursor=pointer]:
+                - /url: https://www.hellofresh.com/recipes/menus
+              - link "Coupons ↗" [ref=e950] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/hellofresh.com
+              - link "Rakuten ↗" [ref=e951] [cursor=pointer]:
+                - /url: https://www.rakuten.com/hellofresh.com
+            - generic [ref=e952]:
+              - generic [ref=e953]:
+                - generic [ref=e954]: Base / meal
+                - generic [ref=e955]: $10.99
+              - generic [ref=e956]:
+                - generic [ref=e957]: After stack
+                - generic [ref=e958]: $6.39/meal
+            - generic [ref=e959]:
+              - generic [ref=e960]: Top promos
+              - generic [ref=e962]:
+                - code [ref=e963]: (auto)
+                - generic [ref=e964]: 25% off
+                - generic [ref=e965]: couponfollow
+              - generic [ref=e966]: 25% Off HelloFresh Promo Codes | April 2026 Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides More Insta
+            - generic [ref=e967]:
+              - generic [ref=e968]: Cashback
+              - generic [ref=e969]:
+                - generic [ref=e970]: "rakuten: 22.5%"
+                - generic [ref=e971]: "topcashback: 8.0%"
+            - generic [ref=e972]:
+              - generic [ref=e973]: meal-kit
+              - generic [ref=e974]: family
+          - generic [ref=e975]:
+            - generic [ref=e976]:
+              - generic [ref=e977]:
+                - heading "Home Chef" [level=3] [ref=e978]
+                - generic [ref=e979]: meal kit · tracked
+              - button "📅 ON" [ref=e980] [cursor=pointer]
+            - paragraph [ref=e981]: Flexible meal kits with oven-ready options.
+            - generic [ref=e982]:
+              - link "Site ↗" [ref=e983] [cursor=pointer]:
+                - /url: https://www.homechef.com/
+              - link "Menu ↗" [ref=e984] [cursor=pointer]:
+                - /url: https://www.homechef.com/our-menu
+              - link "Coupons ↗" [ref=e985] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/homechef.com
+              - link "Rakuten ↗" [ref=e986] [cursor=pointer]:
+                - /url: https://www.rakuten.com/home-chef.com
+            - generic [ref=e987]:
+              - generic [ref=e988]:
+                - generic [ref=e989]: Base / meal
+                - generic [ref=e990]: $9.99
+              - generic [ref=e991]:
+                - generic [ref=e992]: After stack
+                - generic [ref=e993]: $3.68/meal
+            - generic [ref=e994]:
+              - generic [ref=e995]: Top promos
+              - generic [ref=e996]:
+                - generic [ref=e997]:
+                  - code [ref=e998]: (auto)
+                  - generic [ref=e999]: 75% off
+                  - generic [ref=e1000]: couponfollow
+                - generic [ref=e1001]:
+                  - code [ref=e1002]: (auto)
+                  - generic [ref=e1003]: 45% off
+                  - generic [ref=e1004]: direct
+                - generic [ref=e1005]:
+                  - code [ref=e1006]: (auto)
+                  - generic [ref=e1007]: 30% off
+                  - generic [ref=e1008]: direct
+              - generic [ref=e1009]: Home Chef Promo Codes | 75% Off April 2026 Coupons Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides Mor
+            - generic [ref=e1010]:
+              - generic [ref=e1011]: Cashback
+              - generic [ref=e1012]:
+                - generic [ref=e1013]: "topcashback: 8.0%"
+                - generic [ref=e1014]: "rakuten: 2.5%"
+            - generic [ref=e1015]:
+              - generic [ref=e1016]: meal-kit
+              - generic [ref=e1017]: flexible
+          - generic [ref=e1018]:
+            - generic [ref=e1019]:
+              - generic [ref=e1020]:
+                - heading "HungryRoot" [level=3] [ref=e1021]
+                - generic [ref=e1022]: grocery · tracked
+              - button "📅 ON" [ref=e1023] [cursor=pointer]
+            - paragraph [ref=e1024]: AI-personalized groceries + recipes combo service.
+            - generic [ref=e1025]:
+              - link "Site ↗" [ref=e1026] [cursor=pointer]:
+                - /url: https://www.hungryroot.com/
+              - link "Menu ↗" [ref=e1027] [cursor=pointer]:
+                - /url: https://www.hungryroot.com/shop
+              - link "Coupons ↗" [ref=e1028] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/hungryroot.com
+              - link "Rakuten ↗" [ref=e1029] [cursor=pointer]:
+                - /url: https://www.rakuten.com/hungryroot.com
+            - generic [ref=e1030]:
+              - generic [ref=e1031]:
+                - generic [ref=e1032]: Base / meal
+                - generic [ref=e1033]: $8.99
+              - generic [ref=e1034]:
+                - generic [ref=e1035]: After stack
+                - generic [ref=e1036]: $4.04/meal
+            - generic [ref=e1037]:
+              - generic [ref=e1038]: Top promos
+              - generic [ref=e1039]:
+                - generic [ref=e1040]:
+                  - code [ref=e1041]: (auto)
+                  - generic [ref=e1042]: 40% off
+                  - generic [ref=e1043]: couponfollow
+                - generic [ref=e1044]:
+                  - code [ref=e1045]: (auto)
+                  - generic [ref=e1046]: 30% off
+                  - generic [ref=e1047]: direct
+              - generic [ref=e1048]: Hungryroot Promo Codes | 40% Off April 2026 Coupons Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides Mo
+            - generic [ref=e1049]:
+              - generic [ref=e1050]: Upcoming deliveries
+              - generic [ref=e1052]:
+                - generic [ref=e1053]: pending
+                - generic [ref=e1054]: ETA pending
+                - generic [ref=e1055]: —
+            - generic [ref=e1056]:
+              - generic [ref=e1057]: Cashback
+              - generic [ref=e1058]:
+                - generic [ref=e1059]: "rakuten: 25.0%"
+                - generic [ref=e1060]: "topcashback: 8.0%"
+            - generic [ref=e1061]:
+              - generic [ref=e1062]: grocery
+              - generic [ref=e1063]: personalized
+          - generic [ref=e1064]:
+            - generic [ref=e1065]:
+              - generic [ref=e1066]:
+                - heading "Ice Age Meals" [level=3] [ref=e1067]
+                - generic [ref=e1068]: frozen · tracked
+              - button "📅 ON" [ref=e1069] [cursor=pointer]
+            - paragraph [ref=e1070]: Frozen paleo prepared meals with premium meat.
+            - generic [ref=e1071]:
+              - link "Site ↗" [ref=e1072] [cursor=pointer]:
+                - /url: https://iceagemeals.com/
+              - link "Menu ↗" [ref=e1073] [cursor=pointer]:
+                - /url: https://iceagemeals.com/collections/all
+              - link "Coupons ↗" [ref=e1074] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/iceagemeals.com
+              - link "Rakuten ↗" [ref=e1075] [cursor=pointer]:
+                - /url: https://www.rakuten.com/ice-age-meals.com
+            - generic [ref=e1076]:
+              - generic [ref=e1077]:
+                - generic [ref=e1078]: Base / meal
+                - generic [ref=e1079]: $13.99
+              - generic [ref=e1080]:
+                - generic [ref=e1081]: After stack
+                - generic [ref=e1082]: $12.87/meal
+            - generic [ref=e1083]:
+              - generic [ref=e1084]: Cashback
+              - generic [ref=e1085]:
+                - generic [ref=e1086]: "topcashback: 8.0%"
+                - generic [ref=e1087]: "rakuten: 2.5%"
+            - generic [ref=e1088]:
+              - generic [ref=e1089]: frozen
+              - generic [ref=e1090]: paleo
+          - generic [ref=e1091]:
+            - generic [ref=e1092]:
+              - generic [ref=e1093]:
+                - heading "Magic Spoon" [level=3] [ref=e1094]
+                - generic [ref=e1095]: subscription box · tracked
+              - button "📅 ON" [ref=e1096] [cursor=pointer]
+            - paragraph [ref=e1097]: High-protein low-carb cereal. Often stacks with Rakuten.
+            - generic [ref=e1098]:
+              - link "Site ↗" [ref=e1099] [cursor=pointer]:
+                - /url: https://magicspoon.com/
+              - link "Menu ↗" [ref=e1100] [cursor=pointer]:
+                - /url: https://magicspoon.com/collections/all
+              - link "Coupons ↗" [ref=e1101] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/magicspoon.com
+              - link "Rakuten ↗" [ref=e1102] [cursor=pointer]:
+                - /url: https://www.rakuten.com/magic-spoon.com
+            - generic [ref=e1103]:
+              - generic [ref=e1104]:
+                - generic [ref=e1105]: Base / meal
+                - generic [ref=e1106]: $2.75
+              - generic [ref=e1107]:
+                - generic [ref=e1108]: After stack
+                - generic [ref=e1109]: $1.76/meal
+            - generic [ref=e1110]:
+              - generic [ref=e1111]: Top promos
+              - generic [ref=e1112]:
+                - generic [ref=e1113]:
+                  - code [ref=e1114]: MDW
+                  - generic [ref=e1115]: 20% off
+                  - generic [ref=e1116]: couponfollow
+                - generic [ref=e1117]:
+                  - code [ref=e1118]: "023"
+                  - generic [ref=e1119]: 20% off
+                  - generic [ref=e1120]: couponfollow
+                - generic [ref=e1121]:
+                  - code [ref=e1122]: LOW
+                  - generic [ref=e1123]: $5 off
+                  - generic [ref=e1124]: couponfollow
+              - generic [ref=e1125]: 20% off when you spend $50 or more
+            - generic [ref=e1126]:
+              - generic [ref=e1127]: Cashback
+              - generic [ref=e1128]:
+                - generic [ref=e1129]: "topcashback: 8.0%"
+                - generic [ref=e1130]: "rakuten: 2.5%"
+            - generic [ref=e1131]:
+              - generic [ref=e1132]: breakfast
+              - generic [ref=e1133]: high-protein
+          - generic [ref=e1134]:
+            - generic [ref=e1135]:
+              - generic [ref=e1136]:
+                - heading "Marley Spoon" [level=3] [ref=e1137]
+                - generic [ref=e1138]: meal kit · tracked
+              - button "📅 ON" [ref=e1139] [cursor=pointer]
+            - paragraph [ref=e1140]: Martha Stewart meal kits.
+            - generic [ref=e1141]:
+              - link "Site ↗" [ref=e1142] [cursor=pointer]:
+                - /url: https://marleyspoon.com/
+              - link "Menu ↗" [ref=e1143] [cursor=pointer]:
+                - /url: https://marleyspoon.com/menu
+              - link "Coupons ↗" [ref=e1144] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/marleyspoon.com
+              - link "Rakuten ↗" [ref=e1145] [cursor=pointer]:
+                - /url: https://www.rakuten.com/marley-spoon.com
+            - generic [ref=e1146]:
+              - generic [ref=e1147]:
+                - generic [ref=e1148]: Base / meal
+                - generic [ref=e1149]: $9.99
+              - generic [ref=e1150]:
+                - generic [ref=e1151]: After stack
+                - generic [ref=e1152]: $9.19/meal
+            - generic [ref=e1153]:
+              - generic [ref=e1154]: Cashback
+              - generic [ref=e1155]:
+                - generic [ref=e1156]: "topcashback: 8.0%"
+                - generic [ref=e1157]: "rakuten: 2.5%"
+            - generic [ref=e1159]: meal-kit
+          - generic [ref=e1160]:
+            - generic [ref=e1161]:
+              - generic [ref=e1162]:
+                - heading "MealPro" [level=3] [ref=e1163]
+                - generic [ref=e1164]: prepared · tracked
+              - button "📅 ON" [ref=e1165] [cursor=pointer]
+            - paragraph [ref=e1166]: Customizable macros prepared meals.
+            - generic [ref=e1167]:
+              - link "Site ↗" [ref=e1168] [cursor=pointer]:
+                - /url: https://mealpro.net/
+              - link "Menu ↗" [ref=e1169] [cursor=pointer]:
+                - /url: https://mealpro.net/meals
+              - link "Coupons ↗" [ref=e1170] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/mealpro.com
+              - link "Rakuten ↗" [ref=e1171] [cursor=pointer]:
+                - /url: https://www.rakuten.com/mealpro.com
+            - generic [ref=e1172]:
+              - generic [ref=e1173]:
+                - generic [ref=e1174]: Base / meal
+                - generic [ref=e1175]: $11.99
+              - generic [ref=e1176]:
+                - generic [ref=e1177]: After stack
+                - generic [ref=e1178]: $11.03/meal
+            - generic [ref=e1179]:
+              - generic [ref=e1180]: Cashback
+              - generic [ref=e1181]:
+                - generic [ref=e1182]: "topcashback: 8.0%"
+                - generic [ref=e1183]: "rakuten: 2.5%"
+            - generic [ref=e1184]:
+              - generic [ref=e1185]: prepared
+              - generic [ref=e1186]: macros
+          - generic [ref=e1187]:
+            - generic [ref=e1188]:
+              - generic [ref=e1189]:
+                - heading "Mosaic Foods" [level=3] [ref=e1190]
+                - generic [ref=e1191]: frozen · tracked
+              - button "📅 ON" [ref=e1192] [cursor=pointer]
+            - paragraph [ref=e1193]: Frozen family-size and single-serve plant-based meals.
+            - generic [ref=e1194]:
+              - link "Site ↗" [ref=e1195] [cursor=pointer]:
+                - /url: https://www.mosaicfoods.com/
+              - link "Menu ↗" [ref=e1196] [cursor=pointer]:
+                - /url: https://www.mosaicfoods.com/menu
+              - link "Coupons ↗" [ref=e1197] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/mosaicfoods.com
+              - link "Rakuten ↗" [ref=e1198] [cursor=pointer]:
+                - /url: https://www.rakuten.com/mosaic-foods.com
+            - generic [ref=e1199]:
+              - generic [ref=e1200]:
+                - generic [ref=e1201]: Base / meal
+                - generic [ref=e1202]: $7.99
+              - generic [ref=e1203]:
+                - generic [ref=e1204]: After stack
+                - generic [ref=e1205]: $4.28/meal
+            - generic [ref=e1206]:
+              - generic [ref=e1207]: Top promos
+              - generic [ref=e1209]:
+                - code [ref=e1210]: (auto)
+                - generic [ref=e1211]: $20 off
+                - generic [ref=e1212]: direct
+              - generic [ref=e1213]: Mosaic Foods | Healthy Frozen Food Delivery Skip to content Accessibility Statement Shop Veggie Bowls Family Meals Pizzas Smoothies Soups Oat Bowls Our Vision Our Story Get Started 🎁 Gift Mosaic Login
+            - generic [ref=e1214]:
+              - generic [ref=e1215]: Cashback
+              - generic [ref=e1216]:
+                - generic [ref=e1217]: "topcashback: 8.0%"
+                - generic [ref=e1218]: "rakuten: 2.5%"
+            - generic [ref=e1219]:
+              - generic [ref=e1220]: frozen
+              - generic [ref=e1221]: plant-based
+              - generic [ref=e1222]: family
+          - generic [ref=e1223]:
+            - generic [ref=e1224]:
+              - generic [ref=e1225]:
+                - heading "Purple Carrot" [level=3] [ref=e1226]
+                - generic [ref=e1227]: meal kit · tracked
+              - button "📅 ON" [ref=e1228] [cursor=pointer]
+            - paragraph [ref=e1229]: Plant-based meal kits and prepared meals.
+            - generic [ref=e1230]:
+              - link "Site ↗" [ref=e1231] [cursor=pointer]:
+                - /url: https://www.purplecarrot.com/
+              - link "Menu ↗" [ref=e1232] [cursor=pointer]:
+                - /url: https://www.purplecarrot.com/menu
+              - link "Coupons ↗" [ref=e1233] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/purplecarrot.com
+              - link "Rakuten ↗" [ref=e1234] [cursor=pointer]:
+                - /url: https://www.rakuten.com/purple-carrot.com
+            - generic [ref=e1235]:
+              - generic [ref=e1236]:
+                - generic [ref=e1237]: Base / meal
+                - generic [ref=e1238]: $11.99
+              - generic [ref=e1239]:
+                - generic [ref=e1240]: After stack
+                - generic [ref=e1241]: $11.03/meal
+            - generic [ref=e1242]:
+              - generic [ref=e1243]: Cashback
+              - generic [ref=e1244]:
+                - generic [ref=e1245]: "topcashback: 8.0%"
+                - generic [ref=e1246]: "rakuten: 2.5%"
+            - generic [ref=e1247]:
+              - generic [ref=e1248]: meal-kit
+              - generic [ref=e1249]: plant-based
+              - generic [ref=e1250]: vegan
+          - generic [ref=e1251]:
+            - generic [ref=e1252]:
+              - generic [ref=e1253]:
+                - heading "Snap Kitchen" [level=3] [ref=e1254]
+                - generic [ref=e1255]: prepared · tracked
+              - button "📅 ON" [ref=e1256] [cursor=pointer]
+            - paragraph [ref=e1257]: Texas-based fresh prepared meals, keto and paleo options.
+            - generic [ref=e1258]:
+              - link "Site ↗" [ref=e1259] [cursor=pointer]:
+                - /url: https://www.snapkitchen.com/
+              - link "Menu ↗" [ref=e1260] [cursor=pointer]:
+                - /url: https://www.snapkitchen.com/menu
+              - link "Coupons ↗" [ref=e1261] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/snapkitchen.com
+              - link "Rakuten ↗" [ref=e1262] [cursor=pointer]:
+                - /url: https://www.rakuten.com/snap-kitchen.com
+            - generic [ref=e1263]:
+              - generic [ref=e1264]:
+                - generic [ref=e1265]: Base / meal
+                - generic [ref=e1266]: $11.49
+              - generic [ref=e1267]:
+                - generic [ref=e1268]: After stack
+                - generic [ref=e1269]: $10.57/meal
+            - generic [ref=e1270]:
+              - generic [ref=e1271]: Cashback
+              - generic [ref=e1272]:
+                - generic [ref=e1273]: "topcashback: 8.0%"
+                - generic [ref=e1274]: "rakuten: 2.5%"
+            - generic [ref=e1275]:
+              - generic [ref=e1276]: prepared
+              - generic [ref=e1277]: keto
+              - generic [ref=e1278]: paleo
+          - generic [ref=e1279]:
+            - generic [ref=e1280]:
+              - generic [ref=e1281]:
+                - heading "Sunbasket" [level=3] [ref=e1282]
+                - generic [ref=e1283]: meal kit · tracked
+              - button "📅 ON" [ref=e1284] [cursor=pointer]
+            - paragraph [ref=e1285]: Organic ingredient meal kits.
+            - generic [ref=e1286]:
+              - link "Site ↗" [ref=e1287] [cursor=pointer]:
+                - /url: https://sunbasket.com/
+              - link "Menu ↗" [ref=e1288] [cursor=pointer]:
+                - /url: https://sunbasket.com/menu
+              - link "Coupons ↗" [ref=e1289] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/sunbasket.com
+              - link "Rakuten ↗" [ref=e1290] [cursor=pointer]:
+                - /url: https://www.rakuten.com/sunbasket.com
+            - generic [ref=e1291]:
+              - generic [ref=e1292]:
+                - generic [ref=e1293]: Base / meal
+                - generic [ref=e1294]: $10.99
+              - generic [ref=e1295]:
+                - generic [ref=e1296]: After stack
+                - generic [ref=e1297]: $8.52/meal
+            - generic [ref=e1298]:
+              - generic [ref=e1299]: Cashback
+              - generic [ref=e1300]:
+                - generic [ref=e1301]: "rakuten: 22.5%"
+                - generic [ref=e1302]: "topcashback: 8.0%"
+            - generic [ref=e1303]:
+              - generic [ref=e1304]: meal-kit
+              - generic [ref=e1305]: organic
+          - generic [ref=e1306]:
+            - generic [ref=e1307]:
+              - generic [ref=e1308]:
+                - heading "Territory Foods" [level=3] [ref=e1309]
+                - generic [ref=e1310]: prepared · tracked
+              - button "📅 ON" [ref=e1311] [cursor=pointer]
+            - paragraph [ref=e1312]: Chef-curated prepared meals, Whole30/paleo friendly.
+            - generic [ref=e1313]:
+              - link "Site ↗" [ref=e1314] [cursor=pointer]:
+                - /url: https://www.territoryfoods.com/
+              - link "Menu ↗" [ref=e1315] [cursor=pointer]:
+                - /url: https://www.territoryfoods.com/menu
+              - link "Coupons ↗" [ref=e1316] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/territoryfoods.com
+              - link "Rakuten ↗" [ref=e1317] [cursor=pointer]:
+                - /url: https://www.rakuten.com/territory-foods.com
+            - generic [ref=e1318]:
+              - generic [ref=e1319]:
+                - generic [ref=e1320]: Base / meal
+                - generic [ref=e1321]: $13.95
+              - generic [ref=e1322]:
+                - generic [ref=e1323]: After stack
+                - generic [ref=e1324]: $12.83/meal
+            - generic [ref=e1325]:
+              - generic [ref=e1326]: Cashback
+              - generic [ref=e1327]:
+                - generic [ref=e1328]: "topcashback: 8.0%"
+                - generic [ref=e1329]: "rakuten: 2.5%"
+            - generic [ref=e1330]:
+              - generic [ref=e1331]: prepared
+              - generic [ref=e1332]: whole30
+              - generic [ref=e1333]: paleo
+          - generic [ref=e1334]:
+            - generic [ref=e1335]:
+              - generic [ref=e1336]:
+                - heading "Thistle" [level=3] [ref=e1337]
+                - generic [ref=e1338]: prepared · tracked
+              - button "📅 ON" [ref=e1339] [cursor=pointer]
+            - paragraph [ref=e1340]: Plant-forward prepared meals and juices (West Coast).
+            - generic [ref=e1341]:
+              - link "Site ↗" [ref=e1342] [cursor=pointer]:
+                - /url: https://www.thistle.co/
+              - link "Menu ↗" [ref=e1343] [cursor=pointer]:
+                - /url: https://www.thistle.co/menu
+              - link "Coupons ↗" [ref=e1344] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/thistle.com
+              - link "Rakuten ↗" [ref=e1345] [cursor=pointer]:
+                - /url: https://www.rakuten.com/thistle.com
+            - generic [ref=e1346]:
+              - generic [ref=e1347]:
+                - generic [ref=e1348]: Base / meal
+                - generic [ref=e1349]: $13.95
+              - generic [ref=e1350]:
+                - generic [ref=e1351]: After stack
+                - generic [ref=e1352]: $12.83/meal
+            - generic [ref=e1353]:
+              - generic [ref=e1354]: Cashback
+              - generic [ref=e1355]:
+                - generic [ref=e1356]: "topcashback: 8.0%"
+                - generic [ref=e1357]: "rakuten: 2.5%"
+            - generic [ref=e1358]:
+              - generic [ref=e1359]: prepared
+              - generic [ref=e1360]: plant-based
+          - generic [ref=e1361]:
+            - generic [ref=e1362]:
+              - generic [ref=e1363]:
+                - heading "Trifecta" [level=3] [ref=e1364]
+                - generic [ref=e1365]: prepared · tracked
+              - button "📅 ON" [ref=e1366] [cursor=pointer]
+            - paragraph [ref=e1367]: Organic prepared meals for athletes and macro tracking.
+            - generic [ref=e1368]:
+              - link "Site ↗" [ref=e1369] [cursor=pointer]:
+                - /url: https://www.trifectanutrition.com/
+              - link "Menu ↗" [ref=e1370] [cursor=pointer]:
+                - /url: https://www.trifectanutrition.com/meals
+              - link "Coupons ↗" [ref=e1371] [cursor=pointer]:
+                - /url: https://www.retailmenot.com/view/trifecta.com
+              - link "Rakuten ↗" [ref=e1372] [cursor=pointer]:
+                - /url: https://www.rakuten.com/trifecta.com
+            - generic [ref=e1373]:
+              - generic [ref=e1374]:
+                - generic [ref=e1375]: Base / meal
+                - generic [ref=e1376]: $15.12
+              - generic [ref=e1377]:
+                - generic [ref=e1378]: After stack
+                - generic [ref=e1379]: $6.95/meal
+            - generic [ref=e1380]:
+              - generic [ref=e1381]: Top promos
+              - generic [ref=e1383]:
+                - code [ref=e1384]: (auto)
+                - generic [ref=e1385]: 50% off
+                - generic [ref=e1386]: couponfollow
+              - generic [ref=e1387]: Trifecta Discount Codes | 50% OFF | April Promo Codes Menu Coupons Stores Cashback Saving Guides More Install Cently Submit Code Search Sign In Join Sign In Join Coupons Stores Cashback Saving Guides
+            - generic [ref=e1388]:
+              - generic [ref=e1389]: Cashback
+              - generic [ref=e1390]:
+                - generic [ref=e1391]: "topcashback: 8.0%"
+                - generic [ref=e1392]: "rakuten: 2.5%"
+            - generic [ref=e1393]:
+              - generic [ref=e1394]: prepared
+              - generic [ref=e1395]: organic
+              - generic [ref=e1396]: macro
+              - generic [ref=e1397]: fitness
+  - button "Voice settings" [ref=e513] [cursor=pointer]:
+    - img [ref=e514]
+  - button "Start recording a voice command" [ref=e517] [cursor=pointer]:
+    - img [ref=e518]

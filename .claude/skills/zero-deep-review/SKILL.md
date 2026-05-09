@@ -1,3 +1,12 @@
+---
+name: zero-deep-review
+description: "[DEPRECATED — use deep-review (global) with --project=zero] Comprehensive feature completeness and code quality auditor for Zero. Reads source code, verifies logic, runs tests, checks API health, and grades each of 20 features across 5 dimensions."
+owner_project: zero
+category: review
+deprecated: true
+superseded_by: "deep-review"
+---
+
 # /zero-deep-review
 
 Comprehensive feature completeness and code quality auditor for Zero. Reads actual source code, verifies logic correctness, runs tests, checks API health, and grades feature implementation quality across 20 features and 5 dimensions.

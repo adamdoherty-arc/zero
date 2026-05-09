@@ -1,14 +1,18 @@
 """
-Shared Ollama client for ZERO API.
+Shared LLM client for ZERO API.
+
+NOTE 2026-04-27: Ollama was retired ecosystem-wide. This file is misnamed
+for historical reasons — `get_llm_client()` (canonical name) and the
+backwards-compat alias `get_ollama_client()` both return a
+UnifiedLLMClientWrapper that routes via the multi-provider UnifiedLLMClient,
+which in turn routes through shared-litellm at :4444 to vLLM at :18800.
+Direct Ollama HTTP calls are deprecated; the raw OllamaClient class below
+remains as a transitional shim and will be removed in a follow-up sweep.
 
 Provides a single async HTTP client with connection pooling, retry logic
 with exponential backoff, circuit breaker integration, and keep_alive
-management to prevent model unloading.
-
-NOTE: get_ollama_client() now returns a UnifiedLLMClientWrapper that
-delegates to the multi-provider UnifiedLLMClient. All existing services
-continue to work without code changes. The raw OllamaClient class is
-used internally by OllamaProvider.
+management to prevent model unloading (legacy semantics — kept for the
+transitional shim only).
 """
 
 import asyncio
@@ -115,6 +119,7 @@ class OllamaClient:
                             "options": {
                                 "temperature": temperature,
                                 "num_predict": num_predict,
+                                "num_ctx": 8192,
                             },
                         },
                         timeout=effective_timeout,
@@ -198,6 +203,7 @@ class OllamaClient:
                 "options": {
                     "temperature": temperature,
                     "num_predict": num_predict,
+                    "num_ctx": 8192,
                 },
             },
             timeout=effective_timeout,
@@ -251,8 +257,14 @@ class OllamaClient:
         model: Optional[str] = None,
         max_retries: int = 2,
     ) -> List[float]:
-        """Generate embedding vector for text via Ollama /api/embed."""
+        """Generate embedding vector for text. Routes to vLLM or Ollama per settings."""
         settings = get_settings()
+
+        if settings.embed_provider == "vllm":
+            # Always use the vLLM-served model name; caller-supplied names
+            # reference Ollama-side models (e.g. "nomic-embed-text-v2-moe").
+            return await self._embed_vllm(text, settings.vllm_embed_model, max_retries)
+
         model = model or settings.embedding_model
 
         last_error = None
@@ -296,8 +308,12 @@ class OllamaClient:
         model: Optional[str] = None,
         max_retries: int = 2,
     ) -> List[List[float]]:
-        """Generate embeddings for multiple texts via Ollama /api/embed."""
+        """Generate embeddings for multiple texts. Routes to vLLM or Ollama per settings."""
         settings = get_settings()
+
+        if settings.embed_provider == "vllm":
+            return await self._embed_batch_vllm(texts, settings.vllm_embed_model, max_retries)
+
         model = model or settings.embedding_model
 
         last_error = None
@@ -350,6 +366,100 @@ class OllamaClient:
         except Exception as e:
             logger.error("ollama_embed_safe_failed", error=str(e))
             return None
+
+    # --- vLLM embed path (OpenAI-compatible) ---
+
+    async def _embed_vllm(self, text: str, model: str, max_retries: int) -> List[float]:
+        settings = get_settings()
+        base = settings.vllm_embed_url.rstrip("/")
+        api_key = settings.vllm_api_key or "EMPTY"
+        auth_headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "EMPTY" else None
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                client = await self._get_client()
+                response = await client.post(
+                    f"{base}/embeddings",
+                    json={"model": model, "input": text, "encoding_format": "float"},
+                    headers=auth_headers,
+                    timeout=60,
+                )
+                response.raise_for_status()
+                data = response.json()
+                entries = data.get("data", [])
+                if not entries:
+                    raise ValueError("Empty embeddings returned from vLLM")
+                vec = entries[0]["embedding"]
+                target_dim = settings.embedding_dimension
+                if len(vec) > target_dim:
+                    # Matryoshka truncation: Qwen3-Embedding supports this natively.
+                    vec = vec[:target_dim]
+                return vec
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    delay = (2 ** attempt) * 2 + random.uniform(0, 1)
+                    logger.warning(
+                        "vllm_embed_retry",
+                        attempt=attempt + 1,
+                        delay=f"{delay:.1f}s",
+                        error=str(e),
+                    )
+                    await asyncio.sleep(delay)
+        logger.error("vllm_embed_failed", attempts=max_retries + 1, error=str(last_error))
+        raise Exception(f"vLLM embed failed after {max_retries + 1} attempts: {last_error}")
+
+    async def _embed_batch_vllm(
+        self, texts: List[str], model: str, max_retries: int
+    ) -> List[List[float]]:
+        settings = get_settings()
+        base = settings.vllm_embed_url.rstrip("/")
+        api_key = settings.vllm_api_key or "EMPTY"
+        auth_headers = {"Authorization": f"Bearer {api_key}"} if api_key and api_key != "EMPTY" else None
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                client = await self._get_client()
+                response = await client.post(
+                    f"{base}/embeddings",
+                    json={"model": model, "input": texts, "encoding_format": "float"},
+                    headers=auth_headers,
+                    timeout=120,
+                )
+                response.raise_for_status()
+                data = response.json()
+                entries = data.get("data", [])
+                if len(entries) != len(texts):
+                    raise ValueError(
+                        f"Expected {len(texts)} embeddings, got {len(entries)}"
+                    )
+                # vLLM returns entries ordered by index
+                entries_sorted = sorted(entries, key=lambda e: e.get("index", 0))
+                target_dim = settings.embedding_dimension
+                vecs = [e["embedding"] for e in entries_sorted]
+                if vecs and len(vecs[0]) > target_dim:
+                    vecs = [v[:target_dim] for v in vecs]
+                return vecs
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries:
+                    delay = (2 ** attempt) * 2 + random.uniform(0, 1)
+                    logger.warning(
+                        "vllm_embed_batch_retry",
+                        attempt=attempt + 1,
+                        delay=f"{delay:.1f}s",
+                        error=str(e),
+                    )
+                    await asyncio.sleep(delay)
+        logger.error(
+            "vllm_embed_batch_failed",
+            attempts=max_retries + 1,
+            count=len(texts),
+            error=str(last_error),
+        )
+        raise Exception(
+            f"vLLM embed_batch failed after {max_retries + 1} attempts: {last_error}"
+        )
 
     async def is_healthy(self) -> bool:
         """Check if Ollama API is reachable."""
@@ -474,10 +584,16 @@ class UnifiedLLMClientWrapper:
 
 
 @lru_cache()
-def get_ollama_client() -> UnifiedLLMClientWrapper:
-    """Get the unified LLM client with backward-compatible OllamaClient interface.
+def get_llm_client() -> UnifiedLLMClientWrapper:
+    """Get the unified LLM client.
 
-    All existing services calling get_ollama_client().chat() continue to work.
-    Calls now route through the multi-provider system.
+    Routes calls through the multi-provider UnifiedLLMClient → shared-litellm
+    at :4444 → vLLM at :18800 (Ollama retired ecosystem-wide 2026-04-27).
     """
     return UnifiedLLMClientWrapper()
+
+
+# Backwards-compat alias — older callers used `get_ollama_client()`. Cleaned
+# up via the 2026-04-27 retirement sweep but kept here as a one-line shim
+# until every import site is migrated.
+get_ollama_client = get_llm_client

@@ -1,90 +1,86 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getAuthHeaders } from '@/lib/auth'
 
-const API_URL = ''
-
-// Types
+export interface DeepResearchRequest {
+  query: string
+  perspectives?: string[]
+  max_cost_usd?: number
+}
 
 export interface DeepResearchReport {
   id: string
   query: string
   status: string
+  outline?: Record<string, unknown> | null
   perspectives: string[]
-  outline: Record<string, unknown>
-  sources: { url: string; title: string; snippet: string }[]
-  sections: Record<string, string>
-  report_markdown?: string
-  validation_notes?: string
+  sources: Array<Record<string, unknown>>
+  sections: Record<string, unknown>
+  report_markdown?: string | null
+  executive_summary?: string | null
   cost_usd: number
+  error?: string | null
   created_at: string
-  started_at?: string
-  completed_at?: string
+  completed_at?: string | null
 }
 
-export interface DeepResearchRequest {
-  query: string
-  max_perspectives?: number
-  max_cost_usd?: number
+const deepResearchKeys = {
+  all: ['deep-research'] as const,
+  reports: (status?: string, limit?: number) => [...deepResearchKeys.all, 'reports', status, limit] as const,
+  report: (id?: string) => [...deepResearchKeys.all, 'report', id] as const,
 }
 
-export interface ResearchFilters {
-  status?: string
-  limit?: number
-}
-
-// Query key factory
-
-const researchKeys = {
-  all: ['deepResearch'] as const,
-  reports: () => [...researchKeys.all, 'reports'] as const,
-  reportList: (filters?: ResearchFilters) => [...researchKeys.reports(), filters] as const,
-  report: (id: string) => [...researchKeys.reports(), id] as const,
-}
-
-// Hooks
-
-export function useDeepResearchReports(filters?: ResearchFilters) {
-  return useQuery({
-    queryKey: researchKeys.reportList(filters),
-    queryFn: async (): Promise<DeepResearchReport[]> => {
-      const params = new URLSearchParams()
-      if (filters?.status) params.append('status', filters.status)
-      if (filters?.limit !== undefined) params.append('limit', filters.limit.toString())
-      const res = await fetch(`${API_URL}/api/research/deep?${params.toString()}`, { headers: getAuthHeaders() })
-      if (!res.ok) throw new Error('Failed to fetch research reports')
-      return res.json()
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...getAuthHeaders(),
+      ...(init?.headers || {}),
     },
-    staleTime: 10000,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `Request failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export function useDeepResearchReports(status?: string, limit = 30) {
+  return useQuery({
+    queryKey: deepResearchKeys.reports(status, limit),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (status && status !== 'all') params.set('status', status)
+      params.set('limit', String(limit))
+      return fetchJson<DeepResearchReport[]>(`/api/research/deep?${params.toString()}`)
+    },
+    refetchInterval: 10000,
   })
 }
 
-export function useDeepResearchReport(reportId: string) {
+export function useDeepResearchReport(reportId?: string) {
   return useQuery({
-    queryKey: researchKeys.report(reportId),
-    queryFn: async (): Promise<DeepResearchReport> => {
-      const res = await fetch(`${API_URL}/api/research/deep/${reportId}`, { headers: getAuthHeaders() })
-      if (!res.ok) throw new Error('Failed to fetch research report')
-      return res.json()
-    },
+    queryKey: deepResearchKeys.report(reportId),
+    queryFn: () => fetchJson<DeepResearchReport>(`/api/research/deep/${reportId}`),
     enabled: !!reportId,
-    staleTime: 5000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status && !['completed', 'failed'].includes(status) ? 5000 : false
+    },
   })
 }
 
 export function useStartDeepResearch() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (data: DeepResearchRequest): Promise<DeepResearchReport> => {
-      const res = await fetch(`${API_URL}/api/research/deep`, {
+    mutationFn: (payload: DeepResearchRequest) =>
+      fetchJson<DeepResearchReport>('/api/research/deep', {
         method: 'POST',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!res.ok) throw new Error('Failed to start deep research')
-      return res.json()
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: researchKeys.reports() })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (report) => {
+      qc.invalidateQueries({ queryKey: deepResearchKeys.all })
+      qc.setQueryData(deepResearchKeys.report(report.id), report)
     },
   })
 }

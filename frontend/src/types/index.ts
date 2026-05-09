@@ -20,7 +20,7 @@ export interface Sprint {
 }
 
 // Task types
-export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'testing' | 'done' | 'blocked'
+export type TaskStatus = 'backlog' | 'todo' | 'on_hold' | 'in_progress' | 'review' | 'testing' | 'done' | 'blocked' | 'archived'
 export type TaskCategory = 'bug' | 'feature' | 'enhancement' | 'chore' | 'documentation'
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low'
 export type TaskSource = 'MANUAL' | 'QA_DETECTED' | 'ERROR_LOG' | 'ENHANCEMENT_ENGINE' | 'USER_REPORTED' | 'TODO_SCAN'
@@ -38,6 +38,18 @@ export interface Task {
   source: TaskSource
   source_reference?: string
   blocked_reason?: string
+  domain?: string
+  owner_agent?: string
+  due_at?: string
+  scheduled_for?: string
+  risk_level?: 'low' | 'medium' | 'high' | 'critical'
+  approval_state?: 'none' | 'pending' | 'approved' | 'rejected' | 'expired'
+  approval_id?: string
+  tags?: string[]
+  links?: Array<Record<string, unknown>>
+  sort_order?: number
+  estimate_points?: number
+  parent_task_id?: string
   started_at?: string
   completed_at?: string
   created_at: string
@@ -54,6 +66,19 @@ export interface TaskCreate {
   points?: number
   source?: TaskSource
   source_reference?: string
+  blocked_reason?: string
+  domain?: string
+  owner_agent?: string
+  due_at?: string
+  scheduled_for?: string
+  risk_level?: 'low' | 'medium' | 'high' | 'critical'
+  approval_state?: 'none' | 'pending' | 'approved' | 'rejected' | 'expired'
+  approval_id?: string
+  tags?: string[]
+  links?: Array<Record<string, unknown>>
+  sort_order?: number
+  estimate_points?: number
+  parent_task_id?: string
 }
 
 export interface TaskUpdate {
@@ -66,6 +91,61 @@ export interface TaskUpdate {
   priority?: TaskPriority
   points?: number
   blocked_reason?: string
+  domain?: string
+  owner_agent?: string
+  due_at?: string
+  scheduled_for?: string
+  risk_level?: 'low' | 'medium' | 'high' | 'critical'
+  approval_state?: 'none' | 'pending' | 'approved' | 'rejected' | 'expired'
+  approval_id?: string
+  tags?: string[]
+  links?: Array<Record<string, unknown>>
+  sort_order?: number
+  estimate_points?: number
+  parent_task_id?: string
+}
+
+export interface CompanyTaskEvent {
+  id: string
+  task_id: string
+  event_type: string
+  actor: string
+  summary?: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  created_at: string
+}
+
+export interface CompanyWorkItemReview {
+  id: string
+  task_id: string
+  score: number
+  recommendation: string
+  summary?: string
+  missing_info: string[]
+  action_steps: string[]
+  acceptance_criteria: string[]
+  automation_plan: Record<string, unknown>
+  source_links: Array<Record<string, unknown>>
+  reviewed_by: string
+  operator_run_id?: string
+  created_at: string
+  updated_at?: string
+}
+
+export interface CompanyDashboardReviewSummary {
+  overall_score: number
+  status: string
+  tasks_reviewed: number
+  critical_blockers: number
+  missing_info_count: number
+  archived_count: number
+  category_scores: Record<string, number>
+  recommendation_counts: Record<string, number>
+  weakest_tasks: Array<Record<string, unknown>>
+  reviews: CompanyWorkItemReview[]
+  last_run?: Record<string, unknown> | null
+  what_zero_did_last: Array<Record<string, unknown>>
 }
 
 export interface TaskMove {
@@ -938,10 +1018,23 @@ export interface AgentSettings {
 export interface SchedulerJob {
   id: string
   name: string
+  display_name?: string
+  description?: string
+  category: string
   next_run: string | null
   schedule?: string
   last_run?: string | null
-  enabled?: boolean
+  enabled: boolean
+  default_enabled?: boolean
+  configured?: boolean
+  registered?: boolean
+  controllable?: boolean
+  source?: 'configured' | 'runtime'
+  health?: 'green' | 'yellow' | 'red' | 'gray'
+  total_runs?: number
+  success_count?: number
+  failure_count?: number
+  avg_duration_s?: number
 }
 
 export interface SchedulerStatus {
@@ -949,6 +1042,30 @@ export interface SchedulerStatus {
   jobs: SchedulerJob[]
   job_count: number
   total_jobs?: number
+  enabled_jobs?: number
+  disabled_jobs?: number
+}
+
+export interface SchedulerJobToggleResult {
+  success: boolean
+  job_name: string
+  enabled: boolean
+  applied: boolean
+  job: SchedulerJob
+}
+
+export interface SchedulerJobToggleUpdate {
+  job_name: string
+  enabled: boolean
+  applied: boolean
+  job: SchedulerJob
+}
+
+export interface SchedulerJobsToggleResult {
+  success: boolean
+  enabled: boolean
+  count: number
+  updated: SchedulerJobToggleUpdate[]
 }
 
 export interface SchedulerAuditEntry {

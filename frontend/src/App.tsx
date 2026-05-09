@@ -43,7 +43,13 @@ import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
 import { MeetingSearchPage } from '@/pages/MeetingSearchPage'
 import { AiCompanyPage } from '@/pages/AiCompanyPage'
 import { DeepResearchPage } from '@/pages/DeepResearchPage'
+import { CompanyOsPage } from '@/pages/CompanyOsPage'
 import { ExperimentLabPage } from '@/pages/ExperimentLabPage'
+import { LoopsPage } from '@/pages/LoopsPage'
+import { SkillsPage } from '@/pages/SkillsPage'
+import { SkillDetailPage } from '@/pages/SkillDetailPage'
+import { SkillTeamsPage } from '@/pages/SkillTeamsPage'
+import { SkillTeamDetailPage } from '@/pages/SkillTeamDetailPage'
 import { CouncilRoomPage } from '@/pages/CouncilRoomPage'
 import { CharacterContentPage } from '@/pages/CharacterContentPage'
 import { CharacterDetailPage } from '@/pages/CharacterDetailPage'
@@ -57,6 +63,11 @@ import BrainEmployeePage from '@/pages/BrainEmployeePage'
 import { ReachyMotionLibraryPage } from '@/pages/ReachyMotionLibraryPage'
 import { ReachyTeleopPage } from '@/pages/ReachyTeleopPage'
 import { ReachyHomeAssistantPage } from '@/pages/ReachyHomeAssistantPage'
+import { ReachyMeetingsPage } from '@/pages/ReachyMeetingsPage'
+import { ReachyVoiceSettingsPage } from '@/pages/ReachyVoiceSettingsPage'
+import { ReachyRadioPage } from '@/pages/ReachyRadioPage'
+import { ReachyMemoryPage } from '@/pages/ReachyMemoryPage'
+import { MealsPage } from '@/pages/MealsPage'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 /**
@@ -130,14 +141,38 @@ function App() {
             <Route path="/meeting-search" element={<MeetingSearchPage />} />
             <Route path="/ai-company" element={<AiCompanyPage />} />
             <Route path="/deep-research" element={<DeepResearchPage />} />
+            <Route path="/company" element={<CompanyOsPage section="overview" />} />
+            <Route path="/company/operator" element={<CompanyOsPage section="operator" />} />
+            <Route path="/company/tasks" element={<CompanyOsPage section="tasks" />} />
+            <Route path="/company/agents" element={<CompanyOsPage section="agents" />} />
+            <Route path="/company/inbox" element={<CompanyOsPage section="inbox" />} />
+            <Route path="/company/approvals" element={<CompanyOsPage section="approvals" />} />
+            <Route path="/company/finance" element={<CompanyOsPage section="finance" />} />
+            <Route path="/company/legal" element={<CompanyOsPage section="legal" />} />
+            <Route path="/company/revenue" element={<CompanyOsPage section="revenue" />} />
+            <Route path="/company/product" element={<CompanyOsPage section="product" />} />
+            <Route path="/company/robotics" element={<CompanyOsPage section="robotics" />} />
+            <Route path="/company/marketing" element={<CompanyOsPage section="marketing" />} />
+            <Route path="/company/docs" element={<CompanyOsPage section="docs" />} />
             <Route path="/experiments" element={<ExperimentLabPage />} />
+            <Route path="/loops" element={<LoopsPage />} />
+            <Route path="/loops/:loopId" element={<LoopsPage />} />
+            <Route path="/skills" element={<SkillsPage />} />
+            <Route path="/skills/teams" element={<SkillTeamsPage />} />
+            <Route path="/skills/teams/:teamId" element={<SkillTeamDetailPage />} />
+            <Route path="/skills/:name" element={<SkillDetailPage />} />
             <Route path="/council" element={<CouncilRoomPage />} />
             <Route path="/brain" element={<BrainDashboardPage />} />
             <Route path="/brain/employee" element={<BrainEmployeePage />} />
             <Route path="/employee" element={<EmployeeDashboardPage />} />
             <Route path="/reachy" element={<ReachyMotionLibraryPage />} />
             <Route path="/reachy/teleop" element={<ReachyTeleopPage />} />
+            <Route path="/reachy/meetings" element={<ReachyMeetingsPage />} />
             <Route path="/reachy/home-assistant" element={<ReachyHomeAssistantPage />} />
+            <Route path="/reachy/voice-settings" element={<ReachyVoiceSettingsPage />} />
+            <Route path="/reachy/radio" element={<ReachyRadioPage />} />
+            <Route path="/reachy/memory" element={<ReachyMemoryPage />} />
+            <Route path="/meals" element={<ErrorBoundary pageName="Meals"><MealsPage /></ErrorBoundary>} />
             <Route path="/characters" element={<CharacterContentLayout />}>
               <Route index element={<ErrorBoundary pageName="CharacterContent"><CharacterContentPage /></ErrorBoundary>} />
               <Route path="autopilot" element={<ErrorBoundary pageName="CharacterAutopilot"><CharacterAutopilotPage /></ErrorBoundary>} />

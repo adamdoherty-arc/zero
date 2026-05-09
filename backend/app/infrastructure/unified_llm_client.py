@@ -9,7 +9,7 @@ Routes requests through the enhanced LLM Router with:
 - Usage tracking to PostgreSQL (llm_usage table)
 - Metrics recording for dashboards
 
-All existing services continue to work via get_ollama_client() which
+All existing services continue to work via get_llm_client() which
 delegates here transparently.
 """
 
@@ -126,19 +126,27 @@ class UnifiedLLMClient:
 
         provider_name, model_name, fallbacks = self._resolve(model, task_type)
 
-        # Budget check — force Ollama if budget exceeded for paid providers
-        if provider_name != "ollama":
+        # Budget check — force local (vLLM) if budget exceeded for paid providers
+        if provider_name not in ("vllm", "ollama"):
             provider_obj = self._get_provider(provider_name)
             est_tokens = sum(len(m.get("content", "")) for m in msgs) // 4
             est_cost = provider_obj.estimate_cost(est_tokens, est_tokens // 2, model_name)
             if not get_llm_router().check_budget(est_cost):
                 logger.warning(
-                    "llm_budget_exceeded_forcing_ollama",
+                    "llm_budget_exceeded_forcing_local",
                     provider=provider_name,
                     estimated_cost=est_cost,
                     remaining=get_llm_router().get_remaining_budget(),
                 )
-                provider_name, model_name = "ollama", "qwen3.6:35b-a3b-q8_0"
+                # Fall back to whichever local backend LOCAL_LLM_BACKEND picks.
+                import os as _os
+                _backend = _os.getenv("LOCAL_LLM_BACKEND", "vllm").strip().lower()
+                if _backend == "ollama":
+                    provider_name = "ollama"
+                    model_name = _os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
+                else:
+                    provider_name = "vllm"
+                    model_name = _os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")  # canonical alias resolves via shared-litellm
                 fallbacks = []
 
         return await self._execute_with_fallbacks(
@@ -175,6 +183,7 @@ class UnifiedLLMClient:
         prompt: str,
         *,
         output_schema: Optional[Union[dict, list]] = None,
+        model: Optional[str] = None,
         system: Optional[str] = None,
         task_type: str = "structured_output",
         temperature: float = 0.1,
@@ -190,6 +199,7 @@ class UnifiedLLMClient:
         Args:
             prompt: The user prompt describing what to extract/generate.
             output_schema: JSON schema or example to guide output shape.
+            model: Optional explicit provider/model override.
             system: Optional system prompt.
             task_type: Task type for routing (default: structured_output).
             temperature: Sampling temperature.
@@ -232,6 +242,7 @@ class UnifiedLLMClient:
 
                 raw_response = await self.chat(
                     prompt=call_prompt,
+                    model=model,
                     system=structured_system,
                     task_type=task_type,
                     temperature=temperature,
@@ -536,22 +547,41 @@ class UnifiedLLMClient:
         async with _LLM_SEMAPHORE:
             last_error = None
 
-            # Try primary
-            try:
-                return await self._call_provider(
-                    provider_name, model_name, messages,
-                    task_type, temperature, max_tokens,
-                    json_mode=json_mode,
-                    thinking_mode=thinking_mode,
-                )
-            except Exception as e:
-                last_error = e
-                logger.warning(
-                    "llm_primary_failed",
-                    provider=provider_name,
-                    model=model_name,
-                    error=str(e),
-                )
+            # Try primary with one retry on transient connection errors. LiteLLM
+            # in front of vLLM will sometimes drop the first call during a
+            # model swap ("Server disconnected without sending a response"),
+            # then succeed on the second. Retrying here avoids falling through
+            # to misconfigured fallbacks (e.g. expired MiniMax/Kimi keys).
+            for attempt in range(2):
+                try:
+                    return await self._call_provider(
+                        provider_name, model_name, messages,
+                        task_type, temperature, max_tokens,
+                        json_mode=json_mode,
+                        thinking_mode=thinking_mode,
+                    )
+                except Exception as e:
+                    last_error = e
+                    err_s = str(e)
+                    transient = (
+                        "Server disconnected" in err_s
+                        or "ReadError" in err_s
+                        or "ConnectError" in err_s
+                        or "RemoteProtocolError" in err_s
+                        or "ReadTimeout" in err_s
+                    )
+                    logger.warning(
+                        "llm_primary_failed",
+                        provider=provider_name,
+                        model=model_name,
+                        attempt=attempt + 1,
+                        transient=transient,
+                        error=err_s,
+                    )
+                    if attempt == 0 and transient:
+                        await asyncio.sleep(1.0)
+                        continue
+                    break
 
             # Try fallbacks (thinking_mode disabled for fallbacks — only Kimi supports it)
             for fb_provider, fb_model in fallbacks:
@@ -560,7 +590,7 @@ class UnifiedLLMClient:
                     return await self._call_provider(
                         fb_provider, fb_model, messages,
                         task_type, temperature, max_tokens,
-                        json_mode=json_mode if fb_provider in ("gemini", "kimi") else False,
+                        json_mode=json_mode if fb_provider in ("gemini", "kimi", "vllm") else False,
                     )
                 except Exception as e:
                     last_error = e
@@ -584,13 +614,23 @@ class UnifiedLLMClient:
         json_mode: bool = False,
         thinking_mode: bool = False,
     ) -> str:
-        """Call a specific provider with metrics + cost tracking."""
+        """Call a specific provider with metrics + cost tracking + Langfuse trace.
+
+        Langfuse tracing (added in carosel.txt blueprint Phase 1) wraps every
+        LLM call in a ``generation`` span. The tracer is a no-op when
+        ``ZERO_LANGFUSE_PUBLIC_KEY`` is unset, so existing services see no
+        behaviour change until keys are added.
+        """
         provider = self._get_provider(provider_name)
         t0 = time.monotonic()
         prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
         success = True
         error_msg = None
         result = ""
+
+        # Langfuse trace — lazy-imported to keep import-time cost low.
+        from app.infrastructure.langfuse_client import get_langfuse_tracer
+        tracer = get_langfuse_tracer()
 
         try:
             chat_kwargs: Dict[str, Any] = {
@@ -599,12 +639,37 @@ class UnifiedLLMClient:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-            if json_mode and provider_name in ("gemini", "kimi"):
+            if json_mode and provider_name in ("gemini", "kimi", "vllm"):
                 chat_kwargs["json_mode"] = True
             if thinking_mode and provider_name == "kimi":
                 chat_kwargs["thinking_mode"] = True
-            result = await provider.chat(**chat_kwargs)
-            return result
+
+            async with tracer.trace_generation(
+                name=task_type or "chat",
+                model=f"{provider_name}/{model_name}",
+                metadata={
+                    "provider": provider_name,
+                    "task_type": task_type,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "json_mode": json_mode,
+                    "thinking_mode": thinking_mode,
+                },
+                input_messages=messages,
+            ) as generation:
+                result = await provider.chat(**chat_kwargs)
+                try:
+                    generation.update(
+                        output=result,
+                        usage={
+                            "input": prompt_tokens,
+                            "output": len(result) // 4 if result else 0,
+                            "unit": "TOKENS",
+                        },
+                    )
+                except Exception:  # noqa: BLE001 — tracing must never break calls
+                    pass
+                return result
         except Exception as e:
             success = False
             error_msg = str(e)

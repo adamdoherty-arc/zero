@@ -50,6 +50,11 @@ async def ambient_vision_tick() -> dict:
         return {"status": "skipped_busy"}
 
     async with _TICK_LOCK:
+        from app.infrastructure.config import get_settings
+
+        if not get_settings().ambient_vision_enabled:
+            return {"status": "skipped_disabled"}
+
         from app.services.sight import get_sight_registry
         from app.services.vision_vlm_service import get_vision_vlm_service
 

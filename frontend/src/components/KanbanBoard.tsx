@@ -27,6 +27,7 @@ interface KanbanBoardProps {
 const COLUMN_ORDER: TaskStatus[] = [
   'backlog',
   'todo',
+  'on_hold',
   'in_progress',
   'review',
   'testing',
@@ -37,21 +38,25 @@ const COLUMN_ORDER: TaskStatus[] = [
 const COLUMN_LABELS: Record<TaskStatus, string> = {
   backlog: 'Backlog',
   todo: 'To Do',
+  on_hold: 'On Hold',
   in_progress: 'In Progress',
   review: 'Review',
   testing: 'Testing',
   done: 'Done',
   blocked: 'Blocked',
+  archived: 'Archived',
 }
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
   backlog: 'border-gray-600',
   todo: 'border-blue-600',
+  on_hold: 'border-amber-600',
   in_progress: 'border-yellow-600',
   review: 'border-purple-600',
   testing: 'border-orange-600',
   done: 'border-green-600',
   blocked: 'border-red-600',
+  archived: 'border-slate-600',
 }
 
 export function KanbanBoard({ board, onTaskClick }: KanbanBoardProps) {

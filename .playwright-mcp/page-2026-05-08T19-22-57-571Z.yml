@@ -1,0 +1,264 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Company OS
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Command Center" [ref=e23] [cursor=pointer]:
+              - /url: /company
+              - img [ref=e24]
+              - generic [ref=e28]: Command Center
+          - listitem [ref=e29]:
+            - link "Operator" [ref=e30] [cursor=pointer]:
+              - /url: /company/operator
+              - img [ref=e31]
+              - generic [ref=e33]: Operator
+          - listitem [ref=e34]:
+            - link "Tasks" [ref=e35] [cursor=pointer]:
+              - /url: /company/tasks
+              - img [ref=e36]
+              - generic [ref=e40]: Tasks
+          - listitem [ref=e41]:
+            - link "Agents" [ref=e42] [cursor=pointer]:
+              - /url: /company/agents
+              - img [ref=e43]
+              - generic [ref=e46]: Agents
+          - listitem [ref=e47]:
+            - link "Agent Inbox" [ref=e48] [cursor=pointer]:
+              - /url: /company/inbox
+              - img [ref=e49]
+              - generic [ref=e52]: Agent Inbox
+          - listitem [ref=e53]:
+            - link "Approvals" [ref=e54] [cursor=pointer]:
+              - /url: /company/approvals
+              - img [ref=e55]
+              - generic [ref=e58]: Approvals
+          - listitem [ref=e59]:
+            - link "Finance" [ref=e60] [cursor=pointer]:
+              - /url: /company/finance
+              - img [ref=e61]
+              - generic [ref=e64]: Finance
+          - listitem [ref=e65]:
+            - link "Legal / LLC" [ref=e66] [cursor=pointer]:
+              - /url: /company/legal
+              - img [ref=e67]
+              - generic [ref=e73]: Legal / LLC
+          - listitem [ref=e74]:
+            - link "Consulting / CRM" [ref=e75] [cursor=pointer]:
+              - /url: /company/revenue
+              - img [ref=e76]
+              - generic [ref=e79]: Consulting / CRM
+          - listitem [ref=e80]:
+            - link "Product Studio" [ref=e81] [cursor=pointer]:
+              - /url: /company/product
+              - img [ref=e82]
+              - generic [ref=e87]: Product Studio
+          - listitem [ref=e88]:
+            - link "Robotics Lab" [ref=e89] [cursor=pointer]:
+              - /url: /company/robotics
+              - img [ref=e90]
+              - generic [ref=e93]: Robotics Lab
+          - listitem [ref=e94]:
+            - link "Marketing" [ref=e95] [cursor=pointer]:
+              - /url: /company/marketing
+              - img [ref=e96]
+              - generic [ref=e99]: Marketing
+          - listitem [ref=e100]:
+            - link "Docs / Sources" [ref=e101] [cursor=pointer]:
+              - /url: /company/docs
+              - img [ref=e102]
+              - generic [ref=e105]: Docs / Sources
+      - generic [ref=e106]:
+        - generic [ref=e107]: Company Adjacent
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "AI Company Dashboard" [ref=e110] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e111]
+              - generic [ref=e114]: AI Company Dashboard
+          - listitem [ref=e115]:
+            - link "LLC Guidance" [ref=e116] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e117]
+              - generic [ref=e123]: LLC Guidance
+          - listitem [ref=e124]:
+            - link "Deep Research" [ref=e125] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e126]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "CRM" [ref=e131] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e132]
+              - generic [ref=e135]: CRM
+          - listitem [ref=e136]:
+            - link "Reachy" [ref=e137] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e138]
+              - generic [ref=e141]: Reachy
+          - listitem [ref=e142]:
+            - link "Reachy Memory" [ref=e143] [cursor=pointer]:
+              - /url: /reachy/memory
+              - img [ref=e144]
+              - generic [ref=e154]: Reachy Memory
+          - listitem [ref=e155]:
+            - link "Reachy Radio" [ref=e156] [cursor=pointer]:
+              - /url: /reachy/radio
+              - img [ref=e157]
+              - generic [ref=e163]: Reachy Radio
+          - listitem [ref=e164]:
+            - link "Reachy Teleop" [ref=e165] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e166]
+              - generic [ref=e168]: Reachy Teleop
+          - listitem [ref=e169]:
+            - link "Reachy Meetings" [ref=e170] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e171]
+              - generic [ref=e175]: Reachy Meetings
+          - listitem [ref=e176]:
+            - link "Reachy + HA" [ref=e177] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e178]
+              - generic [ref=e181]: Reachy + HA
+          - listitem [ref=e182]:
+            - link "Reachy Voice Settings" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/voice-settings
+              - img [ref=e184]
+              - generic [ref=e185]: Reachy Voice Settings
+    - list [ref=e187]:
+      - listitem [ref=e188]:
+        - button "Zero Company OS" [ref=e189] [cursor=pointer]:
+          - generic [ref=e191]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e192]
+  - main [ref=e193]:
+    - generic [ref=e194]:
+      - generic [ref=e195]:
+        - button "Toggle Sidebar" [ref=e196] [cursor=pointer]:
+          - img
+          - generic [ref=e197]: Toggle Sidebar
+        - generic [ref=e198]:
+          - generic [ref=e199]: Zero
+          - generic [ref=e200]: /
+          - generic [ref=e201]: Reachy
+        - button "Search... Ctrl K" [ref=e202] [cursor=pointer]:
+          - img [ref=e203]
+          - generic [ref=e206]: Search...
+          - generic [ref=e207]:
+            - generic [ref=e208]: Ctrl
+            - text: K
+        - button "Talk to Reachy" [ref=e209] [cursor=pointer]:
+          - img [ref=e211]
+          - generic [ref=e214]: Talk to Reachy
+        - button "Local vLLM" [ref=e216] [cursor=pointer]:
+          - generic [ref=e218]: Local vLLM
+        - generic [ref=e219]:
+          - link "Reachy down" [ref=e809] [cursor=pointer]:
+            - /url: /reachy
+            - img [ref=e222]
+            - generic [ref=e225]: Reachy down
+          - button "Re-link" [ref=e226] [cursor=pointer]:
+            - img [ref=e227]
+            - generic [ref=e232]: Re-link
+        - button "Eyes on" [ref=e233] [cursor=pointer]:
+          - img [ref=e234]
+          - generic [ref=e237]: Eyes on
+        - button "9+" [ref=e239] [cursor=pointer]:
+          - img [ref=e240]
+          - generic [ref=e243]: 9+
+      - navigation [ref=e244]:
+        - link "Personal" [ref=e245] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e246] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e247] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e248] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e249] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e250]:
+      - generic [ref=e251]:
+        - generic [ref=e253]:
+          - img [ref=e255]
+          - generic [ref=e258]:
+            - heading "Reachy Assistant Console" [level=1] [ref=e259]
+            - paragraph [ref=e260]: Start a live assistant, keep the body calm, then open controls only when you need them.
+          - generic "No recent motor hardware faults in daemon logs." [ref=e810]: Reachy offline
+        - generic [ref=e263]:
+          - button "Console" [ref=e264] [cursor=pointer]
+          - button "Body Controls" [ref=e265] [cursor=pointer]
+          - button "Automations" [ref=e266] [cursor=pointer]
+          - button "Motion Library" [ref=e267] [cursor=pointer]
+          - button "Diagnostics" [ref=e268] [cursor=pointer]
+        - generic [ref=e811]: Diagnostics
+        - generic [ref=e812]:
+          - button "Reachy daemonrunningpid 47416 uptime 1h 12m" [ref=e813] [cursor=pointer]:
+            - generic [ref=e814]:
+              - img [ref=e815]
+              - generic [ref=e817]:
+                - generic [ref=e818]:
+                  - text: Reachy daemonrunning
+                  - generic [ref=e819]: pid 47416
+                - generic [ref=e820]: uptime 1h 12m
+            - img [ref=e821]
+          - generic [ref=e823]:
+            - generic [ref=e826]:
+              - generic [ref=e827]: Backend (Docker) — ready
+              - generic [ref=e828]: Docker backend reachable at http://127.0.0.1:18792.
+            - generic [ref=e829]: Ready — click a button to control the daemon.
+            - generic [ref=e830]:
+              - button "Smart Re-link" [ref=e831] [cursor=pointer]:
+                - img [ref=e832]
+                - text: Smart Re-link
+              - button "Stop" [ref=e837] [cursor=pointer]:
+                - img [ref=e838]
+                - text: Stop
+              - button "Reset audio" [ref=e842] [cursor=pointer]:
+                - img [ref=e843]
+                - text: Reset audio
+              - generic [ref=e845] [cursor=pointer]:
+                - checkbox "Auto-restart watchdog" [ref=e846]
+                - generic [ref=e847]: Auto-restart watchdog
+              - button "Show logs" [ref=e848] [cursor=pointer]:
+                - img [ref=e849]
+                - text: Show logs
+              - button "Diagnostics" [ref=e851] [cursor=pointer]:
+                - img [ref=e852]
+                - text: Diagnostics
+            - generic [ref=e855]:
+              - generic [ref=e856]: Recent restarts
+              - list [ref=e857]:
+                - listitem [ref=e858]:
+                  - generic [ref=e859]: 5/8/2026, 2:10:15 PM
+                  - generic [ref=e860]: manual
+                  - generic [ref=e861]: pid 47416
+                - listitem [ref=e862]:
+                  - generic [ref=e863]: 5/8/2026, 1:36:13 PM
+                  - generic [ref=e864]: relink
+                  - generic [ref=e865]: pid 34256
+                - listitem [ref=e866]:
+                  - generic [ref=e867]: 5/8/2026, 1:32:05 PM
+                  - generic [ref=e868]: manual
+                  - generic [ref=e869]: pid 47940
+                - listitem [ref=e870]:
+                  - generic [ref=e871]: 5/8/2026, 12:56:39 PM
+                  - generic [ref=e872]: relink
+                  - generic [ref=e873]: pid 35060
+                - listitem [ref=e874]:
+                  - generic [ref=e875]: 5/8/2026, 11:36:33 AM
+                  - generic [ref=e876]: manual
+                  - generic [ref=e877]: pid 24092
+  - button "Voice settings" [ref=e801] [cursor=pointer]:
+    - img [ref=e802]
+  - button "Start recording a voice command" [ref=e805] [cursor=pointer]:
+    - img [ref=e806]

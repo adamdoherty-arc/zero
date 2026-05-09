@@ -30,6 +30,8 @@ from typing import Any, Optional
 
 import structlog
 
+from app.services.reachy_motion_policy import body_motion_allowed
+
 logger = structlog.get_logger()
 
 
@@ -131,6 +133,15 @@ class HomeAssistantWatcher:
                 emotion = rule.get("emotion")
                 dance = rule.get("dance")
                 if not (emotion or dance):
+                    continue
+                if not body_motion_allowed(surface=f"home_assistant:{entity_id}").get("allowed"):
+                    logger.info(
+                        "ha_gesture_blocked",
+                        entity=entity_id,
+                        emotion=emotion,
+                        dance=dance,
+                        reason="body_motion_locked",
+                    )
                     continue
                 svc = get_reachy_service()
                 if not await svc.is_connected():

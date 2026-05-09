@@ -1,0 +1,485 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Company OS
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Command Center" [ref=e23] [cursor=pointer]:
+              - /url: /company
+              - img [ref=e24]
+              - generic [ref=e28]: Command Center
+          - listitem [ref=e29]:
+            - link "Operator" [ref=e30] [cursor=pointer]:
+              - /url: /company/operator
+              - img [ref=e31]
+              - generic [ref=e33]: Operator
+          - listitem [ref=e34]:
+            - link "Tasks" [ref=e35] [cursor=pointer]:
+              - /url: /company/tasks
+              - img [ref=e36]
+              - generic [ref=e40]: Tasks
+          - listitem [ref=e41]:
+            - link "Agents" [ref=e42] [cursor=pointer]:
+              - /url: /company/agents
+              - img [ref=e43]
+              - generic [ref=e46]: Agents
+          - listitem [ref=e47]:
+            - link "Agent Inbox" [ref=e48] [cursor=pointer]:
+              - /url: /company/inbox
+              - img [ref=e49]
+              - generic [ref=e52]: Agent Inbox
+          - listitem [ref=e53]:
+            - link "Approvals" [ref=e54] [cursor=pointer]:
+              - /url: /company/approvals
+              - img [ref=e55]
+              - generic [ref=e58]: Approvals
+          - listitem [ref=e59]:
+            - link "Finance" [ref=e60] [cursor=pointer]:
+              - /url: /company/finance
+              - img [ref=e61]
+              - generic [ref=e64]: Finance
+          - listitem [ref=e65]:
+            - link "Legal / LLC" [ref=e66] [cursor=pointer]:
+              - /url: /company/legal
+              - img [ref=e67]
+              - generic [ref=e73]: Legal / LLC
+          - listitem [ref=e74]:
+            - link "Consulting / CRM" [ref=e75] [cursor=pointer]:
+              - /url: /company/revenue
+              - img [ref=e76]
+              - generic [ref=e79]: Consulting / CRM
+          - listitem [ref=e80]:
+            - link "Product Studio" [ref=e81] [cursor=pointer]:
+              - /url: /company/product
+              - img [ref=e82]
+              - generic [ref=e87]: Product Studio
+          - listitem [ref=e88]:
+            - link "Robotics Lab" [ref=e89] [cursor=pointer]:
+              - /url: /company/robotics
+              - img [ref=e90]
+              - generic [ref=e93]: Robotics Lab
+          - listitem [ref=e94]:
+            - link "Marketing" [ref=e95] [cursor=pointer]:
+              - /url: /company/marketing
+              - img [ref=e96]
+              - generic [ref=e99]: Marketing
+          - listitem [ref=e100]:
+            - link "Docs / Sources" [ref=e101] [cursor=pointer]:
+              - /url: /company/docs
+              - img [ref=e102]
+              - generic [ref=e105]: Docs / Sources
+      - generic [ref=e106]:
+        - generic [ref=e107]: Company Adjacent
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "AI Company Dashboard" [ref=e110] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e111]
+              - generic [ref=e114]: AI Company Dashboard
+          - listitem [ref=e115]:
+            - link "LLC Guidance" [ref=e116] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e117]
+              - generic [ref=e123]: LLC Guidance
+          - listitem [ref=e124]:
+            - link "Deep Research" [ref=e125] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e126]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "CRM" [ref=e131] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e132]
+              - generic [ref=e135]: CRM
+          - listitem [ref=e136]:
+            - link "Reachy" [ref=e137] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e138]
+              - generic [ref=e141]: Reachy
+          - listitem [ref=e142]:
+            - link "Reachy Memory" [ref=e143] [cursor=pointer]:
+              - /url: /reachy/memory
+              - img [ref=e144]
+              - generic [ref=e154]: Reachy Memory
+          - listitem [ref=e155]:
+            - link "Reachy Radio" [ref=e156] [cursor=pointer]:
+              - /url: /reachy/radio
+              - img [ref=e157]
+              - generic [ref=e163]: Reachy Radio
+          - listitem [ref=e164]:
+            - link "Reachy Teleop" [ref=e165] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e166]
+              - generic [ref=e168]: Reachy Teleop
+          - listitem [ref=e169]:
+            - link "Reachy Meetings" [ref=e170] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e171]
+              - generic [ref=e175]: Reachy Meetings
+          - listitem [ref=e176]:
+            - link "Reachy + HA" [ref=e177] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e178]
+              - generic [ref=e181]: Reachy + HA
+          - listitem [ref=e182]:
+            - link "Reachy Voice Settings" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/voice-settings
+              - img [ref=e184]
+              - generic [ref=e185]: Reachy Voice Settings
+    - list [ref=e187]:
+      - listitem [ref=e188]:
+        - button "Zero Company OS" [ref=e189] [cursor=pointer]:
+          - generic [ref=e191]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e192]
+  - main [ref=e193]:
+    - generic [ref=e194]:
+      - generic [ref=e195]:
+        - button "Toggle Sidebar" [ref=e196] [cursor=pointer]:
+          - img
+          - generic [ref=e197]: Toggle Sidebar
+        - generic [ref=e198]:
+          - generic [ref=e199]: Zero
+          - generic [ref=e200]: /
+          - generic [ref=e201]: Reachy
+        - button "Search... Ctrl K" [ref=e202] [cursor=pointer]:
+          - img [ref=e203]
+          - generic [ref=e206]: Search...
+          - generic [ref=e207]:
+            - generic [ref=e208]: Ctrl
+            - text: K
+        - button "Interactive Mode off" [ref=e209]:
+          - img [ref=e211]
+          - generic [ref=e217]: Interactive Mode off
+        - button "Loading…" [ref=e219] [cursor=pointer]:
+          - generic [ref=e221]: Loading…
+        - link "Reachy …" [ref=e223] [cursor=pointer]:
+          - /url: /reachy
+          - img [ref=e225]
+          - generic [ref=e228]: Reachy …
+        - button "Eyes on" [disabled] [ref=e229]:
+          - img [ref=e230]
+          - generic [ref=e232]: Eyes on
+        - button [ref=e234] [cursor=pointer]:
+          - img [ref=e235]
+      - navigation [ref=e238]:
+        - link "Personal" [ref=e239] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e240] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e241] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e242] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e243] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e244]:
+      - generic [ref=e245]:
+        - generic [ref=e247]:
+          - img [ref=e249]
+          - generic [ref=e252]:
+            - heading "Reachy Assistant Console" [level=1] [ref=e253]
+            - paragraph [ref=e254]: Loading assistant console...
+          - generic [ref=e255]: Reachy offline
+        - generic [ref=e257]:
+          - button "Console" [ref=e258] [cursor=pointer]
+          - button "Body Controls" [ref=e259] [cursor=pointer]
+          - button "Automations" [ref=e260] [cursor=pointer]
+          - button "Motion Library" [ref=e261] [cursor=pointer]
+          - button "Diagnostics" [ref=e262] [cursor=pointer]
+        - generic [ref=e263]:
+          - generic [ref=e264]:
+            - generic [ref=e265]:
+              - generic [ref=e266]:
+                - generic [ref=e267]:
+                  - generic [ref=e268]:
+                    - img [ref=e269]
+                    - text: Robot Assistant Console
+                  - heading "Reachy is in ambient mode" [level=2] [ref=e272]
+                  - paragraph [ref=e273]: Loading companion state...
+                - generic [ref=e274]: ambient
+              - generic [ref=e275]:
+                - button "Ambient" [ref=e276] [cursor=pointer]:
+                  - img [ref=e277]
+                  - text: Ambient
+                - button "Focus" [ref=e280] [cursor=pointer]:
+                  - img [ref=e281]
+                  - text: Focus
+                - button "Meeting" [ref=e284] [cursor=pointer]:
+                  - img [ref=e285]
+                  - text: Meeting
+                - button "Privacy" [ref=e289] [cursor=pointer]:
+                  - img [ref=e290]
+                  - text: Privacy
+                - button "Sleep" [ref=e293] [cursor=pointer]:
+                  - img [ref=e294]
+                  - text: Sleep
+              - generic [ref=e296]:
+                - generic [ref=e297]:
+                  - generic [ref=e298]:
+                    - img [ref=e299]
+                    - text: Live conversation
+                  - generic "idle" [ref=e302]
+                - generic [ref=e303]:
+                  - generic [ref=e304]:
+                    - img [ref=e305]
+                    - text: Wake loop
+                  - generic "Checking" [ref=e311]
+                - generic [ref=e312]:
+                  - generic [ref=e313]:
+                    - img [ref=e314]
+                    - text: Body safety
+                  - generic "Checking" [ref=e317]
+                - generic [ref=e318]:
+                  - generic [ref=e319]:
+                    - img [ref=e320]
+                    - text: Current senses
+                  - generic "mic off / camera off" [ref=e323]
+              - generic [ref=e324]:
+                - generic [ref=e325]:
+                  - generic [ref=e326]: listening
+                  - generic [ref=e327]: transcribing
+                  - generic [ref=e328]: thinking
+                  - generic [ref=e329]: speaking
+                  - generic [ref=e330]: moving
+                  - generic [ref=e331]: recovering
+                  - generic [ref=e332]: stalled
+                - generic [ref=e333]:
+                  - generic [ref=e334]:
+                    - text: Input
+                    - generic [ref=e335]: unknown · unknown
+                  - generic [ref=e336]:
+                    - text: Output
+                    - generic [ref=e337]: unknown · not ready
+              - generic [ref=e338]:
+                - button "Recover Voice" [ref=e339] [cursor=pointer]:
+                  - img [ref=e340]
+                  - text: Recover Voice
+                - button "Switch Mic" [disabled] [ref=e342]:
+                  - img [ref=e343]
+                  - text: Switch Mic
+                - button "Quiet Mode" [disabled] [ref=e347]:
+                  - img [ref=e348]
+                  - text: Quiet Mode
+                - button "Enable Body" [disabled] [ref=e351]:
+                  - img [ref=e352]
+                  - text: Enable Body
+                - link "Personality" [ref=e354] [cursor=pointer]:
+                  - /url: /reachy/voice-settings
+                  - img [ref=e355]
+                  - text: Personality
+                - button "Settle" [ref=e365] [cursor=pointer]:
+                  - img [ref=e366]
+                  - text: Settle
+                - button "Preview Persona" [disabled] [ref=e371]:
+                  - img [ref=e372]
+                  - text: Preview Persona
+                - button "What Did Reachy Notice?" [ref=e376] [cursor=pointer]:
+                  - img [ref=e377]
+                  - text: What Did Reachy Notice?
+            - generic [ref=e379]:
+              - generic [ref=e380]:
+                - generic [ref=e381]:
+                  - generic [ref=e382]: Persona
+                  - heading "Companion" [level=3] [ref=e383]
+                - img [ref=e384]
+              - paragraph [ref=e394]: Warm, attentive, present.
+              - generic [ref=e395]:
+                - generic [ref=e396]:
+                  - generic [ref=e397]: Voice
+                  - generic [ref=e398]: default
+                - generic [ref=e399]:
+                  - generic [ref=e400]: Motion
+                  - generic [ref=e401]: none
+              - generic [ref=e403]: Allowed tools
+          - generic [ref=e404]:
+            - generic [ref=e406]:
+              - heading "Repair Cards" [level=3] [ref=e407]
+              - img [ref=e408]
+            - generic [ref=e411]:
+              - heading "Companion Skills" [level=3] [ref=e412]
+              - generic [ref=e413]: policy gated
+          - generic [ref=e414]:
+            - generic [ref=e415]:
+              - heading "Recent Actions" [level=3] [ref=e416]
+              - generic [ref=e417]: typed companion events
+            - paragraph [ref=e418]: No companion events yet.
+        - generic [ref=e419]: Live Conversation
+        - generic [ref=e420]:
+          - generic [ref=e421]:
+            - img [ref=e423]
+            - generic [ref=e430]:
+              - generic [ref=e431]: Robot Assistant
+              - generic [ref=e432]: Add a key in voice settings to enable.
+            - generic [ref=e433]:
+              - generic "Body motion status" [ref=e434]:
+                - img [ref=e435]
+                - text: Body unknown
+              - button "Settle" [ref=e438] [cursor=pointer]:
+                - img [ref=e439]
+                - text: Settle
+              - button "Start Robot Assistant" [disabled] [ref=e444]
+          - generic [ref=e447]:
+            - img [ref=e448]
+            - text: Checking assistant readiness...
+          - generic [ref=e450]:
+            - generic [ref=e451]: Body
+            - generic [ref=e452]:
+              - img [ref=e453]
+              - text: Checking Body
+          - generic [ref=e455]:
+            - button "Mic standby" [disabled] [ref=e456]:
+              - img [ref=e457]
+              - text: Mic standby
+            - button "Interrupt" [disabled] [ref=e460]:
+              - img [ref=e461]
+              - text: Interrupt
+            - button "Recover Voice" [ref=e466] [cursor=pointer]:
+              - img [ref=e467]
+              - text: Recover Voice
+            - button "Reachy mic" [ref=e469] [cursor=pointer]:
+              - img [ref=e470]
+              - text: Reachy mic
+            - button "Quiet Mode" [ref=e473] [cursor=pointer]:
+              - img [ref=e474]
+              - text: Quiet Mode
+            - link "Personality" [ref=e477] [cursor=pointer]:
+              - /url: /reachy/voice-settings
+              - img [ref=e478]
+              - text: Personality
+            - button "Auto motion off" [disabled] [ref=e481]:
+              - img [ref=e482]
+              - text: Auto motion off
+            - button "Swap → Local (vLLM)" [disabled] [ref=e488]:
+              - img [ref=e489]
+              - text: Swap → Local (vLLM)
+            - button "Reset" [disabled] [ref=e492]:
+              - img [ref=e493]
+              - text: Reset
+            - button "End" [disabled] [ref=e496]:
+              - img [ref=e497]
+              - text: End
+            - link "Settings" [ref=e499] [cursor=pointer]:
+              - /url: /reachy/voice-settings
+              - img [ref=e500]
+              - text: Settings
+            - generic "Waiting for Reachy speaker status" [ref=e503]:
+              - img [ref=e504]
+              - text: Robot speaker...
+            - button "Computer on" [ref=e507] [cursor=pointer]:
+              - img [ref=e508]
+              - text: Computer on
+            - generic [ref=e511]:
+              - img [ref=e512]
+              - slider "Reachy speaker volume" [ref=e516]: "70"
+              - generic [ref=e517]: —
+            - button "Look at me" [ref=e518] [cursor=pointer]:
+              - img [ref=e519]
+              - text: Look at me
+            - button "Ahead" [ref=e522] [cursor=pointer]:
+              - img [ref=e523]
+              - text: Ahead
+            - generic [ref=e526]:
+              - textbox "Type a message…" [disabled] [ref=e527]
+              - button "Send text turn" [disabled] [ref=e528]:
+                - img [ref=e529]
+        - generic [ref=e532]: More Reachy
+        - generic [ref=e533]:
+          - link "Teleop Direct head, body, antenna control with sliders and target pose." [ref=e534] [cursor=pointer]:
+            - /url: /reachy/teleop
+            - img [ref=e536]
+            - generic [ref=e538]:
+              - generic [ref=e539]:
+                - text: Teleop
+                - img [ref=e540]
+              - generic [ref=e542]: Direct head, body, antenna control with sliders and target pose.
+          - link "Meetings Meeting recording with Reachy presence and direction-of-arrival tracking." [ref=e543] [cursor=pointer]:
+            - /url: /reachy/meetings
+            - img [ref=e545]
+            - generic [ref=e549]:
+              - generic [ref=e550]:
+                - text: Meetings
+                - img [ref=e551]
+              - generic [ref=e553]: Meeting recording with Reachy presence and direction-of-arrival tracking.
+          - link "Voice Settings STT/LLM/TTS picker for the classic push-to-talk pipeline." [ref=e554] [cursor=pointer]:
+            - /url: /reachy/voice-settings
+            - img [ref=e556]
+            - generic [ref=e557]:
+              - generic [ref=e558]:
+                - text: Voice Settings
+                - img [ref=e559]
+              - generic [ref=e561]: STT/LLM/TTS picker for the classic push-to-talk pipeline.
+          - link "Home Assistant Bridge Reachy to your HA entities (lights, locks, sensors)." [ref=e562] [cursor=pointer]:
+            - /url: /reachy/home-assistant
+            - img [ref=e564]
+            - generic [ref=e567]:
+              - generic [ref=e568]:
+                - text: Home Assistant
+                - img [ref=e569]
+              - generic [ref=e571]: Bridge Reachy to your HA entities (lights, locks, sensors).
+          - link "Radio Beat-tracked dance mode — Reachy moves to the music." [ref=e572] [cursor=pointer]:
+            - /url: /reachy/radio
+            - img [ref=e574]
+            - generic [ref=e580]:
+              - generic [ref=e581]:
+                - text: Radio
+                - img [ref=e582]
+              - generic [ref=e584]: Beat-tracked dance mode — Reachy moves to the music.
+        - generic [ref=e585]: Presence
+        - generic [ref=e586]: Conversation
+        - generic [ref=e587]:
+          - generic [ref=e588]:
+            - generic [ref=e589]:
+              - generic [ref=e590]: Active stack
+              - generic [ref=e591]:
+                - generic [ref=e592]:
+                  - generic [ref=e593]: STT
+                  - generic [ref=e594]: faster-whisper/…
+                - generic [ref=e595]:
+                  - generic [ref=e596]: LLM
+                  - generic [ref=e597]: …/…
+                - generic [ref=e598]:
+                  - generic [ref=e599]: TTS
+                  - generic [ref=e600]: piper/…
+            - generic [ref=e601]:
+              - button "Voice model settings" [ref=e602] [cursor=pointer]:
+                - img [ref=e603]
+              - link "Full settings" [ref=e606] [cursor=pointer]:
+                - /url: /reachy/voice-settings
+          - generic [ref=e607]:
+            - button "Hold to talk to Reachy" [ref=e608] [cursor=pointer]:
+              - img [ref=e609]
+              - text: Hold to talk to Reachy
+            - generic [ref=e613]:
+              - generic [ref=e614]:
+                - generic [ref=e616]: Hear
+                - generic [ref=e617]: →
+              - generic [ref=e618]:
+                - generic [ref=e620]: Think
+                - generic [ref=e621]: →
+              - generic [ref=e624]: Speak
+        - generic [ref=e625]:
+          - heading "Reachy remembers" [level=2] [ref=e627]:
+            - img [ref=e628]
+            - text: Reachy remembers
+          - paragraph [ref=e638]: No notes yet. After a few turns Reachy will start remembering things about you automatically, or add one below.
+          - generic [ref=e639]:
+            - combobox [ref=e640]:
+              - option "preference" [selected]
+              - option "correction"
+              - option "fact"
+              - option "topic"
+            - textbox "Teach Reachy something durable about you…" [ref=e641]
+            - button "Remember" [disabled] [ref=e642]
+  - button "Voice settings" [ref=e643] [cursor=pointer]:
+    - img [ref=e644]
+  - button "Start recording a voice command" [ref=e647] [cursor=pointer]:
+    - img [ref=e648]

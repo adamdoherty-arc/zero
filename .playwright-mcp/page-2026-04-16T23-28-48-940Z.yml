@@ -1,0 +1,545 @@
+- generic [active] [ref=e1]:
+  - img
+  - generic [ref=e2]:
+    - region "Notifications alt+T"
+    - generic [ref=e3]:
+      - generic [ref=e5]:
+        - generic [ref=e7]:
+          - link "Go to TikTok For You feed" [ref=e9] [cursor=pointer]:
+            - /url: /
+            - img [ref=e10]
+            - strong: TikTok
+          - searchbox "Search" [ref=e20] [cursor=pointer]:
+            - generic [ref=e21]:
+              - img [ref=e24]
+              - generic [ref=e26]: Search
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - link "For You" [ref=e30] [cursor=pointer]:
+              - /url: /
+              - listitem "For You" [ref=e31]:
+                - generic [ref=e32]:
+                  - img [ref=e35]
+                  - generic [ref=e37]: For You
+            - link "Shop" [ref=e39] [cursor=pointer]:
+              - /url: /shop
+              - listitem "Shop" [ref=e40]:
+                - generic [ref=e41]:
+                  - img [ref=e45]
+                  - generic [ref=e48]: Shop
+            - link "Explore" [ref=e50] [cursor=pointer]:
+              - /url: /explore
+              - listitem "Explore" [ref=e51]:
+                - generic [ref=e52]:
+                  - img [ref=e55]
+                  - generic [ref=e58]: Explore
+            - link "Following" [ref=e60] [cursor=pointer]:
+              - /url: /following
+              - listitem "Following" [ref=e61]:
+                - generic [ref=e62]:
+                  - img [ref=e66]
+                  - generic [ref=e68]: Following
+            - link "LIVE" [ref=e71] [cursor=pointer]:
+              - /url: /live
+              - listitem "LIVE" [ref=e72]:
+                - generic [ref=e73]:
+                  - img [ref=e76]
+                  - generic [ref=e79]: LIVE
+            - link "Upload" [ref=e81] [cursor=pointer]:
+              - /url: /tiktokstudio/upload?from=webapp
+              - listitem "Upload" [ref=e82]:
+                - generic [ref=e83]:
+                  - img [ref=e86]
+                  - generic [ref=e89]: Upload
+            - link "Profile" [ref=e91] [cursor=pointer]:
+              - /url: /@
+              - listitem "Profile" [ref=e92]:
+                - generic [ref=e93]:
+                  - img [ref=e96]
+                  - generic [ref=e98]: Profile
+            - listitem "More" [ref=e100] [cursor=pointer]:
+              - generic [ref=e101]:
+                - img [ref=e105]
+                - generic [ref=e108]: More
+          - button "Log in" [ref=e111] [cursor=pointer]:
+            - generic [ref=e113]: Log in
+          - generic [ref=e115]:
+            - heading "Company" [level=4] [ref=e116] [cursor=pointer]
+            - heading "Program" [level=4] [ref=e117] [cursor=pointer]
+            - heading "Terms & Policies" [level=4] [ref=e118] [cursor=pointer]
+            - generic [ref=e119]: © 2026 TikTok
+      - generic [ref=e122]:
+        - generic [ref=e123]:
+          - generic [ref=e124]:
+            - article [ref=e125]:
+              - generic [ref=e126]:
+                - region "Watch in full screen" [ref=e127] [cursor=pointer]:
+                  - generic [ref=e128]:
+                    - img "Captain America's Secret Son Became The Red Skull" [ref=e132]
+                    - generic [ref=e135]:
+                      - generic [ref=e136]:
+                        - button "Volume" [ref=e139]:
+                          - img [ref=e142]
+                        - button [ref=e145]:
+                          - img [ref=e148]
+                      - generic [ref=e151]:
+                        - generic [ref=e152]:
+                          - link "thepunchline4" [ref=e153]:
+                            - /url: /@thepunchline4
+                            - paragraph [ref=e155]: thepunchline4
+                          - generic [ref=e156]: · 2d ago
+                        - generic [ref=e158]:
+                          - generic [ref=e161]: Captain America's Secret Son Became The Red Skull
+                          - button "more" [ref=e162]
+                    - generic [ref=e163]:
+                      - paragraph: 00:00 / 00:00
+                      - generic [ref=e166]:
+                        - slider "Video progress"
+                - generic [ref=e168]:
+                  - generic [ref=e169]:
+                    - link "thepunchline4" [ref=e170] [cursor=pointer]:
+                      - /url: /@thepunchline4
+                      - img "thepunchline4" [ref=e174]
+                    - button [ref=e175] [cursor=pointer]:
+                      - img [ref=e177]
+                  - button "Like video 81.3K likes" [ref=e179] [cursor=pointer]:
+                    - img [ref=e181]
+                    - strong [ref=e186]: 81.3K
+                  - button "Read or add comments 238 comments" [ref=e187] [cursor=pointer]:
+                    - img [ref=e189]
+                    - strong [ref=e191]: "238"
+                  - button "Add to Favorites. 4445 added to Favorites" [ref=e193] [cursor=pointer]:
+                    - img [ref=e195]
+                    - strong [ref=e198]: "4445"
+                  - button "Share video 1248 shares" [ref=e199] [cursor=pointer]:
+                    - img [ref=e201]
+                    - strong [ref=e205]: "1248"
+                  - link "Watch more videos with music original sound - THEPUNCHLINE" [ref=e206] [cursor=pointer]:
+                    - /url: /music/original-sound-7628741237055163158
+            - article [ref=e208]:
+              - generic [ref=e209]:
+                - region "Watch in full screen" [ref=e210] [cursor=pointer]:
+                  - generic [ref=e211]:
+                    - 'img "Get by the flash and get 10,000 Dollars#flash #wallywest #dc #dccomics" [ref=e215]'
+                    - generic [ref=e218]:
+                      - generic [ref=e219]:
+                        - button "Volume" [ref=e222]:
+                          - img [ref=e225]
+                        - button [ref=e228]:
+                          - img [ref=e231]
+                      - generic [ref=e234]:
+                        - generic [ref=e235]:
+                          - link "thepunchline4" [ref=e236]:
+                            - /url: /@thepunchline4
+                            - paragraph [ref=e238]: thepunchline4
+                          - generic [ref=e239]: · 4-5
+                        - generic [ref=e241]:
+                          - generic [ref=e243]:
+                            - generic [ref=e244]: Get by the flash and get 10,000 Dollars
+                            - link "Watch more videos of the flash category" [ref=e245]:
+                              - /url: /tag/flash
+                              - paragraph [ref=e246]: "#flash"
+                            - link "Watch more videos of the wallywest category" [ref=e248]:
+                              - /url: /tag/wallywest
+                              - paragraph [ref=e249]: "#wallywest"
+                            - link "Watch more videos of the dc category" [ref=e251]:
+                              - /url: /tag/dc
+                              - paragraph [ref=e252]: "#dc"
+                            - link "Watch more videos of the dccomics category" [ref=e254]:
+                              - /url: /tag/dccomics
+                              - paragraph [ref=e255]: "#dccomics"
+                          - button "more" [ref=e257]
+                    - generic [ref=e258]:
+                      - paragraph: 00:00 / 00:00
+                      - generic [ref=e261]:
+                        - slider "Video progress"
+                - generic [ref=e263]:
+                  - generic [ref=e264]:
+                    - link "thepunchline4" [ref=e265] [cursor=pointer]:
+                      - /url: /@thepunchline4
+                      - img "thepunchline4" [ref=e269]
+                    - button [ref=e270] [cursor=pointer]:
+                      - img [ref=e272]
+                  - button "Like video 2764 likes" [ref=e274] [cursor=pointer]:
+                    - img [ref=e276]
+                    - strong [ref=e281]: "2764"
+                  - button "Read or add comments 137 comments" [ref=e282] [cursor=pointer]:
+                    - img [ref=e284]
+                    - strong [ref=e286]: "137"
+                  - button "Add to Favorites. 237 added to Favorites" [ref=e288] [cursor=pointer]:
+                    - img [ref=e290]
+                    - strong [ref=e293]: "237"
+                  - button "Share video 33 shares" [ref=e294] [cursor=pointer]:
+                    - img [ref=e296]
+                    - strong [ref=e300]: "33"
+                  - link "Watch more videos with music original sound - THEPUNCHLINE" [ref=e301] [cursor=pointer]:
+                    - /url: /music/original-sound-7625354052762667798
+            - article [ref=e303]
+            - article [ref=e304]
+            - article [ref=e305]
+            - article [ref=e306]
+            - article [ref=e307]
+            - article [ref=e308]
+            - article [ref=e309]
+            - article [ref=e310]
+            - article [ref=e311]
+            - article [ref=e312]
+            - article [ref=e313]
+            - article [ref=e314]
+            - article [ref=e315]
+            - article [ref=e316]
+            - article [ref=e317]
+          - complementary:
+            - generic [ref=e318]:
+              - button [disabled] [ref=e320]:
+                - img [ref=e323]
+              - button [ref=e326] [cursor=pointer]:
+                - img [ref=e329]
+        - generic [ref=e334]:
+          - generic [ref=e337]:
+            - button "Comments" [ref=e340] [cursor=pointer]:
+              - generic [ref=e343]: Comments
+            - button "You may like" [ref=e346] [cursor=pointer]:
+              - generic [ref=e349]: You may like
+          - generic [ref=e354]:
+            - generic [ref=e355] [cursor=pointer]:
+              - generic [ref=e356]:
+                - 'link "Get by the flash and get 10,000 Dollars#flash #wallywest #dc #dccomics"':
+                  - /url: /@thepunchline4/video/7625354016070913302
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "Get by the flash and get 10,000 Dollars#flash #wallywest #dc #dccomics"'
+              - generic [ref=e358]:
+                - generic [ref=e359]:
+                  - generic [ref=e360]: "Get by the flash and get 10,000 Dollars#flash #wallywest #dc #dccomics"
+                  - img [ref=e362]
+                - generic [ref=e365]: thepunchline4
+                - generic [ref=e366]:
+                  - generic [ref=e367]:
+                    - img [ref=e368]
+                    - text: "2764"
+                  - generic [ref=e370]: ·
+                  - generic [ref=e371]: 4-5
+            - generic [ref=e372] [cursor=pointer]:
+              - generic [ref=e373]:
+                - 'link "Maybe the real Artemis II was the friends we made along the way. 🚀 Day 8 out of 10, leaving us 2 more days until splashdown! Live views from Orion and mission coverage can be found on NASA’s official YouTube channel. Source: NASA Follow for more science news, facts, and memes 🌐 #NASA #ArtemisII #SpaceMemes #SpaceTok #ScienceNews"':
+                  - /url: /@currentlyinscience/video/7626578891351526670
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "Maybe the real Artemis II was the friends we made along the way. 🚀 Day 8 out of 10, leaving us 2 more days until splashdown! Live views from Orion and mission coverage can be found on NASA’s official YouTube channel. Source: NASA Follow for more science news, facts, and memes 🌐 #NASA #ArtemisII #SpaceMemes #SpaceTok #ScienceNews"'
+              - generic [ref=e375]:
+                - generic [ref=e376]:
+                  - generic [ref=e377]: "Maybe the real Artemis II was the friends we made along the way. 🚀 Day 8 out of 10, leaving us 2 more days until splashdown! Live views from Orion and mission coverage can be found on NASA’s official YouTube channel. Source: NASA Follow for more science news, facts, and memes 🌐 #NASA #ArtemisII #SpaceMemes #SpaceTok #ScienceNews"
+                  - img [ref=e379]
+                - generic [ref=e382]: currentlyinscience
+                - generic [ref=e383]:
+                  - generic [ref=e384]:
+                    - img [ref=e385]
+                    - text: 3.2M
+                  - generic [ref=e387]: ·
+                  - generic [ref=e388]: 1w ago
+            - generic [ref=e389] [cursor=pointer]:
+              - generic [ref=e390]:
+                - 'link "Would you step in it??#stillwater #refinery #fyp #fypシ"':
+                  - /url: /@pipewella69/video/7623104942508608799
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "Would you step in it??#stillwater #refinery #fyp #fypシ"'
+              - generic [ref=e392]:
+                - generic [ref=e393]:
+                  - generic [ref=e394]: "Would you step in it??#stillwater #refinery #fyp #fypシ"
+                  - img [ref=e396]
+                - generic [ref=e399]: pipewella69
+                - generic [ref=e400]:
+                  - generic [ref=e401]:
+                    - img [ref=e402]
+                    - text: 1.7M
+                  - generic [ref=e404]: ·
+                  - generic [ref=e405]: 3-30
+            - generic [ref=e406] [cursor=pointer]:
+              - generic [ref=e407]:
+                - link "#cat ITS ON AMAZON":
+                  - /url: /@curlyspams26/video/7626208955450068237
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img "#cat ITS ON AMAZON"
+              - generic [ref=e409]:
+                - generic [ref=e410]:
+                  - generic [ref=e411]: "#cat ITS ON AMAZON"
+                  - img [ref=e413]
+                - generic [ref=e416]: curlyspams26
+                - generic [ref=e417]:
+                  - generic [ref=e418]:
+                    - img [ref=e419]
+                    - text: 1.4M
+                  - generic [ref=e421]: ·
+                  - generic [ref=e422]: 4-7
+            - generic [ref=e423] [cursor=pointer]:
+              - generic [ref=e424]:
+                - 'link "😂😂 the song choice was crazy #fyp"':
+                  - /url: /@lulbs_/video/7621317643252845837
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "😂😂 the song choice was crazy #fyp"'
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - generic [ref=e428]: "😂😂 the song choice was crazy #fyp"
+                  - img [ref=e430]
+                - generic [ref=e433]: lulbs_
+                - generic [ref=e434]:
+                  - generic [ref=e435]:
+                    - img [ref=e436]
+                    - text: 725K
+                  - generic [ref=e438]: ·
+                  - generic [ref=e439]: 3-25
+            - generic [ref=e440] [cursor=pointer]:
+              - generic [ref=e441]:
+                - 'link "rise and shine 🐊🐕 #k9softiktok #police #policewife"':
+                  - /url: /@halfcrunchymom/video/7625856661315521823
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "rise and shine 🐊🐕 #k9softiktok #police #policewife"'
+              - generic [ref=e443]:
+                - generic [ref=e444]:
+                  - generic [ref=e445]: "rise and shine 🐊🐕 #k9softiktok #police #policewife"
+                  - img [ref=e447]
+                - generic [ref=e450]: halfcrunchymom
+                - generic [ref=e451]:
+                  - generic [ref=e452]:
+                    - img [ref=e453]
+                    - text: 2.3M
+                  - generic [ref=e455]: ·
+                  - generic [ref=e456]: 4-6
+            - generic [ref=e457] [cursor=pointer]:
+              - generic [ref=e458]:
+                - 'link "Brutal combo 😂 @aeroband #hot #cold #night #morning #aerobandguitar"':
+                  - /url: /@mattymoellz/video/7621358269969206541
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "Brutal combo 😂 @aeroband #hot #cold #night #morning #aerobandguitar"'
+              - generic [ref=e460]:
+                - generic [ref=e461]:
+                  - generic [ref=e462]: "Brutal combo 😂 @aeroband #hot #cold #night #morning #aerobandguitar"
+                  - img [ref=e464]
+                - generic [ref=e467]: mattymoellz
+                - generic [ref=e468]:
+                  - generic [ref=e469]:
+                    - img [ref=e470]
+                    - text: 913K
+                  - generic [ref=e472]: ·
+                  - generic [ref=e473]: 3-25
+            - generic [ref=e474] [cursor=pointer]:
+              - generic [ref=e475]:
+                - link:
+                  - /url: /@alina_lipnitskaya/video/7622987076178365716
+              - generic [ref=e477]:
+                - img [ref=e480]
+                - generic [ref=e483]: alina_lipnitskaya
+                - generic [ref=e484]:
+                  - generic [ref=e485]:
+                    - img [ref=e486]
+                    - text: 2M
+                  - generic [ref=e488]: ·
+                  - generic [ref=e489]: 3-30
+            - generic [ref=e490] [cursor=pointer]:
+              - generic [ref=e491]:
+                - link "Now I want to paint the monsters inc door on Maples room lol":
+                  - /url: /@kaydeechurch/video/7621717166479461645
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img "Now I want to paint the monsters inc door on Maples room lol"
+              - generic [ref=e493]:
+                - generic [ref=e494]:
+                  - generic [ref=e495]: Now I want to paint the monsters inc door on Maples room lol
+                  - img [ref=e497]
+                - generic [ref=e500]: kaydeechurch
+                - generic [ref=e501]:
+                  - generic [ref=e502]:
+                    - img [ref=e503]
+                    - text: 1.5M
+                  - generic [ref=e505]: ·
+                  - generic [ref=e506]: 3-26
+            - generic [ref=e507] [cursor=pointer]:
+              - generic [ref=e508]:
+                - 'link "Story of my life #relatable #girlythings #girlprobs #pink #makeup"':
+                  - /url: /@_baeleia/video/7618292744926137630
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "Story of my life #relatable #girlythings #girlprobs #pink #makeup"'
+              - generic [ref=e510]:
+                - generic [ref=e511]:
+                  - generic [ref=e512]: "Story of my life #relatable #girlythings #girlprobs #pink #makeup"
+                  - img [ref=e514]
+                - generic [ref=e517]: _baeleia
+                - generic [ref=e518]:
+                  - generic [ref=e519]:
+                    - img [ref=e520]
+                    - text: 951.3K
+                  - generic [ref=e522]: ·
+                  - generic [ref=e523]: 3-17
+            - generic [ref=e524] [cursor=pointer]:
+              - generic [ref=e525]:
+                - link "Every bathroom needs this! 🚽":
+                  - /url: /@justinflom/video/7621663376527068447
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img "Every bathroom needs this! 🚽"
+              - generic [ref=e527]:
+                - generic [ref=e528]:
+                  - generic [ref=e529]: Every bathroom needs this! 🚽
+                  - img [ref=e531]
+                - generic [ref=e533]:
+                  - generic [ref=e534]: justinflom
+                  - img [ref=e536]
+                - generic [ref=e540]:
+                  - generic [ref=e541]:
+                    - img [ref=e542]
+                    - text: 1.2M
+                  - generic [ref=e544]: ·
+                  - generic [ref=e545]: 3-26
+            - generic [ref=e546] [cursor=pointer]:
+              - generic [ref=e547]:
+                - 'link "We didddd thatttt 🤣🔥 @Josh Mukendi #dad #family #viral"':
+                  - /url: /@larobenz/video/7621717140407586079
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "We didddd thatttt 🤣🔥 @Josh Mukendi #dad #family #viral"'
+              - generic [ref=e549]:
+                - generic [ref=e550]:
+                  - generic [ref=e551]: "We didddd thatttt 🤣🔥 @Josh Mukendi #dad #family #viral"
+                  - img [ref=e553]
+                - generic [ref=e555]:
+                  - generic [ref=e556]: larobenz
+                  - img [ref=e558]
+                - generic [ref=e562]:
+                  - generic [ref=e563]:
+                    - img [ref=e564]
+                    - text: 974.1K
+                  - generic [ref=e566]: ·
+                  - generic [ref=e567]: 3-26
+            - generic [ref=e568] [cursor=pointer]:
+              - generic [ref=e569]:
+                - 'link "10 years ago today, a legendary miscast was born. #Hamilton #Hamilkids #TheSchuylerSisters #Broadway #Musical"':
+                  - /url: /@hamiltonmusical/video/7626496047241563406
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "10 years ago today, a legendary miscast was born. #Hamilton #Hamilkids #TheSchuylerSisters #Broadway #Musical"'
+              - generic [ref=e571]:
+                - generic [ref=e572]:
+                  - generic [ref=e573]: "10 years ago today, a legendary miscast was born. #Hamilton #Hamilkids #TheSchuylerSisters #Broadway #Musical"
+                  - img [ref=e575]
+                - generic [ref=e577]:
+                  - generic [ref=e578]: hamiltonmusical
+                  - img [ref=e580]
+                - generic [ref=e584]:
+                  - generic [ref=e585]:
+                    - img [ref=e586]
+                    - text: 1.5M
+                  - generic [ref=e588]: ·
+                  - generic [ref=e589]: 4-8
+            - generic [ref=e590] [cursor=pointer]:
+              - generic [ref=e591]:
+                - 'link "A quick check in 😂 #shorts #brother #fyp"':
+                  - /url: /@nbtires/video/7622040958321937680
+                  - generic:
+                    - generic:
+                      - generic:
+                        - 'img "A quick check in 😂 #shorts #brother #fyp"'
+              - generic [ref=e593]:
+                - generic [ref=e594]:
+                  - generic [ref=e595]: "A quick check in 😂 #shorts #brother #fyp"
+                  - img [ref=e597]
+                - generic [ref=e600]: nbtires
+                - generic [ref=e601]:
+                  - generic [ref=e602]:
+                    - img [ref=e603]
+                    - text: 320K
+                  - generic [ref=e605]: ·
+                  - generic [ref=e606]: 1w ago
+            - generic [ref=e607] [cursor=pointer]:
+              - generic [ref=e608]:
+                - link "😂😂😂":
+                  - /url: /@_.1kdeee/video/7621330297128307999
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img "😂😂😂"
+              - generic [ref=e610]:
+                - generic [ref=e611]:
+                  - generic [ref=e612]: 😂😂😂
+                  - img [ref=e614]
+                - generic [ref=e617]: _.1kdeee
+                - generic [ref=e618]:
+                  - generic [ref=e619]:
+                    - img [ref=e620]
+                    - text: 916.4K
+                  - generic [ref=e622]: ·
+                  - generic [ref=e623]: 3-25
+            - generic [ref=e624] [cursor=pointer]:
+              - generic [ref=e625]:
+                - link "💥Call us to schedule your favorite. 904-547-2840💥":
+                  - /url: /@newyou.aesthetics/video/7626226560130977037
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img "💥Call us to schedule your favorite. 904-547-2840💥"
+              - generic [ref=e627]:
+                - generic [ref=e628]:
+                  - generic [ref=e629]: 💥Call us to schedule your favorite. 904-547-2840💥
+                  - img [ref=e631]
+                - generic [ref=e634]: newyou.aesthetics
+                - generic [ref=e635]:
+                  - generic [ref=e636]:
+                    - img [ref=e637]
+                    - text: "7133"
+                  - generic [ref=e639]: ·
+                  - generic [ref=e640]: 4-7
+      - generic [ref=e643]:
+        - button [ref=e646] [cursor=pointer]:
+          - img [ref=e648]
+        - button [ref=e653] [cursor=pointer]:
+          - img [ref=e655]
+        - button [ref=e660] [cursor=pointer]:
+          - img [ref=e662]
+        - button "Log in" [ref=e666] [cursor=pointer]:
+          - generic [ref=e668]: Log in
+      - generic [ref=e670]:
+        - img [ref=e672] [cursor=pointer]
+        - generic [ref=e674]: Introducing keyboard shortcuts!
+        - generic [ref=e675]:
+          - generic [ref=e676]:
+            - text: Go to previous video
+            - img [ref=e677]
+          - generic [ref=e680]:
+            - text: Go to next video
+            - img [ref=e681]
+          - generic [ref=e684]:
+            - text: Like video
+            - img [ref=e685]
+          - generic [ref=e688]:
+            - text: Mute / unmute video
+            - img [ref=e689]
+          - generic [ref=e692]:
+            - text: Play / Pause
+            - img [ref=e693]
+          - generic [ref=e696]:
+            - text: Skip forward
+            - img [ref=e697]
+          - generic [ref=e700]:
+            - text: Skip backward
+            - img [ref=e701]
+          - generic [ref=e704]:
+            - text: Full screen
+            - img [ref=e705]

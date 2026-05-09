@@ -1,0 +1,13 @@
+[    4906ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://m.media-amazon.com/images/I/51qfOmE8VHL._AC_SL1000_.jpg:0
+[    4919ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://m.media-amazon.com/images/I/71j3XjTbGEL._AC_SL1500_.jpg:0
+[   80227ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-content/scripts?product_id=ttp-19d54ad606f5:0
+[   80264ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-shop/catalog/ttp-19d54ad606f5/content:0
+[   81348ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-shop/catalog/ttp-19d54ad606f5/content:0
+[   81350ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-content/scripts?product_id=ttp-19d54ad606f5:0
+[   83416ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-shop/catalog/ttp-19d54ad606f5/content:0
+[   83422ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-content/scripts?product_id=ttp-19d54ad606f5:0
+[   87439ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-content/scripts?product_id=ttp-19d54ad606f5:0
+[   87441ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/tiktok-shop/catalog/ttp-19d54ad606f5/content:0
+[  189868ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  191916ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  193923ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0

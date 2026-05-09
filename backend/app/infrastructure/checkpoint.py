@@ -6,7 +6,7 @@ Falls back to MemorySaver (in-memory, lost on restart) if unavailable.
 
 Configuration:
   Set ZERO_POSTGRES_URL in .env to enable PostgreSQL persistence.
-  Example: ZERO_POSTGRES_URL=postgresql://zero:zero_dev@localhost:5433/zero
+  Example: ZERO_POSTGRES_URL=postgresql://zero:zero_dev@localhost:5434/zero
 """
 
 import structlog

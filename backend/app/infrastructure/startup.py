@@ -132,9 +132,9 @@ class StartupChecker:
     async def _check_ollama(self) -> bool:
         """Check if Ollama is reachable and warm up default model."""
         import asyncio
-        from app.infrastructure.ollama_client import get_ollama_client
+        from app.infrastructure.ollama_client import get_llm_client
 
-        client = get_ollama_client()
+        client = get_llm_client()
         healthy = await client.is_healthy()
 
         if healthy:

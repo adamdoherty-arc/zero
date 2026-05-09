@@ -5,6 +5,7 @@ captures price snapshots, and pushes aggregated data to ADA.
 """
 
 import asyncio
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -99,6 +100,32 @@ def _detect_category(title: str) -> str:
 def _generate_id(prefix: str = "pm") -> str:
     """Generate a short unique ID with a prefix."""
     return f"{prefix}-{uuid.uuid4().hex[:16]}"
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """Parse API numeric fields that may arrive as ints, floats, or strings."""
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    """Parse integer-ish API fields, tolerating decimal strings."""
+    return int(_as_float(value, float(default)))
+
+
+def _first_outcome_price(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    if isinstance(value, list) and value:
+        return value[0]
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -360,13 +387,15 @@ class PredictionMarketService:
                             continue
 
                         title = market.get("question", market.get("title", event.get("title", "")))
-                        # Polymarket prices are 0-1 floats
-                        yes_price = float(market.get("outcomePrices", [0, 0])[0] if isinstance(
-                            market.get("outcomePrices"), list
-                        ) else market.get("bestBid", market.get("lastTradePrice", 0)) or 0)
+                        # Polymarket prices are 0-1 floats. Gamma can return
+                        # prices/liquidity as decimal strings.
+                        yes_price = _as_float(
+                            _first_outcome_price(market.get("outcomePrices"))
+                            or market.get("bestBid", market.get("lastTradePrice", 0))
+                        )
                         no_price = 1.0 - yes_price if yes_price > 0 else 0.0
-                        volume = float(market.get("volume", market.get("volumeNum", 0)) or 0)
-                        open_interest = int(market.get("liquidity", market.get("openInterest", 0)) or 0)
+                        volume = _as_float(market.get("volume", market.get("volumeNum", 0)))
+                        open_interest = _as_int(market.get("liquidity", market.get("openInterest", 0)))
                         category = _detect_category(title)
 
                         close_time = None

@@ -8,7 +8,7 @@ import {
 const architectureDiagram = `graph TB
     User([You])
 
-    subgraph Zero["ZERO - Personal AI Assistant :18792"]
+    subgraph Zero["ZERO - Personal + Company OS :18792"]
         direction TB
         subgraph ZeroBrain["Second Brain"]
             Knowledge["Knowledge Base"]
@@ -25,6 +25,12 @@ const architectureDiagram = `graph TB
             AutoPilot["Autopilot Engine"]
             EnhanceScan["Enhancement Scanner"]
             EcoSync["Ecosystem Sync"]
+        end
+        subgraph CompanyOS["ADA AI LLC Company OS"]
+            CompanyNav["/company UI"]
+            CompanyDocs["docs/company"]
+            CompanyTasks["Company Tasks"]
+            CompanyApprovals["Approval Gates"]
         end
     end
 
@@ -65,6 +71,10 @@ const architectureDiagram = `graph TB
 
     DailyPrompts -->|"Create Sprint Tasks"| Tasks
     AutoPilot -->|"Trigger Swarm Lifecycle"| Swarm
+    CompanyNav --> CompanyTasks
+    CompanyNav --> CompanyDocs
+    CompanyTasks --> CompanyApprovals
+    CompanyApprovals -->|"Approved implementation work"| Tasks
     EnhanceScan -->|"Auto-create Tasks"| Tasks
     EcoSync -->|"Sync Every 15min"| Projects
     Briefing -->|"Query Past Decisions"| RAG
@@ -119,8 +129,9 @@ export function ArchitecturePage() {
         </h2>
         <p className="text-xs text-muted-foreground leading-relaxed">
           <strong className="text-foreground">Zero</strong> is your personal AI
-          assistant and second brain — it manages your email, calendar,
-          knowledge base, research, and daily briefings.{' '}
+          assistant, second brain, and company operating system. It manages your
+          email, calendar, knowledge base, research, daily briefings, Company OS
+          task cockpit, approvals, and docs context.{' '}
           <strong className="text-foreground">Legion</strong> is the sprint
           execution engine that manages all your projects, plans sprints, and
           deploys agent swarms to write, test, review, and commit code. Zero

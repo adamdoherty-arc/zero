@@ -1,0 +1,659 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+      - generic [ref=e102]:
+        - generic [ref=e103]: Meetings
+        - list [ref=e104]:
+          - listitem [ref=e105]:
+            - link "Meetings" [ref=e106] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e107]
+              - generic [ref=e110]: Meetings
+          - listitem [ref=e111]:
+            - link "Meeting Search" [ref=e112] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e113]
+              - generic [ref=e114]: Meeting Search
+      - generic [ref=e115]:
+        - generic [ref=e116]: AI Company
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "Company" [ref=e119] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e120]
+              - generic [ref=e124]: Company
+          - listitem [ref=e125]:
+            - link "Deep Research" [ref=e126] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e127]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "Experiment Lab" [ref=e131] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e132]
+              - generic [ref=e134]: Experiment Lab
+          - listitem [ref=e135]:
+            - link "Council Room" [ref=e136] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e137]
+              - generic [ref=e141]: Council Room
+          - listitem [ref=e142]:
+            - link "Brain" [ref=e143] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e144]
+              - generic [ref=e156]: Brain
+      - generic [ref=e157]:
+        - generic [ref=e158]: Automation
+        - list [ref=e159]:
+          - listitem [ref=e160]:
+            - link "Agent Tasks" [ref=e161] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e162]
+              - generic [ref=e165]: Agent Tasks
+          - listitem [ref=e166]:
+            - link "Workflows" [ref=e167] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e168]
+              - generic [ref=e172]: Workflows
+          - listitem [ref=e173]:
+            - link "Gateway" [ref=e174] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e175]
+              - generic [ref=e181]: Gateway
+          - listitem [ref=e182]:
+            - link "Money Maker" [ref=e183] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e184]
+              - generic [ref=e186]: Money Maker
+          - listitem [ref=e187]:
+            - link "Research" [ref=e188] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e189]
+              - generic [ref=e192]: Research
+          - listitem [ref=e193]:
+            - link "TikTok Shop" [ref=e194] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e195]
+              - generic [ref=e198]: TikTok Shop
+          - listitem [ref=e199]:
+            - link "Characters" [ref=e200] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e201]
+              - generic [ref=e206]: Characters
+          - listitem [ref=e207]:
+            - link "Character Autopilot" [ref=e208] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e209]
+              - generic [ref=e211]: Character Autopilot
+          - listitem [ref=e212]:
+            - link "Content Agent" [ref=e213] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e214]
+              - generic [ref=e216]: Content Agent
+          - listitem [ref=e217]:
+            - link "Predictions" [ref=e218] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e219]
+              - generic [ref=e222]: Predictions
+          - listitem [ref=e223]:
+            - link "LLC Guide" [ref=e224] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e225]
+              - generic [ref=e229]: LLC Guide
+          - listitem [ref=e230]:
+            - link "Visual Workflows" [ref=e231] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e232]
+              - generic [ref=e236]: Visual Workflows
+      - generic [ref=e237]:
+        - generic [ref=e238]: System
+        - list [ref=e239]:
+          - listitem [ref=e240]:
+            - link "Exec Dashboard" [ref=e241] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e242]
+              - generic [ref=e245]: Exec Dashboard
+          - listitem [ref=e246]:
+            - link "Outcomes" [ref=e247] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e248]
+              - generic [ref=e252]: Outcomes
+          - listitem [ref=e253]:
+            - link "System Health" [ref=e254] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e255]
+              - generic [ref=e258]: System Health
+          - listitem [ref=e259]:
+            - link "Architecture" [ref=e260] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e261]
+              - generic [ref=e266]: Architecture
+          - listitem [ref=e267]:
+            - link "QA" [ref=e268] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e269]
+              - generic [ref=e272]: QA
+          - listitem [ref=e273]:
+            - link "Analytics" [ref=e274] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e275]
+              - generic [ref=e277]: Analytics
+          - listitem [ref=e278]:
+            - link "Settings" [ref=e279] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e280]
+              - generic [ref=e291]: Settings
+    - list [ref=e293]:
+      - listitem [ref=e294]:
+        - button "Zero v1.0" [ref=e295] [cursor=pointer]:
+          - generic [ref=e297]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e298]
+  - main [ref=e299]:
+    - generic [ref=e300]:
+      - button "Toggle Sidebar" [ref=e301] [cursor=pointer]:
+        - img
+        - generic [ref=e302]: Toggle Sidebar
+      - generic [ref=e303]:
+        - generic [ref=e304]: Zero
+        - generic [ref=e305]: /
+        - generic [ref=e306]: Character Detail
+      - button "Search... Ctrl K" [ref=e307] [cursor=pointer]:
+        - img [ref=e308]
+        - generic [ref=e311]: Search...
+        - generic [ref=e312]:
+          - generic [ref=e313]: Ctrl
+          - text: K
+      - button "9+" [ref=e315] [cursor=pointer]:
+        - img [ref=e316]
+        - generic [ref=e319]: 9+
+    - main [ref=e320]:
+      - generic [ref=e321]:
+        - navigation "Character content sections" [ref=e322]:
+          - button "Characters" [ref=e323] [cursor=pointer]:
+            - img [ref=e324]
+            - text: Characters
+          - button "TV Shows" [ref=e329] [cursor=pointer]:
+            - img [ref=e330]
+            - text: TV Shows
+          - button "Movies" [ref=e333] [cursor=pointer]:
+            - img [ref=e334]
+            - text: Movies
+          - button "Reference Videos" [ref=e336] [cursor=pointer]:
+            - img [ref=e337]
+            - text: Reference Videos
+          - button "Research Queue" [ref=e339] [cursor=pointer]:
+            - img [ref=e340]
+            - text: Research Queue
+          - button "Content Studio" [ref=e343] [cursor=pointer]:
+            - img [ref=e344]
+            - text: Content Studio
+          - button "Review Queue" [ref=e346] [cursor=pointer]:
+            - img [ref=e347]
+            - text: Review Queue
+          - button "Inspiration" [ref=e350] [cursor=pointer]:
+            - img [ref=e351]
+            - text: Inspiration
+          - button "Analytics" [ref=e353] [cursor=pointer]:
+            - img [ref=e354]
+            - text: Analytics
+          - button "Autopilot" [ref=e356] [cursor=pointer]:
+            - img [ref=e357]
+            - text: Autopilot
+        - generic [ref=e362]:
+          - button "Back to characters list" [ref=e363] [cursor=pointer]:
+            - img [ref=e364]
+            - text: Back to Characters
+          - generic [ref=e366]:
+            - generic [ref=e368]:
+              - generic [ref=e369]:
+                - img "Batman image 1 of 32" [ref=e370]
+                - button "Previous image" [ref=e371] [cursor=pointer]:
+                  - img [ref=e372]
+                - button "Next image" [ref=e374] [cursor=pointer]:
+                  - img [ref=e375]
+                - generic [ref=e377]: 1 / 32
+              - generic [ref=e378]:
+                - button "Batman 1" [ref=e379] [cursor=pointer]:
+                  - img "Batman 1" [ref=e380]
+                - button "Batman 2" [ref=e381] [cursor=pointer]:
+                  - img "Batman 2" [ref=e382]
+                - button "Batman 3" [ref=e383] [cursor=pointer]:
+                  - img "Batman 3" [ref=e384]
+                - button "Batman 4" [ref=e385] [cursor=pointer]:
+                  - img "Batman 4" [ref=e386]
+                - button "Batman 5" [ref=e387] [cursor=pointer]:
+                  - img "Batman 5" [ref=e388]
+                - button "Batman 6" [ref=e389] [cursor=pointer]:
+                  - img "Batman 6" [ref=e390]
+                - button "Batman 7" [ref=e391] [cursor=pointer]:
+                  - img "Batman 7" [ref=e392]
+                - button "Batman 8" [ref=e393] [cursor=pointer]:
+                  - img "Batman 8" [ref=e394]
+                - button "Batman 9" [ref=e395] [cursor=pointer]:
+                  - img "Batman 9" [ref=e396]
+                - button "Batman 10" [ref=e397] [cursor=pointer]:
+                  - img "Batman 10" [ref=e398]
+                - button "Batman 11" [ref=e399] [cursor=pointer]:
+                  - img "Batman 11" [ref=e400]
+                - button "Batman 12" [ref=e401] [cursor=pointer]:
+                  - img "Batman 12" [ref=e402]
+                - button "Batman 13" [ref=e403] [cursor=pointer]:
+                  - img "Batman 13" [ref=e404]
+                - button "Batman 14" [ref=e405] [cursor=pointer]:
+                  - img "Batman 14" [ref=e406]
+                - button "Batman 15" [ref=e407] [cursor=pointer]:
+                  - img "Batman 15" [ref=e408]
+                - button "Batman 16" [ref=e409] [cursor=pointer]:
+                  - img "Batman 16" [ref=e410]
+                - button "Batman 17" [ref=e411] [cursor=pointer]:
+                  - img "Batman 17" [ref=e412]
+                - button "Batman 18" [ref=e413] [cursor=pointer]:
+                  - img "Batman 18" [ref=e414]
+                - button "Batman 19" [ref=e415] [cursor=pointer]:
+                  - img "Batman 19" [ref=e416]
+                - button "Batman 20" [ref=e417] [cursor=pointer]:
+                  - img "Batman 20" [ref=e418]
+                - button "Batman 21" [ref=e419] [cursor=pointer]:
+                  - img "Batman 21" [ref=e420]
+                - button "Batman 22" [ref=e421] [cursor=pointer]:
+                  - img "Batman 22" [ref=e422]
+                - button "Batman 23" [ref=e423] [cursor=pointer]:
+                  - img "Batman 23" [ref=e424]
+                - button "Batman 24" [ref=e425] [cursor=pointer]:
+                  - img "Batman 24" [ref=e426]
+                - button "Batman 25" [ref=e427] [cursor=pointer]:
+                  - img "Batman 25" [ref=e428]
+                - button "Batman 26" [ref=e429] [cursor=pointer]:
+                  - img "Batman 26" [ref=e430]
+                - button "Batman 27" [ref=e431] [cursor=pointer]:
+                  - img "Batman 27" [ref=e432]
+                - button "Batman 28" [ref=e433] [cursor=pointer]:
+                  - img "Batman 28" [ref=e434]
+                - button "Batman 29" [ref=e435] [cursor=pointer]:
+                  - img "Batman 29" [ref=e436]
+                - button "Batman 30" [ref=e437] [cursor=pointer]:
+                  - img "Batman 30" [ref=e438]
+                - button "Batman 31" [ref=e439] [cursor=pointer]:
+                  - img "Batman 31" [ref=e440]
+                - button "Batman 32" [ref=e441] [cursor=pointer]:
+                  - img "Batman 32" [ref=e442]
+                - button "Source more images" [ref=e443] [cursor=pointer]:
+                  - img [ref=e444]
+            - generic [ref=e445]:
+              - generic [ref=e446]:
+                - generic [ref=e447]:
+                  - generic [ref=e448]:
+                    - heading "Batman" [level=1] [ref=e449]
+                    - generic [ref=e450]: dc
+                  - paragraph [ref=e451]: Bruce Wayne
+                  - paragraph [ref=e452]: Justice League
+                  - paragraph [ref=e453]: "Also known as: The Dark Knight, The Caped Crusader, The World’s Greatest Detective, The Batman, Bruce Wayne"
+                - generic [ref=e455]: completed
+              - generic [ref=e456]:
+                - generic [ref=e457]:
+                  - paragraph [ref=e458]: "30"
+                  - paragraph [ref=e459]: Facts
+                - generic [ref=e460]:
+                  - paragraph [ref=e461]: "3"
+                  - paragraph [ref=e462]: Carousels
+                - generic [ref=e463]:
+                  - paragraph [ref=e464]: "32"
+                  - paragraph [ref=e465]: Images
+                - generic [ref=e466]:
+                  - paragraph [ref=e467]: "1"
+                  - paragraph [ref=e468]: Published
+              - generic [ref=e469]:
+                - button "Re-research Batman" [ref=e470] [cursor=pointer]:
+                  - img [ref=e471]
+                  - text: Re-Research
+                - button "Generate carousel for Batman" [ref=e474] [cursor=pointer]:
+                  - img [ref=e475]
+                  - text: Generate Carousel
+                - button "Source images for Batman" [ref=e477] [cursor=pointer]:
+                  - img [ref=e478]
+                  - text: Source Images
+                - button "Deep-enhance Batman" [ref=e482] [cursor=pointer]:
+                  - img [ref=e483]
+                  - text: Enhance
+              - generic [ref=e485]:
+                - generic [ref=e486]: "First: Detective Comics #27 (comic), March 30, 1939"
+                - generic [ref=e487]: "Created by: Bob Kane and Bill Finger"
+                - generic [ref=e488]:
+                  - img [ref=e489]
+                  - text: "Researched: 4/15/2026"
+                - generic [ref=e492]: "Tags: dc, detective, gotham"
+          - tablist "Character detail sections" [ref=e493]:
+            - generic [ref=e494]:
+              - tab "Overview tab" [ref=e495] [cursor=pointer]:
+                - img [ref=e496]
+                - text: Overview
+              - tab "Ideas (14) tab" [active] [selected] [ref=e498] [cursor=pointer]:
+                - img [ref=e499]
+                - text: Ideas (14)
+              - tab "Facts (30) tab" [ref=e501] [cursor=pointer]:
+                - img [ref=e502]
+                - text: Facts (30)
+              - tab "Carousels (3) tab" [ref=e504] [cursor=pointer]:
+                - img [ref=e505]
+                - text: Carousels (3)
+              - tab "Media (32) tab" [ref=e507] [cursor=pointer]:
+                - img [ref=e508]
+                - text: Media (32)
+              - tab "References tab" [ref=e512] [cursor=pointer]:
+                - img [ref=e513]
+                - text: References
+          - generic [ref=e687]:
+            - generic [ref=e688]:
+              - heading "Content Ideas (17)" [level=3] [ref=e689]:
+                - img [ref=e690]
+                - text: Content Ideas (17)
+              - generic [ref=e692]:
+                - button "Re-seed ideas from existing content" [ref=e693] [cursor=pointer]:
+                  - img [ref=e694]
+                  - text: Re-seed
+                - button "AI generate new content ideas" [ref=e699] [cursor=pointer]:
+                  - img [ref=e700]
+                  - text: AI Generate Ideas
+            - generic [ref=e702]:
+              - button "All (17)" [ref=e703] [cursor=pointer]
+              - button "fresh (14)" [ref=e704] [cursor=pointer]
+              - button "in progress (0)" [ref=e705] [cursor=pointer]
+              - button "used (3)" [ref=e706] [cursor=pointer]
+              - button "dismissed (0)" [ref=e707] [cursor=pointer]
+            - generic [ref=e708]:
+              - generic [ref=e709]:
+                - generic [ref=e710]:
+                  - heading "Vs Battle" [level=4] [ref=e711]
+                  - button "Dismiss idea" [ref=e712] [cursor=pointer]:
+                    - img [ref=e713]
+                - paragraph [ref=e716]: Head-to-head matchups and comparisons featuring Batman
+                - generic [ref=e717]:
+                  - generic [ref=e718]: vs comparison
+                  - generic [ref=e719]: used
+                  - generic [ref=e720]: seeded
+                  - generic [ref=e721]:
+                    - img [ref=e722]
+                    - text: "1"
+                - paragraph [ref=e724]: 1 carousel created
+              - generic [ref=e725]:
+                - generic [ref=e726]:
+                  - heading "Behind the Scenes" [level=4] [ref=e727]
+                  - button "Dismiss idea" [ref=e728] [cursor=pointer]:
+                    - img [ref=e729]
+                - paragraph [ref=e732]: Production secrets and BTS stories about Batman
+                - generic [ref=e733]:
+                  - generic [ref=e734]: behind scenes
+                  - generic [ref=e735]: used
+                  - generic [ref=e736]: seeded
+                  - generic [ref=e737]:
+                    - img [ref=e738]
+                    - text: "1"
+                - paragraph [ref=e740]: 1 carousel created
+              - generic [ref=e741]:
+                - generic [ref=e742]:
+                  - heading "Fan Theories" [level=4] [ref=e743]
+                  - button "Dismiss idea" [ref=e744] [cursor=pointer]:
+                    - img [ref=e745]
+                - paragraph [ref=e748]: The wildest fan theories about Batman and which ones might be true
+                - generic [ref=e749]:
+                  - generic [ref=e750]: fan theories
+                  - generic [ref=e751]: used
+                  - generic [ref=e752]: seeded
+                  - generic [ref=e753]:
+                    - img [ref=e754]
+                    - text: "1"
+                - paragraph [ref=e756]: 1 carousel created
+              - generic [ref=e757]:
+                - generic [ref=e758]:
+                  - heading "Trivia & Hidden Details" [level=4] [ref=e759]
+                  - button "Dismiss idea" [ref=e760] [cursor=pointer]:
+                    - img [ref=e761]
+                - paragraph [ref=e764]: Little-known facts most fans have never heard about Batman
+                - generic [ref=e765]:
+                  - generic [ref=e766]: hidden truths
+                  - generic [ref=e767]: fresh
+                  - generic [ref=e768]: seeded
+                - 'button "Create carousel from: Trivia & Hidden Details" [ref=e769] [cursor=pointer]':
+                  - img [ref=e770]
+                  - text: Create Content
+              - generic [ref=e771]:
+                - generic [ref=e772]:
+                  - heading "Secret Powers" [level=4] [ref=e773]
+                  - button "Dismiss idea" [ref=e774] [cursor=pointer]:
+                    - img [ref=e775]
+                - paragraph [ref=e778]: Hidden abilities and power details about Batman the audience does not know
+                - generic [ref=e779]:
+                  - generic [ref=e780]: power secrets
+                  - generic [ref=e781]: fresh
+                  - generic [ref=e782]: seeded
+                - 'button "Create carousel from: Secret Powers" [ref=e783] [cursor=pointer]':
+                  - img [ref=e784]
+                  - text: Create Content
+              - generic [ref=e785]:
+                - generic [ref=e786]:
+                  - heading "Underrated Moments" [level=4] [ref=e787]
+                  - button "Dismiss idea" [ref=e788] [cursor=pointer]:
+                    - img [ref=e789]
+                - paragraph [ref=e792]: Overlooked scenes and character moments for Batman that deserve more attention
+                - generic [ref=e793]:
+                  - generic [ref=e794]: underrated moments
+                  - generic [ref=e795]: fresh
+                  - generic [ref=e796]: seeded
+                - 'button "Create carousel from: Underrated Moments" [ref=e797] [cursor=pointer]':
+                  - img [ref=e798]
+                  - text: Create Content
+              - generic [ref=e799]:
+                - generic [ref=e800]:
+                  - heading "Origin Story" [level=4] [ref=e801]
+                  - button "Dismiss idea" [ref=e802] [cursor=pointer]:
+                    - img [ref=e803]
+                - paragraph [ref=e806]: The untold story of how Batman began
+                - generic [ref=e807]:
+                  - generic [ref=e808]: origin story
+                  - generic [ref=e809]: fresh
+                  - generic [ref=e810]: seeded
+                - 'button "Create carousel from: Origin Story" [ref=e811] [cursor=pointer]':
+                  - img [ref=e812]
+                  - text: Create Content
+              - generic [ref=e813]:
+                - generic [ref=e814]:
+                  - heading "Character Evolution" [level=4] [ref=e815]
+                  - button "Dismiss idea" [ref=e816] [cursor=pointer]:
+                    - img [ref=e817]
+                - paragraph [ref=e820]: How Batman transformed across eras, actors, or storylines
+                - generic [ref=e821]:
+                  - generic [ref=e822]: character evolution
+                  - generic [ref=e823]: fresh
+                  - generic [ref=e824]: seeded
+                - 'button "Create carousel from: Character Evolution" [ref=e825] [cursor=pointer]':
+                  - img [ref=e826]
+                  - text: Create Content
+              - generic [ref=e827]:
+                - generic [ref=e828]:
+                  - heading "Controversial Takes" [level=4] [ref=e829]
+                  - button "Dismiss idea" [ref=e830] [cursor=pointer]:
+                    - img [ref=e831]
+                - paragraph [ref=e834]: Hot takes about Batman that will spark debate
+                - generic [ref=e835]:
+                  - generic [ref=e836]: controversial takes
+                  - generic [ref=e837]: fresh
+                  - generic [ref=e838]: seeded
+                - 'button "Create carousel from: Controversial Takes" [ref=e839] [cursor=pointer]':
+                  - img [ref=e840]
+                  - text: Create Content
+              - generic [ref=e841]:
+                - generic [ref=e842]:
+                  - heading "Dark Facts" [level=4] [ref=e843]
+                  - button "Dismiss idea" [ref=e844] [cursor=pointer]:
+                    - img [ref=e845]
+                - paragraph [ref=e848]: Disturbing or unsettling revelations about Batman
+                - generic [ref=e849]:
+                  - generic [ref=e850]: dark facts
+                  - generic [ref=e851]: fresh
+                  - generic [ref=e852]: seeded
+                - 'button "Create carousel from: Dark Facts" [ref=e853] [cursor=pointer]':
+                  - img [ref=e854]
+                  - text: Create Content
+              - generic [ref=e855]:
+                - generic [ref=e856]:
+                  - heading "Actor Secrets" [level=4] [ref=e857]
+                  - button "Dismiss idea" [ref=e858] [cursor=pointer]:
+                    - img [ref=e859]
+                - paragraph [ref=e862]: Behind-the-scenes actor stories, casting changes, and multiple portrayals of Batman
+                - generic [ref=e863]:
+                  - generic [ref=e864]: actor secrets
+                  - generic [ref=e865]: fresh
+                  - generic [ref=e866]: seeded
+                - 'button "Create carousel from: Actor Secrets" [ref=e867] [cursor=pointer]':
+                  - img [ref=e868]
+                  - text: Create Content
+              - generic [ref=e869]:
+                - generic [ref=e870]:
+                  - heading "Easter Eggs" [level=4] [ref=e871]
+                  - button "Dismiss idea" [ref=e872] [cursor=pointer]:
+                    - img [ref=e873]
+                - paragraph [ref=e876]: Hidden references and details you missed about Batman
+                - generic [ref=e877]:
+                  - generic [ref=e878]: easter eggs
+                  - generic [ref=e879]: fresh
+                  - generic [ref=e880]: seeded
+                - 'button "Create carousel from: Easter Eggs" [ref=e881] [cursor=pointer]':
+                  - img [ref=e882]
+                  - text: Create Content
+              - generic [ref=e883]:
+                - generic [ref=e884]:
+                  - heading "Crossover Connections" [level=4] [ref=e885]
+                  - button "Dismiss idea" [ref=e886] [cursor=pointer]:
+                    - img [ref=e887]
+                - paragraph [ref=e890]: Links between Batman and other characters or universes
+                - generic [ref=e891]:
+                  - generic [ref=e892]: crossover connections
+                  - generic [ref=e893]: fresh
+                  - generic [ref=e894]: seeded
+                - 'button "Create carousel from: Crossover Connections" [ref=e895] [cursor=pointer]':
+                  - img [ref=e896]
+                  - text: Create Content
+              - generic [ref=e897]:
+                - generic [ref=e898]:
+                  - heading "What If" [level=4] [ref=e899]
+                  - button "Dismiss idea" [ref=e900] [cursor=pointer]:
+                    - img [ref=e901]
+                - paragraph [ref=e904]: Alternate timelines and hypothetical scenarios for Batman
+                - generic [ref=e905]:
+                  - generic [ref=e906]: what if
+                  - generic [ref=e907]: fresh
+                  - generic [ref=e908]: seeded
+                - 'button "Create carousel from: What If" [ref=e909] [cursor=pointer]':
+                  - img [ref=e910]
+                  - text: Create Content
+              - generic [ref=e911]:
+                - generic [ref=e912]:
+                  - heading "Timeline Deep Dive" [level=4] [ref=e913]
+                  - button "Dismiss idea" [ref=e914] [cursor=pointer]:
+                    - img [ref=e915]
+                - paragraph [ref=e918]: Chronological journey through Batman's key events
+                - generic [ref=e919]:
+                  - generic [ref=e920]: timeline deep dive
+                  - generic [ref=e921]: fresh
+                  - generic [ref=e922]: seeded
+                - 'button "Create carousel from: Timeline Deep Dive" [ref=e923] [cursor=pointer]':
+                  - img [ref=e924]
+                  - text: Create Content
+              - generic [ref=e925]:
+                - generic [ref=e926]:
+                  - heading "Storyline Recap" [level=4] [ref=e927]
+                  - button "Dismiss idea" [ref=e928] [cursor=pointer]:
+                    - img [ref=e929]
+                - paragraph [ref=e932]: Story condensation and arc summaries for Batman
+                - generic [ref=e933]:
+                  - generic [ref=e934]: storyline recap
+                  - generic [ref=e935]: fresh
+                  - generic [ref=e936]: seeded
+                - 'button "Create carousel from: Storyline Recap" [ref=e937] [cursor=pointer]':
+                  - img [ref=e938]
+                  - text: Create Content
+              - generic [ref=e939]:
+                - generic [ref=e940]:
+                  - heading "Power Ranking" [level=4] [ref=e941]
+                  - button "Dismiss idea" [ref=e942] [cursor=pointer]:
+                    - img [ref=e943]
+                - paragraph [ref=e946]: Comparative power level analysis featuring Batman
+                - generic [ref=e947]:
+                  - generic [ref=e948]: power ranking
+                  - generic [ref=e949]: fresh
+                  - generic [ref=e950]: seeded
+                - 'button "Create carousel from: Power Ranking" [ref=e951] [cursor=pointer]':
+                  - img [ref=e952]
+                  - text: Create Content

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { getAuthHeaders } from '@/lib/auth'
-import { Mail, RefreshCw, Star, CheckCircle } from 'lucide-react'
+import { CheckCircle, Loader2, Mail, RefreshCw, Star, Volume2, VolumeX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { GoogleOAuthButton } from '@/components/GoogleOAuthButton'
@@ -8,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { EmailRulesPanel } from '@/components/email/EmailRulesPanel'
 import { AccountSwitcher } from '@/components/AccountSwitcher'
+import { useSchedulerStatus, useSetSchedulerJobEnabled } from '@/hooks/useSystemApi'
 
 interface Email {
   id: string
@@ -23,6 +25,17 @@ interface Email {
   category: string
 }
 
+interface EmailVoiceSessionStatus {
+  state: string
+  queue_length: number
+  active_email_id: string | null
+  active_sender: string | null
+  active_subject: string | null
+  reader_voice: string
+  last_state_change: string
+  suppressed_count?: number
+}
+
 export function EmailPage() {
   const [emails, setEmails] = useState<Email[]>([])
   const [loading, setLoading] = useState(false)
@@ -30,6 +43,28 @@ export function EmailPage() {
   const [connected, setConnected] = useState(false)
   // null = All Accounts merged view; otherwise the selected account id.
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
+  const { data: schedulerStatus } = useSchedulerStatus()
+  const setSchedulerJobEnabled = useSetSchedulerJobEnabled()
+  const voiceJob = schedulerStatus?.jobs.find((job) => job.id === 'reachy_email_nudge')
+  const voiceReadingEnabled = Boolean(voiceJob?.enabled)
+  const voiceToggleBusy =
+    setSchedulerJobEnabled.isPending &&
+    setSchedulerJobEnabled.variables?.jobName === 'reachy_email_nudge'
+
+  const { data: voiceSession } = useQuery({
+    queryKey: ['reachy-email-session'],
+    queryFn: async (): Promise<EmailVoiceSessionStatus> => {
+      const response = await fetch('/api/reachy/email/session', {
+        headers: getAuthHeaders(),
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      return response.json() as Promise<EmailVoiceSessionStatus>
+    },
+    enabled: connected,
+    refetchInterval: 10000,
+  })
 
   const loadEmails = useCallback(async () => {
     try {
@@ -123,16 +158,49 @@ export function EmailPage() {
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-6 gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6 gap-3">
         <AccountSwitcher value={selectedAccount} onChange={setSelectedAccount} />
-        <Button
-          onClick={syncInbox}
-          disabled={syncing}
-          className="gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Syncing...' : selectedAccount ? 'Sync this account' : 'Sync all accounts'}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label={`${voiceReadingEnabled ? 'Disable' : 'Enable'} Reachy email reading`}
+            disabled={!voiceJob || voiceToggleBusy}
+            onClick={() =>
+              setSchedulerJobEnabled.mutate({
+                jobName: 'reachy_email_nudge',
+                enabled: !voiceReadingEnabled,
+              })
+            }
+            className="gap-2"
+          >
+            {voiceToggleBusy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : voiceReadingEnabled ? (
+              <Volume2 className="w-4 h-4 text-green-400" />
+            ) : (
+              <VolumeX className="w-4 h-4 text-zinc-400" />
+            )}
+            Reachy email reading
+            <Badge variant="outline" className={voiceReadingEnabled ? 'text-green-300' : 'text-zinc-400'}>
+              {voiceReadingEnabled ? 'On' : 'Off'}
+            </Badge>
+          </Button>
+          {voiceSession && voiceSession.state !== 'idle' && (
+            <Badge variant="outline" className="max-w-[360px] truncate border-amber-500/40 text-amber-200">
+              {voiceSession.state.replace(/_/g, ' ')} - {voiceSession.queue_length} queued
+            </Badge>
+          )}
+          <Button
+            onClick={syncInbox}
+            disabled={syncing}
+            className="gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : selectedAccount ? 'Sync this account' : 'Sync all accounts'}
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="all" className="space-y-4">

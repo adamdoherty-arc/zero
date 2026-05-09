@@ -22,20 +22,24 @@ from app.routers import (
     gpu, llm, chat, research_rules, tiktok_shop, tiktok_content, content_agent,
     prediction_markets, llc_guidance, approvals, visual_workflows,
     meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
-    meeting_chat, meeting_search, meeting_speakers, meeting_ws,
+    meeting_chat, meeting_search, meeting_speakers, meeting_ws, voiceprints,
+    meeting_preferences,
     ecosystem_health,
-    tts, reachy, reachy_intent, home_assistant,
+    tts, reachy, reachy_intent, reachy_email, reachy_realtime, reachy_memory, reachy_companion, home_assistant, oauth_accounts, sight,
     feedback, goals, memory,
     vision, focus,
     email_drafts, routine,
     habits, journal,
     agent_company, deep_research, experiments, council,
-    autonomous_research, vault, agent_approvals, voice_bridge,
+    autonomous_research, vault, agent_approvals, voice_bridge, company_operator, company_work_items,
     character_content, brain,
     character_reference_videos,
     media_content,
     trend_intelligence,
     employee,
+    meals,
+    loops,
+    skills_proxy,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -84,6 +88,39 @@ async def lifespan(app: FastAPI):
         await create_tables()
         logger.info("Database initialized")
 
+        # Recover any loop_runs that were left in 'running' state by a previous
+        # container that exited mid-dispatch. asyncio tasks die with the
+        # process, so any in-flight skill execution is lost on restart.
+        try:
+            from app.infrastructure.database import get_session
+            from app.db.models import LoopRunModel
+            from sqlalchemy import update
+            from datetime import datetime, timezone, timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=2)
+            async with get_session() as session:
+                result = await session.execute(
+                    update(LoopRunModel)
+                    .where(LoopRunModel.status == "running")
+                    .where(LoopRunModel.started_at < cutoff)
+                    .values(
+                        status="failure",
+                        ended_at=datetime.now(timezone.utc),
+                        error="orphaned by container restart",
+                    )
+                )
+                if result.rowcount:
+                    logger.warning("loop_runs.orphans_recovered", count=result.rowcount)
+                await session.commit()
+        except Exception as e:
+            logger.warning("loop_runs.orphan_recovery_failed", error=str(e))
+
+        try:
+            from app.services.company_work_item_service import ensure_company_work_item_schema
+            await ensure_company_work_item_schema()
+            logger.info("Company work-item schema verified")
+        except Exception as e:
+            logger.warning("Failed to verify company work-item schema", error=str(e))
+
         # Seed knowledge categories and research rules
         try:
             from app.services.knowledge_service import get_knowledge_service
@@ -114,6 +151,15 @@ async def lifespan(app: FastAPI):
                     logger.info("Registered carousel_v2_rhythm variant", **v2_summary)
             except Exception as e:
                 logger.warning("Failed to seed character prompt variants", error=str(e))
+
+            # Seed meal services catalog (CookUnity, Factor, HelloFresh, etc.)
+            try:
+                from app.services.meal_catalog_service import get_meal_catalog_service
+                meals_added = await get_meal_catalog_service().seed_defaults()
+                if meals_added:
+                    logger.info("Seeded meal services", count=meals_added)
+            except Exception as e:
+                logger.warning("Failed to seed meal services", error=str(e))
         except Exception as e:
             logger.warning("Failed to seed defaults", error=str(e))
     except Exception as e:
@@ -134,6 +180,32 @@ async def lifespan(app: FastAPI):
     # Initialize centralized LLM router (must happen before startup checks)
     from app.infrastructure.llm_router import get_llm_router
     await get_llm_router().initialize()
+
+    # Load Reachy voice-stack config (STT / TTS selections) and pre-warm the
+    # Whisper + Piper models so the first voice turn doesn't pay a 9-10 s
+    # cold start. Both warmups are background tasks — startup keeps moving if
+    # either model is missing.
+    try:
+        from app.services.reachy_voice_config_service import get_reachy_voice_config
+        voice_cfg = get_reachy_voice_config()
+        await voice_cfg.load()
+
+        async def _voice_warmup() -> None:
+            try:
+                from app.services.audio_service import get_audio_service
+                from app.services.tts_service import get_tts_service
+                await get_audio_service().warmup(voice_cfg.get_stt_model())
+            except Exception as e:
+                logger.warning("audio_warmup_failed", error=str(e))
+            try:
+                from app.services.tts_service import get_tts_service
+                await get_tts_service().warmup()
+            except Exception as e:
+                logger.warning("tts_warmup_failed", error=str(e))
+
+        asyncio.create_task(_voice_warmup(), name="voice_warmup")
+    except Exception as e:
+        logger.warning("reachy_voice_config_init_failed", error=str(e))
 
     # Run startup validation checks
     from app.infrastructure.startup import run_startup_checks
@@ -161,6 +233,86 @@ async def lifespan(app: FastAPI):
             logger.info("Reachy presence scheduler started")
         except Exception as e:
             logger.warning("Failed to start Reachy presence scheduler", error=str(e))
+
+        # Validate that every persona's edge-tts voice is real. Logs warnings
+        # for any bad voice so future persona additions don't break silently.
+        try:
+            import asyncio as _asyncio
+            from app.services.reachy_personas import validate_persona_voices
+            _asyncio.create_task(validate_persona_voices())
+        except Exception as e:
+            logger.debug("Persona voice validation skipped", error=str(e))
+
+        # Cross-session memory compaction: re-extract durable notes from
+        # recent turns and age out low-confidence unused ones every 6 h.
+        try:
+            from app.services.scheduler_service import get_scheduler_service
+            from app.services.reachy_user_memory_service import (
+                get_reachy_user_memory_service,
+            )
+            sched = get_scheduler_service().scheduler
+
+            async def _reachy_memory_compact_job() -> None:
+                try:
+                    await get_reachy_user_memory_service().compact()
+                except Exception as exc:
+                    logger.debug("reachy_memory_compact_failed", error=str(exc))
+
+            sched.add_job(
+                _reachy_memory_compact_job,
+                trigger="interval",
+                hours=6,
+                id="reachy_memory_compact",
+                name="Reachy user memory compaction",
+                replace_existing=True,
+            )
+            logger.info("Reachy memory compaction scheduled (every 6h)")
+        except Exception as e:
+            logger.warning("Failed to schedule Reachy memory compaction", error=str(e))
+
+        # One-shot migration: pull existing user_memory.json _notes into the
+        # new Letta-style human block. Idempotent — guarded by a flag inside
+        # the store so it only runs the first time after the schema change.
+        try:
+            from app.services.reachy_memory_blocks import get_reachy_memory_blocks
+            await get_reachy_memory_blocks().maybe_migrate_from_user_memory()
+        except Exception as e:
+            logger.debug("reachy_memory_blocks_migration_skipped", error=str(e))
+
+        # Nightly personality synthesis: 02:30 daily, after the 02:15 drift
+        # scan. Reads the last 24 h of turns + current blocks and updates the
+        # human + relationship blocks; writes a snapshot to the vault.
+        try:
+            from app.services.reachy_personality_synthesis_service import (
+                get_reachy_personality_synthesis_service,
+            )
+            from app.services.scheduler_service import get_scheduler_service
+            sched = get_scheduler_service().scheduler
+
+            async def _reachy_personality_synthesis_job() -> None:
+                try:
+                    await get_reachy_personality_synthesis_service().run()
+                except Exception as exc:
+                    logger.debug(
+                        "reachy_personality_synthesis_failed",
+                        error=str(exc),
+                    )
+
+            sched.add_job(
+                _reachy_personality_synthesis_job,
+                trigger="cron",
+                hour=2,
+                minute=30,
+                id="reachy_personality_synthesis_tick",
+                name="Reachy nightly personality synthesis",
+                replace_existing=True,
+            )
+            logger.info("Reachy personality synthesis scheduled (02:30 daily)")
+        except Exception as e:
+            logger.warning(
+                "Failed to schedule Reachy personality synthesis",
+                error=str(e),
+            )
 
         # Home Assistant → Reachy gesture watcher (Wave 6). Inert when HA is
         # not configured or the gesture map is empty.
@@ -321,8 +473,8 @@ async def lifespan(app: FastAPI):
 
         # Close shared Ollama client
         try:
-            from app.infrastructure.ollama_client import get_ollama_client
-            await get_ollama_client().close()
+            from app.infrastructure.ollama_client import get_llm_client
+            await get_llm_client().close()
         except Exception:
             pass
 
@@ -383,6 +535,7 @@ app.include_router(audio.router, prefix="/api/audio", tags=["Audio"])
 app.include_router(email.router, prefix="/api/email", tags=["Email"])
 app.include_router(calendar.router, prefix="/api/calendar", tags=["Calendar"])
 app.include_router(google_oauth.router, prefix="/api/google", tags=["Google OAuth"])
+app.include_router(oauth_accounts.router, prefix="/api/oauth/accounts", tags=["OAuth Accounts"])
 app.include_router(assistant.router, prefix="/api/assistant", tags=["Assistant"])
 app.include_router(money_maker.router, prefix="/api/money-maker", tags=["Money Maker"])
 app.include_router(workflows.router, prefix="/api/workflows", tags=["Workflows"])
@@ -399,6 +552,7 @@ app.include_router(llm.router, prefix="/api/llm", tags=["LLM Router"])
 app.include_router(chat.router, prefix="/api/ask-zero", tags=["Ask Zero"])
 app.include_router(research_rules.router, tags=["Research Rules"])
 app.include_router(tiktok_shop.router, prefix="/api/tiktok-shop", tags=["TikTok Shop"])
+app.include_router(meals.router, prefix="/api/meals", tags=["Meal Manager"])
 app.include_router(tiktok_content.router, prefix="/api/tiktok-content", tags=["TikTok Content"])
 app.include_router(content_agent.router, prefix="/api/content-agent", tags=["Content Agent"])
 app.include_router(prediction_markets.router, prefix="/api/prediction-markets", tags=["Prediction Markets"])
@@ -410,7 +564,12 @@ app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags
 app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
 app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
 app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Reachy Voice Intents"])
+app.include_router(reachy_email.router, prefix="/api/reachy/email", tags=["Reachy Email Triage"])
+app.include_router(reachy_realtime.router, prefix="/api/reachy/realtime", tags=["Reachy Realtime Voice"])
+app.include_router(reachy_memory.router, prefix="/api/reachy/memory", tags=["Reachy Memory Blocks"])
+app.include_router(reachy_companion.router, prefix="/api/reachy/companion", tags=["Reachy Companion"])
 app.include_router(home_assistant.router, prefix="/api/home-assistant", tags=["Home Assistant"])
+app.include_router(sight.router, prefix="/api/sight", tags=["Sight (wearable-agnostic vision)"])
 
 # Meeting Intelligence (DailyMemory)
 app.include_router(meetings.router, prefix="/api/meetings", tags=["Meetings"])
@@ -421,6 +580,8 @@ app.include_router(meeting_chat.router, prefix="/api/meeting-chat", tags=["Meeti
 app.include_router(meeting_search.router, prefix="/api/meeting-search", tags=["Meeting Search"])
 app.include_router(meeting_speakers.router, prefix="/api/meetings", tags=["Meeting Speakers"])
 app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
+app.include_router(voiceprints.router, prefix="/api/voiceprints", tags=["Voiceprints"])
+app.include_router(meeting_preferences.router, prefix="/api/meeting-preferences", tags=["Meeting Preferences"])
 
 # Personal Assistant (feedback, goals, memory)
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
@@ -453,6 +614,8 @@ app.include_router(
 )
 app.include_router(media_content.router, prefix="/api/media-content", tags=["Media Content"])
 app.include_router(agent_company.router)  # prefix in router
+app.include_router(company_operator.router)  # prefix in router
+app.include_router(company_work_items.router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
 app.include_router(autonomous_research.router)  # prefix in router
 app.include_router(vault.router)  # prefix in router
@@ -463,6 +626,8 @@ app.include_router(council.router)  # prefix in router
 app.include_router(brain.router)  # prefix in router
 app.include_router(trend_intelligence.router)  # prefix in router
 app.include_router(employee.router, prefix="/api/employee", tags=["Employee Check-in"])
+app.include_router(loops.router)  # prefix + tags defined in router
+app.include_router(skills_proxy.router)  # /api/skills/* and /api/teams/* proxied to Legion
 
 
 @app.get("/")
@@ -526,15 +691,21 @@ async def health_ready():
     except Exception:
         checks["scheduler"] = "error"
 
-    # Check Ollama (non-blocking, 2s timeout)
+    # Check local LLM router (non-blocking, 2s timeout). Ollama was retired
+    # in favor of the shared LiteLLM/vLLM route, so keep the legacy key from
+    # reporting a false outage.
     try:
         import httpx
-        base = settings.ollama_base_url.replace("/v1", "")
+        base = settings.vllm_chat_url.rstrip("/")
+        headers = {}
+        if settings.vllm_api_key:
+            headers["Authorization"] = f"Bearer {settings.vllm_api_key}"
         async with httpx.AsyncClient(timeout=2) as client:
-            resp = await client.get(f"{base}/api/tags")
-            checks["ollama"] = "ok" if resp.status_code == 200 else "degraded"
+            resp = await client.get(f"{base}/models", headers=headers)
+            checks["local_llm"] = "ok" if resp.status_code == 200 else "degraded"
     except Exception:
-        checks["ollama"] = "unavailable"
+        checks["local_llm"] = "unavailable"
+    checks["ollama"] = "retired"
 
     # Check Legion (non-blocking, 2s timeout)
     try:

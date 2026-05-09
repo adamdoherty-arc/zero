@@ -36,7 +36,7 @@ export const sprintKeys = {
 export const taskKeys = {
   all: ['tasks'] as const,
   lists: () => [...taskKeys.all, 'list'] as const,
-  list: (filters?: { sprint_id?: string }) => [...taskKeys.lists(), filters] as const,
+  list: (filters?: { sprint_id?: string; project_id?: string }) => [...taskKeys.lists(), filters] as const,
   backlog: () => [...taskKeys.all, 'backlog'] as const,
   detail: (id: string) => [...taskKeys.all, 'detail', id] as const,
 }
@@ -118,12 +118,15 @@ export function useSprintBoard(id: string) {
 }
 
 // Task hooks
-export function useTasks(sprintId?: string) {
+export function useTasks(sprintId?: string, projectId?: string) {
   return useQuery({
-    queryKey: taskKeys.list({ sprint_id: sprintId }),
+    queryKey: taskKeys.list({ sprint_id: sprintId, project_id: projectId }),
     queryFn: () => {
-      const params = sprintId ? `?sprint_id=${sprintId}` : ''
-      return fetchApi<Task[]>(`/tasks${params}`)
+      const params = new URLSearchParams()
+      if (sprintId) params.set('sprint_id', sprintId)
+      if (projectId) params.set('project_id', projectId)
+      const queryStr = params.toString()
+      return fetchApi<Task[]>(`/tasks${queryStr ? `?${queryStr}` : ''}`)
     },
   })
 }

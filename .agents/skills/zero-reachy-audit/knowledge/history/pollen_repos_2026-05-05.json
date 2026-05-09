@@ -1,0 +1,12 @@
+{
+  "fetched_at": "2026-05-05T15:50:00Z",
+  "source": "https://api.github.com/users/pollen-robotics/repos?per_page=100&sort=updated",
+  "reachy_mini_repos": [
+    {"name": "reachy_mini", "url": "https://github.com/pollen-robotics/reachy_mini", "stars": 1111, "pushed_at": "2026-05-05T15:24:44Z", "license": "Apache-2.0"},
+    {"name": "reachy_mini_conversation_app", "url": "https://github.com/pollen-robotics/reachy_mini_conversation_app", "stars": 201, "pushed_at": "2026-05-05T15:20:15Z", "license": "Apache-2.0"},
+    {"name": "reachy-mini-desktop-app", "url": "https://github.com/pollen-robotics/reachy-mini-desktop-app", "stars": 73, "pushed_at": "2026-04-24T07:56:36Z", "license": "Apache-2.0"},
+    {"name": "reachy_mini_rust_kinematics", "url": "https://github.com/pollen-robotics/reachy_mini_rust_kinematics", "stars": 3, "pushed_at": "2026-04-07T16:22:48Z", "license": null},
+    {"name": "reachy-mini-os", "url": "https://github.com/pollen-robotics/reachy-mini-os", "stars": 13, "pushed_at": "2026-03-24T15:51:30Z", "license": "BSD-3-Clause"},
+    {"name": "reachy_mini_toolbox", "url": "https://github.com/pollen-robotics/reachy_mini_toolbox", "stars": 10, "pushed_at": "2025-12-07T09:34:02Z", "license": "Apache-2.0"}
+  ]
+}

@@ -1,6 +1,8 @@
 """Alembic migration environment for ZERO API."""
 
 import asyncio
+import os
+import platform
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -23,7 +25,21 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+# Honor the runtime DSN (ZERO_POSTGRES_URL or DATABASE_URL) over alembic.ini.
+# alembic.ini was written for the legacy Docker `zero-postgres` host; the live
+# stack now points at the host Postgres install via host.docker.internal.
+runtime_url = os.environ.get("ZERO_POSTGRES_URL") or os.environ.get("DATABASE_URL")
+if runtime_url:
+    # Alembic uses sync drivers via the SQLAlchemy engine config; ensure we
+    # land on a driver alembic's async runner can use.
+    if runtime_url.startswith("postgresql://") and "+psycopg" not in runtime_url:
+        runtime_url = runtime_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    config.set_main_option("sqlalchemy.url", runtime_url)
+
 target_metadata = Base.metadata
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def run_migrations_offline() -> None:

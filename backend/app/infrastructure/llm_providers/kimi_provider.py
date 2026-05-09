@@ -2,7 +2,7 @@
 Kimi (Moonshot AI) provider — paid LLM provider.
 
 Uses OpenAI-compatible API at configurable base URL (default: api.moonshot.ai/v1).
-Models: K2.5 (batch/legacy), K2 family (primary reasoning), V1 series (legacy).
+Flagship: K2.6 (released April 2026) — thinking-optimized, 256K context.
 Only active if ZERO_KIMI_API_KEY is set.
 """
 
@@ -19,24 +19,50 @@ from app.infrastructure.llm_providers.base import BaseLLMProvider
 logger = structlog.get_logger(__name__)
 
 KIMI_PRICING = {
-    # K2.5 - batch API eligible, thinking enabled by default on API side
-    "kimi-k2.5": {"input": 0.60, "output": 3.00},
-    # K2 family - primary reasoning models, cheaper output than K2.5
-    "kimi-k2-0905-preview": {"input": 0.60, "output": 2.50},
-    "kimi-k2-0711-preview": {"input": 0.60, "output": 2.50},
-    "kimi-k2-turbo-preview": {"input": 1.15, "output": 8.00},
-    "kimi-k2-thinking": {"input": 0.60, "output": 2.50},
-    "kimi-k2-thinking-turbo": {"input": 1.15, "output": 8.00},
-    # V1 legacy models - official pricing from platform.kimi.ai
-    "moonshot-v1-8k": {"input": 0.20, "output": 2.00},
-    "moonshot-v1-32k": {"input": 1.00, "output": 3.00},
-    "moonshot-v1-128k": {"input": 2.00, "output": 5.00},
+    "kimi-k2.6": {"input": 0.95, "output": 4.00},
+    # Kimi vision models — same K2.6 backbone with MoonViT, same pricing.
+    "kimi-k2.6-vision": {"input": 0.95, "output": 4.00},
 }
-DEFAULT_PRICING = {"input": 0.60, "output": 2.50}
+DEFAULT_PRICING = {"input": 0.95, "output": 4.00}
+
+
+def _attach_images_to_last_user(
+    messages: List[Dict[str, str]], image_urls: List[str]
+) -> List[Dict]:
+    """Convert the trailing user message to OpenAI content-array shape with
+    image_url parts. Kimi's MoonViT accepts both http(s) URLs and base64
+    data URLs.
+    """
+    if not image_urls:
+        return messages
+    out: List[Dict] = []
+    for m in messages[:-1]:
+        out.append(m)
+    last = messages[-1] if messages else {"role": "user", "content": ""}
+    if last.get("role") != "user":
+        out.append(last)
+        out.append({
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": u}} for u in image_urls],
+        })
+        return out
+    text = last.get("content", "")
+    parts: List[Dict] = []
+    if text:
+        parts.append({"type": "text", "text": text})
+    for url in image_urls:
+        parts.append({"type": "image_url", "image_url": {"url": url}})
+    out.append({"role": "user", "content": parts})
+    return out
 
 
 class KimiProvider(BaseLLMProvider):
-    """Moonshot/Kimi API provider (OpenAI-compatible, long context)."""
+    """Moonshot/Kimi API provider (OpenAI-compatible, long context).
+
+    Supports vision when the caller passes ``image_urls=[...]`` — the trailing
+    user message is converted to the OpenAI content-array shape before the
+    request. K2.6 ships with a native MoonViT image encoder.
+    """
 
     def __init__(self):
         settings = get_settings()
@@ -67,37 +93,29 @@ class KimiProvider(BaseLLMProvider):
         **kwargs,
     ) -> str:
         thinking_mode = kwargs.get("thinking_mode", False)
+        image_urls = kwargs.get("image_urls") or []
+        msgs = _attach_images_to_last_user(messages, image_urls) if image_urls else messages
 
         async def _call():
-            # kimi-k2.5 ONLY accepts temperature=1 (API enforced since ~March 2026).
-            # K2-thinking models also work best with higher temperature.
-            # Other Kimi/moonshot models accept variable temperature.
-            if model == "kimi-k2.5":
+            temp = max(temperature, 0.6) if thinking_mode else temperature
+            # Moonshot's K2.5/K2.6 flagship models REQUIRE temperature=1 and
+            # reject any other value with a 400: "invalid temperature: only 1
+            # is allowed for this model". Downstream callers pass 0.0-0.6 so
+            # we force the clamp here rather than pushing that knowledge to
+            # every call site. Non-k2 models (moonshot-v1-*) accept normal
+            # temperatures so we leave those alone.
+            if model.startswith("kimi-k2"):
                 temp = 1.0
-            elif model.startswith("kimi-k2-thinking"):
-                temp = max(temperature, 0.6)
-            elif thinking_mode:
-                temp = max(temperature, 0.6)
-            else:
-                temp = temperature
 
             payload = {
                 "model": model,
-                "messages": messages,
+                "messages": msgs,
                 "temperature": temp,
                 "max_tokens": max_tokens,
             }
 
             if kwargs.get("json_mode"):
                 payload["response_format"] = {"type": "json_object"}
-
-            # K2.5 API defaults to thinking=enabled, so we must explicitly
-            # disable it when not requested to avoid paying for thinking tokens.
-            if model == "kimi-k2.5":
-                if thinking_mode:
-                    payload["thinking"] = {"type": "enabled"}
-                else:
-                    payload["thinking"] = {"type": "disabled"}
 
             response = await self._client.post(
                 f"{self._base_url}/chat/completions",
@@ -108,9 +126,6 @@ class KimiProvider(BaseLLMProvider):
             data = response.json()
 
             content = data["choices"][0]["message"].get("content", "")
-
-            # Kimi K2.5 sometimes puts response in reasoning_content even without
-            # explicit thinking mode. Always check this field when content is empty.
             if not content:
                 reasoning = data["choices"][0]["message"].get("reasoning_content", "")
                 if reasoning:

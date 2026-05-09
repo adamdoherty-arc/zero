@@ -18,8 +18,15 @@ requests>=2.31.0
 python-dateutil>=2.8.2
 
 # LLM Integration (Ollama via OpenAI-compatible API)
-openai>=1.10.0
+# Realtime API (AsyncOpenAI.realtime.connect, openai.types.realtime.*) requires >=2.30.
+openai>=2.30.0
 httpx>=0.28.0
+# Raw-websocket client, used by the Reachy realtime bridge.
+websockets>=13.0
+# Gradio client — used to claim a free OpenAI key from Pollen's HF Space so
+# realtime voice works out-of-the-box without a user-supplied key. Mirrors
+# upstream reachy_mini_conversation_app's first-boot bootstrap.
+gradio-client>=1.8.0
 
 # Logging
 structlog>=25.1.0
@@ -60,6 +67,9 @@ apscheduler>=3.10.0
 
 # Fuzzy string matching (research dedup)
 thefuzz>=0.22.1
+# Faster pure-Rust fuzzy matching used by wake-word service to tolerate
+# whisper mishearings of "hey zero".
+rapidfuzz>=3.9.0
 
 # Email Automation with LangChain
 langchain-google-community>=0.1.0
@@ -93,6 +103,14 @@ mcp>=1.26.0
 
 # Text-to-Speech
 edge-tts>=6.1.0
+piper-tts>=1.2.0  # Local TTS for Interactive Mode "Local" backend (host-resident, ~30MB ONNX voices)
+
+# Voice Activity Detection for the local realtime handler. webrtcvad-wheels
+# is a tiny (~50 KB) C-extension VAD with no Python deps. Picked over
+# silero-vad to avoid pulling torch (~500 MB) into the backend image — for
+# clear speech in a quiet room (Reachy's typical use case) webrtcvad is
+# more than sufficient.
+webrtcvad-wheels>=2.0.14
 
 # Image Compositing (carousel rendering)
 Pillow>=10.0.0
@@ -114,9 +132,49 @@ yt-dlp>=2025.1.1
 # ship only the `tasks` submodule and drop the legacy `mp.solutions`
 # namespace the vision service uses for HandLandmarker.
 mediapipe>=0.10.11,<0.10.20
+# Keep protobuf below v5 for mediapipe; later dependency passes must not
+# upgrade this to v6 or Reachy vision/audio imports become fragile.
+protobuf>=4.25.3,<5
 # Librosa for BPM detection in radio mode (Wave 13).
 librosa>=0.10.0
-# Wake-word detection (Wave 11) is opt-in because openwakeword has patchy
-# pre-built wheels for some Python versions. Install manually when ready:
-#   pip install openwakeword onnxruntime
-# The service reports backend_status().available=false until then.
+# Wake-word detection — used by /api/reachy/wake-word/status + /predict.
+# Pulls scikit-learn + onnxruntime as transitive deps. ~25 MB total.
+openwakeword>=0.6.0
+onnxruntime>=1.16.0
+
+# ---------------------------------------------------------------------------
+# Carousel V2 infrastructure plane (carosel.txt blueprint Phase 1)
+# ---------------------------------------------------------------------------
+
+# Temporal SDK — durable workflow orchestration. Workflow code is deterministic;
+# activities carry I/O. Runs against zero-temporal:7233 (auto-setup container).
+temporalio>=1.10.0
+
+# Langfuse — self-hosted LLM observability + prompt registry + judge scores.
+# Runs against zero-langfuse-web:3000; ClickHouse-backed traces.
+langfuse>=2.60.0
+
+# Qdrant — vector DB for image embeddings, exemplar memory, topic novelty filter.
+# pgvector stays as the primary; Qdrant is added for hybrid (dense + sparse +
+# multi-vector via BGE-M3) at higher recall than pgvector alone.
+qdrant-client>=1.13.0
+
+# Redis — rate-limit token buckets, transient cache, idempotency lookahead.
+# Async client for use inside FastAPI handlers.
+redis>=5.2.0
+
+# MinIO / S3 — generated carousels + master assets + image-source caches.
+# aioboto3 carries its own pinned aiobotocore + botocore — adding a
+# top-level ``boto3`` constraint sends pip's resolver into ResolutionTooDeep
+# at this requirement-set size.
+aioboto3>=13.0.0
+
+# aiometer — bounded concurrency for fan-out fetchers (Phase 2).
+aiometer>=0.5.0
+
+# stamina — production retry policy on top of tenacity. Bakes in jittered
+# exponential backoff, async, structlog/Prometheus instrumentation.
+stamina>=24.3.0
+
+# purgatory — async circuit breaker (Phase 6 production hardening).
+purgatory>=3.0.0

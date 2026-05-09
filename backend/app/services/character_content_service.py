@@ -18,6 +18,7 @@ from typing import List, Dict, Any, Optional
 from functools import lru_cache
 
 import structlog
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select, update, delete, func as sql_func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -1113,7 +1114,14 @@ class CharacterContentService:
                     timeout=900,
                     max_retries=1,
                 )
-            return parse_json_response(raw, name)
+            if not (raw or "").strip():
+                logger.warning("research_synthesis_empty_response", name=name)
+                return {"bio": f"Research data for {name}", "powers": [], "key_relationships": []}
+            parsed = parse_json_response(raw, name)
+            if not isinstance(parsed, dict) or not parsed.get("bio"):
+                logger.warning("research_synthesis_invalid_response", name=name, parsed_type=type(parsed).__name__)
+                return {"bio": f"Research data for {name}", "powers": [], "key_relationships": []}
+            return parsed
         except (ValueError, json.JSONDecodeError, TimeoutError, ConnectionError) as e:
             logger.warning("research_synthesis_failed", name=name, error=str(e))
             return {"bio": f"Research data for {name}", "powers": [], "key_relationships": []}
@@ -1316,13 +1324,19 @@ class CharacterContentService:
                         return result
                     chunk = await resp.content.read(65536)
 
-            from PIL import Image
             import io
             img = Image.open(io.BytesIO(chunk))
             result["width"] = img.width
             result["height"] = img.height
             result["is_valid"] = img.width >= 800  # minimum 800px wide for TikTok
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
+        except (
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            Image.DecompressionBombError,
+            OSError,
+            UnidentifiedImageError,
+            ValueError,
+        ):
             pass
         return result
 

@@ -2,6 +2,7 @@ import { render, type RenderOptions } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import type { ReactElement, ReactNode } from 'react'
+import { RealtimeVoiceProvider } from '@/hooks/useSharedRealtimeVoice'
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -19,7 +20,9 @@ function AllProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        {children}
+        <RealtimeVoiceProvider>
+          {children}
+        </RealtimeVoiceProvider>
       </BrowserRouter>
     </QueryClientProvider>
   )

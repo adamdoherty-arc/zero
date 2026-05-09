@@ -56,8 +56,12 @@ services:
       - C:/code/fortressOS:/projects/fortressos:ro
       - C:/code/Legion:/projects/legion:rw
       - C:/code/zero:/projects/zero:rw
+      - C:/code/LLMRouter:/projects/llmrouter:ro
       # Obsidian vault (personal second brain)
       - C:/code/vault/ObsidianZero:/vault:rw
+      # Claude skills directory — read-only so the loop framework can dispatch
+      # SKILL.md files to local Qwen via LiteLLM (no Anthropic billing).
+      - C:/Users/hadam/.claude/skills:/skills:ro
     environment:
       - ZERO_WORKSPACE_DIR=/app/workspace
       - ZERO_CONFIG_DIR=/app/config
@@ -72,7 +76,11 @@ services:
       - ZERO_VLLM_API_KEY=${LITELLM_MASTER_KEY:-sk-shared-master-change-me}
       # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
       - ZERO_REACHY_API_URL=http://host.docker.internal:8000
-      - ZERO_HOST_AGENT_URL=http://host.docker.internal:18794
+      - ZERO_HOST_AGENT_URL=http://host.docker.internal:18796
+      - ZERO_REACHY_STATUS_CACHE_S=${ZERO_REACHY_STATUS_CACHE_S:-5.0}
+      - ZERO_REACHY_ASSISTANT_STATUS_CACHE_S=${ZERO_REACHY_ASSISTANT_STATUS_CACHE_S:-5.0}
+      - ZERO_REACHY_SPEAKER_SINK=${ZERO_REACHY_SPEAKER_SINK:-true}
+      - ZERO_REACHY_COMPANION_BODY_MOTION=${ZERO_REACHY_COMPANION_BODY_MOTION:-true}
       - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-qwen3-chat}
       # Embeddings also proxy through shared LiteLLM; it maps qwen3-embed / Qwen/...
       # aliases to vllm-embed internally.
@@ -100,7 +108,7 @@ services:
       - ZERO_KIMI_BASE_URL=${ZERO_KIMI_BASE_URL:-https://api.moonshot.ai/v1}
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
       # ADA Bridge
-      - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-}
+      - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-http://ada-backend:8003}
       - ZERO_ADA_API_TOKEN=${ZERO_ADA_API_TOKEN:-}
       # TikTok Content Posting API
       - ZERO_TIKTOK_CLIENT_KEY=${ZERO_TIKTOK_CLIENT_KEY:-}

@@ -1,0 +1,7 @@
+# Copy to zero.properties and edit.
+# Never commit the real token.
+zero.api.url=http://10.0.0.5:18792
+zero.api.token=REDACTED-BEARER
+zero.sight.provider=meta_rayban
+# Set to false when you have the real Meta DAT SDK wired into GlassesSession.
+zero.fallback.phone=true

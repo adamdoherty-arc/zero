@@ -2,7 +2,7 @@
 
 Tier order (chosen by the user 2026-04-28 — see plan file):
 
-    Tier 0: Gemini 2.5 Flash            (paid, $0.075/M tokens, gated by budget)
+    Tier 0: Gemini Flash latest         (paid, gated by budget)
     Tier 1: OpenRouter free vision pool (free, rotates models × keys, always allowed)
 
 Kimi was dropped from the VLM path on 2026-04-28 — Moonshot doesn't expose a
@@ -162,13 +162,9 @@ async def _try_gemini(
     except Exception:  # noqa: BLE001
         return None
 
-    # ``gemini-2.5-flash-lite`` is the current cheapest stable vision-capable
-    # SKU on the v1beta endpoint ($0.025/M input, $0.10/M output). Avoids the
-    # ``gemini-flash-latest`` rolling alias which resolves to a thinking
-    # model that consumes ``max_output_tokens`` on internal reasoning and
-    # truncates the visible JSON response.
-    # Override with ZERO_GEMINI_VISION_MODEL once 3.1 GA hits v1beta.
-    model = os.getenv("ZERO_GEMINI_VISION_MODEL", "gemini-2.5-flash-lite")
+    # Route through a rolling alias by default so Stage 8 inherits the shared
+    # model mapping instead of pinning an older Gemini generation in source.
+    model = os.getenv("ZERO_GEMINI_VISION_MODEL") or os.getenv("ZERO_VLM_MODEL", "gemini-flash-latest")
     estimated = provider.estimate_cost(_AVG_INPUT_TOKENS, _AVG_OUTPUT_TOKENS, model)
 
     budget = await get_vlm_budget()

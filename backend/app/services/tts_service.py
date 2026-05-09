@@ -7,6 +7,7 @@ Provides local TTS synthesis returning WAV audio bytes.
 import asyncio
 import io
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -29,6 +30,21 @@ _FISH_PREFIX = "fish:"
 _FISH_DEFAULT_URL = os.getenv("FISH_SPEECH_URL", "http://host.docker.internal:18802/v1")
 _FISH_TIMEOUT_S = float(os.getenv("FISH_SPEECH_TIMEOUT_S", "20"))
 _VOICE_CLONE_DIR = Path(__file__).resolve().parents[1] / "data" / "voice_clones"
+_EDGE_TTS_VOICE_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}-[A-Za-z0-9]+Neural$")
+_PIPER_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-.+")
+
+
+def _is_edge_tts_voice(voice: str) -> bool:
+    return bool(_EDGE_TTS_VOICE_RE.match((voice or "").strip()))
+
+
+def _is_piper_voice(voice: str) -> bool:
+    voice = (voice or "").strip()
+    return bool(
+        _PIPER_VOICE_RE.match(voice)
+        or voice.endswith(".onnx")
+        or (os.path.isabs(voice) and voice)
+    )
 
 
 class TTSService:
@@ -106,6 +122,7 @@ class TTSService:
         await self.initialize()
 
         if voice_override:
+            voice_override = voice_override.strip()
             # Fish-Speech route — voice IDs prefixed with ``fish:`` resolve to
             # either a built-in preset (``fish:warm-female``) or a stored
             # reference clip (``fish:local-companion-warm`` → reads
@@ -122,17 +139,41 @@ class TTSService:
                     )
                     # Fall through to edge-tts so the voice loop never silently
                     # dies when the Fish-Speech server is offline.
-            try:
-                import edge_tts  # noqa: F401
-                audio = await self._synthesize_edge(text, voice=voice_override)
-                return audio, {"engine": ENGINE_EDGE, "voice": voice_override}
-            except ImportError:
+            if _is_edge_tts_voice(voice_override):
+                try:
+                    import edge_tts  # noqa: F401
+                    audio = await self._synthesize_edge(text, voice=voice_override)
+                    return audio, {"engine": ENGINE_EDGE, "voice": voice_override}
+                except ImportError:
+                    logger.warning(
+                        "voice_override_unavailable",
+                        voice=voice_override,
+                        reason="edge-tts not installed",
+                    )
+                    # fall through to default engine
+            elif _is_piper_voice(voice_override):
+                try:
+                    audio = await self._synthesize_piper_voice(text, voice_override)
+                    return audio, {"engine": ENGINE_PIPER, "voice": voice_override}
+                except Exception as e:
+                    logger.warning(
+                        "piper_voice_override_failed_falling_back_to_edge",
+                        voice=voice_override,
+                        error=str(e),
+                    )
+                    try:
+                        import edge_tts  # noqa: F401
+                        audio = await self._synthesize_edge(text)
+                        return audio, {"engine": ENGINE_EDGE, "voice": self._edge_voice}
+                    except ImportError:
+                        # fall through to default engine
+                        pass
+            else:
                 logger.warning(
-                    "voice_override_unavailable",
+                    "voice_override_ignored_unknown_format",
                     voice=voice_override,
-                    reason="edge-tts not installed",
+                    fallback=self._edge_voice,
                 )
-                # fall through to default engine
 
         if self._engine == ENGINE_PIPER:
             try:
@@ -203,13 +244,13 @@ class TTSService:
         logger.info("tts_saved_to_file", path=str(output_path), size=len(audio_bytes))
         return str(output_path)
 
-    def _resolve_piper_path(self) -> str:
+    def _resolve_piper_path(self, name: Optional[str] = None) -> str:
         """Map a bare voice name (e.g. ``en_US-lessac-medium``) to the .onnx
         path on disk. The Dockerfile pre-downloads voices into /app/voices.
         Absolute paths are passed through unchanged so callers can override
         with ``TTS_MODEL=/some/other/voice.onnx``.
         """
-        name = self._model_name
+        name = name or self._model_name
         if os.path.isabs(name) and os.path.exists(name):
             return name
         # Common search paths, in order of preference.
@@ -232,6 +273,13 @@ class TTSService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._synthesize_piper_sync, text)
 
+    async def _synthesize_piper_voice(self, text: str, voice: str) -> bytes:
+        """Synthesize with a one-shot Piper voice without changing defaults."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, self._synthesize_piper_voice_sync, text, voice
+        )
+
     def _synthesize_piper_sync(self, text: str) -> bytes:
         """Synchronous piper synthesis."""
         import piper
@@ -248,6 +296,19 @@ class TTSService:
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_file:
             self._piper_model.synthesize_wav(text, wav_file, set_wav_format=True)
+
+        return buffer.getvalue()
+
+    def _synthesize_piper_voice_sync(self, text: str, voice: str) -> bytes:
+        """Synchronous one-shot Piper synthesis for explicit voice overrides."""
+        import piper
+        import wave
+
+        piper_voice = piper.PiperVoice.load(self._resolve_piper_path(voice))
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            piper_voice.synthesize_wav(text, wav_file, set_wav_format=True)
 
         return buffer.getvalue()
 

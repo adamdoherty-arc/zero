@@ -78,3 +78,31 @@ async def require_auth(
         )
 
     return credentials.credentials
+
+
+async def require_auth_flex(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+) -> str:
+    """
+    Auth dependency that accepts Bearer header OR ?token= query param.
+
+    Enables browser-native media tags (<img>, <video>) to authenticate
+    against endpoints that serve files, since those tags cannot set headers.
+    """
+    expected_token = _get_api_token()
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication not configured",
+        )
+
+    token = credentials.credentials if credentials else request.query_params.get("token", "")
+    if not token or not _check_token(token):
+        logger.warning("auth_rejected", path=request.url.path, method=request.method)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token

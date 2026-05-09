@@ -1,0 +1,17 @@
+# Copy to local.properties. Never commit the real file.
+# `local.properties` is already in Android Studio's default .gitignore.
+
+# Android SDK location (Android Studio fills this in automatically on first open).
+# sdk.dir=C\:\\Users\\you\\AppData\\Local\\Android\\Sdk
+
+# GitHub personal access token — needed to pull the DAT SDK from GitHub Packages.
+# Scope required: `read:packages`.
+# Create one at: https://github.com/settings/tokens
+github_token=ghp_YOUR_TOKEN_HERE
+
+# Meta DAT credentials — from wearables.developer.meta.com → your app.
+# Use "0" / empty for Developer Mode during initial testing (attestation
+# is skipped, the app is sideloadable but can't be published to the Meta
+# AI app store).
+meta.application.id=0
+meta.client.token=

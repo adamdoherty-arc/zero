@@ -78,6 +78,18 @@ class TaskService:
                 source=task_data.source.value if hasattr(task_data.source, 'value') else task_data.source,
                 source_reference=task_data.source_reference,
                 blocked_reason=task_data.blocked_reason,
+                domain=task_data.domain,
+                owner_agent=task_data.owner_agent,
+                due_at=task_data.due_at,
+                scheduled_for=task_data.scheduled_for,
+                risk_level=task_data.risk_level or "medium",
+                approval_state=task_data.approval_state or "none",
+                approval_id=task_data.approval_id,
+                tags=task_data.tags or [],
+                links=task_data.links or [],
+                sort_order=task_data.sort_order or next_id,
+                estimate_points=task_data.estimate_points,
+                parent_task_id=task_data.parent_task_id,
                 created_at=now,
             )
 

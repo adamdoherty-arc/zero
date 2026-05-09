@@ -1,0 +1,273 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+      - generic [ref=e102]:
+        - generic [ref=e103]: Meetings
+        - list [ref=e104]:
+          - listitem [ref=e105]:
+            - link "Meetings" [ref=e106] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e107]
+              - generic [ref=e110]: Meetings
+          - listitem [ref=e111]:
+            - link "Meeting Search" [ref=e112] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e113]
+              - generic [ref=e114]: Meeting Search
+      - generic [ref=e115]:
+        - generic [ref=e116]: AI Company
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "Company" [ref=e119] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e120]
+              - generic [ref=e124]: Company
+          - listitem [ref=e125]:
+            - link "Deep Research" [ref=e126] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e127]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "Experiment Lab" [ref=e131] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e132]
+              - generic [ref=e134]: Experiment Lab
+          - listitem [ref=e135]:
+            - link "Council Room" [ref=e136] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e137]
+              - generic [ref=e141]: Council Room
+          - listitem [ref=e142]:
+            - link "Brain" [ref=e143] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e144]
+              - generic [ref=e156]: Brain
+      - generic [ref=e157]:
+        - generic [ref=e158]: Automation
+        - list [ref=e159]:
+          - listitem [ref=e160]:
+            - link "Agent Tasks" [ref=e161] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e162]
+              - generic [ref=e165]: Agent Tasks
+          - listitem [ref=e166]:
+            - link "Workflows" [ref=e167] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e168]
+              - generic [ref=e172]: Workflows
+          - listitem [ref=e173]:
+            - link "Gateway" [ref=e174] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e175]
+              - generic [ref=e181]: Gateway
+          - listitem [ref=e182]:
+            - link "Money Maker" [ref=e183] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e184]
+              - generic [ref=e186]: Money Maker
+          - listitem [ref=e187]:
+            - link "Research" [ref=e188] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e189]
+              - generic [ref=e192]: Research
+          - listitem [ref=e193]:
+            - link "TikTok Shop" [ref=e194] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e195]
+              - generic [ref=e198]: TikTok Shop
+          - listitem [ref=e199]:
+            - link "Characters" [ref=e200] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e201]
+              - generic [ref=e206]: Characters
+          - listitem [ref=e207]:
+            - link "Character Autopilot" [ref=e208] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e209]
+              - generic [ref=e211]: Character Autopilot
+          - listitem [ref=e212]:
+            - link "Content Agent" [ref=e213] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e214]
+              - generic [ref=e216]: Content Agent
+          - listitem [ref=e217]:
+            - link "Predictions" [ref=e218] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e219]
+              - generic [ref=e222]: Predictions
+          - listitem [ref=e223]:
+            - link "LLC Guide" [ref=e224] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e225]
+              - generic [ref=e229]: LLC Guide
+          - listitem [ref=e230]:
+            - link "Visual Workflows" [ref=e231] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e232]
+              - generic [ref=e236]: Visual Workflows
+      - generic [ref=e237]:
+        - generic [ref=e238]: System
+        - list [ref=e239]:
+          - listitem [ref=e240]:
+            - link "Exec Dashboard" [ref=e241] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e242]
+              - generic [ref=e245]: Exec Dashboard
+          - listitem [ref=e246]:
+            - link "Outcomes" [ref=e247] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e248]
+              - generic [ref=e252]: Outcomes
+          - listitem [ref=e253]:
+            - link "System Health" [ref=e254] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e255]
+              - generic [ref=e258]: System Health
+          - listitem [ref=e259]:
+            - link "Architecture" [ref=e260] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e261]
+              - generic [ref=e266]: Architecture
+          - listitem [ref=e267]:
+            - link "QA" [ref=e268] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e269]
+              - generic [ref=e272]: QA
+          - listitem [ref=e273]:
+            - link "Analytics" [ref=e274] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e275]
+              - generic [ref=e277]: Analytics
+          - listitem [ref=e278]:
+            - link "Settings" [ref=e279] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e280]
+              - generic [ref=e291]: Settings
+    - list [ref=e293]:
+      - listitem [ref=e294]:
+        - button "Zero v1.0" [ref=e295] [cursor=pointer]:
+          - generic [ref=e297]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e298]
+  - main [ref=e299]:
+    - generic [ref=e300]:
+      - button "Toggle Sidebar" [ref=e301] [cursor=pointer]:
+        - img
+        - generic [ref=e302]: Toggle Sidebar
+      - generic [ref=e303]:
+        - generic [ref=e304]: Zero
+        - generic [ref=e305]: /
+        - generic [ref=e306]: Character Detail
+      - button "Search... Ctrl K" [ref=e307] [cursor=pointer]:
+        - img [ref=e308]
+        - generic [ref=e311]: Search...
+        - generic [ref=e312]:
+          - generic [ref=e313]: Ctrl
+          - text: K
+      - button [ref=e315] [cursor=pointer]:
+        - img [ref=e316]
+    - main [ref=e319]:
+      - generic [ref=e320]:
+        - navigation "Character content sections" [ref=e321]:
+          - button "Characters" [ref=e322] [cursor=pointer]:
+            - img [ref=e323]
+            - text: Characters
+          - button "TV Shows" [ref=e328] [cursor=pointer]:
+            - img [ref=e329]
+            - text: TV Shows
+          - button "Movies" [ref=e332] [cursor=pointer]:
+            - img [ref=e333]
+            - text: Movies
+          - button "Reference Videos" [ref=e335] [cursor=pointer]:
+            - img [ref=e336]
+            - text: Reference Videos
+          - button "Research Queue" [ref=e338] [cursor=pointer]:
+            - img [ref=e339]
+            - text: Research Queue
+          - button "Content Studio" [ref=e342] [cursor=pointer]:
+            - img [ref=e343]
+            - text: Content Studio
+          - button "Review Queue" [ref=e345] [cursor=pointer]:
+            - img [ref=e346]
+            - text: Review Queue
+          - button "Inspiration" [ref=e349] [cursor=pointer]:
+            - img [ref=e350]
+            - text: Inspiration
+          - button "Analytics" [ref=e352] [cursor=pointer]:
+            - img [ref=e353]
+            - text: Analytics
+          - button "Autopilot" [ref=e355] [cursor=pointer]:
+            - img [ref=e356]
+            - text: Autopilot
+        - paragraph [ref=e363]: Loading character...

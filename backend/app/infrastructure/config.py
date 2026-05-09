@@ -92,22 +92,26 @@ class Settings(BaseSettings):
     email_automation_confidence_threshold: float = 0.85
     email_question_timeout_hours: int = 24
 
-    # Embedding Settings (for RAG / semantic search)
-    # Default model name is resolved per provider: "nomic-embed-text-v2-moe" for Ollama,
-    # "qwen3-embed" (served-model-name for Qwen/Qwen3-Embedding-0.6B) for vLLM.
-    embedding_model: str = "nomic-embed-text-v2-moe"
+    # Embedding Settings (for RAG / semantic search). vLLM is the default
+    # provider; the embedding client truncates Qwen3-Embedding vectors to this
+    # dimension for older 768-dim pgvector tables.
+    embedding_model: str = "qwen3-embed"
     embedding_dimension: int = 768
 
     # Reachy Mini voice surface
     reachy_api_url: str = "http://host.docker.internal:8000"
     reachy_tts_confirmations: bool = True  # speak "Recording started" / "Meeting saved"
+    # Ambient camera understanding is useful when explicitly enabled, but the
+    # VLM tick can take many seconds and should not compete with live voice by
+    # default. Enable with ZERO_AMBIENT_VISION_ENABLED=true.
+    ambient_vision_enabled: bool = False
 
     # Reachy realtime voice chat (ported from reachy_mini_conversation_app).
     # Two provider backends — OpenAI Realtime and Gemini Live — each BYO API key.
     # openai_api_key is net-new to Zero (no other service needs OpenAI directly;
     # the existing openai SDK usage is for OpenAI-compatible endpoints).
     openai_api_key: Optional[str] = None
-    reachy_realtime_backend: str = "openai"  # "openai", "gemini", or "local"
+    reachy_realtime_backend: Optional[str] = None  # explicit override: "local", "openai", or "gemini"
     reachy_realtime_model: Optional[str] = None  # None = default for chosen backend
     reachy_realtime_voice: Optional[str] = None  # None = default for chosen backend
     reachy_realtime_profile: Optional[str] = None  # profile / persona id, None = default

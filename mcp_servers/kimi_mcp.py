@@ -1,9 +1,8 @@
 """
-Kimi LLM MCP Server — exposes Kimi/Moonshot AI as cheap LLM tools.
+Kimi LLM MCP Server — exposes Kimi/Moonshot AI as LLM tools.
 
-Claude can delegate classification, summarization, and chat tasks to Kimi
-when cost efficiency matters. Kimi moonshot-v1-32k costs $0.024/1M tokens
-vs Claude Haiku at $0.80-4/1M tokens.
+Claude can delegate classification, summarization, chat, and analysis
+tasks to Kimi K2.6 ($0.95/$4.00 per 1M tokens).
 
 Environment variables:
   KIMI_API_KEY  - Moonshot AI API key
@@ -47,16 +46,12 @@ BASE_URL = os.getenv("KIMI_BASE_URL", "") or os.getenv("ZERO_KIMI_BASE_URL", "ht
 
 async def _kimi_chat(
     messages: list[dict[str, str]],
-    model: str = "moonshot-v1-32k",
+    model: str = "kimi-k2.6",
     temperature: float = 0.3,
     max_tokens: int = 2048,
     json_mode: bool = False,
 ) -> str:
     """Call Kimi API and return response text."""
-    # kimi-k2.5 only accepts temperature=1
-    if model == "kimi-k2.5":
-        temperature = 1.0
-
     payload: dict[str, Any] = {
         "model": model,
         "messages": messages,
@@ -66,9 +61,6 @@ async def _kimi_chat(
 
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
-
-    if model != "kimi-k2.5":
-        payload["extra_body"] = {"thinking": {"type": "disabled"}}
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
         resp = await client.post(
@@ -92,7 +84,7 @@ async def _kimi_chat(
 TOOLS = [
     types.Tool(
         name="kimi_chat",
-        description="Send a chat message to Kimi for general conversation or Q&A. Uses moonshot-v1-32k ($0.024/1M tokens). Much cheaper than Claude for simple responses.",
+        description="Send a chat message to Kimi for general conversation or Q&A. Uses kimi-k2.6 ($0.95/$4.00 per 1M tokens).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -104,7 +96,7 @@ TOOLS = [
     ),
     types.Tool(
         name="kimi_classify",
-        description="Classify text into categories using Kimi. Uses moonshot-v1-8k ($0.012/1M tokens). Very cheap for classification tasks.",
+        description="Classify text into categories using Kimi K2.6.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -121,7 +113,7 @@ TOOLS = [
     ),
     types.Tool(
         name="kimi_summarize",
-        description="Summarize text using Kimi. Uses moonshot-v1-32k ($0.024/1M tokens). Good for condensing long content cheaply.",
+        description="Summarize text using Kimi K2.6. Good for condensing long content.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -134,7 +126,7 @@ TOOLS = [
     ),
     types.Tool(
         name="kimi_analyze",
-        description="Deep analysis using Kimi K2.5 ($0.60/$2.50 per 1M tokens). Use for complex reasoning tasks where Claude delegation saves context window.",
+        description="Deep analysis using Kimi K2.6 ($0.95/$4.00 per 1M tokens). Use for complex reasoning tasks where Claude delegation saves context window.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -191,7 +183,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.T
                 {"role": "system", "content": system},
                 {"role": "user", "content": args["text"]},
             ]
-            result = await _kimi_chat(messages, model="moonshot-v1-8k", temperature=0.0, max_tokens=50)
+            result = await _kimi_chat(messages, temperature=0.0, max_tokens=50)
 
         elif name == "kimi_summarize":
             max_length = args.get("max_length", "medium")
@@ -211,7 +203,7 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.T
             messages = [{"role": "user", "content": args["prompt"]}]
             if "context" in args:
                 messages[0]["content"] = f"Context:\n{args['context']}\n\nAnalysis task:\n{args['prompt']}"
-            result = await _kimi_chat(messages, model="kimi-k2.5", max_tokens=4096)
+            result = await _kimi_chat(messages, max_tokens=4096)
 
         elif name == "kimi_extract_json":
             example_str = f"\nExample output:\n{args['example']}" if "example" in args else ""

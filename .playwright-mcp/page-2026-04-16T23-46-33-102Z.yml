@@ -1,0 +1,2432 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+      - generic [ref=e102]:
+        - generic [ref=e103]: Meetings
+        - list [ref=e104]:
+          - listitem [ref=e105]:
+            - link "Meetings" [ref=e106] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e107]
+              - generic [ref=e110]: Meetings
+          - listitem [ref=e111]:
+            - link "Meeting Search" [ref=e112] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e113]
+              - generic [ref=e114]: Meeting Search
+      - generic [ref=e115]:
+        - generic [ref=e116]: AI Company
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "Company" [ref=e119] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e120]
+              - generic [ref=e124]: Company
+          - listitem [ref=e125]:
+            - link "Deep Research" [ref=e126] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e127]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "Experiment Lab" [ref=e131] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e132]
+              - generic [ref=e134]: Experiment Lab
+          - listitem [ref=e135]:
+            - link "Council Room" [ref=e136] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e137]
+              - generic [ref=e141]: Council Room
+          - listitem [ref=e142]:
+            - link "Brain" [ref=e143] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e144]
+              - generic [ref=e156]: Brain
+      - generic [ref=e157]:
+        - generic [ref=e158]: Automation
+        - list [ref=e159]:
+          - listitem [ref=e160]:
+            - link "Agent Tasks" [ref=e161] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e162]
+              - generic [ref=e165]: Agent Tasks
+          - listitem [ref=e166]:
+            - link "Workflows" [ref=e167] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e168]
+              - generic [ref=e172]: Workflows
+          - listitem [ref=e173]:
+            - link "Gateway" [ref=e174] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e175]
+              - generic [ref=e181]: Gateway
+          - listitem [ref=e182]:
+            - link "Money Maker" [ref=e183] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e184]
+              - generic [ref=e186]: Money Maker
+          - listitem [ref=e187]:
+            - link "Research" [ref=e188] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e189]
+              - generic [ref=e192]: Research
+          - listitem [ref=e193]:
+            - link "TikTok Shop" [ref=e194] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e195]
+              - generic [ref=e198]: TikTok Shop
+          - listitem [ref=e199]:
+            - link "Characters" [ref=e200] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e201]
+              - generic [ref=e206]: Characters
+          - listitem [ref=e207]:
+            - link "Character Autopilot" [ref=e208] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e209]
+              - generic [ref=e211]: Character Autopilot
+          - listitem [ref=e212]:
+            - link "Content Agent" [ref=e213] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e214]
+              - generic [ref=e216]: Content Agent
+          - listitem [ref=e217]:
+            - link "Predictions" [ref=e218] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e219]
+              - generic [ref=e222]: Predictions
+          - listitem [ref=e223]:
+            - link "LLC Guide" [ref=e224] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e225]
+              - generic [ref=e229]: LLC Guide
+          - listitem [ref=e230]:
+            - link "Visual Workflows" [ref=e231] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e232]
+              - generic [ref=e236]: Visual Workflows
+      - generic [ref=e237]:
+        - generic [ref=e238]: System
+        - list [ref=e239]:
+          - listitem [ref=e240]:
+            - link "Exec Dashboard" [ref=e241] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e242]
+              - generic [ref=e245]: Exec Dashboard
+          - listitem [ref=e246]:
+            - link "Outcomes" [ref=e247] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e248]
+              - generic [ref=e252]: Outcomes
+          - listitem [ref=e253]:
+            - link "System Health" [ref=e254] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e255]
+              - generic [ref=e258]: System Health
+          - listitem [ref=e259]:
+            - link "Architecture" [ref=e260] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e261]
+              - generic [ref=e266]: Architecture
+          - listitem [ref=e267]:
+            - link "QA" [ref=e268] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e269]
+              - generic [ref=e272]: QA
+          - listitem [ref=e273]:
+            - link "Analytics" [ref=e274] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e275]
+              - generic [ref=e277]: Analytics
+          - listitem [ref=e278]:
+            - link "Settings" [ref=e279] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e280]
+              - generic [ref=e291]: Settings
+    - list [ref=e293]:
+      - listitem [ref=e294]:
+        - button "Zero v1.0" [ref=e295] [cursor=pointer]:
+          - generic [ref=e297]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e298]
+  - main [ref=e299]:
+    - generic [ref=e300]:
+      - button "Toggle Sidebar" [ref=e301] [cursor=pointer]:
+        - img
+        - generic [ref=e302]: Toggle Sidebar
+      - generic [ref=e303]:
+        - generic [ref=e304]: Zero
+        - generic [ref=e305]: /
+        - generic [ref=e306]: Character Content
+      - button "Search... Ctrl K" [ref=e307] [cursor=pointer]:
+        - img [ref=e308]
+        - generic [ref=e311]: Search...
+        - generic [ref=e312]:
+          - generic [ref=e313]: Ctrl
+          - text: K
+      - button "9+" [ref=e315] [cursor=pointer]:
+        - img [ref=e316]
+        - generic [ref=e319]: 9+
+    - main [ref=e320]:
+      - generic [ref=e321]:
+        - navigation "Character content sections" [ref=e322]:
+          - button "Characters" [ref=e323] [cursor=pointer]:
+            - img [ref=e324]
+            - text: Characters
+          - button "Reference Videos" [ref=e329] [cursor=pointer]:
+            - img [ref=e330]
+            - text: Reference Videos
+          - button "Research Queue" [ref=e332] [cursor=pointer]:
+            - img [ref=e333]
+            - text: Research Queue
+          - button "Content Studio" [ref=e336] [cursor=pointer]:
+            - img [ref=e337]
+            - text: Content Studio
+          - button "Review Queue" [ref=e339] [cursor=pointer]:
+            - img [ref=e340]
+            - text: Review Queue
+          - button "Inspiration" [ref=e343] [cursor=pointer]:
+            - img [ref=e344]
+            - text: Inspiration
+          - button "Analytics" [ref=e346] [cursor=pointer]:
+            - img [ref=e347]
+            - text: Analytics
+          - button "Autopilot" [ref=e349] [cursor=pointer]:
+            - img [ref=e350]
+            - text: Autopilot
+        - generic [ref=e355]:
+          - generic [ref=e356]:
+            - generic [ref=e357]:
+              - combobox "Select universe filter" [ref=e358] [cursor=pointer]:
+                - generic: All Universes
+                - img [ref=e359]
+              - generic [ref=e361]: 80 characters
+            - generic [ref=e362]:
+              - button "Research all characters" [ref=e363] [cursor=pointer]:
+                - img
+                - text: Research All
+              - button "Add new character" [ref=e364] [cursor=pointer]:
+                - img
+                - text: Add Character
+              - button "Seed character library" [ref=e365] [cursor=pointer]:
+                - img
+                - text: Seed Characters
+          - generic [ref=e366]:
+            - generic "View Albus Dumbledore details" [ref=e367] [cursor=pointer]:
+              - generic [ref=e369]:
+                - generic [ref=e370]:
+                  - generic [ref=e371]: Albus Dumbledore
+                  - generic [ref=e372]: Albus Percival Wulfric Brian Dumbledore · Harry Potter
+                - 'generic "Universe: Harry Potter" [ref=e373]': Harry Potter
+              - generic [ref=e374]:
+                - generic [ref=e375]:
+                  - generic [ref=e376]:
+                    - img [ref=e377]
+                    - generic [ref=e387]: "0"
+                    - generic [ref=e388]: facts
+                  - generic [ref=e389]:
+                    - img [ref=e390]
+                    - generic [ref=e392]: "0"
+                    - generic [ref=e393]: posts
+                  - generic [ref=e394]:
+                    - img [ref=e395]
+                    - generic [ref=e399]: "0"
+                    - generic [ref=e400]: carousels
+                - generic [ref=e401]:
+                  - generic [ref=e402]: "#hogwarts"
+                  - generic [ref=e403]: "#mentor"
+                  - generic [ref=e404]: "#headmaster"
+                - button "Researching Albus Dumbledore" [disabled]:
+                  - img
+                  - text: Researching...
+            - generic "View Aquaman details" [ref=e405] [cursor=pointer]:
+              - generic [ref=e407]:
+                - generic [ref=e408]:
+                  - generic [ref=e409]: Aquaman
+                  - generic [ref=e410]: Arthur Curry · Justice League
+                - 'generic "Universe: DC" [ref=e411]': DC
+              - generic [ref=e412]:
+                - img "Aquaman character image" [ref=e414]
+                - generic [ref=e415]:
+                  - generic [ref=e416]:
+                    - img [ref=e417]
+                    - generic [ref=e427]: "30"
+                    - generic [ref=e428]: facts
+                  - generic [ref=e429]:
+                    - img [ref=e430]
+                    - generic [ref=e432]: "1"
+                    - generic [ref=e433]: posts
+                  - generic [ref=e434]:
+                    - img [ref=e435]
+                    - generic [ref=e439]: "3"
+                    - generic [ref=e440]: carousels
+                - generic [ref=e441]:
+                  - generic [ref=e442]: "#dc"
+                  - generic [ref=e443]: "#atlantis"
+                  - generic [ref=e444]: "#ocean"
+                - button "Re-research Aquaman" [ref=e445]:
+                  - img
+                  - text: Re-Research
+            - generic "View Aragorn details" [ref=e446] [cursor=pointer]:
+              - generic [ref=e448]:
+                - generic [ref=e449]:
+                  - generic [ref=e450]: Aragorn
+                  - generic [ref=e451]: Aragorn II Elessar · Lord of the Rings
+                - 'generic "Universe: LOTR" [ref=e452]': LOTR
+              - generic [ref=e453]:
+                - generic [ref=e454]:
+                  - generic [ref=e455]:
+                    - img [ref=e456]
+                    - generic [ref=e466]: "0"
+                    - generic [ref=e467]: facts
+                  - generic [ref=e468]:
+                    - img [ref=e469]
+                    - generic [ref=e471]: "0"
+                    - generic [ref=e472]: posts
+                  - generic [ref=e473]:
+                    - img [ref=e474]
+                    - generic [ref=e478]: "0"
+                    - generic [ref=e479]: carousels
+                - generic [ref=e480]:
+                  - generic [ref=e481]: "#lotr"
+                  - generic [ref=e482]: "#king"
+                  - generic [ref=e483]: "#ranger"
+                - button "Researching Aragorn" [disabled]:
+                  - img
+                  - text: Researching...
+            - generic "View Arthur Morgan details" [ref=e484] [cursor=pointer]:
+              - generic [ref=e486]:
+                - generic [ref=e487]:
+                  - generic [ref=e488]: Arthur Morgan
+                  - generic [ref=e489]: Arthur Morgan · Red Dead Redemption
+                - 'generic "Universe: Gaming" [ref=e490]': Gaming
+              - generic [ref=e491]:
+                - generic [ref=e492]:
+                  - generic [ref=e493]:
+                    - img [ref=e494]
+                    - generic [ref=e504]: "0"
+                    - generic [ref=e505]: facts
+                  - generic [ref=e506]:
+                    - img [ref=e507]
+                    - generic [ref=e509]: "0"
+                    - generic [ref=e510]: posts
+                  - generic [ref=e511]:
+                    - img [ref=e512]
+                    - generic [ref=e516]: "0"
+                    - generic [ref=e517]: carousels
+                - generic [ref=e518]:
+                  - generic [ref=e519]: "#rdr2"
+                  - generic [ref=e520]: "#outlaw"
+                  - generic [ref=e521]: "#cowboy"
+                - button "Research Arthur Morgan" [ref=e522]:
+                  - img
+                  - text: Research Character
+            - generic "View Batman details" [ref=e523] [cursor=pointer]:
+              - generic [ref=e525]:
+                - generic [ref=e526]:
+                  - generic [ref=e527]: Batman
+                  - generic [ref=e528]: Bruce Wayne · Justice League
+                - 'generic "Universe: DC" [ref=e529]': DC
+              - generic [ref=e530]:
+                - img "Batman character image" [ref=e532]
+                - generic [ref=e533]:
+                  - generic [ref=e534]:
+                    - img [ref=e535]
+                    - generic [ref=e545]: "30"
+                    - generic [ref=e546]: facts
+                  - generic [ref=e547]:
+                    - img [ref=e548]
+                    - generic [ref=e550]: "1"
+                    - generic [ref=e551]: posts
+                  - generic [ref=e552]:
+                    - img [ref=e553]
+                    - generic [ref=e557]: "2"
+                    - generic [ref=e558]: carousels
+                - generic [ref=e559]:
+                  - generic [ref=e560]: "#dc"
+                  - generic [ref=e561]: "#detective"
+                  - generic [ref=e562]: "#gotham"
+                - button "Re-research Batman" [ref=e563]:
+                  - img
+                  - text: Re-Research
+            - generic "View Black Widow details" [ref=e564] [cursor=pointer]:
+              - generic [ref=e566]:
+                - generic [ref=e567]:
+                  - generic [ref=e568]: Black Widow
+                  - generic [ref=e569]: Natasha Romanoff · Avengers
+                - 'generic "Universe: Marvel" [ref=e570]': Marvel
+              - generic [ref=e571]:
+                - img "Black Widow character image" [ref=e573]
+                - generic [ref=e574]:
+                  - generic [ref=e575]:
+                    - img [ref=e576]
+                    - generic [ref=e586]: "30"
+                    - generic [ref=e587]: facts
+                  - generic [ref=e588]:
+                    - img [ref=e589]
+                    - generic [ref=e591]: "1"
+                    - generic [ref=e592]: posts
+                  - generic [ref=e593]:
+                    - img [ref=e594]
+                    - generic [ref=e598]: "2"
+                    - generic [ref=e599]: carousels
+                - generic [ref=e600]:
+                  - generic [ref=e601]: "#mcu"
+                  - generic [ref=e602]: "#avengers"
+                  - generic [ref=e603]: "#spy"
+                - button "Re-research Black Widow" [ref=e604]:
+                  - img
+                  - text: Re-Research
+            - generic "View Charlie Cannon details" [ref=e605] [cursor=pointer]:
+              - generic [ref=e607]:
+                - generic [ref=e608]:
+                  - generic [ref=e609]: Charlie Cannon
+                  - generic [ref=e610]: Lee Cronin's The Mummy
+                - 'generic "Universe: Other" [ref=e611]': Other
+              - generic [ref=e612]:
+                - img "Charlie Cannon character image" [ref=e614]
+                - generic [ref=e615]:
+                  - generic [ref=e616]:
+                    - img [ref=e617]
+                    - generic [ref=e627]: "0"
+                    - generic [ref=e628]: facts
+                  - generic [ref=e629]:
+                    - img [ref=e630]
+                    - generic [ref=e632]: "0"
+                    - generic [ref=e633]: posts
+                  - generic [ref=e634]:
+                    - img [ref=e635]
+                    - generic [ref=e639]: "0"
+                    - generic [ref=e640]: carousels
+                - button "Research Charlie Cannon" [ref=e641]:
+                  - img
+                  - text: Research Character
+            - generic "View Daenerys Targaryen details" [ref=e642] [cursor=pointer]:
+              - generic [ref=e644]:
+                - generic [ref=e645]:
+                  - generic [ref=e646]: Daenerys Targaryen
+                  - generic [ref=e647]: Daenerys Targaryen · Game of Thrones
+                - 'generic "Universe: TV" [ref=e648]': TV
+              - generic [ref=e649]:
+                - generic [ref=e650]:
+                  - generic [ref=e651]:
+                    - img [ref=e652]
+                    - generic [ref=e662]: "0"
+                    - generic [ref=e663]: facts
+                  - generic [ref=e664]:
+                    - img [ref=e665]
+                    - generic [ref=e667]: "0"
+                    - generic [ref=e668]: posts
+                  - generic [ref=e669]:
+                    - img [ref=e670]
+                    - generic [ref=e674]: "0"
+                    - generic [ref=e675]: carousels
+                - generic [ref=e676]:
+                  - generic [ref=e677]: "#got"
+                  - generic [ref=e678]: "#targaryen"
+                  - generic [ref=e679]: "#dragons"
+                - button "Researching Daenerys Targaryen" [disabled]:
+                  - img
+                  - text: Researching...
+            - generic "View Dakota details" [ref=e680] [cursor=pointer]:
+              - generic [ref=e682]:
+                - generic [ref=e683]:
+                  - generic [ref=e684]: Dakota
+                  - generic [ref=e685]: Thrash
+                - 'generic "Universe: Other" [ref=e686]': Other
+              - generic [ref=e687]:
+                - generic [ref=e688]:
+                  - generic [ref=e689]:
+                    - img [ref=e690]
+                    - generic [ref=e700]: "0"
+                    - generic [ref=e701]: facts
+                  - generic [ref=e702]:
+                    - img [ref=e703]
+                    - generic [ref=e705]: "0"
+                    - generic [ref=e706]: posts
+                  - generic [ref=e707]:
+                    - img [ref=e708]
+                    - generic [ref=e712]: "0"
+                    - generic [ref=e713]: carousels
+                - button "Research Dakota" [ref=e714]:
+                  - img
+                  - text: Research Character
+            - generic "View Darth Vader details" [ref=e715] [cursor=pointer]:
+              - generic [ref=e717]:
+                - generic [ref=e718]:
+                  - generic [ref=e719]: Darth Vader
+                  - generic [ref=e720]: Anakin Skywalker · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e721]': Star Wars
+              - generic [ref=e722]:
+                - img "Darth Vader character image" [ref=e724]
+                - generic [ref=e725]:
+                  - generic [ref=e726]:
+                    - img [ref=e727]
+                    - generic [ref=e737]: "30"
+                    - generic [ref=e738]: facts
+                  - generic [ref=e739]:
+                    - img [ref=e740]
+                    - generic [ref=e742]: "2"
+                    - generic [ref=e743]: posts
+                  - generic [ref=e744]:
+                    - img [ref=e745]
+                    - generic [ref=e749]: "5"
+                    - generic [ref=e750]: carousels
+                - generic [ref=e751]:
+                  - generic [ref=e752]: "#starwars"
+                  - generic [ref=e753]: "#sith"
+                  - generic [ref=e754]: "#villain"
+                - button "Re-research Darth Vader" [ref=e755]:
+                  - img
+                  - text: Re-Research
+            - generic "View Deadpool details" [ref=e756] [cursor=pointer]:
+              - generic [ref=e758]:
+                - generic [ref=e759]:
+                  - generic [ref=e760]: Deadpool
+                  - generic [ref=e761]: Wade Wilson · X-Men
+                - 'generic "Universe: Marvel" [ref=e762]': Marvel
+              - generic [ref=e763]:
+                - img "Deadpool character image" [ref=e765]
+                - generic [ref=e766]:
+                  - generic [ref=e767]:
+                    - img [ref=e768]
+                    - generic [ref=e778]: "15"
+                    - generic [ref=e779]: facts
+                  - generic [ref=e780]:
+                    - img [ref=e781]
+                    - generic [ref=e783]: "0"
+                    - generic [ref=e784]: posts
+                  - generic [ref=e785]:
+                    - img [ref=e786]
+                    - generic [ref=e790]: "0"
+                    - generic [ref=e791]: carousels
+                - generic [ref=e792]:
+                  - generic [ref=e793]: "#mcu"
+                  - generic [ref=e794]: "#antihero"
+                  - generic [ref=e795]: "#comedy"
+                - button "Re-research Deadpool" [ref=e796]:
+                  - img
+                  - text: Re-Research
+            - generic "View Doctor Strange details" [ref=e797] [cursor=pointer]:
+              - generic [ref=e799]:
+                - generic [ref=e800]:
+                  - generic [ref=e801]: Doctor Strange
+                  - generic [ref=e802]: Stephen Strange · Avengers
+                - 'generic "Universe: Marvel" [ref=e803]': Marvel
+              - generic [ref=e804]:
+                - img "Doctor Strange character image" [ref=e806]
+                - generic [ref=e807]:
+                  - generic [ref=e808]:
+                    - img [ref=e809]
+                    - generic [ref=e819]: "0"
+                    - generic [ref=e820]: facts
+                  - generic [ref=e821]:
+                    - img [ref=e822]
+                    - generic [ref=e824]: "0"
+                    - generic [ref=e825]: posts
+                  - generic [ref=e826]:
+                    - img [ref=e827]
+                    - generic [ref=e831]: "0"
+                    - generic [ref=e832]: carousels
+                - generic [ref=e833]:
+                  - generic [ref=e834]: "#mcu"
+                  - generic [ref=e835]: "#magic"
+                  - generic [ref=e836]: "#sorcerer"
+                - button "Research Doctor Strange" [ref=e837]:
+                  - img
+                  - text: Research Character
+            - generic "View Don Draper details" [ref=e838] [cursor=pointer]:
+              - generic [ref=e840]:
+                - generic [ref=e841]:
+                  - generic [ref=e842]: Don Draper
+                  - generic [ref=e843]: Dick Whitman · Mad Men
+                - 'generic "Universe: TV" [ref=e844]': TV
+              - generic [ref=e845]:
+                - generic [ref=e846]:
+                  - generic [ref=e847]:
+                    - img [ref=e848]
+                    - generic [ref=e858]: "0"
+                    - generic [ref=e859]: facts
+                  - generic [ref=e860]:
+                    - img [ref=e861]
+                    - generic [ref=e863]: "0"
+                    - generic [ref=e864]: posts
+                  - generic [ref=e865]:
+                    - img [ref=e866]
+                    - generic [ref=e870]: "0"
+                    - generic [ref=e871]: carousels
+                - generic [ref=e872]:
+                  - generic [ref=e873]: "#madmen"
+                  - generic [ref=e874]: "#ad-exec"
+                  - generic [ref=e875]: "#drama"
+                - button "Research Don Draper" [ref=e876]:
+                  - img
+                  - text: Research Character
+            - generic "View Eleven details" [ref=e877] [cursor=pointer]:
+              - generic [ref=e879]:
+                - generic [ref=e880]:
+                  - generic [ref=e881]: Eleven
+                  - generic [ref=e882]: Jane Hopper · Stranger Things
+                - 'generic "Universe: TV" [ref=e883]': TV
+              - generic [ref=e884]:
+                - generic [ref=e885]:
+                  - generic [ref=e886]:
+                    - img [ref=e887]
+                    - generic [ref=e897]: "0"
+                    - generic [ref=e898]: facts
+                  - generic [ref=e899]:
+                    - img [ref=e900]
+                    - generic [ref=e902]: "0"
+                    - generic [ref=e903]: posts
+                  - generic [ref=e904]:
+                    - img [ref=e905]
+                    - generic [ref=e909]: "0"
+                    - generic [ref=e910]: carousels
+                - generic [ref=e911]:
+                  - generic [ref=e912]: "#strangerthings"
+                  - generic [ref=e913]: "#psychic"
+                  - generic [ref=e914]: "#hawkins"
+                - button "Research Eleven" [ref=e915]:
+                  - img
+                  - text: Research Character
+            - generic "View Ellie Williams details" [ref=e916] [cursor=pointer]:
+              - generic [ref=e918]:
+                - generic [ref=e919]:
+                  - generic [ref=e920]: Ellie Williams
+                  - generic [ref=e921]: Ellie Williams · The Last of Us
+                - 'generic "Universe: Gaming" [ref=e922]': Gaming
+              - generic [ref=e923]:
+                - generic [ref=e924]:
+                  - generic [ref=e925]:
+                    - img [ref=e926]
+                    - generic [ref=e936]: "0"
+                    - generic [ref=e937]: facts
+                  - generic [ref=e938]:
+                    - img [ref=e939]
+                    - generic [ref=e941]: "0"
+                    - generic [ref=e942]: posts
+                  - generic [ref=e943]:
+                    - img [ref=e944]
+                    - generic [ref=e948]: "0"
+                    - generic [ref=e949]: carousels
+                - generic [ref=e950]:
+                  - generic [ref=e951]: "#tlou"
+                  - generic [ref=e952]: "#immune"
+                  - generic [ref=e953]: "#survivor"
+                - button "Research Ellie Williams" [ref=e954]:
+                  - img
+                  - text: Research Character
+            - generic "View Eren Yeager details" [ref=e955] [cursor=pointer]:
+              - generic [ref=e957]:
+                - generic [ref=e958]:
+                  - generic [ref=e959]: Eren Yeager
+                  - generic [ref=e960]: Eren Yeager · Attack on Titan
+                - 'generic "Universe: Anime" [ref=e961]': Anime
+              - generic [ref=e962]:
+                - generic [ref=e963]:
+                  - generic [ref=e964]:
+                    - img [ref=e965]
+                    - generic [ref=e975]: "0"
+                    - generic [ref=e976]: facts
+                  - generic [ref=e977]:
+                    - img [ref=e978]
+                    - generic [ref=e980]: "0"
+                    - generic [ref=e981]: posts
+                  - generic [ref=e982]:
+                    - img [ref=e983]
+                    - generic [ref=e987]: "0"
+                    - generic [ref=e988]: carousels
+                - generic [ref=e989]:
+                  - generic [ref=e990]: "#aot"
+                  - generic [ref=e991]: "#titan"
+                  - generic [ref=e992]: "#antihero"
+                - button "Research Eren Yeager" [ref=e993]:
+                  - img
+                  - text: Research Character
+            - generic "View Frodo details" [ref=e994] [cursor=pointer]:
+              - generic [ref=e996]:
+                - generic [ref=e997]:
+                  - generic [ref=e998]: Frodo
+                  - generic [ref=e999]: Frodo Baggins · Lord of the Rings
+                - 'generic "Universe: LOTR" [ref=e1000]': LOTR
+              - generic [ref=e1001]:
+                - generic [ref=e1002]:
+                  - generic [ref=e1003]:
+                    - img [ref=e1004]
+                    - generic [ref=e1014]: "0"
+                    - generic [ref=e1015]: facts
+                  - generic [ref=e1016]:
+                    - img [ref=e1017]
+                    - generic [ref=e1019]: "0"
+                    - generic [ref=e1020]: posts
+                  - generic [ref=e1021]:
+                    - img [ref=e1022]
+                    - generic [ref=e1026]: "0"
+                    - generic [ref=e1027]: carousels
+                - generic [ref=e1028]:
+                  - generic [ref=e1029]: "#lotr"
+                  - generic [ref=e1030]: "#hobbit"
+                  - generic [ref=e1031]: "#ringbearer"
+                - button "Research Frodo" [ref=e1032]:
+                  - img
+                  - text: Research Character
+            - generic "View Gandalf details" [ref=e1033] [cursor=pointer]:
+              - generic [ref=e1035]:
+                - generic [ref=e1036]:
+                  - generic [ref=e1037]: Gandalf
+                  - generic [ref=e1038]: Olórin · Lord of the Rings
+                - 'generic "Universe: LOTR" [ref=e1039]': LOTR
+              - generic [ref=e1040]:
+                - img "Gandalf character image" [ref=e1042]
+                - generic [ref=e1043]:
+                  - generic [ref=e1044]:
+                    - img [ref=e1045]
+                    - generic [ref=e1055]: "0"
+                    - generic [ref=e1056]: facts
+                  - generic [ref=e1057]:
+                    - img [ref=e1058]
+                    - generic [ref=e1060]: "0"
+                    - generic [ref=e1061]: posts
+                  - generic [ref=e1062]:
+                    - img [ref=e1063]
+                    - generic [ref=e1067]: "0"
+                    - generic [ref=e1068]: carousels
+                - generic [ref=e1069]:
+                  - generic [ref=e1070]: "#lotr"
+                  - generic [ref=e1071]: "#wizard"
+                  - generic [ref=e1072]: "#tolkien"
+                - button "Research Gandalf" [ref=e1073]:
+                  - img
+                  - text: Research Character
+            - generic "View Geralt of Rivia details" [ref=e1074] [cursor=pointer]:
+              - generic [ref=e1076]:
+                - generic [ref=e1077]:
+                  - generic [ref=e1078]: Geralt of Rivia
+                  - generic [ref=e1079]: Geralt of Rivia · The Witcher
+                - 'generic "Universe: Gaming" [ref=e1080]': Gaming
+              - generic [ref=e1081]:
+                - generic [ref=e1082]:
+                  - generic [ref=e1083]:
+                    - img [ref=e1084]
+                    - generic [ref=e1094]: "0"
+                    - generic [ref=e1095]: facts
+                  - generic [ref=e1096]:
+                    - img [ref=e1097]
+                    - generic [ref=e1099]: "0"
+                    - generic [ref=e1100]: posts
+                  - generic [ref=e1101]:
+                    - img [ref=e1102]
+                    - generic [ref=e1106]: "0"
+                    - generic [ref=e1107]: carousels
+                - generic [ref=e1108]:
+                  - generic [ref=e1109]: "#witcher"
+                  - generic [ref=e1110]: "#monster-hunter"
+                  - generic [ref=e1111]: "#mutant"
+                - button "Research Geralt of Rivia" [ref=e1112]:
+                  - img
+                  - text: Research Character
+            - generic "View Gojo Satoru details" [ref=e1113] [cursor=pointer]:
+              - generic [ref=e1115]:
+                - generic [ref=e1116]:
+                  - generic [ref=e1117]: Gojo Satoru
+                  - generic [ref=e1118]: Satoru Gojo · Jujutsu Kaisen
+                - 'generic "Universe: Anime" [ref=e1119]': Anime
+              - generic [ref=e1120]:
+                - generic [ref=e1121]:
+                  - generic [ref=e1122]:
+                    - img [ref=e1123]
+                    - generic [ref=e1133]: "0"
+                    - generic [ref=e1134]: facts
+                  - generic [ref=e1135]:
+                    - img [ref=e1136]
+                    - generic [ref=e1138]: "0"
+                    - generic [ref=e1139]: posts
+                  - generic [ref=e1140]:
+                    - img [ref=e1141]
+                    - generic [ref=e1145]: "0"
+                    - generic [ref=e1146]: carousels
+                - generic [ref=e1147]:
+                  - generic [ref=e1148]: "#jjk"
+                  - generic [ref=e1149]: "#sorcerer"
+                  - generic [ref=e1150]: "#teacher"
+                - button "Research Gojo Satoru" [ref=e1151]:
+                  - img
+                  - text: Research Character
+            - generic "View Goku details" [ref=e1152] [cursor=pointer]:
+              - generic [ref=e1154]:
+                - generic [ref=e1155]:
+                  - generic [ref=e1156]: Goku
+                  - generic [ref=e1157]: Son Goku · Dragon Ball
+                - 'generic "Universe: Anime" [ref=e1158]': Anime
+              - generic [ref=e1159]:
+                - generic [ref=e1160]:
+                  - generic [ref=e1161]:
+                    - img [ref=e1162]
+                    - generic [ref=e1172]: "0"
+                    - generic [ref=e1173]: facts
+                  - generic [ref=e1174]:
+                    - img [ref=e1175]
+                    - generic [ref=e1177]: "0"
+                    - generic [ref=e1178]: posts
+                  - generic [ref=e1179]:
+                    - img [ref=e1180]
+                    - generic [ref=e1184]: "0"
+                    - generic [ref=e1185]: carousels
+                - generic [ref=e1186]:
+                  - generic [ref=e1187]: "#dragonball"
+                  - generic [ref=e1188]: "#saiyan"
+                  - generic [ref=e1189]: "#hero"
+                - button "Research Goku" [ref=e1190]:
+                  - img
+                  - text: Research Character
+            - generic "View Green Lantern details" [ref=e1191] [cursor=pointer]:
+              - generic [ref=e1193]:
+                - generic [ref=e1194]:
+                  - generic [ref=e1195]: Green Lantern
+                  - generic [ref=e1196]: Hal Jordan · Justice League
+                - 'generic "Universe: DC" [ref=e1197]': DC
+              - generic [ref=e1198]:
+                - img "Green Lantern character image" [ref=e1200]
+                - generic [ref=e1201]:
+                  - generic [ref=e1202]:
+                    - img [ref=e1203]
+                    - generic [ref=e1213]: "0"
+                    - generic [ref=e1214]: facts
+                  - generic [ref=e1215]:
+                    - img [ref=e1216]
+                    - generic [ref=e1218]: "0"
+                    - generic [ref=e1219]: posts
+                  - generic [ref=e1220]:
+                    - img [ref=e1221]
+                    - generic [ref=e1225]: "0"
+                    - generic [ref=e1226]: carousels
+                - generic [ref=e1227]:
+                  - generic [ref=e1228]: "#dc"
+                  - generic [ref=e1229]: "#cosmic"
+                  - generic [ref=e1230]: "#willpower"
+                - button "Research Green Lantern" [ref=e1231]:
+                  - img
+                  - text: Research Character
+            - generic "View Grogu details" [ref=e1232] [cursor=pointer]:
+              - generic [ref=e1234]:
+                - generic [ref=e1235]:
+                  - generic [ref=e1236]: Grogu
+                  - generic [ref=e1237]: Grogu · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e1238]': Star Wars
+              - generic [ref=e1239]:
+                - generic [ref=e1240]:
+                  - generic [ref=e1241]:
+                    - img [ref=e1242]
+                    - generic [ref=e1252]: "0"
+                    - generic [ref=e1253]: facts
+                  - generic [ref=e1254]:
+                    - img [ref=e1255]
+                    - generic [ref=e1257]: "0"
+                    - generic [ref=e1258]: posts
+                  - generic [ref=e1259]:
+                    - img [ref=e1260]
+                    - generic [ref=e1264]: "0"
+                    - generic [ref=e1265]: carousels
+                - generic [ref=e1266]:
+                  - generic [ref=e1267]: "#starwars"
+                  - generic [ref=e1268]: "#mandalorian"
+                  - generic [ref=e1269]: "#force"
+                - button "Research Grogu" [ref=e1270]:
+                  - img
+                  - text: Research Character
+            - generic "View Hannibal Lecter details" [ref=e1271] [cursor=pointer]:
+              - generic [ref=e1273]:
+                - generic [ref=e1274]:
+                  - generic [ref=e1275]: Hannibal Lecter
+                  - generic [ref=e1276]: Hannibal Lecter · Hannibal
+                - 'generic "Universe: Film" [ref=e1277]': Film
+              - generic [ref=e1278]:
+                - generic [ref=e1279]:
+                  - generic [ref=e1280]:
+                    - img [ref=e1281]
+                    - generic [ref=e1291]: "0"
+                    - generic [ref=e1292]: facts
+                  - generic [ref=e1293]:
+                    - img [ref=e1294]
+                    - generic [ref=e1296]: "0"
+                    - generic [ref=e1297]: posts
+                  - generic [ref=e1298]:
+                    - img [ref=e1299]
+                    - generic [ref=e1303]: "0"
+                    - generic [ref=e1304]: carousels
+                - generic [ref=e1305]:
+                  - generic [ref=e1306]: "#thriller"
+                  - generic [ref=e1307]: "#villain"
+                  - generic [ref=e1308]: "#cannibal"
+                - button "Research Hannibal Lecter" [ref=e1309]:
+                  - img
+                  - text: Research Character
+            - generic "View Harley Quinn details" [ref=e1310] [cursor=pointer]:
+              - generic [ref=e1312]:
+                - generic [ref=e1313]:
+                  - generic [ref=e1314]: Harley Quinn
+                  - generic [ref=e1315]: Harleen Quinzel · Batman
+                - 'generic "Universe: DC" [ref=e1316]': DC
+              - generic [ref=e1317]:
+                - img "Harley Quinn character image" [ref=e1319]
+                - generic [ref=e1320]:
+                  - generic [ref=e1321]:
+                    - img [ref=e1322]
+                    - generic [ref=e1332]: "0"
+                    - generic [ref=e1333]: facts
+                  - generic [ref=e1334]:
+                    - img [ref=e1335]
+                    - generic [ref=e1337]: "0"
+                    - generic [ref=e1338]: posts
+                  - generic [ref=e1339]:
+                    - img [ref=e1340]
+                    - generic [ref=e1344]: "0"
+                    - generic [ref=e1345]: carousels
+                - generic [ref=e1346]:
+                  - generic [ref=e1347]: "#dc"
+                  - generic [ref=e1348]: "#villain"
+                  - generic [ref=e1349]: "#antihero"
+                - button "Research Harley Quinn" [ref=e1350]:
+                  - img
+                  - text: Research Character
+            - generic "View Harry Potter details" [ref=e1351] [cursor=pointer]:
+              - generic [ref=e1353]:
+                - generic [ref=e1354]:
+                  - generic [ref=e1355]: Harry Potter
+                  - generic [ref=e1356]: Harry James Potter · Harry Potter
+                - 'generic "Universe: Harry Potter" [ref=e1357]': Harry Potter
+              - generic [ref=e1358]:
+                - generic [ref=e1359]:
+                  - generic [ref=e1360]:
+                    - img [ref=e1361]
+                    - generic [ref=e1371]: "0"
+                    - generic [ref=e1372]: facts
+                  - generic [ref=e1373]:
+                    - img [ref=e1374]
+                    - generic [ref=e1376]: "0"
+                    - generic [ref=e1377]: posts
+                  - generic [ref=e1378]:
+                    - img [ref=e1379]
+                    - generic [ref=e1383]: "0"
+                    - generic [ref=e1384]: carousels
+                - generic [ref=e1385]:
+                  - generic [ref=e1386]: "#hogwarts"
+                  - generic [ref=e1387]: "#gryffindor"
+                  - generic [ref=e1388]: "#chosen"
+                - button "Research Harry Potter" [ref=e1389]:
+                  - img
+                  - text: Research Character
+            - generic "View Hermione Granger details" [ref=e1390] [cursor=pointer]:
+              - generic [ref=e1392]:
+                - generic [ref=e1393]:
+                  - generic [ref=e1394]: Hermione Granger
+                  - generic [ref=e1395]: Hermione Jean Granger · Harry Potter
+                - 'generic "Universe: Harry Potter" [ref=e1396]': Harry Potter
+              - generic [ref=e1397]:
+                - generic [ref=e1398]:
+                  - generic [ref=e1399]:
+                    - img [ref=e1400]
+                    - generic [ref=e1410]: "0"
+                    - generic [ref=e1411]: facts
+                  - generic [ref=e1412]:
+                    - img [ref=e1413]
+                    - generic [ref=e1415]: "0"
+                    - generic [ref=e1416]: posts
+                  - generic [ref=e1417]:
+                    - img [ref=e1418]
+                    - generic [ref=e1422]: "0"
+                    - generic [ref=e1423]: carousels
+                - generic [ref=e1424]:
+                  - generic [ref=e1425]: "#hogwarts"
+                  - generic [ref=e1426]: "#gryffindor"
+                  - generic [ref=e1427]: "#genius"
+                - button "Research Hermione Granger" [ref=e1428]:
+                  - img
+                  - text: Research Character
+            - generic "View Indiana Jones details" [ref=e1429] [cursor=pointer]:
+              - generic [ref=e1431]:
+                - generic [ref=e1432]:
+                  - generic [ref=e1433]: Indiana Jones
+                  - generic [ref=e1434]: Henry Walton Jones Jr. · Indiana Jones
+                - 'generic "Universe: Film" [ref=e1435]': Film
+              - generic [ref=e1436]:
+                - generic [ref=e1437]:
+                  - generic [ref=e1438]:
+                    - img [ref=e1439]
+                    - generic [ref=e1449]: "0"
+                    - generic [ref=e1450]: facts
+                  - generic [ref=e1451]:
+                    - img [ref=e1452]
+                    - generic [ref=e1454]: "0"
+                    - generic [ref=e1455]: posts
+                  - generic [ref=e1456]:
+                    - img [ref=e1457]
+                    - generic [ref=e1461]: "0"
+                    - generic [ref=e1462]: carousels
+                - generic [ref=e1463]:
+                  - generic [ref=e1464]: "#adventure"
+                  - generic [ref=e1465]: "#archaeologist"
+                  - generic [ref=e1466]: "#hero"
+                - button "Research Indiana Jones" [ref=e1467]:
+                  - img
+                  - text: Research Character
+            - generic "View Ira Slitz details" [ref=e1468] [cursor=pointer]:
+              - generic [ref=e1470]:
+                - generic [ref=e1471]:
+                  - generic [ref=e1472]: Ira Slitz
+                  - generic [ref=e1473]: Outcome
+                - 'generic "Universe: Other" [ref=e1474]': Other
+              - generic [ref=e1475]:
+                - generic [ref=e1476]:
+                  - generic [ref=e1477]:
+                    - img [ref=e1478]
+                    - generic [ref=e1488]: "0"
+                    - generic [ref=e1489]: facts
+                  - generic [ref=e1490]:
+                    - img [ref=e1491]
+                    - generic [ref=e1493]: "0"
+                    - generic [ref=e1494]: posts
+                  - generic [ref=e1495]:
+                    - img [ref=e1496]
+                    - generic [ref=e1500]: "0"
+                    - generic [ref=e1501]: carousels
+                - button "Research Ira Slitz" [ref=e1502]:
+                  - img
+                  - text: Research Character
+            - generic "View Iron Man details" [ref=e1503] [cursor=pointer]:
+              - generic [ref=e1505]:
+                - generic [ref=e1506]:
+                  - generic [ref=e1507]: Iron Man
+                  - generic [ref=e1508]: Tony Stark · Avengers
+                - 'generic "Universe: Marvel" [ref=e1509]': Marvel
+              - generic [ref=e1510]:
+                - img "Iron Man character image" [ref=e1512]
+                - generic [ref=e1513]:
+                  - generic [ref=e1514]:
+                    - img [ref=e1515]
+                    - generic [ref=e1525]: "0"
+                    - generic [ref=e1526]: facts
+                  - generic [ref=e1527]:
+                    - img [ref=e1528]
+                    - generic [ref=e1530]: "0"
+                    - generic [ref=e1531]: posts
+                  - generic [ref=e1532]:
+                    - img [ref=e1533]
+                    - generic [ref=e1537]: "0"
+                    - generic [ref=e1538]: carousels
+                - generic [ref=e1539]:
+                  - generic [ref=e1540]: "#mcu"
+                  - generic [ref=e1541]: "#avengers"
+                  - generic [ref=e1542]: "#genius"
+                - button "Research Iron Man" [ref=e1543]:
+                  - img
+                  - text: Research Character
+            - generic "View Jack Bauer details" [ref=e1544] [cursor=pointer]:
+              - generic [ref=e1546]:
+                - generic [ref=e1547]:
+                  - generic [ref=e1548]: Jack Bauer
+                  - generic [ref=e1549]: Jack Bauer · 24
+                - 'generic "Universe: TV" [ref=e1550]': TV
+              - generic [ref=e1551]:
+                - generic [ref=e1552]:
+                  - generic [ref=e1553]:
+                    - img [ref=e1554]
+                    - generic [ref=e1564]: "0"
+                    - generic [ref=e1565]: facts
+                  - generic [ref=e1566]:
+                    - img [ref=e1567]
+                    - generic [ref=e1569]: "0"
+                    - generic [ref=e1570]: posts
+                  - generic [ref=e1571]:
+                    - img [ref=e1572]
+                    - generic [ref=e1576]: "0"
+                    - generic [ref=e1577]: carousels
+                - generic [ref=e1578]:
+                  - generic [ref=e1579]: "#24"
+                  - generic [ref=e1580]: "#agent"
+                  - generic [ref=e1581]: "#action"
+                - button "Research Jack Bauer" [ref=e1582]:
+                  - img
+                  - text: Research Character
+            - generic "View Joel Miller details" [ref=e1583] [cursor=pointer]:
+              - generic [ref=e1585]:
+                - generic [ref=e1586]:
+                  - generic [ref=e1587]: Joel Miller
+                  - generic [ref=e1588]: Joel Miller · The Last of Us
+                - 'generic "Universe: Gaming" [ref=e1589]': Gaming
+              - generic [ref=e1590]:
+                - generic [ref=e1591]:
+                  - generic [ref=e1592]:
+                    - img [ref=e1593]
+                    - generic [ref=e1603]: "0"
+                    - generic [ref=e1604]: facts
+                  - generic [ref=e1605]:
+                    - img [ref=e1606]
+                    - generic [ref=e1608]: "0"
+                    - generic [ref=e1609]: posts
+                  - generic [ref=e1610]:
+                    - img [ref=e1611]
+                    - generic [ref=e1615]: "0"
+                    - generic [ref=e1616]: carousels
+                - generic [ref=e1617]:
+                  - generic [ref=e1618]: "#tlou"
+                  - generic [ref=e1619]: "#smuggler"
+                  - generic [ref=e1620]: "#survivor"
+                - button "Research Joel Miller" [ref=e1621]:
+                  - img
+                  - text: Research Character
+            - generic "View John Wick details" [ref=e1622] [cursor=pointer]:
+              - generic [ref=e1624]:
+                - generic [ref=e1625]:
+                  - generic [ref=e1626]: John Wick
+                  - generic [ref=e1627]: Jardani Jovonovich · John Wick
+                - 'generic "Universe: Film" [ref=e1628]': Film
+              - generic [ref=e1629]:
+                - img "John Wick character image" [ref=e1631]
+                - generic [ref=e1632]:
+                  - generic [ref=e1633]:
+                    - img [ref=e1634]
+                    - generic [ref=e1644]: "30"
+                    - generic [ref=e1645]: facts
+                  - generic [ref=e1646]:
+                    - img [ref=e1647]
+                    - generic [ref=e1649]: "0"
+                    - generic [ref=e1650]: posts
+                  - generic [ref=e1651]:
+                    - img [ref=e1652]
+                    - generic [ref=e1656]: "0"
+                    - generic [ref=e1657]: carousels
+                - generic [ref=e1658]:
+                  - generic [ref=e1659]: "#action"
+                  - generic [ref=e1660]: "#assassin"
+                  - generic [ref=e1661]: "#revenge"
+                - button "Re-research John Wick" [ref=e1662]:
+                  - img
+                  - text: Re-Research
+            - generic "View Joker details" [ref=e1663] [cursor=pointer]:
+              - generic [ref=e1665]:
+                - generic [ref=e1666]:
+                  - generic [ref=e1667]: Joker
+                  - generic [ref=e1668]: Unknown · Batman
+                - 'generic "Universe: DC" [ref=e1669]': DC
+              - generic [ref=e1670]:
+                - img "Joker character image" [ref=e1672]
+                - generic [ref=e1673]:
+                  - generic [ref=e1674]:
+                    - img [ref=e1675]
+                    - generic [ref=e1685]: "0"
+                    - generic [ref=e1686]: facts
+                  - generic [ref=e1687]:
+                    - img [ref=e1688]
+                    - generic [ref=e1690]: "0"
+                    - generic [ref=e1691]: posts
+                  - generic [ref=e1692]:
+                    - img [ref=e1693]
+                    - generic [ref=e1697]: "0"
+                    - generic [ref=e1698]: carousels
+                - generic [ref=e1699]:
+                  - generic [ref=e1700]: "#dc"
+                  - generic [ref=e1701]: "#villain"
+                  - generic [ref=e1702]: "#gotham"
+                - button "Research Joker" [ref=e1703]:
+                  - img
+                  - text: Research Character
+            - generic "View Jon Snow details" [ref=e1704] [cursor=pointer]:
+              - generic [ref=e1706]:
+                - generic [ref=e1707]:
+                  - generic [ref=e1708]: Jon Snow
+                  - generic [ref=e1709]: Aegon Targaryen · Game of Thrones
+                - 'generic "Universe: TV" [ref=e1710]': TV
+              - generic [ref=e1711]:
+                - generic [ref=e1712]:
+                  - generic [ref=e1713]:
+                    - img [ref=e1714]
+                    - generic [ref=e1724]: "0"
+                    - generic [ref=e1725]: facts
+                  - generic [ref=e1726]:
+                    - img [ref=e1727]
+                    - generic [ref=e1729]: "0"
+                    - generic [ref=e1730]: posts
+                  - generic [ref=e1731]:
+                    - img [ref=e1732]
+                    - generic [ref=e1736]: "0"
+                    - generic [ref=e1737]: carousels
+                - generic [ref=e1738]:
+                  - generic [ref=e1739]: "#got"
+                  - generic [ref=e1740]: "#stark"
+                  - generic [ref=e1741]: "#night-watch"
+                - button "Research Jon Snow" [ref=e1742]:
+                  - img
+                  - text: Research Character
+            - generic "View Kratos details" [ref=e1743] [cursor=pointer]:
+              - generic [ref=e1745]:
+                - generic [ref=e1746]:
+                  - generic [ref=e1747]: Kratos
+                  - generic [ref=e1748]: Kratos · God of War
+                - 'generic "Universe: Gaming" [ref=e1749]': Gaming
+              - generic [ref=e1750]:
+                - generic [ref=e1751]:
+                  - generic [ref=e1752]:
+                    - img [ref=e1753]
+                    - generic [ref=e1763]: "0"
+                    - generic [ref=e1764]: facts
+                  - generic [ref=e1765]:
+                    - img [ref=e1766]
+                    - generic [ref=e1768]: "0"
+                    - generic [ref=e1769]: posts
+                  - generic [ref=e1770]:
+                    - img [ref=e1771]
+                    - generic [ref=e1775]: "0"
+                    - generic [ref=e1776]: carousels
+                - generic [ref=e1777]:
+                  - generic [ref=e1778]: "#godofwar"
+                  - generic [ref=e1779]: "#spartan"
+                  - generic [ref=e1780]: "#god-slayer"
+                - button "Research Kratos" [ref=e1781]:
+                  - img
+                  - text: Research Character
+            - generic "View Lara Croft details" [ref=e1782] [cursor=pointer]:
+              - generic [ref=e1784]:
+                - generic [ref=e1785]:
+                  - generic [ref=e1786]: Lara Croft
+                  - generic [ref=e1787]: Lara Croft · Tomb Raider
+                - 'generic "Universe: Gaming" [ref=e1788]': Gaming
+              - generic [ref=e1789]:
+                - generic [ref=e1790]:
+                  - generic [ref=e1791]:
+                    - img [ref=e1792]
+                    - generic [ref=e1802]: "0"
+                    - generic [ref=e1803]: facts
+                  - generic [ref=e1804]:
+                    - img [ref=e1805]
+                    - generic [ref=e1807]: "0"
+                    - generic [ref=e1808]: posts
+                  - generic [ref=e1809]:
+                    - img [ref=e1810]
+                    - generic [ref=e1814]: "0"
+                    - generic [ref=e1815]: carousels
+                - generic [ref=e1816]:
+                  - generic [ref=e1817]: "#tombraider"
+                  - generic [ref=e1818]: "#archaeologist"
+                  - generic [ref=e1819]: "#adventurer"
+                - button "Research Lara Croft" [ref=e1820]:
+                  - img
+                  - text: Research Character
+            - generic "View Larissa Cannon details" [ref=e1821] [cursor=pointer]:
+              - generic [ref=e1823]:
+                - generic [ref=e1824]:
+                  - generic [ref=e1825]: Larissa Cannon
+                  - generic [ref=e1826]: Lee Cronin's The Mummy
+                - 'generic "Universe: Other" [ref=e1827]': Other
+              - generic [ref=e1828]:
+                - generic [ref=e1829]:
+                  - generic [ref=e1830]:
+                    - img [ref=e1831]
+                    - generic [ref=e1841]: "0"
+                    - generic [ref=e1842]: facts
+                  - generic [ref=e1843]:
+                    - img [ref=e1844]
+                    - generic [ref=e1846]: "0"
+                    - generic [ref=e1847]: posts
+                  - generic [ref=e1848]:
+                    - img [ref=e1849]
+                    - generic [ref=e1853]: "0"
+                    - generic [ref=e1854]: carousels
+                - button "Research Larissa Cannon" [ref=e1855]:
+                  - img
+                  - text: Research Character
+            - generic "View Legolas details" [ref=e1856] [cursor=pointer]:
+              - generic [ref=e1858]:
+                - generic [ref=e1859]:
+                  - generic [ref=e1860]: Legolas
+                  - generic [ref=e1861]: Legolas Greenleaf · Lord of the Rings
+                - 'generic "Universe: LOTR" [ref=e1862]': LOTR
+              - generic [ref=e1863]:
+                - generic [ref=e1864]:
+                  - generic [ref=e1865]:
+                    - img [ref=e1866]
+                    - generic [ref=e1876]: "0"
+                    - generic [ref=e1877]: facts
+                  - generic [ref=e1878]:
+                    - img [ref=e1879]
+                    - generic [ref=e1881]: "0"
+                    - generic [ref=e1882]: posts
+                  - generic [ref=e1883]:
+                    - img [ref=e1884]
+                    - generic [ref=e1888]: "0"
+                    - generic [ref=e1889]: carousels
+                - generic [ref=e1890]:
+                  - generic [ref=e1891]: "#lotr"
+                  - generic [ref=e1892]: "#elf"
+                  - generic [ref=e1893]: "#archer"
+                - button "Research Legolas" [ref=e1894]:
+                  - img
+                  - text: Research Character
+            - generic "View Levi Ackerman details" [ref=e1895] [cursor=pointer]:
+              - generic [ref=e1897]:
+                - generic [ref=e1898]:
+                  - generic [ref=e1899]: Levi Ackerman
+                  - generic [ref=e1900]: Levi Ackerman · Attack on Titan
+                - 'generic "Universe: Anime" [ref=e1901]': Anime
+              - generic [ref=e1902]:
+                - generic [ref=e1903]:
+                  - generic [ref=e1904]:
+                    - img [ref=e1905]
+                    - generic [ref=e1915]: "0"
+                    - generic [ref=e1916]: facts
+                  - generic [ref=e1917]:
+                    - img [ref=e1918]
+                    - generic [ref=e1920]: "0"
+                    - generic [ref=e1921]: posts
+                  - generic [ref=e1922]:
+                    - img [ref=e1923]
+                    - generic [ref=e1927]: "0"
+                    - generic [ref=e1928]: carousels
+                - generic [ref=e1929]:
+                  - generic [ref=e1930]: "#aot"
+                  - generic [ref=e1931]: "#captain"
+                  - generic [ref=e1932]: "#skilled"
+                - button "Research Levi Ackerman" [ref=e1933]:
+                  - img
+                  - text: Research Character
+            - generic "View Light Yagami details" [ref=e1934] [cursor=pointer]:
+              - generic [ref=e1936]:
+                - generic [ref=e1937]:
+                  - generic [ref=e1938]: Light Yagami
+                  - generic [ref=e1939]: Light Yagami · Death Note
+                - 'generic "Universe: Anime" [ref=e1940]': Anime
+              - generic [ref=e1941]:
+                - generic [ref=e1942]:
+                  - generic [ref=e1943]:
+                    - img [ref=e1944]
+                    - generic [ref=e1954]: "0"
+                    - generic [ref=e1955]: facts
+                  - generic [ref=e1956]:
+                    - img [ref=e1957]
+                    - generic [ref=e1959]: "0"
+                    - generic [ref=e1960]: posts
+                  - generic [ref=e1961]:
+                    - img [ref=e1962]
+                    - generic [ref=e1966]: "0"
+                    - generic [ref=e1967]: carousels
+                - generic [ref=e1968]:
+                  - generic [ref=e1969]: "#deathnote"
+                  - generic [ref=e1970]: "#antihero"
+                  - generic [ref=e1971]: "#genius"
+                - button "Research Light Yagami" [ref=e1972]:
+                  - img
+                  - text: Research Character
+            - generic "View Link details" [ref=e1973] [cursor=pointer]:
+              - generic [ref=e1975]:
+                - generic [ref=e1976]:
+                  - generic [ref=e1977]: Link
+                  - generic [ref=e1978]: Link · The Legend of Zelda
+                - 'generic "Universe: Gaming" [ref=e1979]': Gaming
+              - generic [ref=e1980]:
+                - generic [ref=e1981]:
+                  - generic [ref=e1982]:
+                    - img [ref=e1983]
+                    - generic [ref=e1993]: "0"
+                    - generic [ref=e1994]: facts
+                  - generic [ref=e1995]:
+                    - img [ref=e1996]
+                    - generic [ref=e1998]: "0"
+                    - generic [ref=e1999]: posts
+                  - generic [ref=e2000]:
+                    - img [ref=e2001]
+                    - generic [ref=e2005]: "0"
+                    - generic [ref=e2006]: carousels
+                - generic [ref=e2007]:
+                  - generic [ref=e2008]: "#zelda"
+                  - generic [ref=e2009]: "#hero"
+                  - generic [ref=e2010]: "#hyrule"
+                - button "Research Link" [ref=e2011]:
+                  - img
+                  - text: Research Character
+            - generic "View Lisa Fields details" [ref=e2012] [cursor=pointer]:
+              - generic [ref=e2014]:
+                - generic [ref=e2015]:
+                  - generic [ref=e2016]: Lisa Fields
+                  - generic [ref=e2017]: Thrash
+                - 'generic "Universe: Other" [ref=e2018]': Other
+              - generic [ref=e2019]:
+                - generic [ref=e2020]:
+                  - generic [ref=e2021]:
+                    - img [ref=e2022]
+                    - generic [ref=e2032]: "0"
+                    - generic [ref=e2033]: facts
+                  - generic [ref=e2034]:
+                    - img [ref=e2035]
+                    - generic [ref=e2037]: "0"
+                    - generic [ref=e2038]: posts
+                  - generic [ref=e2039]:
+                    - img [ref=e2040]
+                    - generic [ref=e2044]: "0"
+                    - generic [ref=e2045]: carousels
+                - button "Research Lisa Fields" [ref=e2046]:
+                  - img
+                  - text: Research Character
+            - generic "View Logan Roy details" [ref=e2047] [cursor=pointer]:
+              - generic [ref=e2049]:
+                - generic [ref=e2050]:
+                  - generic [ref=e2051]: Logan Roy
+                  - generic [ref=e2052]: Logan Roy · Succession
+                - 'generic "Universe: TV" [ref=e2053]': TV
+              - generic [ref=e2054]:
+                - generic [ref=e2055]:
+                  - generic [ref=e2056]:
+                    - img [ref=e2057]
+                    - generic [ref=e2067]: "0"
+                    - generic [ref=e2068]: facts
+                  - generic [ref=e2069]:
+                    - img [ref=e2070]
+                    - generic [ref=e2072]: "0"
+                    - generic [ref=e2073]: posts
+                  - generic [ref=e2074]:
+                    - img [ref=e2075]
+                    - generic [ref=e2079]: "0"
+                    - generic [ref=e2080]: carousels
+                - generic [ref=e2081]:
+                  - generic [ref=e2082]: "#succession"
+                  - generic [ref=e2083]: "#mogul"
+                  - generic [ref=e2084]: "#patriarch"
+                - button "Research Logan Roy" [ref=e2085]:
+                  - img
+                  - text: Research Character
+            - generic "View Loki details" [ref=e2086] [cursor=pointer]:
+              - generic [ref=e2088]:
+                - generic [ref=e2089]:
+                  - generic [ref=e2090]: Loki
+                  - generic [ref=e2091]: Loki Laufeyson · Avengers
+                - 'generic "Universe: Marvel" [ref=e2092]': Marvel
+              - generic [ref=e2093]:
+                - img "Loki character image" [ref=e2095]
+                - generic [ref=e2096]:
+                  - generic [ref=e2097]:
+                    - img [ref=e2098]
+                    - generic [ref=e2108]: "21"
+                    - generic [ref=e2109]: facts
+                  - generic [ref=e2110]:
+                    - img [ref=e2111]
+                    - generic [ref=e2113]: "2"
+                    - generic [ref=e2114]: posts
+                  - generic [ref=e2115]:
+                    - img [ref=e2116]
+                    - generic [ref=e2120]: "3"
+                    - generic [ref=e2121]: carousels
+                - generic [ref=e2122]:
+                  - generic [ref=e2123]: "#mcu"
+                  - generic [ref=e2124]: "#villain"
+                  - generic [ref=e2125]: "#asgard"
+                - button "Re-research Loki" [ref=e2126]:
+                  - img
+                  - text: Re-Research
+            - generic "View Luigi (voice) details" [ref=e2127] [cursor=pointer]:
+              - generic [ref=e2129]:
+                - generic [ref=e2130]:
+                  - generic [ref=e2131]: Luigi (voice)
+                  - generic [ref=e2132]: The Super Mario Galaxy Movie
+                - 'generic "Universe: Other" [ref=e2133]': Other
+              - generic [ref=e2134]:
+                - generic [ref=e2135]:
+                  - generic [ref=e2136]:
+                    - img [ref=e2137]
+                    - generic [ref=e2147]: "0"
+                    - generic [ref=e2148]: facts
+                  - generic [ref=e2149]:
+                    - img [ref=e2150]
+                    - generic [ref=e2152]: "0"
+                    - generic [ref=e2153]: posts
+                  - generic [ref=e2154]:
+                    - img [ref=e2155]
+                    - generic [ref=e2159]: "0"
+                    - generic [ref=e2160]: carousels
+                - button "Research Luigi (voice)" [ref=e2161]:
+                  - img
+                  - text: Research Character
+            - generic "View Luke Skywalker details" [ref=e2162] [cursor=pointer]:
+              - generic [ref=e2164]:
+                - generic [ref=e2165]:
+                  - generic [ref=e2166]: Luke Skywalker
+                  - generic [ref=e2167]: Luke Skywalker · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e2168]': Star Wars
+              - generic [ref=e2169]:
+                - generic [ref=e2170]:
+                  - generic [ref=e2171]:
+                    - img [ref=e2172]
+                    - generic [ref=e2182]: "0"
+                    - generic [ref=e2183]: facts
+                  - generic [ref=e2184]:
+                    - img [ref=e2185]
+                    - generic [ref=e2187]: "0"
+                    - generic [ref=e2188]: posts
+                  - generic [ref=e2189]:
+                    - img [ref=e2190]
+                    - generic [ref=e2194]: "0"
+                    - generic [ref=e2195]: carousels
+                - generic [ref=e2196]:
+                  - generic [ref=e2197]: "#starwars"
+                  - generic [ref=e2198]: "#jedi"
+                  - generic [ref=e2199]: "#hero"
+                - button "Research Luke Skywalker" [ref=e2200]:
+                  - img
+                  - text: Research Character
+            - generic "View Mario details" [ref=e2201] [cursor=pointer]:
+              - generic [ref=e2203]:
+                - generic [ref=e2204]:
+                  - generic [ref=e2205]: Mario
+                  - generic [ref=e2206]: Mario Mario · Super Mario
+                - 'generic "Universe: Gaming" [ref=e2207]': Gaming
+              - generic [ref=e2208]:
+                - generic [ref=e2209]:
+                  - generic [ref=e2210]:
+                    - img [ref=e2211]
+                    - generic [ref=e2221]: "0"
+                    - generic [ref=e2222]: facts
+                  - generic [ref=e2223]:
+                    - img [ref=e2224]
+                    - generic [ref=e2226]: "0"
+                    - generic [ref=e2227]: posts
+                  - generic [ref=e2228]:
+                    - img [ref=e2229]
+                    - generic [ref=e2233]: "0"
+                    - generic [ref=e2234]: carousels
+                - generic [ref=e2235]:
+                  - generic [ref=e2236]: "#nintendo"
+                  - generic [ref=e2237]: "#plumber"
+                  - generic [ref=e2238]: "#mushroom"
+                - button "Research Mario" [ref=e2239]:
+                  - img
+                  - text: Research Character
+            - generic "View Mario (voice) details" [ref=e2240] [cursor=pointer]:
+              - generic [ref=e2242]:
+                - generic [ref=e2243]:
+                  - generic [ref=e2244]: Mario (voice)
+                  - generic [ref=e2245]: The Super Mario Galaxy Movie
+                - 'generic "Universe: Other" [ref=e2246]': Other
+              - generic [ref=e2247]:
+                - generic [ref=e2248]:
+                  - generic [ref=e2249]:
+                    - img [ref=e2250]
+                    - generic [ref=e2260]: "0"
+                    - generic [ref=e2261]: facts
+                  - generic [ref=e2262]:
+                    - img [ref=e2263]
+                    - generic [ref=e2265]: "0"
+                    - generic [ref=e2266]: posts
+                  - generic [ref=e2267]:
+                    - img [ref=e2268]
+                    - generic [ref=e2272]: "0"
+                    - generic [ref=e2273]: carousels
+                - button "Research Mario (voice)" [ref=e2274]:
+                  - img
+                  - text: Research Character
+            - generic "View Master Chief details" [ref=e2275] [cursor=pointer]:
+              - generic [ref=e2277]:
+                - generic [ref=e2278]:
+                  - generic [ref=e2279]: Master Chief
+                  - generic [ref=e2280]: John-117 · Halo
+                - 'generic "Universe: Gaming" [ref=e2281]': Gaming
+              - generic [ref=e2282]:
+                - generic [ref=e2283]:
+                  - generic [ref=e2284]:
+                    - img [ref=e2285]
+                    - generic [ref=e2295]: "0"
+                    - generic [ref=e2296]: facts
+                  - generic [ref=e2297]:
+                    - img [ref=e2298]
+                    - generic [ref=e2300]: "0"
+                    - generic [ref=e2301]: posts
+                  - generic [ref=e2302]:
+                    - img [ref=e2303]
+                    - generic [ref=e2307]: "0"
+                    - generic [ref=e2308]: carousels
+                - generic [ref=e2309]:
+                  - generic [ref=e2310]: "#halo"
+                  - generic [ref=e2311]: "#spartan"
+                  - generic [ref=e2312]: "#unsc"
+                - button "Research Master Chief" [ref=e2313]:
+                  - img
+                  - text: Research Character
+            - generic "View Michael Corleone details" [ref=e2314] [cursor=pointer]:
+              - generic [ref=e2316]:
+                - generic [ref=e2317]:
+                  - generic [ref=e2318]: Michael Corleone
+                  - generic [ref=e2319]: Michael Corleone · The Godfather
+                - 'generic "Universe: Film" [ref=e2320]': Film
+              - generic [ref=e2321]:
+                - generic [ref=e2322]:
+                  - generic [ref=e2323]:
+                    - img [ref=e2324]
+                    - generic [ref=e2334]: "0"
+                    - generic [ref=e2335]: facts
+                  - generic [ref=e2336]:
+                    - img [ref=e2337]
+                    - generic [ref=e2339]: "0"
+                    - generic [ref=e2340]: posts
+                  - generic [ref=e2341]:
+                    - img [ref=e2342]
+                    - generic [ref=e2346]: "0"
+                    - generic [ref=e2347]: carousels
+                - generic [ref=e2348]:
+                  - generic [ref=e2349]: "#godfather"
+                  - generic [ref=e2350]: "#mob"
+                  - generic [ref=e2351]: "#don"
+                - button "Research Michael Corleone" [ref=e2352]:
+                  - img
+                  - text: Research Character
+            - generic "View Michael Scott details" [ref=e2353] [cursor=pointer]:
+              - generic [ref=e2355]:
+                - generic [ref=e2356]:
+                  - generic [ref=e2357]: Michael Scott
+                  - generic [ref=e2358]: Michael Gary Scott · The Office
+                - 'generic "Universe: TV" [ref=e2359]': TV
+              - generic [ref=e2360]:
+                - img "Michael Scott character image" [ref=e2362]
+                - generic [ref=e2363]:
+                  - generic [ref=e2364]:
+                    - img [ref=e2365]
+                    - generic [ref=e2375]: "0"
+                    - generic [ref=e2376]: facts
+                  - generic [ref=e2377]:
+                    - img [ref=e2378]
+                    - generic [ref=e2380]: "0"
+                    - generic [ref=e2381]: posts
+                  - generic [ref=e2382]:
+                    - img [ref=e2383]
+                    - generic [ref=e2387]: "0"
+                    - generic [ref=e2388]: carousels
+                - generic [ref=e2389]:
+                  - generic [ref=e2390]: "#comedy"
+                  - generic [ref=e2391]: "#theoffice"
+                  - generic [ref=e2392]: "#boss"
+                - button "Research Michael Scott" [ref=e2393]:
+                  - img
+                  - text: Research Character
+            - generic "View Monkey D. Luffy details" [ref=e2394] [cursor=pointer]:
+              - generic [ref=e2396]:
+                - generic [ref=e2397]:
+                  - generic [ref=e2398]: Monkey D. Luffy
+                  - generic [ref=e2399]: Monkey D. Luffy · One Piece
+                - 'generic "Universe: Anime" [ref=e2400]': Anime
+              - generic [ref=e2401]:
+                - generic [ref=e2402]:
+                  - generic [ref=e2403]:
+                    - img [ref=e2404]
+                    - generic [ref=e2414]: "0"
+                    - generic [ref=e2415]: facts
+                  - generic [ref=e2416]:
+                    - img [ref=e2417]
+                    - generic [ref=e2419]: "0"
+                    - generic [ref=e2420]: posts
+                  - generic [ref=e2421]:
+                    - img [ref=e2422]
+                    - generic [ref=e2426]: "0"
+                    - generic [ref=e2427]: carousels
+                - generic [ref=e2428]:
+                  - generic [ref=e2429]: "#onepiece"
+                  - generic [ref=e2430]: "#pirate"
+                  - generic [ref=e2431]: "#devil-fruit"
+                - button "Research Monkey D. Luffy" [ref=e2432]:
+                  - img
+                  - text: Research Character
+            - generic "View Naruto Uzumaki details" [ref=e2433] [cursor=pointer]:
+              - generic [ref=e2435]:
+                - generic [ref=e2436]:
+                  - generic [ref=e2437]: Naruto Uzumaki
+                  - generic [ref=e2438]: Naruto Uzumaki · Naruto
+                - 'generic "Universe: Anime" [ref=e2439]': Anime
+              - generic [ref=e2440]:
+                - generic [ref=e2441]:
+                  - generic [ref=e2442]:
+                    - img [ref=e2443]
+                    - generic [ref=e2453]: "0"
+                    - generic [ref=e2454]: facts
+                  - generic [ref=e2455]:
+                    - img [ref=e2456]
+                    - generic [ref=e2458]: "0"
+                    - generic [ref=e2459]: posts
+                  - generic [ref=e2460]:
+                    - img [ref=e2461]
+                    - generic [ref=e2465]: "0"
+                    - generic [ref=e2466]: carousels
+                - generic [ref=e2467]:
+                  - generic [ref=e2468]: "#naruto"
+                  - generic [ref=e2469]: "#ninja"
+                  - generic [ref=e2470]: "#hokage"
+                - button "Research Naruto Uzumaki" [ref=e2471]:
+                  - img
+                  - text: Research Character
+            - generic "View Neo details" [ref=e2472] [cursor=pointer]:
+              - generic [ref=e2474]:
+                - generic [ref=e2475]:
+                  - generic [ref=e2476]: Neo
+                  - generic [ref=e2477]: Thomas A. Anderson · The Matrix
+                - 'generic "Universe: Film" [ref=e2478]': Film
+              - generic [ref=e2479]:
+                - generic [ref=e2480]:
+                  - generic [ref=e2481]:
+                    - img [ref=e2482]
+                    - generic [ref=e2492]: "0"
+                    - generic [ref=e2493]: facts
+                  - generic [ref=e2494]:
+                    - img [ref=e2495]
+                    - generic [ref=e2497]: "0"
+                    - generic [ref=e2498]: posts
+                  - generic [ref=e2499]:
+                    - img [ref=e2500]
+                    - generic [ref=e2504]: "0"
+                    - generic [ref=e2505]: carousels
+                - generic [ref=e2506]:
+                  - generic [ref=e2507]: "#matrix"
+                  - generic [ref=e2508]: "#hero"
+                  - generic [ref=e2509]: "#chosen"
+                - button "Research Neo" [ref=e2510]:
+                  - img
+                  - text: Research Character
+            - generic "View Obi-Wan Kenobi details" [ref=e2511] [cursor=pointer]:
+              - generic [ref=e2513]:
+                - generic [ref=e2514]:
+                  - generic [ref=e2515]: Obi-Wan Kenobi
+                  - generic [ref=e2516]: Obi-Wan Kenobi · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e2517]': Star Wars
+              - generic [ref=e2518]:
+                - generic [ref=e2519]:
+                  - generic [ref=e2520]:
+                    - img [ref=e2521]
+                    - generic [ref=e2531]: "0"
+                    - generic [ref=e2532]: facts
+                  - generic [ref=e2533]:
+                    - img [ref=e2534]
+                    - generic [ref=e2536]: "0"
+                    - generic [ref=e2537]: posts
+                  - generic [ref=e2538]:
+                    - img [ref=e2539]
+                    - generic [ref=e2543]: "0"
+                    - generic [ref=e2544]: carousels
+                - generic [ref=e2545]:
+                  - generic [ref=e2546]: "#starwars"
+                  - generic [ref=e2547]: "#jedi"
+                  - generic [ref=e2548]: "#mentor"
+                - button "Research Obi-Wan Kenobi" [ref=e2549]:
+                  - img
+                  - text: Research Character
+            - generic "View Reef Hawk details" [ref=e2550] [cursor=pointer]:
+              - generic [ref=e2552]:
+                - generic [ref=e2553]:
+                  - generic [ref=e2554]: Reef Hawk
+                  - generic [ref=e2555]: Outcome
+                - 'generic "Universe: Other" [ref=e2556]': Other
+              - generic [ref=e2557]:
+                - generic [ref=e2558]:
+                  - generic [ref=e2559]:
+                    - img [ref=e2560]
+                    - generic [ref=e2570]: "0"
+                    - generic [ref=e2571]: facts
+                  - generic [ref=e2572]:
+                    - img [ref=e2573]
+                    - generic [ref=e2575]: "0"
+                    - generic [ref=e2576]: posts
+                  - generic [ref=e2577]:
+                    - img [ref=e2578]
+                    - generic [ref=e2582]: "0"
+                    - generic [ref=e2583]: carousels
+                - button "Research Reef Hawk" [ref=e2584]:
+                  - img
+                  - text: Research Character
+            - generic "View Rey details" [ref=e2585] [cursor=pointer]:
+              - generic [ref=e2587]:
+                - generic [ref=e2588]:
+                  - generic [ref=e2589]: Rey
+                  - generic [ref=e2590]: Rey Skywalker · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e2591]': Star Wars
+              - generic [ref=e2592]:
+                - generic [ref=e2593]:
+                  - generic [ref=e2594]:
+                    - img [ref=e2595]
+                    - generic [ref=e2605]: "0"
+                    - generic [ref=e2606]: facts
+                  - generic [ref=e2607]:
+                    - img [ref=e2608]
+                    - generic [ref=e2610]: "0"
+                    - generic [ref=e2611]: posts
+                  - generic [ref=e2612]:
+                    - img [ref=e2613]
+                    - generic [ref=e2617]: "0"
+                    - generic [ref=e2618]: carousels
+                - generic [ref=e2619]:
+                  - generic [ref=e2620]: "#starwars"
+                  - generic [ref=e2621]: "#jedi"
+                  - generic [ref=e2622]: "#scavenger"
+                - button "Research Rey" [ref=e2623]:
+                  - img
+                  - text: Research Character
+            - generic "View Rocky (voice) details" [ref=e2624] [cursor=pointer]:
+              - generic [ref=e2626]:
+                - generic [ref=e2627]:
+                  - generic [ref=e2628]: Rocky (voice)
+                  - generic [ref=e2629]: Project Hail Mary
+                - 'generic "Universe: Other" [ref=e2630]': Other
+              - generic [ref=e2631]:
+                - img "Rocky (voice) character image" [ref=e2633]
+                - generic [ref=e2634]:
+                  - generic [ref=e2635]:
+                    - img [ref=e2636]
+                    - generic [ref=e2646]: "0"
+                    - generic [ref=e2647]: facts
+                  - generic [ref=e2648]:
+                    - img [ref=e2649]
+                    - generic [ref=e2651]: "0"
+                    - generic [ref=e2652]: posts
+                  - generic [ref=e2653]:
+                    - img [ref=e2654]
+                    - generic [ref=e2658]: "0"
+                    - generic [ref=e2659]: carousels
+                - button "Research Rocky (voice)" [ref=e2660]:
+                  - img
+                  - text: Research Character
+            - generic "View Ryland Grace details" [ref=e2661] [cursor=pointer]:
+              - generic [ref=e2663]:
+                - generic [ref=e2664]:
+                  - generic [ref=e2665]: Ryland Grace
+                  - generic [ref=e2666]: Project Hail Mary
+                - 'generic "Universe: Other" [ref=e2667]': Other
+              - generic [ref=e2668]:
+                - img "Ryland Grace character image" [ref=e2670]
+                - generic [ref=e2671]:
+                  - generic [ref=e2672]:
+                    - img [ref=e2673]
+                    - generic [ref=e2683]: "0"
+                    - generic [ref=e2684]: facts
+                  - generic [ref=e2685]:
+                    - img [ref=e2686]
+                    - generic [ref=e2688]: "0"
+                    - generic [ref=e2689]: posts
+                  - generic [ref=e2690]:
+                    - img [ref=e2691]
+                    - generic [ref=e2695]: "0"
+                    - generic [ref=e2696]: carousels
+                - button "Research Ryland Grace" [ref=e2697]:
+                  - img
+                  - text: Research Character
+            - generic "View Saul Goodman details" [ref=e2698] [cursor=pointer]:
+              - generic [ref=e2700]:
+                - generic [ref=e2701]:
+                  - generic [ref=e2702]: Saul Goodman
+                  - generic [ref=e2703]: Jimmy McGill · Better Call Saul
+                - 'generic "Universe: TV" [ref=e2704]': TV
+              - generic [ref=e2705]:
+                - generic [ref=e2706]:
+                  - generic [ref=e2707]:
+                    - img [ref=e2708]
+                    - generic [ref=e2718]: "0"
+                    - generic [ref=e2719]: facts
+                  - generic [ref=e2720]:
+                    - img [ref=e2721]
+                    - generic [ref=e2723]: "0"
+                    - generic [ref=e2724]: posts
+                  - generic [ref=e2725]:
+                    - img [ref=e2726]
+                    - generic [ref=e2730]: "0"
+                    - generic [ref=e2731]: carousels
+                - generic [ref=e2732]:
+                  - generic [ref=e2733]: "#breakingbad"
+                  - generic [ref=e2734]: "#lawyer"
+                  - generic [ref=e2735]: "#antihero"
+                - button "Research Saul Goodman" [ref=e2736]:
+                  - img
+                  - text: Research Character
+            - generic "View Scarlet Witch details" [ref=e2737] [cursor=pointer]:
+              - generic [ref=e2739]:
+                - generic [ref=e2740]:
+                  - generic [ref=e2741]: Scarlet Witch
+                  - generic [ref=e2742]: Wanda Maximoff · Avengers
+                - 'generic "Universe: Marvel" [ref=e2743]': Marvel
+              - generic [ref=e2744]:
+                - img "Scarlet Witch character image" [ref=e2746]
+                - generic [ref=e2747]:
+                  - generic [ref=e2748]:
+                    - img [ref=e2749]
+                    - generic [ref=e2759]: "0"
+                    - generic [ref=e2760]: facts
+                  - generic [ref=e2761]:
+                    - img [ref=e2762]
+                    - generic [ref=e2764]: "0"
+                    - generic [ref=e2765]: posts
+                  - generic [ref=e2766]:
+                    - img [ref=e2767]
+                    - generic [ref=e2771]: "0"
+                    - generic [ref=e2772]: carousels
+                - generic [ref=e2773]:
+                  - generic [ref=e2774]: "#mcu"
+                  - generic [ref=e2775]: "#magic"
+                  - generic [ref=e2776]: "#mutant"
+                - button "Research Scarlet Witch" [ref=e2777]:
+                  - img
+                  - text: Research Character
+            - generic "View Severus Snape details" [ref=e2778] [cursor=pointer]:
+              - generic [ref=e2780]:
+                - generic [ref=e2781]:
+                  - generic [ref=e2782]: Severus Snape
+                  - generic [ref=e2783]: Severus Snape · Harry Potter
+                - 'generic "Universe: Harry Potter" [ref=e2784]': Harry Potter
+              - generic [ref=e2785]:
+                - generic [ref=e2786]:
+                  - generic [ref=e2787]:
+                    - img [ref=e2788]
+                    - generic [ref=e2798]: "0"
+                    - generic [ref=e2799]: facts
+                  - generic [ref=e2800]:
+                    - img [ref=e2801]
+                    - generic [ref=e2803]: "0"
+                    - generic [ref=e2804]: posts
+                  - generic [ref=e2805]:
+                    - img [ref=e2806]
+                    - generic [ref=e2810]: "0"
+                    - generic [ref=e2811]: carousels
+                - generic [ref=e2812]:
+                  - generic [ref=e2813]: "#hogwarts"
+                  - generic [ref=e2814]: "#slytherin"
+                  - generic [ref=e2815]: "#antihero"
+                - button "Research Severus Snape" [ref=e2816]:
+                  - img
+                  - text: Research Character
+            - generic "View Solid Snake details" [ref=e2817] [cursor=pointer]:
+              - generic [ref=e2819]:
+                - generic [ref=e2820]:
+                  - generic [ref=e2821]: Solid Snake
+                  - generic [ref=e2822]: David / Solid Snake · Metal Gear
+                - 'generic "Universe: Gaming" [ref=e2823]': Gaming
+              - generic [ref=e2824]:
+                - generic [ref=e2825]:
+                  - generic [ref=e2826]:
+                    - img [ref=e2827]
+                    - generic [ref=e2837]: "0"
+                    - generic [ref=e2838]: facts
+                  - generic [ref=e2839]:
+                    - img [ref=e2840]
+                    - generic [ref=e2842]: "0"
+                    - generic [ref=e2843]: posts
+                  - generic [ref=e2844]:
+                    - img [ref=e2845]
+                    - generic [ref=e2849]: "0"
+                    - generic [ref=e2850]: carousels
+                - generic [ref=e2851]:
+                  - generic [ref=e2852]: "#metalgear"
+                  - generic [ref=e2853]: "#stealth"
+                  - generic [ref=e2854]: "#soldier"
+                - button "Research Solid Snake" [ref=e2855]:
+                  - img
+                  - text: Research Character
+            - generic "View Spider-Man details" [ref=e2856] [cursor=pointer]:
+              - generic [ref=e2858]:
+                - generic [ref=e2859]:
+                  - generic [ref=e2860]: Spider-Man
+                  - generic [ref=e2861]: Peter Parker · Avengers
+                - 'generic "Universe: Marvel" [ref=e2862]': Marvel
+              - generic [ref=e2863]:
+                - img "Spider-Man character image" [ref=e2865]
+                - generic [ref=e2866]:
+                  - generic [ref=e2867]:
+                    - img [ref=e2868]
+                    - generic [ref=e2878]: "0"
+                    - generic [ref=e2879]: facts
+                  - generic [ref=e2880]:
+                    - img [ref=e2881]
+                    - generic [ref=e2883]: "0"
+                    - generic [ref=e2884]: posts
+                  - generic [ref=e2885]:
+                    - img [ref=e2886]
+                    - generic [ref=e2890]: "0"
+                    - generic [ref=e2891]: carousels
+                - generic [ref=e2892]:
+                  - generic [ref=e2893]: "#mcu"
+                  - generic [ref=e2894]: "#avengers"
+                  - generic [ref=e2895]: "#teen"
+                - button "Research Spider-Man" [ref=e2896]:
+                  - img
+                  - text: Research Character
+            - generic "View Sukuna details" [ref=e2897] [cursor=pointer]:
+              - generic [ref=e2899]:
+                - generic [ref=e2900]:
+                  - generic [ref=e2901]: Sukuna
+                  - generic [ref=e2902]: Ryomen Sukuna · Jujutsu Kaisen
+                - 'generic "Universe: Anime" [ref=e2903]': Anime
+              - generic [ref=e2904]:
+                - generic [ref=e2905]:
+                  - generic [ref=e2906]:
+                    - img [ref=e2907]
+                    - generic [ref=e2917]: "0"
+                    - generic [ref=e2918]: facts
+                  - generic [ref=e2919]:
+                    - img [ref=e2920]
+                    - generic [ref=e2922]: "0"
+                    - generic [ref=e2923]: posts
+                  - generic [ref=e2924]:
+                    - img [ref=e2925]
+                    - generic [ref=e2929]: "0"
+                    - generic [ref=e2930]: carousels
+                - generic [ref=e2931]:
+                  - generic [ref=e2932]: "#jjk"
+                  - generic [ref=e2933]: "#curse"
+                  - generic [ref=e2934]: "#villain"
+                - button "Research Sukuna" [ref=e2935]:
+                  - img
+                  - text: Research Character
+            - generic "View Superman details" [ref=e2936] [cursor=pointer]:
+              - generic [ref=e2938]:
+                - generic [ref=e2939]:
+                  - generic [ref=e2940]: Superman
+                  - generic [ref=e2941]: Clark Kent / Kal-El · Justice League
+                - 'generic "Universe: DC" [ref=e2942]': DC
+              - generic [ref=e2943]:
+                - img "Superman character image" [ref=e2945]
+                - generic [ref=e2946]:
+                  - generic [ref=e2947]:
+                    - img [ref=e2948]
+                    - generic [ref=e2958]: "25"
+                    - generic [ref=e2959]: facts
+                  - generic [ref=e2960]:
+                    - img [ref=e2961]
+                    - generic [ref=e2963]: "0"
+                    - generic [ref=e2964]: posts
+                  - generic [ref=e2965]:
+                    - img [ref=e2966]
+                    - generic [ref=e2970]: "0"
+                    - generic [ref=e2971]: carousels
+                - generic [ref=e2972]:
+                  - generic [ref=e2973]: "#dc"
+                  - generic [ref=e2974]: "#krypton"
+                  - generic [ref=e2975]: "#godlike"
+                - button "Re-research Superman" [ref=e2976]:
+                  - img
+                  - text: Re-Research
+            - generic "View Thanos details" [ref=e2977] [cursor=pointer]:
+              - generic [ref=e2979]:
+                - generic [ref=e2980]:
+                  - generic [ref=e2981]: Thanos
+                  - generic [ref=e2982]: Thanos · Avengers
+                - 'generic "Universe: Marvel" [ref=e2983]': Marvel
+              - generic [ref=e2984]:
+                - img "Thanos character image" [ref=e2986]
+                - generic [ref=e2987]:
+                  - generic [ref=e2988]:
+                    - img [ref=e2989]
+                    - generic [ref=e2999]: "0"
+                    - generic [ref=e3000]: facts
+                  - generic [ref=e3001]:
+                    - img [ref=e3002]
+                    - generic [ref=e3004]: "0"
+                    - generic [ref=e3005]: posts
+                  - generic [ref=e3006]:
+                    - img [ref=e3007]
+                    - generic [ref=e3011]: "0"
+                    - generic [ref=e3012]: carousels
+                - generic [ref=e3013]:
+                  - generic [ref=e3014]: "#mcu"
+                  - generic [ref=e3015]: "#villain"
+                  - generic [ref=e3016]: "#titan"
+                - button "Research Thanos" [ref=e3017]:
+                  - img
+                  - text: Research Character
+            - generic "View The Flash details" [ref=e3018] [cursor=pointer]:
+              - generic [ref=e3020]:
+                - generic [ref=e3021]:
+                  - generic [ref=e3022]: The Flash
+                  - generic [ref=e3023]: Barry Allen · Justice League
+                - 'generic "Universe: DC" [ref=e3024]': DC
+              - generic [ref=e3025]:
+                - img "The Flash character image" [ref=e3027]
+                - generic [ref=e3028]:
+                  - generic [ref=e3029]:
+                    - img [ref=e3030]
+                    - generic [ref=e3040]: "0"
+                    - generic [ref=e3041]: facts
+                  - generic [ref=e3042]:
+                    - img [ref=e3043]
+                    - generic [ref=e3045]: "0"
+                    - generic [ref=e3046]: posts
+                  - generic [ref=e3047]:
+                    - img [ref=e3048]
+                    - generic [ref=e3052]: "0"
+                    - generic [ref=e3053]: carousels
+                - generic [ref=e3054]:
+                  - generic [ref=e3055]: "#dc"
+                  - generic [ref=e3056]: "#speedforce"
+                  - generic [ref=e3057]: "#speedster"
+                - button "Research The Flash" [ref=e3058]:
+                  - img
+                  - text: Research Character
+            - generic "View Thor details" [ref=e3059] [cursor=pointer]:
+              - generic [ref=e3061]:
+                - generic [ref=e3062]:
+                  - generic [ref=e3063]: Thor
+                  - generic [ref=e3064]: Thor Odinson · Avengers
+                - 'generic "Universe: Marvel" [ref=e3065]': Marvel
+              - generic [ref=e3066]:
+                - img "Thor character image" [ref=e3068]
+                - generic [ref=e3069]:
+                  - generic [ref=e3070]:
+                    - img [ref=e3071]
+                    - generic [ref=e3081]: "30"
+                    - generic [ref=e3082]: facts
+                  - generic [ref=e3083]:
+                    - img [ref=e3084]
+                    - generic [ref=e3086]: "0"
+                    - generic [ref=e3087]: posts
+                  - generic [ref=e3088]:
+                    - img [ref=e3089]
+                    - generic [ref=e3093]: "0"
+                    - generic [ref=e3094]: carousels
+                - generic [ref=e3095]:
+                  - generic [ref=e3096]: "#mcu"
+                  - generic [ref=e3097]: "#avengers"
+                  - generic [ref=e3098]: "#asgard"
+                - button "Re-research Thor" [ref=e3099]:
+                  - img
+                  - text: Re-Research
+            - generic "View Tony Soprano details" [ref=e3100] [cursor=pointer]:
+              - generic [ref=e3102]:
+                - generic [ref=e3103]:
+                  - generic [ref=e3104]: Tony Soprano
+                  - generic [ref=e3105]: Anthony Soprano · The Sopranos
+                - 'generic "Universe: TV" [ref=e3106]': TV
+              - generic [ref=e3107]:
+                - generic [ref=e3108]:
+                  - generic [ref=e3109]:
+                    - img [ref=e3110]
+                    - generic [ref=e3120]: "0"
+                    - generic [ref=e3121]: facts
+                  - generic [ref=e3122]:
+                    - img [ref=e3123]
+                    - generic [ref=e3125]: "0"
+                    - generic [ref=e3126]: posts
+                  - generic [ref=e3127]:
+                    - img [ref=e3128]
+                    - generic [ref=e3132]: "0"
+                    - generic [ref=e3133]: carousels
+                - generic [ref=e3134]:
+                  - generic [ref=e3135]: "#sopranos"
+                  - generic [ref=e3136]: "#mob"
+                  - generic [ref=e3137]: "#antihero"
+                - button "Research Tony Soprano" [ref=e3138]:
+                  - img
+                  - text: Research Character
+            - generic "View Tyler Durden details" [ref=e3139] [cursor=pointer]:
+              - generic [ref=e3141]:
+                - generic [ref=e3142]:
+                  - generic [ref=e3143]: Tyler Durden
+                  - generic [ref=e3144]: Tyler Durden · Fight Club
+                - 'generic "Universe: Film" [ref=e3145]': Film
+              - generic [ref=e3146]:
+                - generic [ref=e3147]:
+                  - generic [ref=e3148]:
+                    - img [ref=e3149]
+                    - generic [ref=e3159]: "0"
+                    - generic [ref=e3160]: facts
+                  - generic [ref=e3161]:
+                    - img [ref=e3162]
+                    - generic [ref=e3164]: "0"
+                    - generic [ref=e3165]: posts
+                  - generic [ref=e3166]:
+                    - img [ref=e3167]
+                    - generic [ref=e3171]: "0"
+                    - generic [ref=e3172]: carousels
+                - generic [ref=e3173]:
+                  - generic [ref=e3174]: "#fightclub"
+                  - generic [ref=e3175]: "#antihero"
+                  - generic [ref=e3176]: "#anarchy"
+                - button "Research Tyler Durden" [ref=e3177]:
+                  - img
+                  - text: Research Character
+            - generic "View Tyrion Lannister details" [ref=e3178] [cursor=pointer]:
+              - generic [ref=e3180]:
+                - generic [ref=e3181]:
+                  - generic [ref=e3182]: Tyrion Lannister
+                  - generic [ref=e3183]: Tyrion Lannister · Game of Thrones
+                - 'generic "Universe: TV" [ref=e3184]': TV
+              - generic [ref=e3185]:
+                - img "Tyrion Lannister character image" [ref=e3187]
+                - generic [ref=e3188]:
+                  - generic [ref=e3189]:
+                    - img [ref=e3190]
+                    - generic [ref=e3200]: "0"
+                    - generic [ref=e3201]: facts
+                  - generic [ref=e3202]:
+                    - img [ref=e3203]
+                    - generic [ref=e3205]: "0"
+                    - generic [ref=e3206]: posts
+                  - generic [ref=e3207]:
+                    - img [ref=e3208]
+                    - generic [ref=e3212]: "0"
+                    - generic [ref=e3213]: carousels
+                - generic [ref=e3214]:
+                  - generic [ref=e3215]: "#got"
+                  - generic [ref=e3216]: "#lannister"
+                  - generic [ref=e3217]: "#clever"
+                - button "Research Tyrion Lannister" [ref=e3218]:
+                  - img
+                  - text: Research Character
+            - generic "View Vito Corleone details" [ref=e3219] [cursor=pointer]:
+              - generic [ref=e3221]:
+                - generic [ref=e3222]:
+                  - generic [ref=e3223]: Vito Corleone
+                  - generic [ref=e3224]: Vito Andolini Corleone · The Godfather
+                - 'generic "Universe: Film" [ref=e3225]': Film
+              - generic [ref=e3226]:
+                - generic [ref=e3227]:
+                  - generic [ref=e3228]:
+                    - img [ref=e3229]
+                    - generic [ref=e3239]: "0"
+                    - generic [ref=e3240]: facts
+                  - generic [ref=e3241]:
+                    - img [ref=e3242]
+                    - generic [ref=e3244]: "0"
+                    - generic [ref=e3245]: posts
+                  - generic [ref=e3246]:
+                    - img [ref=e3247]
+                    - generic [ref=e3251]: "0"
+                    - generic [ref=e3252]: carousels
+                - generic [ref=e3253]:
+                  - generic [ref=e3254]: "#godfather"
+                  - generic [ref=e3255]: "#mob"
+                  - generic [ref=e3256]: "#patriarch"
+                - button "Research Vito Corleone" [ref=e3257]:
+                  - img
+                  - text: Research Character
+            - generic "View Voldemort details" [ref=e3258] [cursor=pointer]:
+              - generic [ref=e3260]:
+                - generic [ref=e3261]:
+                  - generic [ref=e3262]: Voldemort
+                  - generic [ref=e3263]: Tom Marvolo Riddle · Harry Potter
+                - 'generic "Universe: Harry Potter" [ref=e3264]': Harry Potter
+              - generic [ref=e3265]:
+                - generic [ref=e3266]:
+                  - generic [ref=e3267]:
+                    - img [ref=e3268]
+                    - generic [ref=e3278]: "0"
+                    - generic [ref=e3279]: facts
+                  - generic [ref=e3280]:
+                    - img [ref=e3281]
+                    - generic [ref=e3283]: "0"
+                    - generic [ref=e3284]: posts
+                  - generic [ref=e3285]:
+                    - img [ref=e3286]
+                    - generic [ref=e3290]: "0"
+                    - generic [ref=e3291]: carousels
+                - generic [ref=e3292]:
+                  - generic [ref=e3293]: "#hogwarts"
+                  - generic [ref=e3294]: "#villain"
+                  - generic [ref=e3295]: "#slytherin"
+                - button "Research Voldemort" [ref=e3296]:
+                  - img
+                  - text: Research Character
+            - generic "View Walter White details" [ref=e3297] [cursor=pointer]:
+              - generic [ref=e3299]:
+                - generic [ref=e3300]:
+                  - generic [ref=e3301]: Walter White
+                  - generic [ref=e3302]: Walter Hartwell White · Breaking Bad
+                - 'generic "Universe: TV" [ref=e3303]': TV
+              - generic [ref=e3304]:
+                - img "Walter White character image" [ref=e3306]
+                - generic [ref=e3307]:
+                  - generic [ref=e3308]:
+                    - img [ref=e3309]
+                    - generic [ref=e3319]: "0"
+                    - generic [ref=e3320]: facts
+                  - generic [ref=e3321]:
+                    - img [ref=e3322]
+                    - generic [ref=e3324]: "0"
+                    - generic [ref=e3325]: posts
+                  - generic [ref=e3326]:
+                    - img [ref=e3327]
+                    - generic [ref=e3331]: "0"
+                    - generic [ref=e3332]: carousels
+                - generic [ref=e3333]:
+                  - generic [ref=e3334]: "#breakingbad"
+                  - generic [ref=e3335]: "#antihero"
+                  - generic [ref=e3336]: "#drama"
+                - button "Research Walter White" [ref=e3337]:
+                  - img
+                  - text: Research Character
+            - generic "View Wednesday Addams details" [ref=e3338] [cursor=pointer]:
+              - generic [ref=e3340]:
+                - generic [ref=e3341]:
+                  - generic [ref=e3342]: Wednesday Addams
+                  - generic [ref=e3343]: Wednesday Addams · Wednesday
+                - 'generic "Universe: TV" [ref=e3344]': TV
+              - generic [ref=e3345]:
+                - generic [ref=e3346]:
+                  - generic [ref=e3347]:
+                    - img [ref=e3348]
+                    - generic [ref=e3358]: "0"
+                    - generic [ref=e3359]: facts
+                  - generic [ref=e3360]:
+                    - img [ref=e3361]
+                    - generic [ref=e3363]: "0"
+                    - generic [ref=e3364]: posts
+                  - generic [ref=e3365]:
+                    - img [ref=e3366]
+                    - generic [ref=e3370]: "0"
+                    - generic [ref=e3371]: carousels
+                - generic [ref=e3372]:
+                  - generic [ref=e3373]: "#addamsfamily"
+                  - generic [ref=e3374]: "#dark"
+                  - generic [ref=e3375]: "#teen"
+                - button "Research Wednesday Addams" [ref=e3376]:
+                  - img
+                  - text: Research Character
+            - generic "View Wolverine details" [ref=e3377] [cursor=pointer]:
+              - generic [ref=e3379]:
+                - generic [ref=e3380]:
+                  - generic [ref=e3381]: Wolverine
+                  - generic [ref=e3382]: Logan / James Howlett · X-Men
+                - 'generic "Universe: Marvel" [ref=e3383]': Marvel
+              - generic [ref=e3384]:
+                - img "Wolverine character image" [ref=e3386]
+                - generic [ref=e3387]:
+                  - generic [ref=e3388]:
+                    - img [ref=e3389]
+                    - generic [ref=e3399]: "30"
+                    - generic [ref=e3400]: facts
+                  - generic [ref=e3401]:
+                    - img [ref=e3402]
+                    - generic [ref=e3404]: "0"
+                    - generic [ref=e3405]: posts
+                  - generic [ref=e3406]:
+                    - img [ref=e3407]
+                    - generic [ref=e3411]: "0"
+                    - generic [ref=e3412]: carousels
+                - generic [ref=e3413]:
+                  - generic [ref=e3414]: "#xmen"
+                  - generic [ref=e3415]: "#mutant"
+                  - generic [ref=e3416]: "#adamantium"
+                - button "Re-research Wolverine" [ref=e3417]:
+                  - img
+                  - text: Re-Research
+            - generic "View Wonder Woman details" [ref=e3418] [cursor=pointer]:
+              - generic [ref=e3420]:
+                - generic [ref=e3421]:
+                  - generic [ref=e3422]: Wonder Woman
+                  - generic [ref=e3423]: Diana Prince · Justice League
+                - 'generic "Universe: DC" [ref=e3424]': DC
+              - generic [ref=e3425]:
+                - img "Wonder Woman character image" [ref=e3427]
+                - generic [ref=e3428]:
+                  - generic [ref=e3429]:
+                    - img [ref=e3430]
+                    - generic [ref=e3440]: "0"
+                    - generic [ref=e3441]: facts
+                  - generic [ref=e3442]:
+                    - img [ref=e3443]
+                    - generic [ref=e3445]: "0"
+                    - generic [ref=e3446]: posts
+                  - generic [ref=e3447]:
+                    - img [ref=e3448]
+                    - generic [ref=e3452]: "0"
+                    - generic [ref=e3453]: carousels
+                - generic [ref=e3454]:
+                  - generic [ref=e3455]: "#dc"
+                  - generic [ref=e3456]: "#amazon"
+                  - generic [ref=e3457]: "#warrior"
+                - button "Research Wonder Woman" [ref=e3458]:
+                  - img
+                  - text: Research Character
+            - generic "View Yoda details" [ref=e3459] [cursor=pointer]:
+              - generic [ref=e3461]:
+                - generic [ref=e3462]:
+                  - generic [ref=e3463]: Yoda
+                  - generic [ref=e3464]: Yoda · Star Wars
+                - 'generic "Universe: Star Wars" [ref=e3465]': Star Wars
+              - generic [ref=e3466]:
+                - generic [ref=e3467]:
+                  - generic [ref=e3468]:
+                    - img [ref=e3469]
+                    - generic [ref=e3479]: "0"
+                    - generic [ref=e3480]: facts
+                  - generic [ref=e3481]:
+                    - img [ref=e3482]
+                    - generic [ref=e3484]: "0"
+                    - generic [ref=e3485]: posts
+                  - generic [ref=e3486]:
+                    - img [ref=e3487]
+                    - generic [ref=e3491]: "0"
+                    - generic [ref=e3492]: carousels
+                - generic [ref=e3493]:
+                  - generic [ref=e3494]: "#starwars"
+                  - generic [ref=e3495]: "#jedi"
+                  - generic [ref=e3496]: "#mentor"
+                - button "Research Yoda" [ref=e3497]:
+                  - img
+                  - text: Research Character

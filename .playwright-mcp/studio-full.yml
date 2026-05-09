@@ -1,0 +1,1823 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+      - generic [ref=e102]:
+        - generic [ref=e103]: Meetings
+        - list [ref=e104]:
+          - listitem [ref=e105]:
+            - link "Meetings" [ref=e106] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e107]
+              - generic [ref=e110]: Meetings
+          - listitem [ref=e111]:
+            - link "Meeting Search" [ref=e112] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e113]
+              - generic [ref=e114]: Meeting Search
+      - generic [ref=e115]:
+        - generic [ref=e116]: AI Company
+        - list [ref=e117]:
+          - listitem [ref=e118]:
+            - link "Company" [ref=e119] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e120]
+              - generic [ref=e124]: Company
+          - listitem [ref=e125]:
+            - link "Deep Research" [ref=e126] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e127]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "Experiment Lab" [ref=e131] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e132]
+              - generic [ref=e134]: Experiment Lab
+          - listitem [ref=e135]:
+            - link "Council Room" [ref=e136] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e137]
+              - generic [ref=e141]: Council Room
+          - listitem [ref=e142]:
+            - link "Brain" [ref=e143] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e144]
+              - generic [ref=e156]: Brain
+      - generic [ref=e157]:
+        - generic [ref=e158]: Automation
+        - list [ref=e159]:
+          - listitem [ref=e160]:
+            - link "Agent Tasks" [ref=e161] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e162]
+              - generic [ref=e165]: Agent Tasks
+          - listitem [ref=e166]:
+            - link "Workflows" [ref=e167] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e168]
+              - generic [ref=e172]: Workflows
+          - listitem [ref=e173]:
+            - link "Gateway" [ref=e174] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e175]
+              - generic [ref=e181]: Gateway
+          - listitem [ref=e182]:
+            - link "Money Maker" [ref=e183] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e184]
+              - generic [ref=e186]: Money Maker
+          - listitem [ref=e187]:
+            - link "Research" [ref=e188] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e189]
+              - generic [ref=e192]: Research
+          - listitem [ref=e193]:
+            - link "TikTok Shop" [ref=e194] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e195]
+              - generic [ref=e198]: TikTok Shop
+          - listitem [ref=e199]:
+            - link "Characters" [ref=e200] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e201]
+              - generic [ref=e206]: Characters
+          - listitem [ref=e207]:
+            - link "Character Autopilot" [ref=e208] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e209]
+              - generic [ref=e211]: Character Autopilot
+          - listitem [ref=e212]:
+            - link "Content Agent" [ref=e213] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e214]
+              - generic [ref=e216]: Content Agent
+          - listitem [ref=e217]:
+            - link "Predictions" [ref=e218] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e219]
+              - generic [ref=e222]: Predictions
+          - listitem [ref=e223]:
+            - link "LLC Guide" [ref=e224] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e225]
+              - generic [ref=e229]: LLC Guide
+          - listitem [ref=e230]:
+            - link "Visual Workflows" [ref=e231] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e232]
+              - generic [ref=e236]: Visual Workflows
+      - generic [ref=e237]:
+        - generic [ref=e238]: System
+        - list [ref=e239]:
+          - listitem [ref=e240]:
+            - link "Exec Dashboard" [ref=e241] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e242]
+              - generic [ref=e245]: Exec Dashboard
+          - listitem [ref=e246]:
+            - link "Outcomes" [ref=e247] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e248]
+              - generic [ref=e252]: Outcomes
+          - listitem [ref=e253]:
+            - link "System Health" [ref=e254] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e255]
+              - generic [ref=e258]: System Health
+          - listitem [ref=e259]:
+            - link "Architecture" [ref=e260] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e261]
+              - generic [ref=e266]: Architecture
+          - listitem [ref=e267]:
+            - link "QA" [ref=e268] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e269]
+              - generic [ref=e272]: QA
+          - listitem [ref=e273]:
+            - link "Analytics" [ref=e274] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e275]
+              - generic [ref=e277]: Analytics
+          - listitem [ref=e278]:
+            - link "Settings" [ref=e279] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e280]
+              - generic [ref=e291]: Settings
+    - list [ref=e293]:
+      - listitem [ref=e294]:
+        - button "Zero v1.0" [ref=e295] [cursor=pointer]:
+          - generic [ref=e297]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e298]
+  - main [ref=e299]:
+    - generic [ref=e300]:
+      - button "Toggle Sidebar" [ref=e301] [cursor=pointer]:
+        - img
+        - generic [ref=e302]: Toggle Sidebar
+      - generic [ref=e303]:
+        - generic [ref=e304]: Zero
+        - generic [ref=e305]: /
+        - generic [ref=e306]: Character Content
+      - button "Search... Ctrl K" [ref=e307] [cursor=pointer]:
+        - img [ref=e308]
+        - generic [ref=e311]: Search...
+        - generic [ref=e312]:
+          - generic [ref=e313]: Ctrl
+          - text: K
+      - button "9+" [ref=e315] [cursor=pointer]:
+        - img [ref=e316]
+        - generic [ref=e319]: 9+
+    - main [ref=e320]:
+      - generic [ref=e321]:
+        - navigation "Character content sections" [ref=e322]:
+          - button "Characters" [ref=e323] [cursor=pointer]:
+            - img [ref=e324]
+            - text: Characters
+          - button "Reference Videos" [ref=e329] [cursor=pointer]:
+            - img [ref=e330]
+            - text: Reference Videos
+          - button "Research Queue" [ref=e332] [cursor=pointer]:
+            - img [ref=e333]
+            - text: Research Queue
+          - button "Content Studio" [active] [ref=e336] [cursor=pointer]:
+            - img [ref=e337]
+            - text: Content Studio
+          - button "Review Queue" [ref=e339] [cursor=pointer]:
+            - img [ref=e340]
+            - text: Review Queue
+          - button "Inspiration" [ref=e343] [cursor=pointer]:
+            - img [ref=e344]
+            - text: Inspiration
+          - button "Analytics" [ref=e346] [cursor=pointer]:
+            - img [ref=e347]
+            - text: Analytics
+          - button "Autopilot" [ref=e349] [cursor=pointer]:
+            - img [ref=e350]
+            - text: Autopilot
+        - generic [ref=e3498]:
+          - generic [ref=e3499]:
+            - generic [ref=e3500]:
+              - generic [ref=e3501]: Generate Carousel
+              - generic [ref=e3502]: Pick a researched character, template, and angle to create a viral carousel
+            - generic [ref=e3503]:
+              - generic [ref=e3504]:
+                - generic [ref=e3505]:
+                  - text: Character
+                  - combobox "Select character for carousel" [ref=e3506] [cursor=pointer]:
+                    - generic: Select character...
+                    - img [ref=e3507]
+                - generic [ref=e3509]:
+                  - text: Angle
+                  - combobox "Select content angle" [ref=e3510] [cursor=pointer]:
+                    - generic: Hidden Truths
+                    - img [ref=e3511]
+                - generic [ref=e3513]:
+                  - text: Story Template
+                  - combobox "Select story template" [ref=e3514] [cursor=pointer]:
+                    - generic: Auto-select
+                    - img [ref=e3515]
+                - generic [ref=e3517]:
+                  - text: Slides
+                  - combobox "Select number of slides" [ref=e3518] [cursor=pointer]:
+                    - generic: 6 slides
+                    - img [ref=e3519]
+              - generic [ref=e3521]:
+                - button "Generate single carousel" [disabled]:
+                  - img
+                  - text: Generate
+                - button "Generate 3-part carousel series" [disabled]:
+                  - img
+                  - text: Generate Series (3 parts)
+                - button "Smart batch generate 12 carousels" [ref=e3522] [cursor=pointer]:
+                  - img
+                  - text: Smart Batch (12)
+                - button "Seed story templates" [ref=e3523] [cursor=pointer]: Seed Templates
+                - button "Seed music library" [ref=e3524] [cursor=pointer]: Seed Music
+          - generic [ref=e3525]:
+            - generic [ref=e3526]:
+              - generic [ref=e3528]:
+                - generic [ref=e3529]:
+                  - generic [ref=e3530]:
+                    - button "Open Aquaman character page" [ref=e3531] [cursor=pointer]:
+                      - text: Aquaman
+                      - img [ref=e3532]
+                    - generic [ref=e3536]: "-"
+                    - generic [ref=e3537]: Actor Secrets
+                  - generic [ref=e3539]: Actor Behind Role
+                - generic [ref=e3540]:
+                  - generic [ref=e3541]: approved
+                  - button "Enhance carousel for Aquaman" [ref=e3543] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Aquaman" [ref=e3544] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e3545]:
+                - generic [ref=e3546]:
+                  - generic [ref=e3548]:
+                    - generic [ref=e3549]:
+                      - generic [ref=e3550]: TikTok preview
+                      - button "Hide UI" [ref=e3551] [cursor=pointer]:
+                        - img [ref=e3552]
+                        - text: Hide UI
+                    - generic [ref=e3558]:
+                      - generic [ref=e3560]:
+                        - generic [ref=e3561]
+                        - img [ref=e3565]
+                      - generic [ref=e3568]:
+                        - generic [ref=e3569]
+                        - generic [ref=e3580]
+                        - generic [ref=e3591]
+                        - generic [ref=e3602]
+                        - generic [ref=e3613]
+                        - generic [ref=e3620]
+                      - generic [ref=e3636]:
+                        - generic [ref=e3637]
+                        - generic [ref=e3644]
+                        - generic [ref=e3648]
+                        - generic [ref=e3652]
+                        - generic [ref=e3656]
+                        - img [ref=e3665]
+                      - generic [ref=e3668]:
+                        - generic [ref=e3669]
+                        - generic [ref=e3679]
+                      - generic [ref=e3689]:
+                        - generic [ref=e3690]
+                        - generic [ref=e3695]
+                        - img [ref=e3701]
+                        - generic [ref=e3702]
+                        - generic [ref=e3707]
+                  - generic [ref=e3712]:
+                    - generic [ref=e3713]:
+                      - generic [ref=e3714]: Hook
+                      - generic [ref=e3715]: Jason Momoa was almost recast before Aquaman even hit theaters.
+                    - generic [ref=e3716]: "\"He was almost replaced. He trained like a warrior. He fought in real blood and water. Jason Momoa didn’t just play Aquaman. he became him. body, soul, and ocean. What would you have done differently? 👇 #JasonMomoa #Aquaman #DCU #ActorStories #BehindTheScenes #SuperheroPrep #FilmTrivia\""
+                    - generic [ref=e3717]:
+                      - generic [ref=e3718]: "#JasonMomoa"
+                      - generic [ref=e3719]: "#Aquaman"
+                      - generic [ref=e3720]: "#DCU"
+                      - generic [ref=e3721]: "#ActorStories"
+                      - generic [ref=e3722]: "#BehindTheScenes"
+                      - generic [ref=e3723]: "#SuperheroPrep"
+                      - generic [ref=e3724]: "#FilmTrivia"
+                      - generic [ref=e3725]: "#DiveDeeper"
+                    - generic [ref=e3726]:
+                      - generic [ref=e3727]:
+                        - img [ref=e3728]
+                        - text: Battle of the Heroes - John Williams
+                      - generic [ref=e3732]: Emotional
+                      - generic [ref=e3733]:
+                        - img [ref=e3734]
+                        - text: Brain-enhanced
+                - group [ref=e3744]:
+                  - generic "Generation Details" [ref=e3745] [cursor=pointer]:
+                    - img [ref=e3746]
+                    - text: Generation Details
+                - generic [ref=e3749]:
+                  - generic [ref=e3750]: AI Review
+                  - generic [ref=e3751]:
+                    - generic [ref=e3752]:
+                      - generic [ref=e3753]: "9"
+                      - generic [ref=e3754]: Hook
+                    - generic [ref=e3755]:
+                      - generic [ref=e3756]: "8"
+                      - generic [ref=e3757]: Facts
+                    - generic [ref=e3758]:
+                      - generic [ref=e3759]: "9"
+                      - generic [ref=e3760]: Engagement
+                    - generic [ref=e3761]:
+                      - generic [ref=e3762]: "8"
+                      - generic [ref=e3763]: Caption
+                    - generic [ref=e3764]:
+                      - generic [ref=e3765]: "8.5"
+                      - generic [ref=e3766]: Overall
+                  - generic [ref=e3767]:
+                    - generic [ref=e3768]: "Suggestions:"
+                    - list [ref=e3769]:
+                      - listitem [ref=e3770]: Add a visual cue (e.g., ‘BEFORE/AFTER’ split or ‘WB MEMO’ graphic) to Slide 1 to heighten intrigue and credibility.
+                      - listitem [ref=e3771]: Clarify *when* the recasting rumors surfaced—was it pre-production, post-screen test, or after early test footage? Specificity builds trust.
+                      - listitem [ref=e3772]: Include a *contrarian* or *controversial* twist (e.g., ‘Why Momoa *hated* the first script’ or ‘He almost quit after 2 weeks of training’) to deepen narrative tension.
+                      - listitem [ref=e3773]: Add a *‘Did You Know?’* micro-stat (e.g., ‘Only 3 actors ever held breath longer underwater for film’) for shareable trivia.
+            - generic [ref=e3774]:
+              - generic [ref=e3776]:
+                - generic [ref=e3777]:
+                  - generic [ref=e3778]:
+                    - button "Open Loki character page" [ref=e3779] [cursor=pointer]:
+                      - text: Loki
+                      - img [ref=e3780]
+                    - generic [ref=e3784]: "-"
+                    - generic [ref=e3785]: Dark Facts
+                  - generic [ref=e3787]: Timeline Tragedy
+                - generic [ref=e3788]:
+                  - generic [ref=e3789]: approved
+                  - button "Enhance carousel for Loki" [ref=e3791] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Loki" [ref=e3792] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e3793]:
+                - generic [ref=e3794]:
+                  - generic [ref=e3796]:
+                    - generic [ref=e3797]:
+                      - generic [ref=e3798]: TikTok preview
+                      - button "Hide UI" [ref=e3799] [cursor=pointer]:
+                        - img [ref=e3800]
+                        - text: Hide UI
+                    - generic [ref=e3806]:
+                      - generic [ref=e3808]:
+                        - generic [ref=e3809]
+                        - img [ref=e3813]
+                      - generic [ref=e3816]:
+                        - generic [ref=e3817]
+                        - generic [ref=e3828]
+                        - generic [ref=e3835]
+                        - generic [ref=e3842]
+                        - generic [ref=e3849]
+                        - generic [ref=e3856]
+                      - generic [ref=e3870]:
+                        - generic [ref=e3871]
+                        - generic [ref=e3878]
+                        - generic [ref=e3882]
+                        - generic [ref=e3886]
+                        - generic [ref=e3890]
+                        - img [ref=e3899]
+                      - generic [ref=e3902]:
+                        - generic [ref=e3903]
+                        - generic [ref=e3913]
+                      - generic [ref=e3923]:
+                        - generic [ref=e3924]
+                        - generic [ref=e3929]
+                        - img [ref=e3935]
+                        - generic [ref=e3936]
+                        - generic [ref=e3941]
+                  - generic [ref=e3946]:
+                    - generic [ref=e3947]:
+                      - generic [ref=e3948]: Hook
+                      - generic [ref=e3949]: The God of Lies never lied about his pain.
+                    - generic [ref=e3950]: "\"He wasn’t evil. He was unseen. 🌑 From abandoned child to God of Mischief to… finally, a boy who could be loved for himself. Would you have forgiven him? 💔 #Loki #MCU #TragicAntihero #MarvelFandom #CharacterArc #GodOfMischief\""
+                    - generic [ref=e3951]:
+                      - generic [ref=e3952]: "#Loki"
+                      - generic [ref=e3953]: "#MCU"
+                      - generic [ref=e3954]: "#TragicAntihero"
+                      - generic [ref=e3955]: "#MarvelFandom"
+                      - generic [ref=e3956]: "#CharacterArc"
+                      - generic [ref=e3957]: "#GodOfMischief"
+                      - generic [ref=e3958]: "#LokiVariant"
+                      - generic [ref=e3959]: "#EmotionalTimeline"
+                    - generic [ref=e3960]:
+                      - generic [ref=e3961]:
+                        - img [ref=e3962]
+                        - text: O Fortuna - Carl Orff
+                      - generic [ref=e3966]: Emotional
+                      - generic [ref=e3967]:
+                        - img [ref=e3968]
+                        - text: Brain-enhanced
+                - group [ref=e3978]:
+                  - generic "Generation Details" [ref=e3979] [cursor=pointer]:
+                    - img [ref=e3980]
+                    - text: Generation Details
+                - generic [ref=e3983]:
+                  - generic [ref=e3984]: AI Review
+                  - generic [ref=e3985]:
+                    - generic [ref=e3986]:
+                      - generic [ref=e3987]: "9"
+                      - generic [ref=e3988]: Hook
+                    - generic [ref=e3989]:
+                      - generic [ref=e3990]: "8"
+                      - generic [ref=e3991]: Facts
+                    - generic [ref=e3992]:
+                      - generic [ref=e3993]: "9"
+                      - generic [ref=e3994]: Engagement
+                    - generic [ref=e3995]:
+                      - generic [ref=e3996]: "9"
+                      - generic [ref=e3997]: Caption
+                    - generic [ref=e3998]:
+                      - generic [ref=e3999]: "8.8"
+                      - generic [ref=e4000]: Overall
+                  - generic [ref=e4001]:
+                    - generic [ref=e4002]: "Suggestions:"
+                    - list [ref=e4003]:
+                      - listitem [ref=e4004]: Add a subtle visual cue (e.g., icy cracks, fractured mirrors, or a child’s handprint) in Slide 1 to amplify emotional impact and reinforce the ‘abandoned child’ theme.
+                      - listitem [ref=e4005]: Include a 0.5–1s pause or soft sound effect (e.g., distant thunder or a heartbeat) before Slide 6’s final line to heighten the emotional payoff.
+                      - listitem [ref=e4006]: Consider adding a *very brief* audio clip of Tom Hiddleston’s voice (e.g., “I know what it’s like to lose everything”) if rights allow—this significantly boosts authenticity and shareability.
+                      - listitem [ref=e4007]: Replace ‘no one mourned him the way he deserved’ with ‘no one *knew* how much he needed mourning’ to avoid overstatement and sharpen the emotional nuance.
+            - generic [ref=e4008]:
+              - generic [ref=e4010]:
+                - generic [ref=e4011]:
+                  - generic [ref=e4012]:
+                    - button "Open Black Widow character page" [ref=e4013] [cursor=pointer]:
+                      - text: Black Widow
+                      - img [ref=e4014]
+                    - generic [ref=e4018]: "-"
+                    - generic [ref=e4019]: Behind the Scenes
+                  - generic [ref=e4021]: What They Changed
+                - generic [ref=e4022]:
+                  - generic [ref=e4023]: approved
+                  - button "Enhance carousel for Black Widow" [ref=e4025] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Black Widow" [ref=e4026] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e4027]:
+                - generic [ref=e4028]:
+                  - generic [ref=e4030]:
+                    - generic [ref=e4031]:
+                      - generic [ref=e4032]: TikTok preview
+                      - button "Hide UI" [ref=e4033] [cursor=pointer]:
+                        - img [ref=e4034]
+                        - text: Hide UI
+                    - generic [ref=e4040]:
+                      - generic [ref=e4042]:
+                        - generic [ref=e4043]
+                        - img [ref=e4047]
+                      - generic [ref=e4050]:
+                        - generic [ref=e4051]
+                        - generic [ref=e4068]
+                        - generic [ref=e4092]
+                        - generic [ref=e4113]
+                        - generic [ref=e4124]
+                        - generic [ref=e4137]
+                      - generic [ref=e4153]:
+                        - generic [ref=e4154]
+                        - generic [ref=e4161]
+                        - generic [ref=e4165]
+                        - generic [ref=e4169]
+                        - generic [ref=e4173]
+                        - img [ref=e4182]
+                      - generic [ref=e4185]:
+                        - generic [ref=e4186]
+                        - generic [ref=e4196]
+                      - generic [ref=e4206]:
+                        - generic [ref=e4207]
+                        - generic [ref=e4212]
+                        - img [ref=e4218]
+                        - generic [ref=e4219]
+                        - generic [ref=e4224]
+                  - generic [ref=e4229]:
+                    - generic [ref=e4230]:
+                      - generic [ref=e4231]: Hook
+                      - generic [ref=e4232]: She wasn’t a spy. She was a weapon. and Hollywood erased the most disturbing truth about her past.
+                    - generic [ref=e4233]: "\"She was never just a spy. She was a child soldier, a surgical experiment, a lied-to daughter, and a weapon that outsmarted gods. The MCU gave her heart. The comics gave her truth. Which one do you mourn more? 👇 Debate below. (Yes, the strawberry allergy is real. And yes, she did fake being a nun.)*\""
+                    - generic [ref=e4234]:
+                      - generic [ref=e4235]: "##BlackWidow"
+                      - generic [ref=e4236]: "##MarvelComicsVsMCU"
+                      - generic [ref=e4237]: "##CharacterDevelopment"
+                      - generic [ref=e4238]: "##RedRoomTruth"
+                      - generic [ref=e4239]: "##MCUExposes"
+                      - generic [ref=e4240]: "##ComicBookHistory"
+                    - generic [ref=e4241]:
+                      - generic [ref=e4242]:
+                        - img [ref=e4243]
+                        - text: Weightless - Marconi Union
+                      - generic [ref=e4247]: Dramatic
+                      - generic [ref=e4248]:
+                        - img [ref=e4249]
+                        - text: Brain-enhanced
+                - group [ref=e4259]:
+                  - generic "Generation Details" [ref=e4260] [cursor=pointer]:
+                    - img [ref=e4261]
+                    - text: Generation Details
+                - generic [ref=e4264]:
+                  - generic [ref=e4265]: AI Review
+                  - generic [ref=e4266]:
+                    - generic [ref=e4267]:
+                      - generic [ref=e4268]: "9"
+                      - generic [ref=e4269]: Hook
+                    - generic [ref=e4270]:
+                      - generic [ref=e4271]: "8"
+                      - generic [ref=e4272]: Facts
+                    - generic [ref=e4273]:
+                      - generic [ref=e4274]: "9"
+                      - generic [ref=e4275]: Engagement
+                    - generic [ref=e4276]:
+                      - generic [ref=e4277]: "8"
+                      - generic [ref=e4278]: Caption
+                    - generic [ref=e4279]:
+                      - generic [ref=e4280]: "8.5"
+                      - generic [ref=e4281]: Overall
+                  - generic [ref=e4282]:
+                    - generic [ref=e4283]: "Suggestions:"
+                    - list [ref=e4284]:
+                      - listitem [ref=e4285]: Add a visual cue (e.g., redacted text, glitch effect, or split-screen) in Slide 1 to visually reinforce 'erasure'—this boosts retention in silent autoplay.
+                      - listitem [ref=e4286]: "Clarify the 'male in original concept' claim with a source (e.g., *Tales of Suspense* #52, 1964—she was *conceptualized* as male but never published that way), to avoid misinformation."
+                      - listitem [ref=e4287]: "Include a *micro-controversy* in Slide 6: e.g., 'Only 22% of comic readers knew the Red Room kill-switch detail—was Disney right to omit it?' to fuel debate."
+                      - listitem [ref=e4288]: "Add a *CTA sticker* (e.g., 'Poll: Red Room Truth vs. MCU Redemption') in post for algorithm boost."
+            - generic [ref=e4289]:
+              - generic [ref=e4291]:
+                - generic [ref=e4292]:
+                  - generic [ref=e4293]:
+                    - button "Open Batman character page" [ref=e4294] [cursor=pointer]:
+                      - text: Batman
+                      - img [ref=e4295]
+                    - generic [ref=e4299]: "-"
+                    - generic [ref=e4300]: Fan Theories
+                  - generic [ref=e4302]: Fan Theory Deep Dive
+                - generic [ref=e4303]:
+                  - generic [ref=e4304]: pending review
+                  - button "Enhance carousel for Batman" [ref=e4306] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Batman" [ref=e4307] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e4308]:
+                - generic [ref=e4309]:
+                  - generic [ref=e4311]:
+                    - generic [ref=e4312]:
+                      - generic [ref=e4313]: TikTok preview
+                      - button "Hide UI" [ref=e4314] [cursor=pointer]:
+                        - img [ref=e4315]
+                        - text: Hide UI
+                    - generic [ref=e4321]:
+                      - generic [ref=e4323]:
+                        - generic [ref=e4324]
+                        - img [ref=e4328]
+                      - generic [ref=e4331]:
+                        - generic [ref=e4332]
+                        - generic [ref=e4349]
+                        - generic [ref=e4358]
+                        - generic [ref=e4367]
+                        - generic [ref=e4374]
+                        - generic [ref=e4383]
+                      - generic [ref=e4397]:
+                        - generic [ref=e4398]
+                        - generic [ref=e4405]
+                        - generic [ref=e4409]
+                        - generic [ref=e4413]
+                        - generic [ref=e4417]
+                        - img [ref=e4426]
+                      - generic [ref=e4429]:
+                        - generic [ref=e4430]
+                        - generic [ref=e4440]
+                      - generic [ref=e4450]:
+                        - generic [ref=e4451]
+                        - generic [ref=e4456]
+                        - img [ref=e4462]
+                        - generic [ref=e4463]
+                        - generic [ref=e4468]
+                  - generic [ref=e4473]:
+                    - generic [ref=e4474]:
+                      - generic [ref=e4475]: Hook
+                      - generic [ref=e4476]: "Batman: Why Batman’s real superpower isn’t money, training, or tech…"
+                    - generic [ref=e4477]: "\"Batman’s no-kill rule is iconic… but what if it’s a performance? A carefully constructed myth to keep the world safe and himself sane? 🤯 The evidence isn’t just in the comics. it’s in the gaps, the glitches, the moments he almost snapped. We want him to be pure. But the best heroes aren’t perfect. they’re terrifyingly close to the edge. 🩸 Who else is hiding a hammer in plain sight? 👀\""
+                    - generic [ref=e4478]:
+                      - generic [ref=e4479]: "##Batman"
+                      - generic [ref=e4480]: "##DCTheory"
+                      - generic [ref=e4481]: "##NoKillRule"
+                      - generic [ref=e4482]: "##HammerLie"
+                      - generic [ref=e4483]: "##ComicTheory"
+                    - generic [ref=e4484]:
+                      - generic [ref=e4485]:
+                        - img [ref=e4486]
+                        - text: Stranger Things Theme - Kyle Dixon
+                      - generic [ref=e4490]: Mysterious
+                      - generic [ref=e4491]:
+                        - img [ref=e4492]
+                        - text: Brain-enhanced
+                - group [ref=e4502]:
+                  - generic "Generation Details" [ref=e4503] [cursor=pointer]:
+                    - img [ref=e4504]
+                    - text: Generation Details
+                - generic [ref=e4507]:
+                  - generic [ref=e4508]: AI Review
+                  - generic [ref=e4509]:
+                    - generic [ref=e4510]:
+                      - generic [ref=e4511]: "9"
+                      - generic [ref=e4512]: Hook
+                    - generic [ref=e4513]:
+                      - generic [ref=e4514]: "8"
+                      - generic [ref=e4515]: Facts
+                    - generic [ref=e4516]:
+                      - generic [ref=e4517]: "9"
+                      - generic [ref=e4518]: Engagement
+                    - generic [ref=e4519]:
+                      - generic [ref=e4520]: "8"
+                      - generic [ref=e4521]: Caption
+                    - generic [ref=e4522]:
+                      - generic [ref=e4523]: "8.5"
+                      - generic [ref=e4524]: Overall
+                  - generic [ref=e4525]:
+                    - generic [ref=e4526]: "Suggestions:"
+                    - list [ref=e4527]:
+                      - listitem [ref=e4528]: Add a visual cue (e.g., a hammer icon or cracked Bat-signal) on Slide 1 to reinforce the 'Hammer' metaphor instantly.
+                      - listitem [ref=e4529]: Include a 1–2 second audio sting (e.g., a metallic *clang* or heartbeat thud) when revealing the 'Hammer Switch' on Slide 2 to heighten impact.
+                      - listitem [ref=e4530]: "Clarify that Earth One is a non-canon alternate universe to avoid misleading casual fans—add a small '(Earth One: alt-universe)' footnote on Slide 3."
+                      - listitem [ref=e4531]: Add a quick cut or zoom-in on Superman’s broken collarbone panel from TDKR (Slide 4) to strengthen visual evidence.
+            - generic [ref=e4532]:
+              - generic [ref=e4534]:
+                - generic [ref=e4535]:
+                  - generic [ref=e4536]:
+                    - button "Open Darth Vader character page" [ref=e4537] [cursor=pointer]:
+                      - text: Darth Vader
+                      - img [ref=e4538]
+                    - generic [ref=e4542]: "-"
+                    - generic [ref=e4543]: Dark Facts
+                  - generic [ref=e4545]: Dark Origin
+                - generic [ref=e4546]:
+                  - generic [ref=e4547]: pending review
+                  - button "Enhance carousel for Darth Vader" [ref=e4549] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Darth Vader" [ref=e4550] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e4551]:
+                - generic [ref=e4552]:
+                  - generic [ref=e4554]:
+                    - generic [ref=e4555]:
+                      - generic [ref=e4556]: TikTok preview
+                      - button "Hide UI" [ref=e4557] [cursor=pointer]:
+                        - img [ref=e4558]
+                        - text: Hide UI
+                    - generic [ref=e4564]:
+                      - generic [ref=e4566]:
+                        - generic [ref=e4567]
+                        - img [ref=e4571]
+                      - generic [ref=e4574]:
+                        - generic [ref=e4575]
+                        - generic [ref=e4588]
+                        - generic [ref=e4601]
+                        - generic [ref=e4608]
+                        - generic [ref=e4615]
+                        - generic [ref=e4624]
+                      - generic [ref=e4642]:
+                        - generic [ref=e4643]
+                        - generic [ref=e4650]
+                        - generic [ref=e4654]
+                        - generic [ref=e4658]
+                        - generic [ref=e4662]
+                        - img [ref=e4671]
+                      - generic [ref=e4674]:
+                        - generic [ref=e4675]
+                        - generic [ref=e4685]
+                      - generic [ref=e4695]:
+                        - generic [ref=e4696]
+                        - generic [ref=e4701]
+                        - img [ref=e4707]
+                        - generic [ref=e4708]
+                        - generic [ref=e4713]
+                  - generic [ref=e4718]:
+                    - generic [ref=e4719]:
+                      - generic [ref=e4720]: Hook
+                      - generic [ref=e4721]: But here’s what they don’t show you… The real horror begins before the fall.
+                    - generic [ref=e4722]: "\"He wasn’t always a monster. But he chose to become one. The darkest truth? He knew what he was doing. 👇 Agree? Or is there hope left in him? (Yes. this is why the prequels hit harder than the sequels.)\""
+                    - generic [ref=e4723]:
+                      - generic [ref=e4724]: "##StarWars"
+                      - generic [ref=e4725]: "##DarthVader"
+                      - generic [ref=e4726]: "##AnakinSkywalker"
+                      - generic [ref=e4727]: "##DarkOrigin"
+                      - generic [ref=e4728]: "##ForceSensitive"
+                      - generic [ref=e4729]: "##Tragedy"
+                      - generic [ref=e4730]: "##Sith"
+                    - generic [ref=e4731]:
+                      - generic [ref=e4732]:
+                        - img [ref=e4733]
+                        - text: Imperial March - John Williams
+                      - generic [ref=e4737]: Dark
+                      - generic [ref=e4738]:
+                        - img [ref=e4739]
+                        - text: Brain-enhanced
+                - group [ref=e4749]:
+                  - generic "Generation Details" [ref=e4750] [cursor=pointer]:
+                    - img [ref=e4751]
+                    - text: Generation Details
+                - generic [ref=e4754]:
+                  - generic [ref=e4755]: AI Review
+                  - generic [ref=e4756]:
+                    - generic [ref=e4757]:
+                      - generic [ref=e4758]: "9"
+                      - generic [ref=e4759]: Hook
+                    - generic [ref=e4760]:
+                      - generic [ref=e4761]: "8"
+                      - generic [ref=e4762]: Facts
+                    - generic [ref=e4763]:
+                      - generic [ref=e4764]: "9"
+                      - generic [ref=e4765]: Engagement
+                    - generic [ref=e4766]:
+                      - generic [ref=e4767]: "8"
+                      - generic [ref=e4768]: Caption
+                    - generic [ref=e4769]:
+                      - generic [ref=e4770]: "8.5"
+                      - generic [ref=e4771]: Overall
+                  - generic [ref=e4772]:
+                    - generic [ref=e4773]: "Suggestions:"
+                    - list [ref=e4774]:
+                      - listitem [ref=e4775]: Add a visual cue in Slide 1 (e.g., blurred lightsaber, red text overlay) to reinforce the 'dark truth' tone immediately.
+                      - listitem [ref=e4776]: Slide 4 should clarify *why* the Tusken massacre is rarely shown—e.g., 'Disney cut it from the theatrical cut but left it in the 'Special Edition' and *Revenge of the Sith* novelization.'
+                      - listitem [ref=e4777]: Include a subtle audio cue suggestion (e.g., 'add ambient thunder or Vader’s breathing under voiceover') to boost retention.
+                      - listitem [ref=e4778]: Slide 5’s claim about Shmi being Force-sensitive is *implied* in EU/Legends but not confirmed on-screen—flag for nuance.
+            - generic [ref=e4779]:
+              - generic [ref=e4781]:
+                - generic [ref=e4782]:
+                  - generic [ref=e4783]:
+                    - button "Open Darth Vader character page" [ref=e4784] [cursor=pointer]:
+                      - text: Darth Vader
+                      - img [ref=e4785]
+                    - generic [ref=e4789]: "-"
+                    - generic [ref=e4790]: Hidden Truths
+                  - generic [ref=e4792]: Secrets Revealed
+                - generic [ref=e4793]:
+                  - generic [ref=e4794]: approved
+                  - button "Enhance carousel for Darth Vader" [ref=e4796] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Darth Vader" [ref=e4797] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e4798]:
+                - generic [ref=e4799]:
+                  - generic [ref=e4801]:
+                    - generic [ref=e4802]:
+                      - generic [ref=e4803]: TikTok preview
+                      - button "Hide UI" [ref=e4804] [cursor=pointer]:
+                        - img [ref=e4805]
+                        - text: Hide UI
+                    - generic [ref=e4811]:
+                      - generic [ref=e4813]:
+                        - generic [ref=e4814]
+                        - img [ref=e4818]
+                      - generic [ref=e4821]:
+                        - generic [ref=e4822]
+                        - generic [ref=e4835]
+                        - generic [ref=e4842]
+                        - generic [ref=e4849]
+                        - generic [ref=e4858]
+                        - generic [ref=e4865]
+                      - generic [ref=e4879]:
+                        - generic [ref=e4880]
+                        - generic [ref=e4887]
+                        - generic [ref=e4891]
+                        - generic [ref=e4895]
+                        - generic [ref=e4899]
+                        - img [ref=e4908]
+                      - generic [ref=e4911]:
+                        - generic [ref=e4912]
+                        - generic [ref=e4922]
+                      - generic [ref=e4932]:
+                        - generic [ref=e4933]
+                        - generic [ref=e4938]
+                        - img [ref=e4944]
+                        - generic [ref=e4945]
+                        - generic [ref=e4950]
+                  - generic [ref=e4955]:
+                    - generic [ref=e4956]:
+                      - generic [ref=e4957]: Hook
+                      - generic [ref=e4958]: "Darth Vader: Darth Vader They Never Told You"
+                    - generic [ref=e4959]: "\"Vader’s redemption arc wasn’t always the plan. His first kill wasn’t Jedi. His voice was shaped by a stutter. His name was hidden for years. 🌌 The deeper you go, the darker. and more tragic. he becomes. Who else got the short end of the Force? 👇 Drop your theory below. ⚔️\""
+                    - generic [ref=e4960]:
+                      - generic [ref=e4961]: "##StarWarsSecrets"
+                      - generic [ref=e4962]: "##DarthVader"
+                      - generic [ref=e4963]: "##GeekHistory"
+                      - generic [ref=e4964]: "##ForceSensitive"
+                      - generic [ref=e4965]: "##MovieTrivia"
+                    - generic [ref=e4966]:
+                      - generic [ref=e4967]:
+                        - img [ref=e4968]
+                        - text: Moon Knight Theme - Hesham Nazih
+                      - generic [ref=e4972]: Mysterious
+                      - generic [ref=e4973]:
+                        - img [ref=e4974]
+                        - text: Brain-enhanced
+                - group [ref=e4984]:
+                  - generic "Generation Details" [ref=e4985] [cursor=pointer]:
+                    - img [ref=e4986]
+                    - text: Generation Details
+                - generic [ref=e4989]:
+                  - generic [ref=e4990]: AI Review
+                  - generic [ref=e4991]:
+                    - generic [ref=e4992]:
+                      - generic [ref=e4993]: "9"
+                      - generic [ref=e4994]: Hook
+                    - generic [ref=e4995]:
+                      - generic [ref=e4996]: "9"
+                      - generic [ref=e4997]: Facts
+                    - generic [ref=e4998]:
+                      - generic [ref=e4999]: "9"
+                      - generic [ref=e5000]: Engagement
+                    - generic [ref=e5001]:
+                      - generic [ref=e5002]: "8"
+                      - generic [ref=e5003]: Caption
+                    - generic [ref=e5004]:
+                      - generic [ref=e5005]: "8.8"
+                      - generic [ref=e5006]: Overall
+                  - generic [ref=e5007]:
+                    - generic [ref=e5008]: "Suggestions:"
+                    - list [ref=e5009]:
+                      - listitem [ref=e5010]: Add a visual cue (e.g., red text, Vader’s helmet silhouette) to Slide 1 to maximize scroll-stopping impact.
+                      - listitem [ref=e5011]: Include a *‘Wait… what?!’* visual transition (e.g., glitch effect or sudden zoom) before revealing Slide 2’s Tusken Raider fact—heightens shock value.
+                      - listitem [ref=e5012]: Add a quick ‘source’ text (e.g., ‘Per 1978 novelization’ or ‘George Lucas, 1978 interview’) on Slide 4 to boost credibility.
+                      - listitem [ref=e5013]: "End Slide 6 with a *stronger CTA*: ‘Save this before Disney removes it 😅’ or ‘Tag someone who thinks they know Vader!’"
+            - generic [ref=e5014]:
+              - generic [ref=e5016]:
+                - generic [ref=e5017]:
+                  - generic [ref=e5018]:
+                    - button "Open Darth Vader character page" [ref=e5019] [cursor=pointer]:
+                      - text: Darth Vader
+                      - img [ref=e5020]
+                    - generic [ref=e5024]: "-"
+                    - generic [ref=e5025]: Hidden Truths
+                  - generic [ref=e5027]: Secrets Revealed
+                - generic [ref=e5028]:
+                  - generic [ref=e5029]: approved
+                  - button "Enhance carousel for Darth Vader" [ref=e5031] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Darth Vader" [ref=e5032] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e5033]:
+                - generic [ref=e5034]:
+                  - generic [ref=e5036]:
+                    - generic [ref=e5037]:
+                      - generic [ref=e5038]: TikTok preview
+                      - button "Hide UI" [ref=e5039] [cursor=pointer]:
+                        - img [ref=e5040]
+                        - text: Hide UI
+                    - generic [ref=e5046]:
+                      - generic [ref=e5048]:
+                        - generic [ref=e5049]
+                        - img [ref=e5053]
+                      - generic [ref=e5056]:
+                        - generic [ref=e5057]
+                        - generic [ref=e5070]
+                        - generic [ref=e5077]
+                        - generic [ref=e5084]
+                        - generic [ref=e5093]
+                        - generic [ref=e5102]
+                      - generic [ref=e5116]:
+                        - generic [ref=e5117]
+                        - generic [ref=e5124]
+                        - generic [ref=e5128]
+                        - generic [ref=e5132]
+                        - generic [ref=e5136]
+                        - img [ref=e5145]
+                      - generic [ref=e5148]:
+                        - generic [ref=e5149]
+                        - generic [ref=e5159]
+                      - generic [ref=e5169]:
+                        - generic [ref=e5170]
+                        - generic [ref=e5175]
+                        - img [ref=e5181]
+                        - generic [ref=e5182]
+                        - generic [ref=e5187]
+                  - generic [ref=e5192]:
+                    - generic [ref=e5193]:
+                      - generic [ref=e5194]: Hook
+                      - generic [ref=e5195]: "Darth Vader: About Darth Vader"
+                    - generic [ref=e5196]: "\"Vader’s redemption arc was almost erased. His first kill? Not Jedi. His voice? Shaped by a stutter. You think you know Darth Vader… but this? This is the real story. 👑🔥 Drop a 🤖 if you learned something new.\""
+                    - generic [ref=e5197]:
+                      - generic [ref=e5198]: "##StarWars"
+                      - generic [ref=e5199]: "##DarthVader"
+                      - generic [ref=e5200]: "##BehindTheScenes"
+                      - generic [ref=e5201]: "##SecretsRevealed"
+                      - generic [ref=e5202]: "##Geek"
+                    - generic [ref=e5203]:
+                      - generic [ref=e5204]:
+                        - img [ref=e5205]
+                        - text: Twin Peaks Theme - Angelo Badalamenti
+                      - generic [ref=e5209]: Mysterious
+                      - generic [ref=e5210]:
+                        - img [ref=e5211]
+                        - text: Brain-enhanced
+                - group [ref=e5221]:
+                  - generic "Generation Details" [ref=e5222] [cursor=pointer]:
+                    - img [ref=e5223]
+                    - text: Generation Details
+                - generic [ref=e5226]:
+                  - generic [ref=e5227]: AI Review
+                  - generic [ref=e5228]:
+                    - generic [ref=e5229]:
+                      - generic [ref=e5230]: "9"
+                      - generic [ref=e5231]: Hook
+                    - generic [ref=e5232]:
+                      - generic [ref=e5233]: "9"
+                      - generic [ref=e5234]: Facts
+                    - generic [ref=e5235]:
+                      - generic [ref=e5236]: "9"
+                      - generic [ref=e5237]: Engagement
+                    - generic [ref=e5238]:
+                      - generic [ref=e5239]: "8"
+                      - generic [ref=e5240]: Caption
+                    - generic [ref=e5241]:
+                      - generic [ref=e5242]: "8.8"
+                      - generic [ref=e5243]: Overall
+                  - generic [ref=e5244]:
+                    - generic [ref=e5245]: "Suggestions:"
+                    - list [ref=e5246]:
+                      - listitem [ref=e5247]: "Add a visual cue in Slide 1 (e.g., split-screen: young Vader + ' sequels' text) to reinforce the twist immediately."
+                      - listitem [ref=e5248]: Include a *‘Wait… what?!’* moment in Slide 2—e.g., ‘This act haunted him for life’—to deepen emotional resonance.
+                      - listitem [ref=e5249]: In Slide 3, clarify *how* the stutter shaped delivery (e.g., ‘He paused mid-sentence to avoid stuttering—Lucas kept it for drama’) for credibility.
+                      - listitem [ref=e5250]: Slide 6 should end with a *stronger CTA* like ‘Tap follow before Disney erases this’ to boost retention.
+            - generic [ref=e5251]:
+              - generic [ref=e5253]:
+                - generic [ref=e5254]:
+                  - generic [ref=e5255]:
+                    - button "Open Darth Vader character page" [ref=e5256] [cursor=pointer]:
+                      - text: Darth Vader
+                      - img [ref=e5257]
+                    - generic [ref=e5261]: "-"
+                    - generic [ref=e5262]: Hidden Truths
+                  - generic [ref=e5264]: Secrets Revealed
+                - generic [ref=e5265]:
+                  - generic [ref=e5266]: pending review
+                  - button "Enhance carousel for Darth Vader" [ref=e5268] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Darth Vader" [ref=e5269] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e5270]:
+                - generic [ref=e5271]:
+                  - generic [ref=e5273]:
+                    - generic [ref=e5274]:
+                      - generic [ref=e5275]: TikTok preview
+                      - button "Hide UI" [ref=e5276] [cursor=pointer]:
+                        - img [ref=e5277]
+                        - text: Hide UI
+                    - generic [ref=e5283]:
+                      - generic [ref=e5285]:
+                        - generic [ref=e5286]
+                        - img [ref=e5290]
+                      - generic [ref=e5293]:
+                        - generic [ref=e5294]
+                        - generic [ref=e5306]
+                        - generic [ref=e5313]
+                        - generic [ref=e5320]
+                        - generic [ref=e5329]
+                        - generic [ref=e5338]
+                      - generic [ref=e5352]:
+                        - generic [ref=e5353]
+                        - generic [ref=e5360]
+                        - generic [ref=e5364]
+                        - generic [ref=e5368]
+                        - generic [ref=e5372]
+                        - img [ref=e5381]
+                      - generic [ref=e5384]:
+                        - generic [ref=e5385]
+                        - generic [ref=e5395]
+                      - generic [ref=e5405]:
+                        - generic [ref=e5406]
+                        - generic [ref=e5411]
+                        - img [ref=e5417]
+                        - generic [ref=e5418]
+                        - generic [ref=e5423]
+                  - generic [ref=e5428]:
+                    - generic [ref=e5429]:
+                      - generic [ref=e5430]: Hook
+                      - generic [ref=e5431]: 6 Darth Vader Truths That Will Rewire Your Brain
+                    - generic [ref=e5432]: "\"The myth says he was a monster. The truth? He was a man. broken, betrayed, and manipulated. His tragedy wasn’t his power… it was what was taken from him. 🤯 Who else got the short end of the Star Wars stick? Drop your pick below. 👇\""
+                    - generic [ref=e5433]:
+                      - generic [ref=e5434]: "##StarWarsSecrets"
+                      - generic [ref=e5435]: "##DarthVader"
+                      - generic [ref=e5436]: "##GeorgeLucas"
+                      - generic [ref=e5437]: "##DarkSideTruths"
+                      - generic [ref=e5438]: "##Storytelling"
+                    - generic [ref=e5439]:
+                      - generic [ref=e5440]:
+                        - img [ref=e5441]
+                        - text: Inception Main Theme - Hans Zimmer
+                      - generic [ref=e5445]: Mysterious
+                      - generic [ref=e5446]:
+                        - img [ref=e5447]
+                        - text: Brain-enhanced
+                - group [ref=e5457]:
+                  - generic "Generation Details" [ref=e5458] [cursor=pointer]:
+                    - img [ref=e5459]
+                    - text: Generation Details
+                - generic [ref=e5462]:
+                  - generic [ref=e5463]: AI Review
+                  - generic [ref=e5464]:
+                    - generic [ref=e5465]:
+                      - generic [ref=e5466]: "9"
+                      - generic [ref=e5467]: Hook
+                    - generic [ref=e5468]:
+                      - generic [ref=e5469]: "9"
+                      - generic [ref=e5470]: Facts
+                    - generic [ref=e5471]:
+                      - generic [ref=e5472]: "9"
+                      - generic [ref=e5473]: Engagement
+                    - generic [ref=e5474]:
+                      - generic [ref=e5475]: "8"
+                      - generic [ref=e5476]: Caption
+                    - generic [ref=e5477]:
+                      - generic [ref=e5478]: "8.8"
+                      - generic [ref=e5479]: Overall
+                  - generic [ref=e5480]:
+                    - generic [ref=e5481]: "Suggestions:"
+                    - list [ref=e5482]:
+                      - listitem [ref=e5483]: Add a visual cue (e.g., ‘🔥’ or ‘⚠️’) to Slide 1 to boost scroll-stopping power in feed
+                      - listitem [ref=e5484]: Include a *visual contrast* in Slide 2 (e.g., ‘Jedi vs. Tusken massacre’ side-by-side) to emphasize moral complexity
+                      - listitem [ref=e5485]: Add a *‘Wait… what?!’* transition slide (e.g., Slide 3.5) after Slide 4 to re-engage before the final emotional punch
+                      - listitem [ref=e5486]: In caption, replace ‘Who else got the short end…’ with a more specific prompt like ‘Which truth shocked you most? A) Anakin’s first kill B) Vader’s ship C) Shmi’s fate’ to boost comment volume
+            - generic [ref=e5487]:
+              - generic [ref=e5489]:
+                - generic [ref=e5490]:
+                  - generic [ref=e5491]:
+                    - button "Open Darth Vader character page" [ref=e5492] [cursor=pointer]:
+                      - text: Darth Vader
+                      - img [ref=e5493]
+                    - generic [ref=e5497]: "-"
+                    - generic [ref=e5498]: Hidden Truths
+                  - generic [ref=e5500]: Secrets Revealed
+                - generic [ref=e5501]:
+                  - generic [ref=e5502]: needs work
+                  - button "Enhance carousel for Darth Vader" [ref=e5504] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Darth Vader" [ref=e5505] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e5506]:
+                - generic [ref=e5507]:
+                  - generic [ref=e5509]:
+                    - generic [ref=e5510]:
+                      - generic [ref=e5511]: TikTok preview
+                      - button "Hide UI" [ref=e5512] [cursor=pointer]:
+                        - img [ref=e5513]
+                        - text: Hide UI
+                    - generic [ref=e5519]:
+                      - generic [ref=e5521]:
+                        - generic [ref=e5522]
+                        - img [ref=e5526]
+                      - generic [ref=e5529]:
+                        - generic [ref=e5530]
+                        - generic [ref=e5543]
+                        - generic [ref=e5550]
+                        - generic [ref=e5557]
+                        - generic [ref=e5566]
+                        - generic [ref=e5573]
+                      - generic [ref=e5587]:
+                        - generic [ref=e5588]
+                        - generic [ref=e5595]
+                        - generic [ref=e5599]
+                        - generic [ref=e5603]
+                        - generic [ref=e5607]
+                        - img [ref=e5616]
+                      - generic [ref=e5619]:
+                        - generic [ref=e5620]
+                        - generic [ref=e5630]
+                      - generic [ref=e5640]:
+                        - generic [ref=e5641]
+                        - generic [ref=e5646]
+                        - img [ref=e5652]
+                        - generic [ref=e5653]
+                        - generic [ref=e5658]
+                  - generic [ref=e5663]:
+                    - generic [ref=e5664]:
+                      - generic [ref=e5665]: Hook
+                      - generic [ref=e5666]: 6 Shocking Darth Vader Secrets They Hide in the Shadows..
+                    - generic [ref=e5667]: "\"Vader’s truth is darker than the void. 🌌 He wasn’t just a man in a suit. he was a tragic weapon, shaped by lies, rage, and hidden Force potential. Which secret shocked you most? 👇 Let’s debate in the comments. (Yes. Shmi was Force-sensitive. Yes. he did slaughter toddlers. Yes. his cape hurt his feelings.)\""
+                    - generic [ref=e5668]:
+                      - generic [ref=e5669]: "##StarWarsSecrets"
+                      - generic [ref=e5670]: "##DarthVader"
+                      - generic [ref=e5671]: "##SpaceHistory"
+                      - generic [ref=e5672]: "##ForceSensitive"
+                      - generic [ref=e5673]: "##BehindTheSuit"
+                    - generic [ref=e5674]:
+                      - generic [ref=e5675]:
+                        - img [ref=e5676]
+                        - text: Westworld Theme - Ramin Djawadi
+                      - generic [ref=e5680]: Mysterious
+                      - generic [ref=e5681]:
+                        - img [ref=e5682]
+                        - text: Brain-enhanced
+                - group [ref=e5692]:
+                  - generic "Generation Details" [ref=e5693] [cursor=pointer]:
+                    - img [ref=e5694]
+                    - text: Generation Details
+                - generic [ref=e5697]:
+                  - generic [ref=e5698]: AI Review
+                  - generic [ref=e5699]:
+                    - generic [ref=e5700]:
+                      - generic [ref=e5701]: "9"
+                      - generic [ref=e5702]: Hook
+                    - generic [ref=e5703]:
+                      - generic [ref=e5704]: "9"
+                      - generic [ref=e5705]: Facts
+                    - generic [ref=e5706]:
+                      - generic [ref=e5707]: "9"
+                      - generic [ref=e5708]: Engagement
+                    - generic [ref=e5709]:
+                      - generic [ref=e5710]: "8"
+                      - generic [ref=e5711]: Caption
+                    - generic [ref=e5712]:
+                      - generic [ref=e5713]: "8.8"
+                      - generic [ref=e5714]: Overall
+                  - generic [ref=e5715]:
+                    - generic [ref=e5716]: "Suggestions:"
+                    - list [ref=e5717]:
+                      - listitem [ref=e5718]: Add a visual cue (e.g., '👇' or 'Slide 6 = mind blown') to guide attention to the CTA slide.
+                      - listitem [ref=e5719]: "Include a *visual contrast* suggestion (e.g., 'Slide 2: Dark red filter over Tusken massacre concept art') to amplify emotional impact."
+                      - listitem [ref=e5720]: Clarify the 'cape hurt his feelings' claim in caption—either cite source or rephrase to avoid confusion (likely a meme, not canon).
+                      - listitem [ref=e5721]: Add a *time-stamped* hook in video (e.g., '0:03—Vader’s *real* redemption plan') to boost retention.
+            - generic [ref=e5722]:
+              - generic [ref=e5724]:
+                - generic [ref=e5725]:
+                  - generic [ref=e5726]:
+                    - button "Open Aquaman character page" [ref=e5727] [cursor=pointer]:
+                      - text: Aquaman
+                      - img [ref=e5728]
+                    - generic [ref=e5732]: "-"
+                    - generic [ref=e5733]: Origin Story
+                  - generic [ref=e5735]: Real Life Inspiration
+                - generic [ref=e5736]:
+                  - generic [ref=e5737]: needs work
+                  - button "Enhance carousel for Aquaman" [ref=e5739] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Aquaman" [ref=e5740] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e5741]:
+                - generic [ref=e5742]:
+                  - generic [ref=e5744]:
+                    - generic [ref=e5745]:
+                      - generic [ref=e5746]: TikTok preview
+                      - button "Hide UI" [ref=e5747] [cursor=pointer]:
+                        - img [ref=e5748]
+                        - text: Hide UI
+                    - generic [ref=e5754]:
+                      - generic [ref=e5756]:
+                        - generic [ref=e5757]
+                        - img [ref=e5761]
+                      - generic [ref=e5764]:
+                        - generic [ref=e5765]
+                        - generic [ref=e5780]
+                        - generic [ref=e5789]
+                        - generic [ref=e5804]
+                        - generic [ref=e5817]
+                        - generic [ref=e5826]
+                      - generic [ref=e5840]:
+                        - generic [ref=e5841]
+                        - generic [ref=e5848]
+                        - generic [ref=e5852]
+                        - generic [ref=e5856]
+                        - generic [ref=e5860]
+                        - img [ref=e5869]
+                      - generic [ref=e5872]:
+                        - generic [ref=e5873]
+                        - generic [ref=e5883]
+                      - generic [ref=e5893]:
+                        - generic [ref=e5894]
+                        - generic [ref=e5899]
+                        - img [ref=e5905]
+                        - generic [ref=e5906]
+                        - generic [ref=e5911]
+                  - generic [ref=e5916]:
+                    - generic [ref=e5917]:
+                      - generic [ref=e5918]: Hook
+                      - generic [ref=e5919]: Aquaman wasn’t just a fish-talking king. he was literally modeled after a real-world war hero.
+                    - generic [ref=e5920]: "\"Aquaman’s power isn’t just the ocean. it’s history. His first comic dropped in 1941, right as WWII raged… and his early missions were straight from the headlines. The man who inspired him? A Navy hero who jumped overboard into shark-infested waters to save strangers. while bleeding from a shrapnel wound. 🇺🇸🌊 This isn’t myth. It’s memory. Who else in superhero history is rooted in real heroism? 👇 Let’s debate.\""
+                    - generic [ref=e5921]:
+                      - generic [ref=e5922]: "##Aquaman"
+                      - generic [ref=e5923]: "##DCComics"
+                      - generic [ref=e5924]: "##RealHistory"
+                      - generic [ref=e5925]: "##HeroOrigin"
+                      - generic [ref=e5926]: "##WarHeroes"
+                      - generic [ref=e5927]: "##ComicHistory"
+                    - generic [ref=e5928]:
+                      - generic [ref=e5929]:
+                        - img [ref=e5930]
+                        - text: The Dark Knight Theme - Hans Zimmer
+                      - generic [ref=e5934]: epic and emotional
+                      - generic [ref=e5935]:
+                        - img [ref=e5936]
+                        - text: Brain-enhanced
+                - group [ref=e5946]:
+                  - generic "Generation Details" [ref=e5947] [cursor=pointer]:
+                    - img [ref=e5948]
+                    - text: Generation Details
+                - generic [ref=e5951]:
+                  - generic [ref=e5952]: AI Review
+                  - generic [ref=e5953]:
+                    - generic [ref=e5954]:
+                      - generic [ref=e5955]: "9"
+                      - generic [ref=e5956]: Hook
+                    - generic [ref=e5957]:
+                      - generic [ref=e5958]: "8"
+                      - generic [ref=e5959]: Facts
+                    - generic [ref=e5960]:
+                      - generic [ref=e5961]: "9"
+                      - generic [ref=e5962]: Engagement
+                    - generic [ref=e5963]:
+                      - generic [ref=e5964]: "8"
+                      - generic [ref=e5965]: Caption
+                    - generic [ref=e5966]:
+                      - generic [ref=e5967]: "8.5"
+                      - generic [ref=e5968]: Overall
+                  - generic [ref=e5969]:
+                    - generic [ref=e5970]: "Suggestions:"
+                    - list [ref=e5971]:
+                      - listitem [ref=e5972]: "Clarify the *exact* comic issue/date of Aquaman’s debut (1941 vs. 1942) — early versions appeared in *More Fun Comics* #73 (Nov 1941), but his full origin solidified in 1942."
+                      - listitem [ref=e5973]: Add a visual cue (e.g., split-screen of Stockton photo + Aquaman comic panel) to reinforce the parallel — TikTok is visual-first.
+                      - listitem [ref=e5974]: Include a *brief* audio cue suggestion (e.g., dramatic war sound → ocean swell) to heighten emotional contrast between slides 3 and 4.
+                      - listitem [ref=e5975]: "End with a stronger CTA: e.g., ‘Double-tap if you learned something new’ to boost algorithmic signals."
+            - generic [ref=e5976]:
+              - generic [ref=e5978]:
+                - generic [ref=e5979]:
+                  - generic [ref=e5980]:
+                    - button "Open Black Widow character page" [ref=e5981] [cursor=pointer]:
+                      - text: Black Widow
+                      - img [ref=e5982]
+                    - generic [ref=e5986]: "-"
+                    - generic [ref=e5987]: Dark Facts
+                  - generic [ref=e5989]: Dark Origin
+                - generic [ref=e5990]:
+                  - generic [ref=e5991]: needs work
+                  - button "Enhance carousel for Black Widow" [ref=e5993] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Black Widow" [ref=e5994] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e5995]:
+                - generic [ref=e5996]:
+                  - generic [ref=e5998]:
+                    - generic [ref=e5999]:
+                      - generic [ref=e6000]: TikTok preview
+                      - button "Hide UI" [ref=e6001] [cursor=pointer]:
+                        - img [ref=e6002]
+                        - text: Hide UI
+                    - generic [ref=e6008]:
+                      - generic [ref=e6010]:
+                        - generic [ref=e6011]
+                        - img [ref=e6015]
+                      - generic [ref=e6018]:
+                        - generic [ref=e6019]
+                        - generic [ref=e6036]
+                        - generic [ref=e6048]
+                        - generic [ref=e6059]
+                        - generic [ref=e6074]
+                        - generic [ref=e6087]
+                      - generic [ref=e6105]:
+                        - generic [ref=e6106]
+                        - generic [ref=e6113]
+                        - generic [ref=e6117]
+                        - generic [ref=e6121]
+                        - generic [ref=e6125]
+                        - img [ref=e6134]
+                      - generic [ref=e6137]:
+                        - generic [ref=e6138]
+                        - generic [ref=e6148]
+                      - generic [ref=e6158]:
+                        - generic [ref=e6159]
+                        - generic [ref=e6164]
+                        - img [ref=e6170]
+                        - generic [ref=e6171]
+                        - generic [ref=e6176]
+                  - generic [ref=e6181]:
+                    - generic [ref=e6182]:
+                      - generic [ref=e6183]: Hook
+                      - generic [ref=e6184]: "Black Widow: Black Widow’s origin isn’t just dark. it’s designed to be forgotten"
+                    - generic [ref=e6185]: "\"She wasn’t broken. She was built to obey. And the bravest thing she ever did? Choose to disobey. even when it cost her everything. Would you have made the same choice? 👇 #BlackWidow #MarvelSecrets #DarkOrigins #Avengers #CharacterDesign #RedRoom #Sacrifice #MCU\""
+                    - generic [ref=e6186]:
+                      - generic [ref=e6187]: "#BlackWidow"
+                      - generic [ref=e6188]: "#RedRoom"
+                      - generic [ref=e6189]: "#MCU"
+                      - generic [ref=e6190]: "#MarvelSecrets"
+                      - generic [ref=e6191]: "#CharacterDesign"
+                      - generic [ref=e6192]: "#Avengers"
+                      - generic [ref=e6193]: "#Sacrifice"
+                      - generic [ref=e6194]: "#DarkOrigins"
+                    - generic [ref=e6195]:
+                      - generic [ref=e6196]:
+                        - img [ref=e6197]
+                        - text: Lacrimosa - Mozart
+                      - generic [ref=e6201]: Dark
+                      - generic [ref=e6202]:
+                        - img [ref=e6203]
+                        - text: Brain-enhanced
+                - group [ref=e6213]:
+                  - generic "Generation Details" [ref=e6214] [cursor=pointer]:
+                    - img [ref=e6215]
+                    - text: Generation Details
+                - generic [ref=e6218]:
+                  - generic [ref=e6219]: AI Review
+                  - generic [ref=e6220]:
+                    - generic [ref=e6221]:
+                      - generic [ref=e6222]: "9"
+                      - generic [ref=e6223]: Hook
+                    - generic [ref=e6224]:
+                      - generic [ref=e6225]: "8"
+                      - generic [ref=e6226]: Facts
+                    - generic [ref=e6227]:
+                      - generic [ref=e6228]: "9"
+                      - generic [ref=e6229]: Engagement
+                    - generic [ref=e6230]:
+                      - generic [ref=e6231]: "8"
+                      - generic [ref=e6232]: Caption
+                    - generic [ref=e6233]:
+                      - generic [ref=e6234]: "8.5"
+                      - generic [ref=e6235]: Overall
+                  - generic [ref=e6236]:
+                    - generic [ref=e6237]: "Suggestions:"
+                    - list [ref=e6238]:
+                      - listitem [ref=e6239]: Add a visual cue (e.g., redacted file stamp, glitch effect, or ‘classified’ watermark) to Slide 1 to reinforce the ‘erased truth’ theme and boost scroll-stopping power.
+                      - listitem [ref=e6240]: Clarify the Red Room’s Red Dust mechanism—specify it’s *canonically* ambiguous (per *Black Widow* film & MCU lore), to avoid overclaiming.
+                      - listitem [ref=e6241]: "Include a subtle ‘source’ watermark (e.g., ‘MCU: Black Widow, 2021’) on Slide 4 or 5 to boost credibility without breaking immersion."
+                      - listitem [ref=e6242]: End Slide 6 with a *visual* of Natasha’s face half in shadow/half lit—symbolizing reclaimed identity—to maximize emotional resonance.
+            - generic [ref=e6243]:
+              - generic [ref=e6245]:
+                - generic [ref=e6246]:
+                  - generic [ref=e6247]:
+                    - button "Open Batman character page" [ref=e6248] [cursor=pointer]:
+                      - text: Batman
+                      - img [ref=e6249]
+                    - generic [ref=e6253]: "-"
+                    - generic [ref=e6254]: Behind the Scenes
+                  - generic [ref=e6256]: What They Changed
+                - generic [ref=e6257]:
+                  - generic [ref=e6258]: approved
+                  - button "Enhance carousel for Batman" [ref=e6260] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Batman" [ref=e6261] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e6262]:
+                - generic [ref=e6263]:
+                  - generic [ref=e6265]:
+                    - generic [ref=e6266]:
+                      - generic [ref=e6267]: TikTok preview
+                      - button "Hide UI" [ref=e6268] [cursor=pointer]:
+                        - img [ref=e6269]
+                        - text: Hide UI
+                    - generic [ref=e6275]:
+                      - generic [ref=e6277]:
+                        - generic [ref=e6278]
+                        - img [ref=e6282]
+                      - generic [ref=e6285]:
+                        - generic [ref=e6286]
+                        - generic [ref=e6297]
+                        - generic [ref=e6314]
+                        - generic [ref=e6331]
+                        - generic [ref=e6344]
+                        - generic [ref=e6359]
+                      - generic [ref=e6381]:
+                        - generic [ref=e6382]
+                        - generic [ref=e6389]
+                        - generic [ref=e6393]
+                        - generic [ref=e6397]
+                        - generic [ref=e6401]
+                        - img [ref=e6410]
+                      - generic [ref=e6413]:
+                        - generic [ref=e6414]
+                        - generic [ref=e6424]
+                      - generic [ref=e6434]:
+                        - generic [ref=e6435]
+                        - generic [ref=e6440]
+                        - img [ref=e6446]
+                        - generic [ref=e6447]
+                        - generic [ref=e6452]
+                  - generic [ref=e6457]:
+                    - generic [ref=e6458]:
+                      - generic [ref=e6459]: Hook
+                      - generic [ref=e6460]: The Batman you love on screen? He’s barely recognizable next to his original comic self.
+                    - generic [ref=e6461]: "\"He started with a gun. and almost became a murderer. Now he’s a symbol who’d rather break his back than break his rule. How did Batman go from kill or be killed… to never kill, ever? 👇 Who’s the REAL Batman? Let’s fight in the comments. #Batman #DCComics #SuperheroHistory #VigilanteMyth #NolanTrilogy #ComicsVsMovies\""
+                    - generic [ref=e6462]:
+                      - generic [ref=e6463]: "#Batman"
+                      - generic [ref=e6464]: "#DCComics"
+                      - generic [ref=e6465]: "#ComicsHistory"
+                      - generic [ref=e6466]: "#SuperheroEvolution"
+                      - generic [ref=e6467]: "#TheDarkKnight"
+                      - generic [ref=e6468]: "#DetectiveComics"
+                      - generic [ref=e6469]: "#CharacterDesign"
+                      - generic [ref=e6470]: "#Storytelling"
+                    - generic [ref=e6471]:
+                      - generic [ref=e6472]:
+                        - img [ref=e6473]
+                        - text: Experience - Ludovico Einaudi
+                      - generic [ref=e6477]: Dramatic
+                      - generic [ref=e6478]:
+                        - img [ref=e6479]
+                        - text: Brain-enhanced
+                - group [ref=e6489]:
+                  - generic "Generation Details" [ref=e6490] [cursor=pointer]:
+                    - img [ref=e6491]
+                    - text: Generation Details
+                - generic [ref=e6494]:
+                  - generic [ref=e6495]: AI Review
+                  - generic [ref=e6496]:
+                    - generic [ref=e6497]:
+                      - generic [ref=e6498]: "9"
+                      - generic [ref=e6499]: Hook
+                    - generic [ref=e6500]:
+                      - generic [ref=e6501]: "9"
+                      - generic [ref=e6502]: Facts
+                    - generic [ref=e6503]:
+                      - generic [ref=e6504]: "9"
+                      - generic [ref=e6505]: Engagement
+                    - generic [ref=e6506]:
+                      - generic [ref=e6507]: "8"
+                      - generic [ref=e6508]: Caption
+                    - generic [ref=e6509]:
+                      - generic [ref=e6510]: "8.8"
+                      - generic [ref=e6511]: Overall
+                  - generic [ref=e6512]:
+                    - generic [ref=e6513]: "Suggestions:"
+                    - list [ref=e6514]:
+                      - listitem [ref=e6515]: Add a visual comparison (e.g., side-by-side panels of 1939 vs. modern Batman) to reinforce the contrast instantly.
+                      - listitem [ref=e6516]: Include a *micro-trend* hook in Slide 1—e.g., 'This is why Batman doesn’t kill (and it’s not what you think)' to boost algorithm appeal.
+                      - listitem [ref=e6517]: Slide 5 could cite *specific* Comics Code years (1954) and post-9/11 context (e.g., *The Dark Knight* released 2008) for sharper credibility.
+                      - listitem [ref=e6518]: End Slide 6 with a *CTA sticker prompt* like 'Tap ✅ or ❌' to boost interaction metrics.
+            - generic [ref=e6519]:
+              - generic [ref=e6521]:
+                - generic [ref=e6522]:
+                  - generic [ref=e6523]:
+                    - button "Open Aquaman character page" [ref=e6524] [cursor=pointer]:
+                      - text: Aquaman
+                      - img [ref=e6525]
+                    - generic [ref=e6529]: "-"
+                    - generic [ref=e6530]: Hidden Truths
+                  - generic [ref=e6532]: Secrets Revealed
+                - generic [ref=e6533]:
+                  - generic [ref=e6534]: pending review
+                  - button "Enhance carousel for Aquaman" [ref=e6536] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Aquaman" [ref=e6537] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e6538]:
+                - generic [ref=e6539]:
+                  - generic [ref=e6541]:
+                    - generic [ref=e6542]:
+                      - generic [ref=e6543]: TikTok preview
+                      - button "Hide UI" [ref=e6544] [cursor=pointer]:
+                        - img [ref=e6545]
+                        - text: Hide UI
+                    - generic [ref=e6551]:
+                      - generic [ref=e6553]:
+                        - generic [ref=e6554]
+                        - img [ref=e6558]
+                      - generic [ref=e6561]:
+                        - generic [ref=e6562]
+                        - generic [ref=e6574]
+                        - generic [ref=e6581]
+                        - generic [ref=e6588]
+                        - generic [ref=e6595]
+                        - generic [ref=e6602]
+                      - generic [ref=e6616]:
+                        - generic [ref=e6617]
+                        - generic [ref=e6624]
+                        - generic [ref=e6628]
+                        - generic [ref=e6632]
+                        - generic [ref=e6636]
+                        - img [ref=e6645]
+                      - generic [ref=e6648]:
+                        - generic [ref=e6649]
+                        - generic [ref=e6659]
+                      - generic [ref=e6669]:
+                        - generic [ref=e6670]
+                        - generic [ref=e6675]
+                        - img [ref=e6681]
+                        - generic [ref=e6682]
+                        - generic [ref=e6687]
+                  - generic [ref=e6692]:
+                    - generic [ref=e6693]:
+                      - generic [ref=e6694]: Hook
+                      - generic [ref=e6695]: 6 Truths That Rewrite Aquaman’s Entire Story
+                    - generic [ref=e6696]: "\"Aquaman isn’t just ‘the fish guy’. he’s a royal exile, divine heir, tyrant-turned-hero, and oceanic sovereign with a curse in his bloodline. 🌊💀 Which secret shocked you most? Drop a 🦈 below & follow for more #DCsecrets that rewrite history.\""
+                    - generic [ref=e6697]:
+                      - generic [ref=e6698]: "##Aquaman"
+                      - generic [ref=e6699]: "##DCSecrets"
+                      - generic [ref=e6700]: "##ComicBookTruths"
+                      - generic [ref=e6701]: "##JusticeLeague"
+                      - generic [ref=e6702]: "##GeekHistory"
+                    - generic [ref=e6703]:
+                      - generic [ref=e6704]:
+                        - img [ref=e6705]
+                        - text: X-Files Theme - Mark Snow
+                      - generic [ref=e6709]: Mysterious
+                      - generic [ref=e6710]:
+                        - img [ref=e6711]
+                        - text: Brain-enhanced
+                - group [ref=e6721]:
+                  - generic "Generation Details" [ref=e6722] [cursor=pointer]:
+                    - img [ref=e6723]
+                    - text: Generation Details
+                - generic [ref=e6726]:
+                  - generic [ref=e6727]: AI Review
+                  - generic [ref=e6728]:
+                    - generic [ref=e6729]:
+                      - generic [ref=e6730]: "9"
+                      - generic [ref=e6731]: Hook
+                    - generic [ref=e6732]:
+                      - generic [ref=e6733]: "9"
+                      - generic [ref=e6734]: Facts
+                    - generic [ref=e6735]:
+                      - generic [ref=e6736]: "9"
+                      - generic [ref=e6737]: Engagement
+                    - generic [ref=e6738]:
+                      - generic [ref=e6739]: "8"
+                      - generic [ref=e6740]: Caption
+                    - generic [ref=e6741]:
+                      - generic [ref=e6742]: "8.8"
+                      - generic [ref=e6743]: Overall
+                  - generic [ref=e6744]:
+                    - generic [ref=e6745]: "Suggestions:"
+                    - list [ref=e6746]:
+                      - listitem [ref=e6747]: Add a visual cue (e.g., bold text overlay or emoji) on Slide 1 to emphasize 'Orin' and 'sentient Great White Shark'—this boosts retention in silent autoplay.
+                      - listitem [ref=e6748]: Include a quick 'Wait… what?!' transition slide (e.g., Slide 1.5) after the first fact to amplify disbelief before moving to the next.
+                      - listitem [ref=e6749]: In Slide 6, replace 'Follow for more DC deep cuts' with a stronger CTA like 'Tap follow—Atlantis is *not* what you think.' for higher conversion.
+                      - listitem [ref=e6750]: Consider adding a 7th slide teasing a *controversial* retcon (e.g., 'Aquaman’s bloodline carries a *curse* that nearly destroyed Atlantis') to boost save rate.
+            - generic [ref=e6751]:
+              - generic [ref=e6753]:
+                - generic [ref=e6754]:
+                  - generic [ref=e6755]:
+                    - button "Open Loki character page" [ref=e6756] [cursor=pointer]:
+                      - text: Loki
+                      - img [ref=e6757]
+                    - generic [ref=e6761]: "-"
+                    - generic [ref=e6762]: Hidden Truths
+                  - generic [ref=e6763]: Loki_HiddenTruths_Carousel
+                - generic [ref=e6764]:
+                  - generic [ref=e6765]: pending review
+                  - button "Enhance carousel for Loki" [ref=e6767] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Loki_HiddenTruths_Carousel" [ref=e6768] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e6769]:
+                - generic [ref=e6770]:
+                  - generic [ref=e6772]:
+                    - generic [ref=e6773]:
+                      - generic [ref=e6774]: TikTok preview
+                      - button "Hide UI" [ref=e6775] [cursor=pointer]:
+                        - img [ref=e6776]
+                        - text: Hide UI
+                    - generic [ref=e6782]:
+                      - generic [ref=e6784]:
+                        - generic [ref=e6785]
+                        - img [ref=e6789]
+                      - generic [ref=e6792]:
+                        - generic [ref=e6793]
+                        - generic [ref=e6804]
+                        - generic [ref=e6814]
+                        - generic [ref=e6822]
+                        - generic [ref=e6832]
+                        - generic [ref=e6844]
+                      - generic [ref=e6859]:
+                        - generic [ref=e6860]
+                        - generic [ref=e6867]
+                        - generic [ref=e6871]
+                        - generic [ref=e6875]
+                        - generic [ref=e6879]
+                        - img [ref=e6888]
+                      - generic [ref=e6891]:
+                        - generic [ref=e6892]
+                        - generic [ref=e6901]
+                      - generic [ref=e6911]:
+                        - generic [ref=e6912]
+                        - generic [ref=e6917]
+                        - img [ref=e6923]
+                        - generic [ref=e6924]
+                        - generic [ref=e6929]
+                  - generic [ref=e6934]:
+                    - generic [ref=e6935]:
+                      - generic [ref=e6936]: Hook
+                      - generic [ref=e6937]: The Truth Loki Hid From Everyone..
+                    - generic [ref=e6938]: "\"Loki’s entire myth is Built on Lies… but which hidden truth shocked you most? 👀\""
+                    - generic [ref=e6939]:
+                      - generic [ref=e6940]: "##Loki"
+                      - generic [ref=e6941]: "##MarvelSecrets"
+                      - generic [ref=e6942]: "##MCU"
+                      - generic [ref=e6943]: "##CharacterDevelopment"
+                      - generic [ref=e6944]: "##HiddenFacts"
+                    - generic [ref=e6945]:
+                      - generic [ref=e6946]:
+                        - img [ref=e6947]
+                        - text: Doctor Strange Theme - Michael Giacchino
+                      - generic [ref=e6951]: Mysterious
+                      - generic [ref=e6952]:
+                        - img [ref=e6953]
+                        - text: Brain-enhanced
+                - group [ref=e6963]:
+                  - generic "Generation Details" [ref=e6964] [cursor=pointer]:
+                    - img [ref=e6965]
+                    - text: Generation Details
+                - generic [ref=e6968]:
+                  - generic [ref=e6969]: AI Review
+                  - generic [ref=e6970]:
+                    - generic [ref=e6971]:
+                      - generic [ref=e6972]: "9"
+                      - generic [ref=e6973]: Hook
+                    - generic [ref=e6974]:
+                      - generic [ref=e6975]: "8"
+                      - generic [ref=e6976]: Facts
+                    - generic [ref=e6977]:
+                      - generic [ref=e6978]: "9"
+                      - generic [ref=e6979]: Engagement
+                    - generic [ref=e6980]:
+                      - generic [ref=e6981]: "8"
+                      - generic [ref=e6982]: Caption
+                    - generic [ref=e6983]:
+                      - generic [ref=e6984]: "8.5"
+                      - generic [ref=e6985]: Overall
+                  - generic [ref=e6986]:
+                    - generic [ref=e6987]: "Suggestions:"
+                    - list [ref=e6988]:
+                      - listitem [ref=e6989]: Add a visual cue (e.g., red 'X' over Loki’s face or a cracked shield icon) on Slide 1 to reinforce the 'hidden truth' theme.
+                      - listitem [ref=e6990]: Include a quick text animation or sound effect (e.g., *record scratch* or *mystery chime*) on Slide 2 to emphasize the pre-adoption twist.
+                      - listitem [ref=e6991]: "Clarify the TVA tablet reference—add a small ' comics: Journey into Mystery #85 (1962)' footnote to avoid confusion with MCU canon."
+                      - listitem [ref=e6992]: End with a strong CTA like 'Save for your next rewatch!' to boost saves.
+            - generic [ref=e6993]:
+              - generic [ref=e6995]:
+                - generic [ref=e6996]:
+                  - generic [ref=e6997]:
+                    - button "Open Loki character page" [ref=e6998] [cursor=pointer]:
+                      - text: Loki
+                      - img [ref=e6999]
+                    - generic [ref=e7003]: "-"
+                    - generic [ref=e7004]: Hidden Truths
+                  - generic [ref=e7005]: Loki - Hidden Truths
+                - generic [ref=e7006]:
+                  - generic [ref=e7007]: approved
+                  - button "Enhance carousel for Loki" [ref=e7009] [cursor=pointer]:
+                    - img
+                    - text: Enhance
+                  - button "Edit carousel Loki - Hidden Truths" [ref=e7010] [cursor=pointer]:
+                    - img
+                    - text: Edit
+              - generic [ref=e7011]:
+                - generic [ref=e7012]:
+                  - generic [ref=e7014]:
+                    - generic [ref=e7015]:
+                      - generic [ref=e7016]: TikTok preview
+                      - button "Hide UI" [ref=e7017] [cursor=pointer]:
+                        - img [ref=e7018]
+                        - text: Hide UI
+                    - generic [ref=e7024]:
+                      - generic [ref=e7026]:
+                        - generic [ref=e7027]
+                        - img [ref=e7031]
+                      - generic [ref=e7034]:
+                        - generic [ref=e7035]
+                        - generic [ref=e7053]
+                        - generic [ref=e7065]
+                        - generic [ref=e7075]
+                        - generic [ref=e7087]
+                        - generic [ref=e7095]
+                      - generic [ref=e7112]:
+                        - generic [ref=e7113]
+                        - generic [ref=e7120]
+                        - generic [ref=e7124]
+                        - generic [ref=e7128]
+                        - generic [ref=e7132]
+                        - img [ref=e7141]
+                      - generic [ref=e7144]:
+                        - generic [ref=e7145]
+                        - generic [ref=e7153]
+                      - generic [ref=e7162]:
+                        - generic [ref=e7163]
+                        - generic [ref=e7168]
+                        - img [ref=e7174]
+                        - generic [ref=e7175]
+                        - generic [ref=e7180]
+                  - generic [ref=e7185]:
+                    - generic [ref=e7186]:
+                      - generic [ref=e7187]: Hook
+                      - generic [ref=e7188]: That TVA tablet showing the year 3000.. might be referencing a specific Marvel Comics timeline that hardcore fans instantly recognized.
+                    - generic [ref=e7189]: "\"Which fact surprised you most? 👇 #Loki\""
+                    - generic [ref=e7190]:
+                      - generic [ref=e7191]: "#loki"
+                      - generic [ref=e7192]: "#marvel"
+                      - generic [ref=e7193]: "#characterfacts"
+                      - generic [ref=e7194]: "#fyp"
+                    - generic [ref=e7196]: Epic
+                - generic [ref=e7197]:
+                  - generic [ref=e7198]: AI Review
+                  - generic [ref=e7199]:
+                    - generic [ref=e7200]:
+                      - generic [ref=e7201]: "8"
+                      - generic [ref=e7202]: Hook
+                    - generic [ref=e7203]:
+                      - generic [ref=e7204]: "9"
+                      - generic [ref=e7205]: Facts
+                    - generic [ref=e7206]:
+                      - generic [ref=e7207]: "8"
+                      - generic [ref=e7208]: Engagement
+                    - generic [ref=e7209]:
+                      - generic [ref=e7210]: "7"
+                      - generic [ref=e7211]: Caption
+                    - generic [ref=e7212]:
+                      - generic [ref=e7213]: "8"
+                      - generic [ref=e7214]: Overall
+                  - generic [ref=e7215]:
+                    - generic [ref=e7216]: "Suggestions:"
+                    - list [ref=e7217]:
+                      - listitem [ref=e7218]: Consider adding a slide that highlights Loki's redemption arc in the series to balance the negative aspects and engage a wider audience.

@@ -15,8 +15,8 @@ from app.infrastructure.llm_providers.gemini_provider import GeminiProvider
 from app.infrastructure.llm_providers.huggingface_provider import HuggingFaceProvider
 from app.infrastructure.llm_providers.kimi_provider import KimiProvider
 from app.infrastructure.llm_providers.minimax_provider import MinimaxProvider
-from app.infrastructure.llm_providers.ollama_provider import OllamaProvider
 from app.infrastructure.llm_providers.openrouter_provider import OpenRouterProvider
+from app.infrastructure.llm_providers.vllm_provider import VllmProvider
 
 logger = structlog.get_logger(__name__)
 
@@ -27,9 +27,15 @@ def get_provider_registry() -> Dict[str, BaseLLMProvider]:
 
     Returns all providers (configured or not). Check provider.is_configured
     before using cloud providers.
+
+    Note 2026-04-27: OllamaProvider retired. The legacy "ollama" key resolves
+    to VllmProvider as a backwards-compat alias for any caller that still
+    asks for it by name.
     """
+    vllm_provider = VllmProvider()
     providers = {
-        "ollama": OllamaProvider(),
+        "vllm": vllm_provider,
+        "ollama": vllm_provider,  # legacy alias — Ollama retired 2026-04-27
         "gemini": GeminiProvider(),
         "openrouter": OpenRouterProvider(),
         "huggingface": HuggingFaceProvider(),

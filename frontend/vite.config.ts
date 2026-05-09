@@ -95,5 +95,14 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash]-zero-ui.js',
+        chunkFileNames: 'assets/[name]-[hash]-zero-ui.js',
+        assetFileNames: 'assets/[name]-[hash]-zero-ui.[ext]',
+      },
+    },
   }
 })

@@ -1,131 +1,67 @@
-# Zero - Personal AI Assistant (OpenClaw.ai)
+# Zero - Personal And Company AI Operating System
 
-Multi-channel AI assistant powered by Claude, built on [OpenClaw.ai](https://openclaw.ai).
+Zero is Adam's personal AI assistant and the active software home for
+**ADA AI LLC Company OS**. The Company OS docs, task cockpit, approval
+gates, agent structure, finance/legal readiness, consulting pipeline, product
+studio, and robotics lab context now live here.
+
+- Company UI: `/company`
+- Company docs UI: `/company/docs`
+- Company docs on disk: `C:\code\zero\docs\company`
+- Legacy company archive: `C:\code\company`
+
+Multi-channel assistant capabilities still run on the existing Zero stack.
 
 ## Quick Start
 
-1. **Set your Anthropic API key** in `.env`:
-   ```
-   ANTHROPIC_API_KEY=sk-ant-xxxxx
-   ```
+1. Set required API keys in `.env`.
+2. Start the sprint stack:
 
-2. **Start the gateway**:
-   ```bash
-   cd C:\code\zero
-   docker-compose up -d
-   ```
-
-3. **Pair WhatsApp** (requires interactive terminal):
-   ```bash
-   docker exec -it zero-gateway node dist/index.js configure --section channels
-   ```
-   - Select "WhatsApp" when prompted
-   - Scan the QR code with WhatsApp (Settings > Linked Devices > Link a Device)
-
-## Commands
-
-### Start Services
-```bash
-docker-compose up -d
+```powershell
+cd C:\code\zero
+docker compose -f docker-compose.sprint.yml up -d
 ```
 
-### Stop Services
-```bash
-docker-compose down
+3. Open the UI:
+
+```text
+http://localhost:5173
+http://localhost:5173/company
 ```
 
-### View Logs
-```bash
-# All logs
-docker-compose logs -f
+## Company OS
 
-# Gateway only
-docker logs -f zero-gateway
-```
+Zero is the canonical company operating system:
 
-### Run CLI Commands
-```bash
-# Run doctor health check
-docker exec zero-gateway node dist/index.js doctor
+- tasks and approvals live in Zero;
+- docs live in `docs/company`;
+- Obsidian mirrors narrative weekly reviews and decisions;
+- Notion is deferred until external collaboration requires it;
+- purchases, legal filings, tax elections, client/public communications,
+  account changes, and financial actions require approval gates.
 
-# Configure channels (WhatsApp)
-docker exec -it zero-gateway node dist/index.js configure --section channels
+## Ports
 
-# Check gateway status
-docker exec zero-gateway node dist/index.js doctor
-```
-
-### Restart Services
-```bash
-docker-compose restart zero-gateway
-```
-
-## Configuration
-
-- **Config file**: `./config/zero.json`
-- **Workspace**: `./workspace/`
-- **Environment**: `.env`
-
-### Ports
-- `18789`: Gateway WebSocket API
-- `18790`: Bridge port
-
-### Current Settings
-- Model: `anthropic/claude-sonnet-4`
-- Gateway mode: local
-- Gateway bind: lan (network accessible)
-
-## Troubleshooting
-
-### WhatsApp disconnected
-Re-run channel configuration:
-```bash
-docker exec -it zero-gateway node dist/index.js configure --section channels
-```
-
-### Gateway not responding
-Check logs and restart:
-```bash
-docker logs zero-gateway
-docker-compose restart zero-gateway
-```
-
-### API key issues
-1. Edit `.env` and set your Anthropic API key
-2. Restart:
-   ```bash
-   docker-compose down
-   docker-compose up -d
-   ```
-
-### Container issues
-Reset and rebuild:
-```bash
-docker-compose down
-docker-compose pull
-docker-compose up -d
-```
-
-### Run doctor to diagnose
-```bash
-docker exec zero-gateway node dist/index.js doctor
-```
+- `18792`: Zero FastAPI backend
+- `5173`: Zero UI
+- `18796`: host agent
+- `8000`: Reachy Mini daemon
+- `4444`: shared LiteLLM gateway
 
 ## File Structure
 
-```
+```text
 zero/
-├── config/
-│   └── zero.json        # Bot configuration
-├── workspace/           # Bot workspace/sessions
-├── docker-compose.yml   # Docker services
-├── .env                 # Environment variables (API keys, tokens)
-└── README.md            # This file
+|-- docs/company/       # Company OS operating manual and sourced context
+|-- frontend/           # React/Vite UI, including /company routes
+|-- backend/            # FastAPI API, including /api/company context endpoints
+|-- workspace/          # Runtime workspace and generated state
+|-- config/             # Local configuration
+|-- .agents/skills/     # Project-local skills
+`-- docker-compose.sprint.yml
 ```
 
-## Security Notes
+## Legacy Note
 
-- The gateway token is stored in `.env` and `config/zero.json`
-- Keep your Anthropic API key secure
-- The gateway is bound to LAN - ensure your network is trusted
-- Run `docker exec zero-gateway node dist/index.js security audit --deep` for security checks
+`C:\code\company` is retained as a migration/archive folder only. New Company
+OS work starts in `C:\code\zero`.

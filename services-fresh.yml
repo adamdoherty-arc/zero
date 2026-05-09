@@ -1,0 +1,122 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]
+          - listitem [ref=e27]
+          - listitem [ref=e35]
+          - listitem [ref=e40]
+          - listitem [ref=e46]
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]
+          - listitem [ref=e59]
+          - listitem [ref=e67]
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]
+          - listitem [ref=e84]
+          - listitem [ref=e89]
+          - listitem [ref=e102]
+      - generic [ref=e108]:
+        - generic [ref=e109]: Meetings
+        - list [ref=e110]:
+          - listitem [ref=e111]
+          - listitem [ref=e117]
+      - generic [ref=e121]:
+        - generic [ref=e122]: AI Company
+        - list [ref=e123]:
+          - listitem [ref=e124]
+          - listitem [ref=e131]
+          - listitem [ref=e136]
+          - listitem [ref=e143]
+          - listitem [ref=e158]
+          - listitem [ref=e164]
+          - listitem [ref=e170]
+          - listitem [ref=e175]
+          - listitem [ref=e182]
+      - generic [ref=e188]:
+        - generic [ref=e189]: Automation
+        - list [ref=e190]:
+          - listitem [ref=e191]
+          - listitem [ref=e197]
+          - listitem [ref=e204]
+          - listitem [ref=e213]
+          - listitem [ref=e218]
+          - listitem [ref=e224]
+          - listitem [ref=e230]
+          - listitem [ref=e238]
+          - listitem [ref=e243]
+          - listitem [ref=e248]
+          - listitem [ref=e254]
+          - listitem [ref=e261]
+      - generic [ref=e268]:
+        - generic [ref=e269]: System
+        - list [ref=e270]:
+          - listitem [ref=e271]
+          - listitem [ref=e277]
+          - listitem [ref=e284]
+          - listitem [ref=e290]
+          - listitem [ref=e298]
+          - listitem [ref=e304]
+          - listitem [ref=e309]
+    - list [ref=e324]:
+      - listitem [ref=e325]:
+        - button "Zero v1.0" [ref=e326] [cursor=pointer]:
+          - generic [ref=e328]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e329]
+  - main [ref=e330]:
+    - generic [ref=e331]:
+      - button "Toggle Sidebar" [ref=e332] [cursor=pointer]:
+        - img
+        - generic [ref=e333]: Toggle Sidebar
+      - generic [ref=e334]:
+        - generic [ref=e335]: Zero
+        - generic [ref=e336]: /
+        - generic [ref=e337]: Zero
+      - button "Search... Ctrl K" [ref=e338] [cursor=pointer]:
+        - img [ref=e339]
+        - generic [ref=e342]: Search...
+        - generic [ref=e343]:
+          - generic [ref=e344]: Ctrl
+          - text: K
+      - button "9+" [ref=e346] [cursor=pointer]:
+        - img [ref=e347]
+        - generic [ref=e350]: 9+
+    - main [ref=e351]:
+      - generic [ref=e352]:
+        - generic [ref=e353]:
+          - generic [ref=e354]
+          - generic [ref=e360]
+        - generic [ref=e374]:
+          - generic [ref=e376]
+          - generic [ref=e386]
+          - generic [ref=e396]
+          - generic [ref=e406]
+          - generic [ref=e414]
+          - generic [ref=e424]
+        - generic [ref=e435]:
+          - button "Overview" [ref=e436] [cursor=pointer]
+          - button "Services 25" [ref=e437] [cursor=pointer]
+          - button "Cheapest" [ref=e439] [cursor=pointer]
+          - button "Promos" [ref=e440] [cursor=pointer]
+          - button "Card offers" [ref=e441] [cursor=pointer]
+          - button "Portals" [ref=e442] [cursor=pointer]
+          - button "Shipments" [ref=e443] [cursor=pointer]
+        - generic [ref=e444]:
+          - generic [ref=e445]
+          - generic [ref=e451]
+  - button "Voice settings" [ref=e456] [cursor=pointer]:
+    - img [ref=e457]
+  - button "Start recording a voice command" [ref=e460] [cursor=pointer]:
+    - img [ref=e461]

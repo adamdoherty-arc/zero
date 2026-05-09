@@ -235,12 +235,16 @@ async def get_assistant_status():
     briefing = await briefing_service.get_latest_briefing()
     reminder_stats = await reminder_service.get_stats()
     unread_count = await notification_service.get_unread_count()
-    scheduler_status = scheduler_service.get_status()
+    scheduler_status = await scheduler_service.get_status_detailed()
 
     return AssistantStatus(
         scheduler_running=scheduler_status.get("running", False),
         last_briefing_at=briefing.generated_at if briefing else None,
         pending_reminders=reminder_stats.get("active", 0),
         unread_notifications=unread_count,
-        active_jobs=[job.get("name", job.get("id")) for job in scheduler_status.get("jobs", [])]
+        active_jobs=[
+            job.get("name", job.get("id"))
+            for job in scheduler_status.get("jobs", [])
+            if job.get("enabled")
+        ]
     )

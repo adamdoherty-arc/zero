@@ -1,0 +1,87 @@
+﻿{
+  "run_id": "1895a7c5-6ade-4f85-a1cd-7ef8860fc0cf",
+  "captured_at": "2026-04-28T-run-1",
+  "captured_at_note": "first formal run; baseline established",
+
+  "doc_sha256": {
+    "c:/code/ArchitectureMaster/docs/MANDATE.md": "7a8d5fcb6d51f09411d276b392845122c899132a3769024eeaffb8db1211a93c",
+    "c:/code/ArchitectureMaster/docs/ARCHITECTURE.md": "67b468c55a2d026318df0450726cf0d30ecea6cdb94f4aab7e1e7c42114ae1e0",
+    "c:/code/ArchitectureMaster/README.md": "7018ef7695708f452feb9210254d716477bd35130921ecd9c50272498709ad0e",
+    "c:/code/ArchitectureMaster/docs/AgenticOs.md": "7ac8883b6ef5c00787b3170aec874a134263bdc0f6a7c0a0826943e0960e2b8e",
+    "c:/code/ArchitectureMaster/docs/SecondBrain.md": "b46260bbffb317383823c9cf1b6cdab1bad3e1f377c61ab1c4c50307f2c3f18d"
+  },
+
+  "doc_sizes_bytes": {
+    "MANDATE.md": 6603,
+    "ARCHITECTURE.md": 8519,
+    "README.md": 4998,
+    "AgenticOs.md": 57610,
+    "SecondBrain.md": 45531
+  },
+
+  "ports_listening": {
+    "4444": true,
+    "8000": true,
+    "8001": true,
+    "8005": true,
+    "8006": true,
+    "18792": true,
+    "18800": true,
+    "5432": true,
+    "5433": true,
+    "5434": true
+  },
+
+  "port_8000_owner": "reachy-mini-dashboard",
+  "port_8000_owner_evidence": "GET / returned <title>Reachy Mini dashboard</title>",
+
+  "litellm_image_pin": "ghcr.io/berriai/litellm:main-v1.83.7-stable",
+  "litellm_pin_status": "ok (>= 1.81.14, not in compromised 1.82.7 / 1.82.8 window)",
+
+  "vllm_chat_models_served": ["qwen3-chat", "qwen3-coder"],
+  "vllm_chat_root_model": "Qwen/Qwen3-32B-AWQ",
+  "vllm_chat_max_model_len": 12288,
+  "vllm_embed_model_served": "Qwen/Qwen3-Embedding-0.6B",
+
+  "containers_up_at_capture": [
+    "zero-api", "zero-ui", "legion-frontend", "legion-backend",
+    "ada-backend", "ada-frontend", "legion-postgres",
+    "vllm-chat", "vllm-embed", "shared-litellm",
+    "zero-postgres", "zero-temporal", "zero-temporal-ui", "zero-redis",
+    "zero-qdrant", "zero-langfuse-web", "zero-langfuse-clickhouse",
+    "zero-minio", "zero-searxng",
+    "ada-postgres-exporter", "ada-prometheus", "ada-grafana",
+    "ada-neo4j", "ada-qdrant", "ada-alertmanager", "ada-redis", "ada-jaeger",
+    "ada-firecrawl-playwright",
+    "legion-grafana", "legion-prometheus", "legion-jaeger",
+    "legion-redis", "legion-qdrant",
+    "portainer", "dockge",
+    "monitoring-grafana", "monitoring-cadvisor", "monitoring-prometheus"
+  ],
+
+  "vault_plugins_installed": [
+    "obsidian-git", "templater-obsidian", "quickadd",
+    "obsidian-tasks-plugin", "periodic-notes", "calendar",
+    "obsidian-advanced-uri", "dataview", "obsidian-linter"
+  ],
+  "vault_plugins_baseline_status": "Tier-1 complete (7/7); Tier-2 2/3 (missing: bases â€” proposal already filed)",
+
+  "vault_last_commit": "2026-04-27 21:45:32 -0400 1b25eac chore(vault): baseline commit â€” agent-initialized 2026-04-27 by ecosystem-audit",
+
+  "project_last_commits": {
+    "zero": "2026-04-22 12:43:01 -0400 b05af9a feat(skills): seed zero-reachy-audit knowledge with real state",
+    "Legion": "2026-04-27 02:00:36 +0000 cc760590 [Nightly Sync 2026-04-27] Auto-commit 75 file(s)",
+    "ADA": "2026-04-26 19:24:34 -0400 b31435e feat(skills): add week-ahead-optimizer skill for continuous planning improvement"
+  },
+
+  "mandate_blockquote_drift": {
+    "zero": "verbatim_match",
+    "legion": "verbatim_match",
+    "ada": "verbatim_match"
+  },
+
+  "lib_drift_observed": {
+    "port-map.md_3001_label": "claims 'Legion UI'; docker shows ada-grafana on :3001 â€” Legion UI lives at :3005 only"
+  }
+}
+

@@ -1,0 +1,45 @@
+- generic [active] [ref=e1]:
+  - img
+  - generic [ref=e3]:
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - article [ref=e38]:
+          - region "Watch in full screen" [ref=e40] [cursor=pointer]:
+            - 'img "Peter Parker Became the Hulk and Killed Captain America...#comics #spiderman" [ref=e45]'
+        - img [ref=e55]
+      - complementary
+    - generic [ref=e72]:
+      - button [ref=e75] [cursor=pointer]:
+        - img [ref=e77]
+      - button [ref=e82] [cursor=pointer]:
+        - img [ref=e84]
+      - button "Log in" [ref=e89] [cursor=pointer]:
+        - generic [ref=e91]: Log in
+    - generic [ref=e93]:
+      - img [ref=e95] [cursor=pointer]
+      - generic [ref=e97]: Introducing keyboard shortcuts!
+      - generic [ref=e98]:
+        - generic [ref=e99]:
+          - text: Go to previous video
+          - img [ref=e100]
+        - generic [ref=e103]:
+          - text: Go to next video
+          - img [ref=e104]
+        - generic [ref=e107]:
+          - text: Like video
+          - img [ref=e108]
+        - generic [ref=e111]:
+          - text: Mute / unmute video
+          - img [ref=e112]
+        - generic [ref=e115]:
+          - text: Play / Pause
+          - img [ref=e116]
+        - generic [ref=e119]:
+          - text: Skip forward
+          - img [ref=e120]
+        - generic [ref=e123]:
+          - text: Skip backward
+          - img [ref=e124]
+        - generic [ref=e127]:
+          - text: Full screen
+          - img [ref=e128]

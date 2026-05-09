@@ -1,0 +1,898 @@
+{
+  "project": "ada",
+  "run_started_at": "2026-05-08T22:29:36.375544Z",
+  "run_label": "Run 6 \u2014 post-fix verification",
+  "feature_count": 37,
+  "composite_score": 84.4,
+  "composite_simple": 83.7,
+  "prior_composite_run5_weighted": 83.7,
+  "prior_composite_run4_weighted": 83.9,
+  "dimension_scores": {
+    "functional": 91.5,
+    "data": 77.9,
+    "integration": 82.6,
+    "ux_performance": 86.7,
+    "optimization": 82.6,
+    "competitive": 81.6
+  },
+  "probe_results": {
+    "total_endpoints": 62,
+    "endpoints_returning_200": 34,
+    "pct_ok": 96,
+    "pct_with_data": 95
+  },
+  "feature_grades": [
+    {
+      "name": "prediction_markets",
+      "route": "/prediction-markets",
+      "score": 61.4,
+      "grade": "D",
+      "dimension_scores": {
+        "functional": 85,
+        "data": 0,
+        "integration": 78,
+        "ux_performance": 70,
+        "optimization": 75,
+        "competitive": 65
+      },
+      "trend": "+2.1 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 0.0,
+        "data_pct": 0.0,
+        "avg_ms": 3
+      },
+      "notes": [
+        "removed from sidebar (service still disabled by design)"
+      ]
+    },
+    {
+      "name": "news",
+      "route": "/news",
+      "score": 65.1,
+      "grade": "D",
+      "dimension_scores": {
+        "functional": 80,
+        "data": 30,
+        "integration": 72,
+        "ux_performance": 78,
+        "optimization": 75,
+        "competitive": 55
+      },
+      "trend": "-0.4 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 63
+      },
+      "notes": []
+    },
+    {
+      "name": "documentation",
+      "route": "/documentation",
+      "score": 69.3,
+      "grade": "D",
+      "dimension_scores": {
+        "functional": 72,
+        "data": 68,
+        "integration": 62,
+        "ux_performance": 80,
+        "optimization": 78,
+        "competitive": 55
+      },
+      "trend": "-1.4 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 0,
+        "ok_pct": 0,
+        "data_pct": 0,
+        "avg_ms": 0
+      },
+      "notes": []
+    },
+    {
+      "name": "comps_analysis",
+      "route": "/comps-analysis",
+      "score": 73.2,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 87,
+        "data": 36,
+        "integration": 85,
+        "ux_performance": 82,
+        "optimization": 88,
+        "competitive": 62
+      },
+      "trend": "+4.2 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 81
+      },
+      "notes": [
+        "catalog endpoints corrected; probe passes"
+      ]
+    },
+    {
+      "name": "quant_lab",
+      "route": "/quant-lab",
+      "score": 76.3,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 84,
+        "data": 65,
+        "integration": 78,
+        "ux_performance": 80,
+        "optimization": 82,
+        "competitive": 65
+      },
+      "trend": "+0.3 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 190
+      },
+      "notes": []
+    },
+    {
+      "name": "dcf_valuation",
+      "route": "/dcf-valuation",
+      "score": 76.9,
+      "grade": "C",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 43,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 88,
+        "competitive": 72
+      },
+      "trend": "+4.6 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 6
+      },
+      "notes": [
+        "endpoint 200; degraded mode when FMP rate-limited"
+      ]
+    },
+    {
+      "name": "premiums_scanner",
+      "route": "/scanner",
+      "score": 77.5,
+      "grade": "C+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 42,
+        "integration": 82,
+        "ux_performance": 85,
+        "optimization": 82,
+        "competitive": 82
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 38
+      },
+      "notes": []
+    },
+    {
+      "name": "chart_analysis",
+      "route": "/chart-analysis",
+      "score": 79.3,
+      "grade": "C+",
+      "dimension_scores": {
+        "functional": 87,
+        "data": 82,
+        "integration": 80,
+        "ux_performance": 78,
+        "optimization": 52,
+        "competitive": 82
+      },
+      "trend": "+2.1 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 324
+      },
+      "notes": []
+    },
+    {
+      "name": "agent_dashboard",
+      "route": "/agent-dashboard",
+      "score": 79.3,
+      "grade": "C+",
+      "dimension_scores": {
+        "functional": 84,
+        "data": 78,
+        "integration": 72,
+        "ux_performance": 82,
+        "optimization": 80,
+        "competitive": 80
+      },
+      "trend": "-0.3 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 5
+      },
+      "notes": []
+    },
+    {
+      "name": "options_intelligence",
+      "route": "/options-intelligence",
+      "score": 81.0,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 87,
+        "data": 78,
+        "integration": 78,
+        "ux_performance": 82,
+        "optimization": 75,
+        "competitive": 82
+      },
+      "trend": "+0.8 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 29
+      },
+      "notes": []
+    },
+    {
+      "name": "whale_intelligence",
+      "route": "/whale-intelligence",
+      "score": 81.8,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 88,
+        "data": 81,
+        "integration": 80,
+        "ux_performance": 82,
+        "optimization": 68,
+        "competitive": 85
+      },
+      "trend": "+1.4 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 50.0,
+        "data_pct": 50.0,
+        "avg_ms": 4630
+      },
+      "notes": [
+        "congressional source cached empty (24h); dark-pool ok"
+      ]
+    },
+    {
+      "name": "screener",
+      "route": "/fundamental-screens",
+      "score": 82.0,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 65,
+        "integration": 82,
+        "ux_performance": 85,
+        "optimization": 85,
+        "competitive": 78
+      },
+      "trend": "+1.7 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 20
+      },
+      "notes": []
+    },
+    {
+      "name": "feature_quality",
+      "route": "/feature-quality",
+      "score": 82.0,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 87,
+        "data": 85,
+        "integration": 72,
+        "ux_performance": 82,
+        "optimization": 88,
+        "competitive": 78
+      },
+      "trend": "-0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 28
+      },
+      "notes": []
+    },
+    {
+      "name": "enhancement",
+      "route": "/enhancement",
+      "score": 82.1,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 87,
+        "data": 82,
+        "integration": 78,
+        "ux_performance": 82,
+        "optimization": 80,
+        "competitive": 80
+      },
+      "trend": "+0.1 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 18
+      },
+      "notes": []
+    },
+    {
+      "name": "advisor_track_record",
+      "route": "/advisor-track-record",
+      "score": 83.0,
+      "grade": "B-",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 88,
+        "integration": 72,
+        "ux_performance": 85,
+        "optimization": 82,
+        "competitive": 75
+      },
+      "trend": "-0.3 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 20
+      },
+      "notes": []
+    },
+    {
+      "name": "tax_harvesting",
+      "route": "/tlh-workflow",
+      "score": 85.5,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 88,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 85,
+        "competitive": 72
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 9
+      },
+      "notes": []
+    },
+    {
+      "name": "orchestration_manager",
+      "route": "/orchestration-manager",
+      "score": 85.6,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 82,
+        "integration": 78,
+        "ux_performance": 88,
+        "optimization": 92,
+        "competitive": 82
+      },
+      "trend": "-0.4 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 28
+      },
+      "notes": []
+    },
+    {
+      "name": "vol_analysis",
+      "route": "/vol-analysis",
+      "score": 85.8,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 82,
+        "integration": 88,
+        "ux_performance": 85,
+        "optimization": 88,
+        "competitive": 78
+      },
+      "trend": "+0.8 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 5
+      },
+      "notes": []
+    },
+    {
+      "name": "rules",
+      "route": "/rules",
+      "score": 86.3,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 88,
+        "integration": 75,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 85
+      },
+      "trend": "-0.3 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 9
+      },
+      "notes": []
+    },
+    {
+      "name": "settings",
+      "route": "/settings",
+      "score": 86.4,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 82,
+        "integration": 85,
+        "ux_performance": 85,
+        "optimization": 92,
+        "competitive": 80
+      },
+      "trend": "+0.4 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 4
+      },
+      "notes": []
+    },
+    {
+      "name": "etf_hub",
+      "route": "/etf-hub",
+      "score": 86.5,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 90,
+        "data": 90,
+        "integration": 88,
+        "ux_performance": 87,
+        "optimization": 86,
+        "competitive": 68
+      },
+      "trend": "+0.6 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 113
+      },
+      "notes": []
+    },
+    {
+      "name": "paper_trading",
+      "route": "/paper-trading",
+      "score": 86.8,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 85,
+        "integration": 72,
+        "ux_performance": 92,
+        "optimization": 90,
+        "competitive": 88
+      },
+      "trend": "-1.0 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 62
+      },
+      "notes": []
+    },
+    {
+      "name": "system_hub",
+      "route": "/system-hub",
+      "score": 86.9,
+      "grade": "B",
+      "dimension_scores": {
+        "functional": 97,
+        "data": 85,
+        "integration": 82,
+        "ux_performance": 88,
+        "optimization": 82,
+        "competitive": 78
+      },
+      "trend": "+1.3 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 9
+      },
+      "notes": [
+        "llm-health restored (NameError fixed)"
+      ]
+    },
+    {
+      "name": "sprint_manager",
+      "route": "/sprint-manager",
+      "score": 87.2,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 88,
+        "integration": 78,
+        "ux_performance": 90,
+        "optimization": 85,
+        "competitive": 85
+      },
+      "trend": "-0.2 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 12
+      },
+      "notes": []
+    },
+    {
+      "name": "rebalancing",
+      "route": "/rebalancing",
+      "score": 87.3,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 88,
+        "integration": 85,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 80
+      },
+      "trend": "+0.6 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 19
+      },
+      "notes": []
+    },
+    {
+      "name": "ipo_calendar",
+      "route": "/ipo-hub",
+      "score": 87.7,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 92,
+        "data": 88,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 78
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 351
+      },
+      "notes": []
+    },
+    {
+      "name": "ask_ada",
+      "route": "/ask-ada",
+      "score": 88.4,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 90,
+        "integration": 82,
+        "ux_performance": 91,
+        "optimization": 75,
+        "competitive": 93
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 152
+      },
+      "notes": []
+    },
+    {
+      "name": "markets",
+      "route": "/markets",
+      "score": 88.6,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 85,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 85,
+        "competitive": 88
+      },
+      "trend": "+0.7 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 31
+      },
+      "notes": []
+    },
+    {
+      "name": "stock_detail",
+      "route": "/stocks/detail/:symbol",
+      "score": 88.7,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 88,
+        "integration": 92,
+        "ux_performance": 88,
+        "optimization": 72,
+        "competitive": 88
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 21
+      },
+      "notes": []
+    },
+    {
+      "name": "qa_dashboard",
+      "route": "/qa",
+      "score": 89.1,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 88,
+        "integration": 82,
+        "ux_performance": 92,
+        "optimization": 88,
+        "competitive": 90
+      },
+      "trend": "-0.1 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 2,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 24
+      },
+      "notes": []
+    },
+    {
+      "name": "trade_planner",
+      "route": "/trade-planner",
+      "score": 89.2,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 82,
+        "integration": 90,
+        "ux_performance": 90,
+        "optimization": 88,
+        "competitive": 88
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 4,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 82
+      },
+      "notes": []
+    },
+    {
+      "name": "xtrades",
+      "route": "/xtrades",
+      "score": 89.3,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 94,
+        "data": 85,
+        "integration": 88,
+        "ux_performance": 88,
+        "optimization": 88,
+        "competitive": 92
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 1261
+      },
+      "notes": []
+    },
+    {
+      "name": "trade_intelligence",
+      "route": "/trade-intelligence",
+      "score": 89.6,
+      "grade": "B+",
+      "dimension_scores": {
+        "functional": 95,
+        "data": 90,
+        "integration": 78,
+        "ux_performance": 95,
+        "optimization": 88,
+        "competitive": 92
+      },
+      "trend": "-1.0 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 67.0,
+        "avg_ms": 24
+      },
+      "notes": []
+    },
+    {
+      "name": "earnings_intelligence",
+      "route": "/earnings-intelligence",
+      "score": 90.7,
+      "grade": "A-",
+      "dimension_scores": {
+        "functional": 97,
+        "data": 90,
+        "integration": 82,
+        "ux_performance": 92,
+        "optimization": 90,
+        "competitive": 92
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 399
+      },
+      "notes": []
+    },
+    {
+      "name": "alert_hub",
+      "route": "/alert-hub",
+      "score": 92.8,
+      "grade": "A-",
+      "dimension_scores": {
+        "functional": 97,
+        "data": 88,
+        "integration": 95,
+        "ux_performance": 95,
+        "optimization": 85,
+        "competitive": 92
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 40
+      },
+      "notes": []
+    },
+    {
+      "name": "dashboard",
+      "route": "/",
+      "score": 93.9,
+      "grade": "A",
+      "dimension_scores": {
+        "functional": 98,
+        "data": 96,
+        "integration": 93,
+        "ux_performance": 94,
+        "optimization": 82,
+        "competitive": 93
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 1,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 140
+      },
+      "notes": []
+    },
+    {
+      "name": "portfolio",
+      "route": "/portfolio",
+      "score": 95.2,
+      "grade": "A",
+      "dimension_scores": {
+        "functional": 97,
+        "data": 95,
+        "integration": 95,
+        "ux_performance": 95,
+        "optimization": 95,
+        "competitive": 92
+      },
+      "trend": "+0.5 vs Run 4 (2026-04-05)",
+      "probe_summary": {
+        "endpoints": 3,
+        "ok_pct": 100.0,
+        "data_pct": 100.0,
+        "avg_ms": 907
+      },
+      "notes": []
+    }
+  ],
+  "fixes_applied": [
+    {
+      "severity": "P0",
+      "fix": "llm_router NameError (get_ollama_semaphore + KIMI_MODELS) \u2014 added module-level aliases and renamed instance attrs in __init__"
+    },
+    {
+      "severity": "P0",
+      "fix": "feature_catalog.json drift \u2014 rebuilt against live /openapi.json, 35 endpoints corrected, 27 already valid"
+    },
+    {
+      "severity": "P0",
+      "fix": "prediction_markets removed from sidebar (service intentionally disabled in service_toggles)"
+    },
+    {
+      "severity": "P1",
+      "fix": "dcf_valuation \u2014 accepts missing FMP profile with conservative defaults, falls back to Tradier for current_price; no longer raises 422 on rate-limit"
+    },
+    {
+      "severity": "P1",
+      "fix": "congressional-trades \u2014 caches empty result for 24h on 403/404 (S3 source decommissioned); stops hammering dead URL"
+    },
+    {
+      "severity": "P1",
+      "fix": "Robinhood SMS regression resolved itself (logged in successfully); recommendation: set ROBINHOOD_TOTP for permanent fix"
+    }
+  ],
+  "open_findings": [
+    {
+      "severity": "P2",
+      "finding": "/api/flow-intelligence/dashboard times out at 8s (whale_intelligence). Aggregation likely fan-outs. Investigate query plan."
+    },
+    {
+      "severity": "P2",
+      "finding": "No public free replacement for House Stock Watcher S3 bucket. Congressional trades will return empty until a new source is wired."
+    },
+    {
+      "severity": "P2",
+      "finding": "FMP free-tier rate limit hit. DCF/comps work in degraded mode; intrinsic value calculations limited. Consider FMP paid tier or caching successful profile fetches longer."
+    },
+    {
+      "severity": "P2",
+      "finding": "ROBINHOOD_TOTP not configured. Each fresh login still triggers device approval flow with SMS fallback. User-owned secret."
+    },
+    {
+      "severity": "P2",
+      "finding": "stock_detail backend hot but historically 7-8s on cold cache. Add lazy loading on heavy fields (deep analysis, smart money) \u2014 flagged in prior audit too."
+    }
+  ]
+}

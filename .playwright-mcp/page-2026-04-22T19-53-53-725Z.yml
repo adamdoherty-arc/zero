@@ -1,0 +1,308 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO Personal AI" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO
+            - generic [ref=e17]: Personal AI
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Overview
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Ask Zero" [ref=e23] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e24]
+              - generic [ref=e26]: Ask Zero
+          - listitem [ref=e27]:
+            - link "Dashboard" [ref=e28] [cursor=pointer]:
+              - /url: /
+              - img [ref=e29]
+              - generic [ref=e34]: Dashboard
+          - listitem [ref=e35]:
+            - link "Operations" [ref=e36] [cursor=pointer]:
+              - /url: /operations
+              - img [ref=e37]
+              - generic [ref=e39]: Operations
+          - listitem [ref=e40]:
+            - link "Ecosystem" [ref=e41] [cursor=pointer]:
+              - /url: /ecosystem
+              - img [ref=e42]
+              - generic [ref=e45]: Ecosystem
+          - listitem [ref=e46]:
+            - link "Board" [ref=e47] [cursor=pointer]:
+              - /url: /board
+              - img [ref=e48]
+              - generic [ref=e49]: Board
+      - generic [ref=e50]:
+        - generic [ref=e51]: Management
+        - list [ref=e52]:
+          - listitem [ref=e53]:
+            - link "Sprints" [ref=e54] [cursor=pointer]:
+              - /url: /sprints
+              - img [ref=e55]
+              - generic [ref=e58]: Sprints
+          - listitem [ref=e59]:
+            - link "Projects" [ref=e60] [cursor=pointer]:
+              - /url: /projects
+              - img [ref=e61]
+              - generic [ref=e66]: Projects
+          - listitem [ref=e67]:
+            - link "CRM" [ref=e68] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e69]
+              - generic [ref=e74]: CRM
+      - generic [ref=e75]:
+        - generic [ref=e76]: Productivity
+        - list [ref=e77]:
+          - listitem [ref=e78]:
+            - link "Email" [ref=e79] [cursor=pointer]:
+              - /url: /email
+              - img [ref=e80]
+              - generic [ref=e83]: Email
+          - listitem [ref=e84]:
+            - link "Calendar" [ref=e85] [cursor=pointer]:
+              - /url: /calendar
+              - img [ref=e86]
+              - generic [ref=e88]: Calendar
+          - listitem [ref=e89]:
+            - link "Knowledge" [ref=e90] [cursor=pointer]:
+              - /url: /knowledge
+              - img [ref=e91]
+              - generic [ref=e101]: Knowledge
+          - listitem [ref=e102]:
+            - link "Meals" [ref=e103] [cursor=pointer]:
+              - /url: /meals
+              - img [ref=e104]
+              - generic [ref=e107]: Meals
+      - generic [ref=e108]:
+        - generic [ref=e109]: Meetings
+        - list [ref=e110]:
+          - listitem [ref=e111]:
+            - link "Meetings" [ref=e112] [cursor=pointer]:
+              - /url: /meetings
+              - img [ref=e113]
+              - generic [ref=e116]: Meetings
+          - listitem [ref=e117]:
+            - link "Meeting Search" [ref=e118] [cursor=pointer]:
+              - /url: /meeting-search
+              - img [ref=e119]
+              - generic [ref=e120]: Meeting Search
+      - generic [ref=e121]:
+        - generic [ref=e122]: AI Company
+        - list [ref=e123]:
+          - listitem [ref=e124]:
+            - link "Company" [ref=e125] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e126]
+              - generic [ref=e130]: Company
+          - listitem [ref=e131]:
+            - link "Experiment Lab" [ref=e132] [cursor=pointer]:
+              - /url: /experiments
+              - img [ref=e133]
+              - generic [ref=e135]: Experiment Lab
+          - listitem [ref=e136]:
+            - link "Council Room" [ref=e137] [cursor=pointer]:
+              - /url: /council
+              - img [ref=e138]
+              - generic [ref=e142]: Council Room
+          - listitem [ref=e143]:
+            - link "Brain" [ref=e144] [cursor=pointer]:
+              - /url: /brain
+              - img [ref=e145]
+              - generic [ref=e157]: Brain
+          - listitem [ref=e158]:
+            - link "Employee" [ref=e159] [cursor=pointer]:
+              - /url: /employee
+              - img [ref=e160]
+              - generic [ref=e163]: Employee
+          - listitem [ref=e164]:
+            - link "Reachy" [ref=e165] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e166]
+              - generic [ref=e169]: Reachy
+          - listitem [ref=e170]:
+            - link "Teleop" [ref=e171] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e172]
+              - generic [ref=e174]: Teleop
+          - listitem [ref=e175]:
+            - link "Reachy Meetings" [ref=e176] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e177]
+              - generic [ref=e181]: Reachy Meetings
+          - listitem [ref=e182]:
+            - link "Reachy + HA" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e184]
+              - generic [ref=e187]: Reachy + HA
+      - generic [ref=e188]:
+        - generic [ref=e189]: Automation
+        - list [ref=e190]:
+          - listitem [ref=e191]:
+            - link "Agent Tasks" [ref=e192] [cursor=pointer]:
+              - /url: /agent
+              - img [ref=e193]
+              - generic [ref=e196]: Agent Tasks
+          - listitem [ref=e197]:
+            - link "Workflows" [ref=e198] [cursor=pointer]:
+              - /url: /workflows
+              - img [ref=e199]
+              - generic [ref=e203]: Workflows
+          - listitem [ref=e204]:
+            - link "Gateway" [ref=e205] [cursor=pointer]:
+              - /url: /orchestrator
+              - img [ref=e206]
+              - generic [ref=e212]: Gateway
+          - listitem [ref=e213]:
+            - link "Money Maker" [ref=e214] [cursor=pointer]:
+              - /url: /money-maker
+              - img [ref=e215]
+              - generic [ref=e217]: Money Maker
+          - listitem [ref=e218]:
+            - link "Research" [ref=e219] [cursor=pointer]:
+              - /url: /research
+              - img [ref=e220]
+              - generic [ref=e223]: Research
+          - listitem [ref=e224]:
+            - link "TikTok Shop" [ref=e225] [cursor=pointer]:
+              - /url: /tiktok-shop
+              - img [ref=e226]
+              - generic [ref=e229]: TikTok Shop
+          - listitem [ref=e230]:
+            - link "Characters" [ref=e231] [cursor=pointer]:
+              - /url: /characters
+              - img [ref=e232]
+              - generic [ref=e237]: Characters
+          - listitem [ref=e238]:
+            - link "Character Autopilot" [ref=e239] [cursor=pointer]:
+              - /url: /characters/autopilot
+              - img [ref=e240]
+              - generic [ref=e242]: Character Autopilot
+          - listitem [ref=e243]:
+            - link "Content Agent" [ref=e244] [cursor=pointer]:
+              - /url: /content-agent
+              - img [ref=e245]
+              - generic [ref=e247]: Content Agent
+          - listitem [ref=e248]:
+            - link "Predictions" [ref=e249] [cursor=pointer]:
+              - /url: /prediction-markets
+              - img [ref=e250]
+              - generic [ref=e253]: Predictions
+          - listitem [ref=e254]:
+            - link "LLC Guide" [ref=e255] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e256]
+              - generic [ref=e260]: LLC Guide
+          - listitem [ref=e261]:
+            - link "Visual Workflows" [ref=e262] [cursor=pointer]:
+              - /url: /visual-workflows
+              - img [ref=e263]
+              - generic [ref=e267]: Visual Workflows
+      - generic [ref=e268]:
+        - generic [ref=e269]: System
+        - list [ref=e270]:
+          - listitem [ref=e271]:
+            - link "Exec Dashboard" [ref=e272] [cursor=pointer]:
+              - /url: /execution-dashboard
+              - img [ref=e273]
+              - generic [ref=e276]: Exec Dashboard
+          - listitem [ref=e277]:
+            - link "Outcomes" [ref=e278] [cursor=pointer]:
+              - /url: /outcomes
+              - img [ref=e279]
+              - generic [ref=e283]: Outcomes
+          - listitem [ref=e284]:
+            - link "System Health" [ref=e285] [cursor=pointer]:
+              - /url: /system-health
+              - img [ref=e286]
+              - generic [ref=e289]: System Health
+          - listitem [ref=e290]:
+            - link "Architecture" [ref=e291] [cursor=pointer]:
+              - /url: /architecture
+              - img [ref=e292]
+              - generic [ref=e297]: Architecture
+          - listitem [ref=e298]:
+            - link "QA" [ref=e299] [cursor=pointer]:
+              - /url: /qa
+              - img [ref=e300]
+              - generic [ref=e303]: QA
+          - listitem [ref=e304]:
+            - link "Analytics" [ref=e305] [cursor=pointer]:
+              - /url: /analytics
+              - img [ref=e306]
+              - generic [ref=e308]: Analytics
+          - listitem [ref=e309]:
+            - link "Settings" [ref=e310] [cursor=pointer]:
+              - /url: /settings
+              - img [ref=e311]
+              - generic [ref=e322]: Settings
+    - list [ref=e324]:
+      - listitem [ref=e325]:
+        - button "Zero v1.0" [ref=e326] [cursor=pointer]:
+          - generic [ref=e328]: Zero v1.0
+    - button "Toggle Sidebar" [ref=e329]
+  - main [ref=e330]:
+    - generic [ref=e331]:
+      - button "Toggle Sidebar" [ref=e332] [cursor=pointer]:
+        - img
+        - generic [ref=e333]: Toggle Sidebar
+      - generic [ref=e334]:
+        - generic [ref=e335]: Zero
+        - generic [ref=e336]: /
+        - generic [ref=e337]: Zero
+      - button "Search... Ctrl K" [ref=e338] [cursor=pointer]:
+        - img [ref=e339]
+        - generic [ref=e342]: Search...
+        - generic [ref=e343]:
+          - generic [ref=e344]: Ctrl
+          - text: K
+      - button "9+" [ref=e346] [cursor=pointer]:
+        - img [ref=e347]
+        - generic [ref=e350]: 9+
+    - main [ref=e351]:
+      - generic [ref=e352]:
+        - generic [ref=e353]:
+          - generic [ref=e354]:
+            - heading "Meal Manager" [level=1] [ref=e355]:
+              - img [ref=e356]
+              - text: Meal Manager
+            - paragraph [ref=e359]: Catalog, promo stacking, shipment tracking, best-price discovery.
+          - generic [ref=e360]:
+            - button "Scan email" [ref=e361] [cursor=pointer]:
+              - img [ref=e362]
+              - text: Scan email
+            - button "Hunt promos" [ref=e365] [cursor=pointer]:
+              - img [ref=e366]
+              - text: Hunt promos
+            - button "Refresh catalog" [ref=e368] [cursor=pointer]:
+              - img [ref=e369]
+              - text: Refresh catalog
+        - generic [ref=e374]:
+          - button "Overview" [ref=e375] [cursor=pointer]
+          - button "Services 25" [ref=e376] [cursor=pointer]:
+            - text: Services
+            - generic [ref=e377]: "25"
+          - button "Cheapest" [ref=e378] [cursor=pointer]
+          - button "Promos" [ref=e379] [cursor=pointer]
+          - button "Card offers" [ref=e380] [cursor=pointer]
+          - button "Portals" [ref=e381] [cursor=pointer]
+          - button "Shipments" [ref=e382] [cursor=pointer]
+        - generic [ref=e383]:
+          - generic [ref=e384]:
+            - heading "Recent in-transit shipments" [level=2] [ref=e385]:
+              - img [ref=e386]
+              - text: Recent in-transit shipments
+            - generic [ref=e389]: No shipments tracked yet. Click “Scan email”.
+          - generic [ref=e390]:
+            - heading "Hottest promos" [level=2] [ref=e391]:
+              - img [ref=e392]
+              - text: Hottest promos
+            - generic [ref=e394]: No promos yet. Click “Hunt promos”.
+  - button "Voice settings" [ref=e395] [cursor=pointer]:
+    - img [ref=e396]
+  - button "Start recording a voice command" [ref=e399] [cursor=pointer]:
+    - img [ref=e400]

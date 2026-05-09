@@ -72,7 +72,14 @@ export default {
   				'-apple-system',
   				'BlinkMacSystemFont',
   				'sans-serif'
-  			]
+  			],
+  			'display-hook': ['Anton', 'Impact', 'sans-serif'],
+  			'display-stat': ['"Bebas Neue"', 'Impact', 'sans-serif'],
+  			'display-quote': ['"Playfair Display"', 'Georgia', 'serif'],
+  			'display-hot': ['"Permanent Marker"', 'Comic Sans MS', 'cursive'],
+  			'display-shout': ['Bangers', 'Impact', 'sans-serif'],
+  			'display-block': ['Staatliches', 'Impact', 'sans-serif'],
+  			'display-body': ['Inter', 'system-ui', 'sans-serif']
   		},
   		backdropBlur: {
   			glass: '24px'

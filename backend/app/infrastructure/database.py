@@ -149,6 +149,14 @@ async def create_tables() -> None:
             # Phase 028: TV & Movie content support
             ("character_carousels", "content_type", "VARCHAR(20) DEFAULT 'character'"),
             ("character_carousels", "media_title_id", "VARCHAR(64)"),
+            # Phase 036: 24/7 Employee — reference-video learning + carousel re-audit + typed research profiles
+            ("characters", "style_exemplars", "JSONB DEFAULT '[]'::jsonb"),
+            ("characters", "profile_version", "VARCHAR(30)"),
+            ("character_reference_videos", "learnings_applied_at", "TIMESTAMPTZ"),
+            ("character_carousels", "last_audited_at", "TIMESTAMPTZ"),
+            ("character_carousels", "audit_report", "JSONB"),
+            # Reachy Mini voice + meeting pipeline: per-recording mic selection
+            ("meeting_recordings", "mic_device_name", "VARCHAR(255)"),
         ]
 
         # Phase 028: Make character_id nullable for media-only carousels

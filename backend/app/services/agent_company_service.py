@@ -24,6 +24,18 @@ from app.models.agent_company import (
 logger = structlog.get_logger()
 
 
+COMPANY_AGENT_PROMPT_POLICY = """
+Company-agent execution policy:
+1. Do safe internal work before asking Adam. Draft the checklist, packet, copy, evidence list, task update, or decision memo using the facts available.
+2. Ask Adam at most one question, and only when the answer blocks the next safe internal step or an approval-gated external step. If the uncertainty does not block progress, choose the safest internal default and list it in assumptions_made.
+3. Every question_for_adam item must be an object with: question, recommended_default, why_needed, blocks_progress, decision_type, answer_type, priority. The recommended_default should be the answer you would use if Adam says "use your judgment."
+4. For legal, tax, finance, public/client communication, account, purchase, filing, DNS, email, credential, and live-trading actions: prepare the exact Adam action packet and approval_request. Do not claim the action was performed.
+5. Make recommended_task_updates concrete. Use sections named Goal, Steps, Acceptance Criteria, Evidence/Links, Guardrail, and Adam Action when useful.
+6. Self-improve the prompt run. Include quality_checks, assumptions_made, self_improvement_notes, and legion_prompt_feedback so the prompt evaluation bridge can grade and improve future agent prompts.
+7. Use ADA AI LLC as the legal company fact. Do not mention old entity assumptions or live trading execution.
+""".strip()
+
+
 def _orm_to_role(row: AgentRoleModel) -> AgentRole:
     return AgentRole(
         id=row.id,
@@ -58,6 +70,10 @@ def _orm_to_task(row: AgentTaskModel) -> AgentTask:
         parent_task_id=row.parent_task_id,
         cost_usd=row.cost_usd,
         error=row.error,
+        lease_id=row.lease_id,
+        lease_expires_at=row.lease_expires_at,
+        attempt_count=row.attempt_count or 0,
+        last_heartbeat_at=row.last_heartbeat_at,
         created_at=row.created_at,
         started_at=row.started_at,
         completed_at=row.completed_at,
@@ -184,8 +200,11 @@ class AgentCompanyService:
                 raise ValueError(f"Task {task_id} is {row.status}, cannot execute")
 
             # Mark in progress
+            now = datetime.now(timezone.utc)
             row.status = "in_progress"
-            row.started_at = datetime.now(timezone.utc)
+            row.started_at = now
+            row.last_heartbeat_at = now
+            row.attempt_count = int(row.attempt_count or 0) + 1
             await session.commit()
 
         # Load role
@@ -207,7 +226,11 @@ class AgentCompanyService:
                 task_row = await session.get(AgentTaskModel, task_id)
                 task_row.status = "completed"
                 task_row.result = result
+                task_row.error = None
                 task_row.completed_at = datetime.now(timezone.utc)
+                task_row.lease_id = None
+                task_row.lease_expires_at = None
+                task_row.last_heartbeat_at = datetime.now(timezone.utc)
                 # Cost is tracked by unified LLM client in llm_usage table
                 await session.commit()
 
@@ -216,6 +239,16 @@ class AgentCompanyService:
 
         except Exception as e:
             logger.error("agent_task_failed", task_id=task_id, error=str(e))
+            if self._can_complete_company_internal_fallback(row):
+                fallback = self._deterministic_company_result(role, row, str(e))
+                await self._complete_task(task_id, fallback)
+                logger.warning(
+                    "agent_task_completed_with_company_fallback",
+                    task_id=task_id,
+                    role=role.id,
+                    error=str(e)[:300],
+                )
+                return await self.get_task(task_id)
             await self._fail_task(task_id, str(e))
             return await self.get_task(task_id)
 
@@ -315,7 +348,31 @@ class AgentCompanyService:
 
     def _build_task_prompt(self, task: AgentTaskModel) -> str:
         """Build prompt from task fields."""
-        parts = [f"Task: {task.title}"]
+        canonical = {
+            "company": "ADA AI LLC",
+            "public_brand": "ADA AI",
+            "agent_meaning": "ADA is Adam Doherty's Automated Decision Agent.",
+            "llc_status": "Adam confirmed ADA AI LLC has been created.",
+            "autonomy": "approval_staged_internal_work",
+            "guardrails": [
+                "Prepare drafts, packets, checklists, research, questions, and internal task updates.",
+                "Do not file, purchase, open accounts, send client/public messages, make tax/legal decisions, or place live trades.",
+                "Live trading remains decision-support only unless Adam explicitly approves an external execution step.",
+            ],
+            "official_sources": {
+                "sba_startup_steps": "https://www.sba.gov/business-guide/10-steps-start-your-business",
+                "irs_ein": "https://www.irs.gov/businesses/small-businesses-self-employed/get-an-employer-identification-number",
+                "florida_sunbiz_llc": "https://dos.fl.gov/sunbiz/start-business/efile/fl-llc/",
+                "uspto_trademark_search": "https://www.uspto.gov/trademarks/search",
+                "fincen_boi": "https://www.fincen.gov/boi",
+            },
+        }
+        parts = [
+            "You are working inside Zero Company OS for ADA AI LLC.",
+            f"Canonical facts: {json.dumps(canonical, default=str)}",
+            COMPANY_AGENT_PROMPT_POLICY,
+            f"Task: {task.title}",
+        ]
         if task.description:
             parts.append(f"Description: {task.description}")
         if task.context:
@@ -324,10 +381,220 @@ class AgentCompanyService:
                 ctx_str = ctx_str[:3000] + "...(truncated)"
             parts.append(f"Context: {ctx_str}")
         parts.append(
-            "Respond with valid JSON containing your analysis, findings, or results. "
-            "Include a 'summary' field with a brief text summary."
+            "Respond with valid JSON using these keys: "
+            "summary, completed_internal_steps, questions_for_adam, approval_requests, "
+            "evidence_links, recommended_task_updates, assumptions_made, quality_checks, "
+            "self_improvement_notes, legion_prompt_feedback, confidence, stale_assumption_flags. "
+            "questions_for_adam must be an array of zero or one objects. Do not ask generic confirmation questions. "
+            "approval_requests must only describe approval-gated external follow-through; never claim you performed it. "
+            "If you cannot use a live source, state the stale-assumption risk and prepare the safest internal packet anyway."
         )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _can_complete_company_internal_fallback(task: AgentTaskModel) -> bool:
+        """Allow deterministic completion for safe Company OS internal packets.
+
+        This keeps Zero's company agents useful overnight even if a local/remote
+        model returns malformed JSON or the LLM router is temporarily unhealthy.
+        It is intentionally limited to internal work packets and never applies
+        to tasks that can spend money, file documents, contact clients, or make
+        public/account changes.
+        """
+        context = task.context or {}
+        if task.project_id != "company":
+            return False
+        if context.get("external_actions_allowed") is True:
+            return False
+        return context.get("autonomy") in {None, "internal_work", "write_local", "approval_staged"}
+
+    @staticmethod
+    def _role_work_packet(role_id: str, title: str) -> Dict[str, Any]:
+        base_packets: Dict[str, Dict[str, Any]] = {
+            "legal_compliance": {
+                "summary": "Prepared an internal LLC/legal readiness packet for Adam review.",
+                "deliverables": [
+                    "Confirm legal name availability before filing.",
+                    "Prepare registered agent decision notes.",
+                    "Collect operating agreement and IP assignment templates for attorney review.",
+                    "Queue approvals for any filing, signature, attorney engagement, or public legal change.",
+                ],
+                "checklist": [
+                    "Record ADA AI LLC Sunbiz filing confirmation.",
+                    "Choose registered agent option and record rationale.",
+                    "Draft operating agreement review notes.",
+                    "Draft IP assignment inventory covering code, domains, docs, and brand assets.",
+                    "Add Duval LBTR and attorney consult tasks to Formation Sprint.",
+                ],
+                "approval_notes": [
+                    "Zero may prepare packets only.",
+                    "Adam must approve or perform Sunbiz filing, EIN, signatures, LBTR, and attorney engagement.",
+                ],
+            },
+            "finance_cpa": {
+                "summary": "Prepared a CPA readiness packet and finance evidence checklist.",
+                "deliverables": [
+                    "Initial bookkeeping category map.",
+                    "Receipt and subscription evidence checklist.",
+                    "Hardware asset evidence checklist with placed-in-service and business-use fields.",
+                    "Open questions for CPA consult.",
+                ],
+                "checklist": [
+                    "Create vendor/subscription registry.",
+                    "Create hardware asset register for GPUs, computers, printers, robotics gear.",
+                    "Capture home-office photos, square footage, and business-use notes.",
+                    "Define monthly close checklist and CPA export format.",
+                    "Queue approval before opening bank/card accounts or paying professionals.",
+                ],
+                "approval_notes": [
+                    "Zero cannot make tax elections or represent CPA advice.",
+                    "Adam/CPA must approve deductions, filings, accounts, and payments.",
+                ],
+            },
+            "procurement_asset": {
+                "summary": "Prepared banking, procurement, asset, and subscription setup checklist.",
+                "deliverables": [
+                    "Business account setup readiness list.",
+                    "Subscription migration checklist.",
+                    "Asset registry fields for warranty, serial, renewal, and business-use percentage.",
+                    "Procurement approval policy for purchases and renewals.",
+                ],
+                "checklist": [
+                    "List required vendors: email, bookkeeping, password vault, receipt inbox, cloud/dev tools.",
+                    "Add renewal date and owner agent for every subscription.",
+                    "Track purchase approval state before any spend.",
+                    "Record serial numbers, invoices, warranty links, and placed-in-service dates.",
+                    "Flag high-risk purchases for Adam approval.",
+                ],
+                "approval_notes": [
+                    "Purchases, subscriptions, account openings, and vendor contracts require Adam approval.",
+                ],
+            },
+            "consulting_revenue": {
+                "summary": "Prepared consulting offer launch checklist and CRM starter path.",
+                "deliverables": [
+                    "ICP draft for AI adoption consulting.",
+                    "Service package skeletons.",
+                    "Discovery call questionnaire outline.",
+                    "CRM follow-up task pattern.",
+                ],
+                "checklist": [
+                    "Define first ICP and painful use cases.",
+                    "Draft 2-3 fixed-scope service packages.",
+                    "Create discovery questionnaire and proposal/SOW template tasks.",
+                    "Add adamdoherty.com update plan.",
+                    "Queue approval before sending outreach, proposals, or public website changes.",
+                ],
+                "approval_notes": [
+                    "Client communications and public website changes require Adam approval.",
+                ],
+            },
+            "knowledge_second_brain": {
+                "summary": "Prepared company docs and second-brain sync checklist.",
+                "deliverables": [
+                    "Company docs context map.",
+                    "Decision-log update convention.",
+                    "Weekly review note outline.",
+                    "Stale-doc warning checklist.",
+                ],
+                "checklist": [
+                    "Link company docs under docs/company to related UI routes.",
+                    "Mirror summaries into Obsidian weekly review notes.",
+                    "Record formation decisions with date, source, owner, and approval state.",
+                    "Keep Zero database canonical for tasks and approvals.",
+                ],
+                "approval_notes": [
+                    "Obsidian remains a narrative mirror; Zero remains the operational source of truth.",
+                ],
+            },
+        }
+        return base_packets.get(
+            role_id,
+            {
+                "summary": f"Prepared an internal work packet for {title}.",
+                "deliverables": [
+                    "Task summary.",
+                    "Current assumptions.",
+                    "Ready/blocked next-action list.",
+                    "Approval notes for risky follow-through.",
+                ],
+                "checklist": [
+                    "Review linked company docs.",
+                    "Separate safe internal work from approval-gated external actions.",
+                    "Create or update related company work items.",
+                    "Report blockers and next steps to Zero Operator.",
+                ],
+                "approval_notes": [
+                    "External, legal, financial, client, public, and account-changing actions require approval.",
+                ],
+            },
+        )
+
+    def _deterministic_company_result(self, role: AgentRole, task: AgentTaskModel, error: str) -> Dict[str, Any]:
+        context = task.context or {}
+        packet = self._role_work_packet(role.id, task.title)
+        return {
+            "summary": packet["summary"],
+            "status": "completed_with_deterministic_fallback",
+            "source": "deterministic_company_agent_fallback",
+            "role": role.id,
+            "role_name": role.name,
+            "task_id": task.id,
+            "title": task.title,
+            "work_packet": context.get("work_packet", "company_internal_work"),
+            "autonomy": context.get("autonomy", "internal_work"),
+            "deliverables": packet["deliverables"],
+            "checklist": packet["checklist"],
+            "next_actions": [
+                "Review this packet in the Company Operator dashboard.",
+                "Convert any missing checklist item into an editable company task.",
+                "Queue approval for anything involving money, filings, legal/tax decisions, clients, public sites, or account changes.",
+            ],
+            "questions_for_adam": [],
+            "approval_notes": packet["approval_notes"],
+            "assumptions_made": [
+                "No external action was taken.",
+                "The fallback produced a safe internal packet because the LLM path failed.",
+            ],
+            "quality_checks": [
+                "Question budget respected.",
+                "External actions remain approval-gated.",
+                "ADA AI LLC canonical company fact preserved.",
+            ],
+            "self_improvement_notes": [
+                "If this fallback fires often, improve the role prompt or structured output schema for this packet type.",
+            ],
+            "legion_prompt_feedback": {
+                "prompt_issue": "LLM execution failed or returned malformed output.",
+                "recommended_mutation": "Make company-agent JSON schema stricter and require concrete internal deliverables before questions.",
+            },
+            "linked_company_task_id": context.get("zero_task_id"),
+            "docs_context": [
+                "docs/company/INDEX.md",
+                "docs/company/task-management-system.md",
+                "docs/company/zero-company-operator.md",
+                "docs/company/llc-compliance.md",
+            ],
+            "guardrails": {
+                "external_actions_allowed": False,
+                "requires_adam_approval_for_high_risk_actions": True,
+            },
+            "llm_error": error[:800],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def _complete_task(self, task_id: str, result: Dict[str, Any]):
+        async with get_session() as session:
+            row = await session.get(AgentTaskModel, task_id)
+            if row:
+                row.status = "completed"
+                row.result = result
+                row.error = None
+                row.completed_at = datetime.now(timezone.utc)
+                row.lease_id = None
+                row.lease_expires_at = None
+                row.last_heartbeat_at = datetime.now(timezone.utc)
+                await session.commit()
 
     async def _fail_task(self, task_id: str, error: str):
         async with get_session() as session:
@@ -336,6 +603,9 @@ class AgentCompanyService:
                 row.status = "failed"
                 row.error = error[:2000]
                 row.completed_at = datetime.now(timezone.utc)
+                row.lease_id = None
+                row.lease_expires_at = None
+                row.last_heartbeat_at = datetime.now(timezone.utc)
                 await session.commit()
 
     # ------------------------------------------------------------------

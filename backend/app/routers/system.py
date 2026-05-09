@@ -8,9 +8,19 @@ self-knowledge introspection, and other operational endpoints.
 import os
 import json
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 from typing import Dict, Any
 
 router = APIRouter()
+
+
+class SchedulerJobToggleRequest(BaseModel):
+    enabled: bool
+
+
+class SchedulerJobsToggleRequest(BaseModel):
+    job_names: list[str] = Field(default_factory=list, min_length=1)
+    enabled: bool
 
 
 @router.get("/status")
@@ -59,7 +69,7 @@ async def get_self_knowledge() -> Dict[str, Any]:
     try:
         from app.services.scheduler_service import get_scheduler_service
         svc = get_scheduler_service()
-        status = svc.get_status()
+        status = await svc.get_status_detailed()
         scheduler_jobs = status.get("jobs", [])
     except Exception:
         pass
@@ -151,7 +161,7 @@ async def reset_circuit_breaker(name: str) -> Dict[str, Any]:
 async def scheduler_status() -> Dict[str, Any]:
     """Get scheduler status with next run times."""
     from app.services.scheduler_service import get_scheduler_service
-    return get_scheduler_service().get_status()
+    return await get_scheduler_service().get_status_detailed()
 
 
 @router.get("/scheduler/audit")
@@ -171,6 +181,28 @@ async def trigger_job(job_name: str) -> Dict[str, Any]:
     result = await get_scheduler_service().trigger_job(job_name)
     if not result.get("success"):
         raise HTTPException(400, result.get("error", "Unknown error"))
+    return result
+
+
+@router.patch("/scheduler/jobs/{job_name}")
+async def set_scheduler_job_enabled(job_name: str, body: SchedulerJobToggleRequest) -> Dict[str, Any]:
+    """Enable or disable one scheduler job."""
+    from app.services.scheduler_service import get_scheduler_service
+
+    result = await get_scheduler_service().set_job_enabled(job_name, body.enabled)
+    if not result.get("success"):
+        raise HTTPException(404, result.get("error", "Unknown job"))
+    return result
+
+
+@router.patch("/scheduler/jobs")
+async def set_scheduler_jobs_enabled(body: SchedulerJobsToggleRequest) -> Dict[str, Any]:
+    """Enable or disable multiple scheduler jobs."""
+    from app.services.scheduler_service import get_scheduler_service
+
+    result = await get_scheduler_service().set_jobs_enabled(body.job_names, body.enabled)
+    if not result.get("success"):
+        raise HTTPException(404, result.get("error", "Unknown job"))
     return result
 
 

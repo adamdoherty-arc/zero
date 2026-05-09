@@ -29,6 +29,7 @@ class AgentTaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     DELEGATED = "delegated"
+    NEEDS_REVIEW = "needs_review"
 
 
 class ExperimentType(str, Enum):
@@ -114,6 +115,10 @@ class AgentTask(BaseModel):
     parent_task_id: Optional[str] = None
     cost_usd: float = 0.0
     error: Optional[str] = None
+    lease_id: Optional[str] = None
+    lease_expires_at: Optional[datetime] = None
+    attempt_count: int = 0
+    last_heartbeat_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

@@ -119,11 +119,72 @@ class TaskModel(Base):
     source: Mapped[str] = mapped_column(String(30), default="MANUAL")
     source_reference: Mapped[Optional[str]] = mapped_column(Text)
     blocked_reason: Mapped[Optional[str]] = mapped_column(Text)
+    domain: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    owner_agent: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    risk_level: Mapped[str] = mapped_column(String(20), default="medium", index=True)
+    approval_state: Mapped[str] = mapped_column(String(20), default="none", index=True)
+    approval_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    links: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    estimate_points: Mapped[Optional[int]] = mapped_column(Integer)
+    parent_task_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
 
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_tasks_project_status_sort", "project_id", "status", "sort_order"),
+        Index("idx_tasks_project_domain_status", "project_id", "domain", "status"),
+        Index("idx_tasks_project_due", "project_id", "due_at"),
+    )
+
+
+class CompanyTaskEventModel(Base):
+    """Append-only audit trail for company work-item activity."""
+    __tablename__ = "company_task_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    actor: Mapped[str] = mapped_column(String(100), default="system", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    before: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    after: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_company_task_events_task_created", "task_id", "created_at"),
+    )
+
+
+class CompanyWorkItemReviewModel(Base):
+    """Latest dashboard review packet for a company work item."""
+    __tablename__ = "company_work_item_reviews"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    recommendation: Mapped[str] = mapped_column(String(40), nullable=False, default="keep", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    missing_info: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    action_steps: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    acceptance_criteria: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    automation_plan: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    source_links: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    reviewed_by: Mapped[str] = mapped_column(String(100), default="zero-company-operator", index=True)
+    operator_run_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_company_work_item_reviews_score", "score"),
+        Index("idx_company_work_item_reviews_recommendation", "recommendation"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -441,10 +502,41 @@ class ReminderModel(Base):
 # Email Cache (Gmail sync)
 # ---------------------------------------------------------------------------
 
+class OAuthAccountModel(Base):
+    """One row per connected OAuth identity (e.g. personal Gmail + work Gmail).
+
+    Schema follows fastapi-users `OAuthAccount` shape (MIT) — see CLAUDE.md
+    "CHECK GITHUB BEFORE BUILDING". Stores credentials in JSONB so refresh-token
+    rotation lands without a migration.
+    """
+
+    __tablename__ = "oauth_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # uuid hex
+    provider: Mapped[str] = mapped_column(String(50), nullable=False, default="google")
+    label: Mapped[str] = mapped_column(String(50), nullable=False)  # personal | work | ...
+    email: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    credentials: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    scopes: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    quiet_hours: Mapped[Optional[dict]] = mapped_column(JSONB, default={})  # {start:"09:00",end:"17:00",weekdays_only:true} or {}
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})  # history_id, last_sync, etc.
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_refreshed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("idx_oauth_accounts_provider_email", "provider", "email", unique=True),
+    )
+
+
 class EmailCacheModel(Base):
     __tablename__ = "email_cache"
 
+    # Composite-key migration: (id, account_id) becomes the natural PK once all
+    # rows are backfilled. For now id stays primary so old code still works;
+    # account_id is filtered as a column.
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     thread_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     subject: Mapped[Optional[str]] = mapped_column(Text)
     snippet: Mapped[Optional[str]] = mapped_column(Text)
@@ -475,6 +567,7 @@ class CalendarEventCacheModel(Base):
     __tablename__ = "calendar_event_cache"
 
     id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    account_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     calendar_id: Mapped[str] = mapped_column(String(100), default="primary")
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
@@ -500,6 +593,11 @@ class CalendarEventCacheModel(Base):
 # ---------------------------------------------------------------------------
 
 class SyncStatusModel(Base):
+    """Legacy global sync status. Per-account sync state (incl. history_id)
+    now lives on OAuthAccountModel.metadata_. Kept for backward compatibility
+    with existing rows + the /status endpoints — populated for the *default*
+    account only."""
+
     __tablename__ = "sync_status"
 
     service_name: Mapped[str] = mapped_column(String(50), primary_key=True)
@@ -1239,6 +1337,7 @@ class MeetingRecordingModel(Base):
     duration_seconds: Mapped[Optional[float]] = mapped_column(Float)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
     source: Mapped[str] = mapped_column(String(10), default="mixed")
+    mic_device_name: Mapped[Optional[str]] = mapped_column(String(255))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -1281,6 +1380,23 @@ class MeetingSpeakerMappingModel(Base):
     meeting_id: Mapped[str] = mapped_column(String(64), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False, index=True)
     speaker_label: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+
+class VoiceprintModel(Base):
+    """Persistent voice fingerprint for a single identity, used to auto-label
+    speakers across meetings via cosine match against pyannote embeddings."""
+    __tablename__ = "voiceprints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    embedding = mapped_column(Vector(256), nullable=False)
+    samples_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_meeting_id: Mapped[Optional[str]] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1487,12 +1603,72 @@ class AgentTaskModel(Base):
     parent_task_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     error: Mapped[Optional[str]] = mapped_column(Text)
+    lease_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         Index("idx_agent_tasks_created", "created_at"),
+        Index("idx_agent_tasks_lease_status", "lease_expires_at", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Company Operator: always-on Zero company manager run log
+# ---------------------------------------------------------------------------
+
+class CompanyOperatorRunModel(Base):
+    __tablename__ = "company_operator_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    requested_by: Mapped[str] = mapped_column(String(100), default="scheduler", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    report: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    actions: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    errors: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_company_operator_run_type_created", "run_type", "created_at"),
+        Index("idx_company_operator_status_created", "status", "created_at"),
+    )
+
+
+class CompanyAgentQuestionModel(Base):
+    """Question an internal company agent needs Adam to answer."""
+    __tablename__ = "company_agent_questions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    context: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    answer_type: Mapped[str] = mapped_column(String(30), default="text", index=True)
+    options: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    priority: Mapped[str] = mapped_column(String(20), default="medium", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    asked_by_agent: Mapped[str] = mapped_column(String(64), default="ceo", index=True)
+    task_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    agent_task_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    operator_run_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(80), default="company_agent", index=True)
+    answer: Mapped[Optional[str]] = mapped_column(Text)
+    answered_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    answered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_company_agent_questions_status_created", "status", "created_at"),
+        Index("idx_company_agent_questions_task_status", "task_id", "status"),
+        Index("idx_company_agent_questions_agent_status", "asked_by_agent", "status"),
     )
 
 
@@ -1611,6 +1787,11 @@ class CharacterModel(Base):
     discovery_evidence: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
     discovery_hits: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Phase 036: 24/7 Employee — reference-video style exemplars consumed by carousel synthesis
+    style_exemplars: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    # Phase 036: Typed research profile version marker (entity_type: character|tv|movie)
+    profile_version: Mapped[Optional[str]] = mapped_column(String(30))
+
     __table_args__ = (
         Index("idx_characters_universe_status", "universe", "status"),
     )
@@ -1683,6 +1864,14 @@ class CharacterCarouselModel(Base):
     # Phase 027: Carousel versions. Pointer to latest snapshot row for fast head lookup.
     current_version_id: Mapped[Optional[str]] = mapped_column(String(64))
 
+    # Migration 035 (W3): retry counter driven by swarm fail/retry loop.
+    retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    rubric: Mapped[Optional[dict]] = mapped_column(JSONB)
+
+    # Phase 036: 24/7 Employee — carousel re-audit loop
+    last_audited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    audit_report: Mapped[Optional[dict]] = mapped_column(JSONB)
+
     __table_args__ = (
         Index("idx_carousel_character_status", "character_id", "status"),
     )
@@ -1745,6 +1934,8 @@ class CharacterImageModel(Base):
     is_approved: Mapped[Optional[bool]] = mapped_column(Boolean)
     feedback_reason: Mapped[Optional[str]] = mapped_column(Text)
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    phash: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -1802,6 +1993,9 @@ class CharacterReferenceVideoModel(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text)
     promoted_character_id: Mapped[Optional[str]] = mapped_column(String(64))
     applied_fact_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Phase 036: 24/7 Employee — marks when apply_learnings() consumed this row
+    learnings_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
@@ -2054,6 +2248,8 @@ class MediaImageModel(Base):
     is_approved: Mapped[Optional[bool]] = mapped_column(Boolean)
     feedback_reason: Mapped[Optional[str]] = mapped_column(Text)
     validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    phash: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    sha256: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -2340,3 +2536,680 @@ class CompetitorContentSampleModel(Base):
         Index("idx_competitor_niche_engagement", "niche", "engagement_rate"),
         Index("idx_competitor_platform_retrieved", "platform", "retrieved_at"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Content-pipeline hardening (migration 035)
+# ---------------------------------------------------------------------------
+
+class SwarmRoleWeightModel(Base):
+    """Per-role calibrated weight for the content swarm.
+
+    Populated by the weekly swarm_calibration scheduler job from the last 30 days
+    of AgentPredictionModel outcomes. Read at vote time by content_swarm_service.
+    """
+    __tablename__ = "swarm_role_weights"
+
+    role_name: Mapped[str] = mapped_column(String(50), primary_key=True)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    brier_score: Mapped[Optional[float]] = mapped_column(Float)
+    rank_correlation: Mapped[Optional[float]] = mapped_column(Float)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    role_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default={})
+
+
+class CharacterLoreChunkModel(Base):
+    """Grounded lore chunks for retrieval-augmented carousel synthesis.
+
+    Ingestor job (scheduler: lore_ingestion) walks CharacterModel.research_data,
+    chunks text, embeds via the unified embedding provider, and upserts rows.
+    Synthesis node in the carousel graph performs pgvector search over these
+    chunks rather than dumping raw research_data into the prompt.
+    """
+    __tablename__ = "character_lore_chunks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    source: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_license: Mapped[Optional[str]] = mapped_column(String(40))
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, default=0)
+    chunk_metadata: Mapped[dict] = mapped_column("chunk_metadata", JSONB, default={})
+    embedding = mapped_column(Vector(768), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CharacterQuoteModel(Base):
+    """Canonical character quotes with pgvector embedding for retrieval."""
+    __tablename__ = "character_quotes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    character_id: Mapped[str] = mapped_column(String(64), ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[Optional[str]] = mapped_column(String(100))
+    source_license: Mapped[Optional[str]] = mapped_column(String(40))
+    quote_metadata: Mapped[dict] = mapped_column("quote_metadata", JSONB, default={})
+    embedding = mapped_column(Vector(768), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Phase 036: 24/7 Employee — daily check-in snapshots
+# ---------------------------------------------------------------------------
+
+class EmployeeCheckinModel(Base):
+    """One row per employee check-in cycle. Holds the full aggregated report
+    (ops grade, per-subsystem grades, accomplishments, issues, wins) so the
+    dashboard can render history and detect regressions."""
+    __tablename__ = "employee_checkins"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    ops_grade: Mapped[Optional[float]] = mapped_column(Float)
+    overall_grade: Mapped[Optional[float]] = mapped_column(Float)
+    subsystem_grades: Mapped[dict] = mapped_column(JSONB, default={})
+    accomplishments: Mapped[dict] = mapped_column(JSONB, default={})
+    issues: Mapped[list] = mapped_column(JSONB, default=[])
+    wins: Mapped[list] = mapped_column(JSONB, default=[])
+    legion_task_ids: Mapped[list] = mapped_column(JSONB, default=[])
+    full_report: Mapped[dict] = mapped_column(JSONB, default={})
+
+
+# ---------------------------------------------------------------------------
+# SecondBrain phases 2 / 3 / 5: vault chunks, approval queue, drift alerts
+# ---------------------------------------------------------------------------
+
+class VaultChunkModel(Base):
+    """One markdown chunk from the Obsidian vault (embedded + BM25-indexed).
+
+    Partition drives retrieval: reference | projects | journal | inbox.
+    Journal gets time-decay; the other partitions don't.
+    """
+    __tablename__ = "vault_chunks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    path: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    partition: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    chunk_idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    heading_path: Mapped[Optional[str]] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    tags: Mapped[list] = mapped_column(ARRAY(Text), default=list)
+    frontmatter: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    embedding = mapped_column(Vector(1024), nullable=True)
+    file_mtime: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AgentApprovalModel(Base):
+    """Queued tool call awaiting human approval before execution.
+
+    Gates every write_external and financial tool call per SecondBrain §6.
+    """
+    __tablename__ = "agent_approvals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    tier: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    arguments: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    decision_reason: Mapped[Optional[str]] = mapped_column(Text)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(100))
+    result: Mapped[Optional[dict]] = mapped_column(JSONB)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class AgentAlertModel(Base):
+    """Output of the nightly drift scanner. One row per rule-firing.
+
+    The weekly review reads open alerts to drive the 'Get Current' pass.
+    """
+    __tablename__ = "agent_alerts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    rule: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+    salience: Mapped[float] = mapped_column(Float, default=0.5)
+    entity_type: Mapped[Optional[str]] = mapped_column(String(50))
+    entity_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    interrupted_user: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    interrupted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Meal Manager
+# ---------------------------------------------------------------------------
+
+
+class MealServiceModel(Base):
+    __tablename__ = "meal_services"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    website_url: Mapped[str] = mapped_column(Text, nullable=False)
+    menu_url: Mapped[Optional[str]] = mapped_column(Text)
+    email_sender_patterns: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    tier: Mapped[str] = mapped_column(String(30), default="unknown", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="tracked", index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    base_price_per_meal: Mapped[Optional[float]] = mapped_column(Float)
+    shipping_fee: Mapped[Optional[float]] = mapped_column(Float)
+    min_order_meals: Mapped[Optional[int]] = mapped_column(Integer)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, default={})
+    last_catalog_refresh_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class MealMenuItemModel(Base):
+    __tablename__ = "meal_menu_items"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    service_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    base_price: Mapped[Optional[float]] = mapped_column(Float)
+    calories: Mapped[Optional[int]] = mapped_column(Integer)
+    protein_g: Mapped[Optional[float]] = mapped_column(Float)
+    tags: Mapped[Optional[list]] = mapped_column(ARRAY(Text), default=[])
+    image_url: Mapped[Optional[str]] = mapped_column(Text)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    available: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("service_id", "name", name="uq_meal_menu_items_service_name"),
+        Index("idx_meal_menu_items_service", "service_id"),
+    )
+
+
+class MealPromoCodeModel(Base):
+    __tablename__ = "meal_promo_codes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    code: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    service_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    service_slug_hint: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    source: Mapped[str] = mapped_column(String(40), default="other", index=True)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    discount_type: Mapped[str] = mapped_column(String(30), default="percent")
+    discount_value: Mapped[float] = mapped_column(Float, default=0.0)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    min_order: Mapped[Optional[float]] = mapped_column(Float)
+    new_customer_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    stackable: Mapped[bool] = mapped_column(Boolean, default=False)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    success_rate: Mapped[Optional[float]] = mapped_column(Float)
+    times_seen: Mapped[int] = mapped_column(Integer, default=1)
+    is_referral: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("idx_meal_promo_codes_service", "service_id"),
+        Index("idx_meal_promo_codes_expires", "expires_at"),
+    )
+
+
+class MealCardOfferModel(Base):
+    __tablename__ = "meal_card_offers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    network: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    card_nickname: Mapped[Optional[str]] = mapped_column(String(100))
+    merchant_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    service_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    offer_type: Mapped[str] = mapped_column(String(30), default="dollar")
+    value: Mapped[float] = mapped_column(Float, default=0.0)
+    min_spend: Mapped[Optional[float]] = mapped_column(Float)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    activated: Mapped[bool] = mapped_column(Boolean, default=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(String(20), default="manual")
+    source_email_id: Mapped[Optional[str]] = mapped_column(String(100))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MealRebatePortalOfferModel(Base):
+    __tablename__ = "meal_rebate_portal_offers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    portal: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    service_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    merchant_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    cashback_percent: Mapped[float] = mapped_column(Float, default=0.0)
+    cashback_flat: Mapped[Optional[float]] = mapped_column(Float)
+    new_customer_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("portal", "merchant_name", "new_customer_only", name="uq_rebate_portal_merchant"),
+    )
+
+
+class MealShipmentModel(Base):
+    __tablename__ = "meal_shipments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    service_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    email_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    subject: Mapped[Optional[str]] = mapped_column(Text)
+    order_number: Mapped[Optional[str]] = mapped_column(String(100), index=True)
+    carrier: Mapped[Optional[str]] = mapped_column(String(50))
+    tracking_number: Mapped[Optional[str]] = mapped_column(String(200), index=True)
+    tracking_url: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    expected_delivery: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    meal_count: Mapped[Optional[int]] = mapped_column(Integer)
+    total_charged: Mapped[Optional[float]] = mapped_column(Float)
+    raw_body: Mapped[Optional[str]] = mapped_column(Text)
+    calendar_event_id: Mapped[Optional[str]] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("service_id", "order_number", name="uq_meal_shipments_service_order"),
+    )
+
+
+class MealPriceQuoteModel(Base):
+    __tablename__ = "meal_price_quotes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    service_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    meal_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_customer: Mapped[bool] = mapped_column(Boolean, default=False)
+    base_subtotal: Mapped[float] = mapped_column(Float, default=0.0)
+    shipping: Mapped[float] = mapped_column(Float, default=0.0)
+    total_discounts: Mapped[float] = mapped_column(Float, default=0.0)
+    total_cashback: Mapped[float] = mapped_column(Float, default=0.0)
+    final_out_of_pocket: Mapped[float] = mapped_column(Float, default=0.0)
+    final_after_cashback: Mapped[float] = mapped_column(Float, default=0.0)
+    price_per_meal: Mapped[float] = mapped_column(Float, default=0.0)
+    best_promo_id: Mapped[Optional[str]] = mapped_column(String(64))
+    best_card_offer_id: Mapped[Optional[str]] = mapped_column(String(64))
+    best_portal_offer_id: Mapped[Optional[str]] = mapped_column(String(64))
+    components: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    notes: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reachy custom motion sequences
+# ---------------------------------------------------------------------------
+
+class ReachySequenceModel(Base):
+    """User-defined motion sequences — ordered chains of emotion/dance clips."""
+    __tablename__ = "reachy_sequences"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    # steps: [{"clip": "yes1", "kind": "emotion", "gap_ms": 200}, ...]
+    steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Carousel V2 foundation (migration 039 — carosel.txt blueprint Phase 1)
+# ---------------------------------------------------------------------------
+
+class PromptVersionModel(Base):
+    """Designer / Hook / Skeptic / Judge prompt registry. DSPy GEPA writes
+    children via ``parent_id``; auto-rollback flips ``status`` to
+    ``last_known_good`` on drift alert.
+    """
+    __tablename__ = "prompt_versions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    system_text: Mapped[Optional[str]] = mapped_column(Text)
+    optimizer: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
+    model_hint: Mapped[Optional[str]] = mapped_column(String(120))
+    voice_file: Mapped[Optional[str]] = mapped_column(String(120))
+    extra: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    golden_set_score: Mapped[Optional[float]] = mapped_column(Float)
+    live_win_rate: Mapped[Optional[float]] = mapped_column(Float)
+    engagement_lift: Mapped[Optional[float]] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="shadow", index=True)
+    activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CarouselGenerationModel(Base):
+    """One row per Temporal workflow attempt. Lives alongside
+    ``CharacterCarouselModel`` until Phase 6 cutover.
+    """
+    __tablename__ = "carousel_generations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    carousel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    workflow_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    workflow_run_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    franchise: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    character_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    prompt_version_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    designer_prompt_id: Mapped[Optional[str]] = mapped_column(String(64))
+    skeptic_prompt_id: Mapped[Optional[str]] = mapped_column(String(64))
+    slides_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    judge_scores_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    source_citations_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    engagement_metrics_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    composite_score: Mapped[Optional[float]] = mapped_column(Float)
+    revision_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class JudgeScoreModel(Base):
+    """Per-axis × per-judge × per-carousel rubric score. 7 axes × 3 judges per generation."""
+    __tablename__ = "judge_scores"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    carousel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    judge_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    axis: Mapped[str] = mapped_column(String(40), nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    model_id: Mapped[Optional[str]] = mapped_column(String(120))
+    temperature: Mapped[Optional[float]] = mapped_column(Float)
+    samples_n: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    trust_weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GoldenSetModel(Base):
+    """Frozen hand-rated carousels. CI gate replays prompt changes against this set."""
+    __tablename__ = "golden_set"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    carousel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64))
+    franchise: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    frozen: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    human_score_per_axis: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    human_composite: Mapped[Optional[float]] = mapped_column(Float)
+    human_rater: Mapped[Optional[str]] = mapped_column(String(80))
+    kappa_vs_judges: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    adversarial_category: Mapped[Optional[str]] = mapped_column(String(80))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_replayed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class AtomicFactModel(Base):
+    """Citation-grounded fact ledger. Every published [fact_id:N] resolves here."""
+    __tablename__ = "atomic_facts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    subject: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    predicate: Mapped[str] = mapped_column(String(80), nullable=False)
+    object: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_quote: Mapped[Optional[str]] = mapped_column(Text)
+    trust_tier: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    entity_type: Mapped[Optional[str]] = mapped_column(String(40))
+    entity_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    franchise: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    supersedes_id: Mapped[Optional[str]] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class ImageScoreModel(Base):
+    """11-stage image curation funnel audit trail per candidate."""
+    __tablename__ = "image_scores"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    carousel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    slide_num: Mapped[Optional[int]] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    phash: Mapped[Optional[str]] = mapped_column(String(20), index=True)
+    dhash: Mapped[Optional[str]] = mapped_column(String(20))
+    width: Mapped[Optional[int]] = mapped_column(Integer)
+    height: Mapped[Optional[int]] = mapped_column(Integer)
+    blur_variance: Mapped[Optional[float]] = mapped_column(Float)
+    nsfw_score: Mapped[Optional[float]] = mapped_column(Float)
+    aspect_match: Mapped[Optional[bool]] = mapped_column(Boolean)
+    clip_relevance: Mapped[Optional[float]] = mapped_column(Float)
+    clip_alt_softmax: Mapped[Optional[dict]] = mapped_column(JSONB)
+    aesthetic_v2: Mapped[Optional[float]] = mapped_column(Float)
+    maniqa: Mapped[Optional[float]] = mapped_column(Float)
+    clip_iqa: Mapped[Optional[float]] = mapped_column(Float)
+    face_cosine: Mapped[Optional[float]] = mapped_column(Float)
+    face_actor: Mapped[Optional[str]] = mapped_column(String(120))
+    watermark_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    text_overlay_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    vlm_likeness: Mapped[Optional[float]] = mapped_column(Float)
+    vlm_is_promotional_still: Mapped[Optional[bool]] = mapped_column(Boolean)
+    vlm_response_json: Mapped[Optional[dict]] = mapped_column(JSONB)
+    vlm_model: Mapped[Optional[str]] = mapped_column(String(120))
+    # Per-call cost estimate for the Stage-8 VLM verifier. Carousel V2 cost
+    # telemetry aggregates this for the cheapest-route bandit + budget alerts.
+    vlm_cost_usd: Mapped[Optional[float]] = mapped_column(Float)
+    vlm_tier: Mapped[Optional[str]] = mapped_column(String(24))  # kimi | openrouter_free | gemini_paid
+    composite_z: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    rank: Mapped[Optional[int]] = mapped_column(Integer)
+    kept: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    drop_reason: Mapped[Optional[str]] = mapped_column(String(80))
+    upscaled_url: Mapped[Optional[str]] = mapped_column(Text)
+    crop_box: Mapped[Optional[dict]] = mapped_column(JSONB)
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EngagementSignalModel(Base):
+    """TikTok analytics rolling window — feeds bandit reward + DSPy trainset."""
+    __tablename__ = "engagement_signals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    carousel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    publish_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    t_offset_h: Mapped[int] = mapped_column(Integer, nullable=False)
+    views: Mapped[Optional[int]] = mapped_column(BigInteger)
+    likes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    comments: Mapped[Optional[int]] = mapped_column(BigInteger)
+    shares: Mapped[Optional[int]] = mapped_column(BigInteger)
+    saves: Mapped[Optional[int]] = mapped_column(BigInteger)
+    follows_from_video: Mapped[Optional[int]] = mapped_column(BigInteger)
+    completion_rate: Mapped[Optional[float]] = mapped_column(Float)
+    avg_swipe_depth: Mapped[Optional[float]] = mapped_column(Float)
+    for_you_pct: Mapped[Optional[float]] = mapped_column(Float)
+    niche_z_score: Mapped[Optional[float]] = mapped_column(Float)
+    residual: Mapped[Optional[float]] = mapped_column(Float)
+    cohort_key: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    source: Mapped[str] = mapped_column(String(24), nullable=False, default="display_api")
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BanditLogModel(Base):
+    """VW-style decision log: (decision_point, context, arm, propensity, reward)."""
+    __tablename__ = "bandit_logs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    carousel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    decision_point: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    context_features: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    arm_chosen: Mapped[str] = mapped_column(String(120), nullable=False)
+    arms_offered: Mapped[Optional[list]] = mapped_column(JSONB)
+    propensity: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    policy_id: Mapped[Optional[str]] = mapped_column(String(80))
+    reward: Mapped[Optional[float]] = mapped_column(Float)
+    reward_t_offset_h: Mapped[Optional[int]] = mapped_column(Integer)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    rewarded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class IdempotencyKeyModel(Base):
+    """TikTok publish dedup. Key = sha256(carousel_id + image_hashes + caption)."""
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False, default="tiktok_publish", index=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    publish_id: Mapped[Optional[str]] = mapped_column(String(120))
+    response_payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Loops framework — cross-project self-improvement substrate (P0 / migration 047)
+# ---------------------------------------------------------------------------
+
+class LoopModel(Base):
+    """Registry row for one continuously-running loop (skill, prompt, http target)."""
+    __tablename__ = "loops"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    owner_project: Mapped[str] = mapped_column(String(20), nullable=False)
+    runner_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    runner_target: Mapped[str] = mapped_column(Text, nullable=False)
+    cron: Mapped[str] = mapped_column(String(80), nullable=False, default="manual")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sandbox_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    judge_tier: Mapped[str] = mapped_column(String(20), nullable=False, default="local")
+    auto_promote_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    current_variant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("loop_variants.id", ondelete="SET NULL"))
+    baseline_score: Mapped[Optional[float]] = mapped_column(Float)
+    consecutive_regressions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    daily_token_budget: Mapped[int] = mapped_column(Integer, nullable=False, default=200000)
+    daily_run_cap: Mapped[int] = mapped_column(Integer, nullable=False, default=48)
+    wall_clock_budget_s: Mapped[int] = mapped_column(Integer, nullable=False, default=600)
+    last_run_id: Mapped[Optional[int]] = mapped_column(Integer)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    next_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    skill_name: Mapped[Optional[str]] = mapped_column(String(150), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LoopVariantModel(Base):
+    """A/B variant pool per loop. Active + canary populations live here."""
+    __tablename__ = "loop_variants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    loop_id: Mapped[int] = mapped_column(Integer, ForeignKey("loops.id", ondelete="CASCADE"), nullable=False)
+    parent_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("loop_variants.id", ondelete="SET NULL"))
+    variant_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    payload_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_canary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    canary_traffic_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    runs_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LoopRunModel(Base):
+    """Immutable history of every loop tick. The audit trail."""
+    __tablename__ = "loop_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    loop_id: Mapped[int] = mapped_column(Integer, ForeignKey("loops.id", ondelete="CASCADE"), nullable=False)
+    variant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("loop_variants.id", ondelete="SET NULL"))
+    runner_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    runner_id: Mapped[Optional[str]] = mapped_column(String(80))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    duration_s: Mapped[Optional[float]] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    judge_score: Mapped[Optional[float]] = mapped_column(Float)
+    judge_notes: Mapped[Optional[str]] = mapped_column(Text)
+    vault_path: Mapped[Optional[str]] = mapped_column(Text)
+    legion_run_id: Mapped[Optional[int]] = mapped_column(Integer)
+    cost_tokens: Mapped[Optional[int]] = mapped_column(Integer)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    output: Mapped[Optional[str]] = mapped_column(Text)
+    run_metadata: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+
+
+class LoopLearningModel(Base):
+    """Cross-project learnings emitted by skills via <learning> blocks."""
+    __tablename__ = "loop_learnings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_run_id: Mapped[int] = mapped_column(Integer, ForeignKey("loop_runs.id", ondelete="CASCADE"), nullable=False)
+    source_project: Mapped[str] = mapped_column(String(20), nullable=False)
+    pattern_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+    applied_to: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LoopPromotionModel(Base):
+    """Audit trail for canary->active flips and rollbacks. autoresearch readable log."""
+    __tablename__ = "loop_promotions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    loop_id: Mapped[int] = mapped_column(Integer, ForeignKey("loops.id", ondelete="CASCADE"), nullable=False)
+    from_variant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("loop_variants.id", ondelete="SET NULL"))
+    to_variant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("loop_variants.id", ondelete="SET NULL"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_by: Mapped[str] = mapped_column(String(80), nullable=False, default="auto")
