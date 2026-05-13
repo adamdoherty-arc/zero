@@ -107,12 +107,37 @@ class OpenHandsRuntimeService:
         repo_dir: Optional[str] = None,
     ) -> OpenHandsTask:
         """Queue a task and start it in the background. Returns the task
-        record immediately so callers can poll via ``get()``."""
+        record immediately so callers can poll via ``get()``.
+
+        Microagents that match the instruction's triggers are prepended to
+        the instruction so the OpenHands agent has the right project
+        conventions loaded from the first turn (mirrors how OpenHands
+        loads its own ``.openhands/microagents/`` files at conversation
+        start).
+        """
         if workspace not in {"local", "docker"}:
             raise ValueError(f"workspace must be 'local' or 'docker', got {workspace!r}")
+
+        # Inject microagent context — same trigger-based pattern OpenHands
+        # uses natively, just sourced from Zero's own ``microagents/`` tree.
+        final_instruction = instruction
+        try:
+            from app.services.microagents_service import get_microagents_service
+            context = get_microagents_service().compose_context_for(
+                instruction, max_chars=3000
+            )
+            if context:
+                final_instruction = f"{context}\n\n---\n\n{instruction}"
+                logger.info(
+                    "openhands_microagent_inject",
+                    chars=len(context),
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("openhands_microagent_inject_failed", error=str(e))
+
         task = OpenHandsTask(
             id=uuid.uuid4().hex[:12],
-            instruction=instruction,
+            instruction=final_instruction,
             status="queued" if self.is_available() else "failed",
             created_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
             workspace=workspace,
