@@ -95,6 +95,7 @@ export const navSections: NavSection[] = [
       { label: 'Integrations', href: '/integrations', icon: Plug },
       { label: 'Memory Vault', href: '/memory-vault', icon: FolderGit2 },
       { label: 'Meeting Agent', href: '/meeting-agent', icon: Megaphone },
+      { label: 'OpenHands', href: '/openhands', icon: Cpu },
     ],
   },
   {

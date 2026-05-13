@@ -26,6 +26,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import IntegrationsPage from '@/pages/IntegrationsPage'
 import MemoryVaultPage from '@/pages/MemoryVaultPage'
 import MeetingAgentPage from '@/pages/MeetingAgentPage'
+import OpenHandsTasksPage from '@/pages/OpenHandsTasksPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
 import { ArchitecturePage } from '@/pages/ArchitecturePage'
 import { QAPage } from '@/pages/QAPage'
@@ -130,6 +131,7 @@ function App() {
             <Route path="/integrations" element={<IntegrationsPage />} />
             <Route path="/memory-vault" element={<MemoryVaultPage />} />
             <Route path="/meeting-agent" element={<MeetingAgentPage />} />
+            <Route path="/openhands" element={<OpenHandsTasksPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
             <Route path="/qa" element={<QAPage />} />
             <Route path="/agent" element={<AgentPage />} />

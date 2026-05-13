@@ -183,3 +183,9 @@ purgatory>=3.0.0
 # Optional: the provider degrades gracefully when missing or when
 # COMPOSIO_API_KEY is unset (falls back to Zero's native code paths).
 composio-core>=0.5.0; python_version >= "3.10"
+
+# openhands-ai — sandboxed code-agent runtime. Optional: the runtime
+# adapter (`backend/app/services/openhands_runtime_service.py`) reports
+# ``is_available()=False`` cleanly when missing, so tasks dispatch but
+# are recorded as ``failed`` with a friendly error.
+openhands-ai>=0.1.0; python_version >= "3.10"
