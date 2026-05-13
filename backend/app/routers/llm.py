@@ -355,9 +355,11 @@ class CompactRequest(__import__("pydantic").BaseModel):
 @router.post("/compact")
 async def compact_text(req: CompactRequest):
     """Run TokenJuice on a chunk of text. Useful for tool wrappers."""
-    from app.services.tokenjuice_compactor import compact, estimate_savings
+    from app.services.tokenjuice_compactor import compact_with_telemetry, estimate_savings
 
-    out = compact(req.text, kind=req.kind, max_chars=req.max_chars)
+    out = compact_with_telemetry(
+        req.text, kind=req.kind, max_chars=req.max_chars, label="api"
+    )
     report = estimate_savings(req.text, out)
     return {
         "compacted": out,
@@ -367,3 +369,10 @@ async def compact_text(req: CompactRequest):
         "after_tokens_est": report.after_tokens_est,
         "savings_ratio": round(report.savings_ratio, 3),
     }
+
+
+@router.get("/compact/metrics")
+async def compact_metrics():
+    """Process-wide TokenJuice telemetry — total calls, chars in/out, savings."""
+    from app.services.tokenjuice_compactor import get_compaction_metrics
+    return get_compaction_metrics()

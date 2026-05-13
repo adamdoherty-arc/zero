@@ -254,3 +254,65 @@ def estimate_savings(before: str, after: str) -> CompactionReport:
         after_tokens_est=at,
         savings_ratio=max(0.0, min(1.0, ratio)),
     )
+
+
+# ----------------------------------------------------------------------
+# Process-wide telemetry counters
+# ----------------------------------------------------------------------
+# A tiny in-process counter so any tool wrapper that runs ``compact`` gets
+# observability for free. Read via ``get_compaction_metrics()`` (e.g. from
+# the LLM router /metrics surface or a Prometheus exporter).
+
+_METRICS = {
+    "calls": 0,
+    "before_chars_total": 0,
+    "after_chars_total": 0,
+    "before_tokens_total": 0,
+    "after_tokens_total": 0,
+}
+
+
+def get_compaction_metrics() -> dict:
+    out = dict(_METRICS)
+    if out["before_chars_total"]:
+        out["savings_ratio"] = round(
+            1.0 - out["after_chars_total"] / out["before_chars_total"], 3
+        )
+    else:
+        out["savings_ratio"] = 0.0
+    return out
+
+
+def reset_compaction_metrics() -> None:
+    for k in _METRICS:
+        _METRICS[k] = 0
+
+
+def compact_with_telemetry(
+    text: str,
+    *,
+    kind: str = "auto",
+    max_chars: int = 8000,
+    label: str = "tool",
+) -> str:
+    """Run ``compact`` and bump the process-wide counters.
+
+    Prefer this wrapper in tool-output sites so the LLM router telemetry
+    endpoint always sees an accurate compaction picture.
+    """
+    out = compact(text, kind=kind, max_chars=max_chars)
+    report = estimate_savings(text, out)
+    _METRICS["calls"] += 1
+    _METRICS["before_chars_total"] += report.before_chars
+    _METRICS["after_chars_total"] += report.after_chars
+    _METRICS["before_tokens_total"] += report.before_tokens_est
+    _METRICS["after_tokens_total"] += report.after_tokens_est
+    import structlog as _structlog
+    _structlog.get_logger(__name__).debug(
+        "tokenjuice_compacted",
+        label=label,
+        before_chars=report.before_chars,
+        after_chars=report.after_chars,
+        savings_ratio=round(report.savings_ratio, 3),
+    )
+    return out

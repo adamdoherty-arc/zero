@@ -214,17 +214,10 @@ class SearXNGService:
         out = "\n".join(lines)
         if compact_output:
             try:
-                from app.services.tokenjuice_compactor import compact, estimate_savings
-                compacted = compact(out, kind="text", max_chars=12000)
-                report = estimate_savings(out, compacted)
-                if report.savings_ratio > 0.05:
-                    logger.info(
-                        "searxng_research_compacted",
-                        before_chars=report.before_chars,
-                        after_chars=report.after_chars,
-                        savings_ratio=round(report.savings_ratio, 3),
-                    )
-                return compacted
+                from app.services.tokenjuice_compactor import compact_with_telemetry
+                return compact_with_telemetry(
+                    out, kind="text", max_chars=12000, label="searxng_research"
+                )
             except Exception as e:  # noqa: BLE001
                 logger.warning("searxng_compact_failed", error=str(e))
         return out

@@ -80,6 +80,16 @@ export function MascotSVG({
   const pose = FACE_POSE[face]
   const mouthPath = useMemo(() => buildMouthPath(viseme), [viseme])
 
+  // Speech-driven body bob: when speaking, openness drives a tiny extra
+  // body tilt + antenna sway so the mascot doesn't look frozen above the
+  // neck. Mirrors the spirit of Reachy's head_wobbler — the robot bobs
+  // its head while it talks; the mascot bobs its body.
+  const speechSway =
+    face === 'speaking'
+      ? Math.sin(performance.now() / 200) * Math.max(0.2, viseme.openness) * 1.5
+      : 0
+  const bodyTilt = pose.bodyTilt + speechSway
+
   // Eye-blink uses pose.eyeScaleY; a periodic blink would be added at the
   // hook level (timing event), but the resting pose already varies enough
   // for now. Cheek dots use opacity for blush during 'speaking' / 'listening'.
@@ -121,7 +131,7 @@ export function MascotSVG({
 
       {/* Body — yellow disc */}
       <g
-        transform={`rotate(${pose.bodyTilt}, 100, 110)`}
+        transform={`rotate(${bodyTilt}, 100, 110)`}
         style={{ transition: 'transform 200ms ease-out' }}
       >
         <circle cx="100" cy="110" r="78" fill="url(#mascot-body-grad)" />

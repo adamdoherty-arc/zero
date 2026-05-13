@@ -103,3 +103,50 @@ def collapse_consecutive(frames: Iterable[dict]) -> Iterator[dict]:
             continue
         last = vid
         yield f
+
+
+def viseme_from_pcm_rms(pcm_bytes: bytes) -> dict:
+    """Energy-driven viseme for cloud realtime backends.
+
+    Cloud realtime (OpenAI/Gemini) ships raw PCM with no phoneme alignment,
+    so we approximate mouth shape from RMS energy: louder = wider open.
+    Not as accurate as the text-aligned local path, but enough to keep the
+    mascot lips moving in sync with the actual audio.
+
+    Returns a dict in the same shape as ``viseme_frames_for_speech``.
+    """
+    if not pcm_bytes or len(pcm_bytes) < 2:
+        op, wd = viseme_shape(VISEME_REST)
+        return {"viseme_id": VISEME_REST, "openness": op, "width": wd, "offset_ms": 0}
+    # Quick RMS without numpy — int16 little-endian.
+    n = len(pcm_bytes) // 2
+    if n == 0:
+        op, wd = viseme_shape(VISEME_REST)
+        return {"viseme_id": VISEME_REST, "openness": op, "width": wd, "offset_ms": 0}
+    total = 0
+    for i in range(0, n * 2, 2):
+        sample = int.from_bytes(pcm_bytes[i:i + 2], "little", signed=True)
+        total += sample * sample
+    rms = (total / n) ** 0.5  # 0..32768
+    # Map RMS → openness with a sqrt curve so quiet speech is visible but
+    # peaks don't dominate. 4000 RMS ≈ normal-volume speech.
+    norm = min(1.0, rms / 8000.0)
+    openness = norm ** 0.6
+    if openness < 0.05:
+        vid = "REST"
+    elif openness < 0.25:
+        vid = "M"
+    elif openness < 0.45:
+        vid = "E"
+    elif openness < 0.7:
+        vid = "O"
+    else:
+        vid = "A"
+    base_op, base_wd = viseme_shape(vid)
+    # Blend table-defined openness with measured energy for smoother motion.
+    return {
+        "viseme_id": vid,
+        "openness": (base_op + openness) / 2.0,
+        "width": base_wd,
+        "offset_ms": 0,
+    }

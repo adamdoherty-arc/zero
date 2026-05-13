@@ -433,10 +433,18 @@ class OpenAIRealtimeHandler:
                 "rate": OPENAI_SAMPLE_RATE,
                 "audio_b64": delta_b64,
             })
-            if self._on_assistant_audio and delta_b64:
+            if delta_b64:
                 try:
                     pcm_bytes = base64.b64decode(delta_b64)
-                    await self._on_assistant_audio(pcm_bytes, OPENAI_SAMPLE_RATE)
+                    # Energy-driven viseme — cloud realtime has no phoneme
+                    # alignment, so we estimate from RMS.
+                    from app.services.reachy_realtime.visemes import viseme_from_pcm_rms
+                    await self._emit_client({
+                        "type": "mascot.viseme",
+                        **viseme_from_pcm_rms(pcm_bytes),
+                    })
+                    if self._on_assistant_audio:
+                        await self._on_assistant_audio(pcm_bytes, OPENAI_SAMPLE_RATE)
                 except Exception as e:
                     logger.debug("openai_on_assistant_audio_failed", error=str(e))
             return

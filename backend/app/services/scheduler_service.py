@@ -1067,6 +1067,14 @@ DAILY_SCHEDULE = {
         "description": "Cross-project loops: replay buffer + Legion tripwire + circuit breaker telemetry",
         "enabled": True,
     },
+    # Memory Tree daily global digest — rolls up yesterday's vault entries
+    # into a single `global/{yyyymmdd}.md` chunk so the user has one place
+    # to read what Zero saw across all sources that day.
+    "memory_vault_daily_digest": {
+        "cron": "0 4 * * *",  # 04:00 UTC daily
+        "description": "Memory Tree: write daily global digest across all vault sources",
+        "enabled": True,
+    },
 }
 
 
@@ -1594,6 +1602,7 @@ class SchedulerService:
             "loop_promote_hourly": self._run_loop_promote,
             "loop_crosspoll_30m": self._run_loop_crosspoll,
             "loop_health_5min": self._run_loop_health,
+            "memory_vault_daily_digest": self._run_memory_vault_daily_digest,
         }
         return handlers.get(job_name)
 
@@ -5963,6 +5972,62 @@ Have a great evening!"""
             legion_consecutive_failures=state.get("consecutive_failures", 0),
             **replay,
         )
+
+    async def _run_memory_vault_daily_digest(self):
+        """Roll up yesterday's vault entries into one global digest file.
+
+        Walks every Source-tree entry created in the last 24 h, formats a
+        short markdown summary per source, and writes the combined text to
+        ``vault/global/{yyyymmdd}.md`` via the Memory Tree service. This is
+        the openhuman "Global tree" pattern — one place to read what the
+        agent saw across all sources for the day.
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            from app.services.memory_tree import get_memory_tree
+            from app.services.memory_tree.vault import list_entries
+        except Exception as e:
+            logger.warning("memory_vault_digest_import_failed", error=str(e))
+            return
+
+        tree = get_memory_tree()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_iso = cutoff.isoformat(timespec="seconds")
+
+        entries = list_entries(tree.root, scope="source")
+        recent_by_source: dict[str, list] = {}
+        for entry in entries:
+            created = entry.frontmatter.get("created", "")
+            if not created or created.replace("Z", "") < cutoff_iso:
+                continue
+            src = entry.frontmatter.get("source", "unknown")
+            recent_by_source.setdefault(src, []).append(entry)
+
+        if not recent_by_source:
+            logger.info("memory_vault_digest_skipped", reason="no_fresh_chunks")
+            return
+
+        sections: list[str] = []
+        for src, items in sorted(recent_by_source.items()):
+            lines = [f"## {src} ({len(items)} chunk(s))"]
+            for e in items[:10]:
+                title = e.frontmatter.get("title", e.path.stem)
+                preview = e.body[:160].replace("\n", " ")
+                lines.append(f"- **{title}** — {preview}…")
+            sections.append("\n".join(lines))
+
+        body = (
+            f"Daily digest for {datetime.utcnow().strftime('%Y-%m-%d')} UTC.\n"
+            f"Sources covered: {len(recent_by_source)}, chunks: "
+            f"{sum(len(v) for v in recent_by_source.values())}.\n\n"
+            + "\n\n".join(sections)
+        )
+        path = await tree.write_global_digest(
+            body,
+            title=f"Daily digest {datetime.utcnow().strftime('%Y-%m-%d')}",
+            sources=sorted(recent_by_source.keys()),
+        )
+        logger.info("memory_vault_digest_written", path=str(path))
 
 
 # ============================================

@@ -70,6 +70,30 @@ class TestFrameGeneration:
             assert "width" in f
 
 
+class TestRmsViseme:
+    def test_silent_pcm_is_rest(self):
+        from app.services.reachy_realtime.visemes import viseme_from_pcm_rms
+        # 100 ms of silence at 24 kHz mono int16
+        pcm = b"\x00\x00" * 2400
+        out = viseme_from_pcm_rms(pcm)
+        assert out["viseme_id"] == "REST"
+        assert out["openness"] < 0.1
+
+    def test_loud_pcm_opens_mouth(self):
+        from app.services.reachy_realtime.visemes import viseme_from_pcm_rms
+        # Sustained max-amplitude tone
+        sample = (16000).to_bytes(2, "little", signed=True)
+        pcm = sample * 2400
+        out = viseme_from_pcm_rms(pcm)
+        assert out["viseme_id"] in {"A", "O", "E"}
+        assert out["openness"] > 0.3
+
+    def test_empty_bytes(self):
+        from app.services.reachy_realtime.visemes import viseme_from_pcm_rms
+        out = viseme_from_pcm_rms(b"")
+        assert out["viseme_id"] == "REST"
+
+
 class TestCollapseConsecutive:
     def test_collapses_runs(self):
         from app.services.reachy_realtime.visemes import collapse_consecutive

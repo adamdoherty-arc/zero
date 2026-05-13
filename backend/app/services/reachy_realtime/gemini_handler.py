@@ -297,6 +297,16 @@ class GeminiLiveHandler:
                                 "rate": GEMINI_OUTPUT_SAMPLE_RATE,
                                 "audio_b64": base64.b64encode(audio_bytes).decode("ascii"),
                             })
+                            try:
+                                from app.services.reachy_realtime.visemes import (
+                                    viseme_from_pcm_rms,
+                                )
+                                await self._emit_client({
+                                    "type": "mascot.viseme",
+                                    **viseme_from_pcm_rms(audio_bytes),
+                                })
+                            except Exception as e:
+                                logger.debug("gemini_viseme_emit_failed", error=str(e))
                             if self._on_assistant_audio:
                                 try:
                                     await self._on_assistant_audio(audio_bytes, GEMINI_OUTPUT_SAMPLE_RATE)

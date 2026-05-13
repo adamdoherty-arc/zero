@@ -207,6 +207,39 @@ class SubconsciousLoop:
             tags=["subconscious", "reflection"],
         )
 
+        # Surface to the user only when the insight proposes an action.
+        # Observation-only ticks are vault-only — we don't want to spam
+        # agent_alerts with every idle reflection.
+        if not insight.get("suggested_action"):
+            return
+        try:
+            import uuid as _uuid
+            from app.db.models import AgentAlertModel
+            from app.infrastructure.database import get_session
+            from datetime import datetime as _dt
+
+            async with get_session() as session:
+                session.add(
+                    AgentAlertModel(
+                        id=f"sub-{_uuid.uuid4().hex[:12]}",
+                        rule="subconscious_insight",
+                        severity="info",
+                        salience=0.4,
+                        entity_type="subconscious",
+                        entity_id=_dt.utcnow().strftime("%Y%m%d-%H%M%S"),
+                        summary=insight.get("observation") or "Subconscious insight",
+                        details={
+                            "theme": insight.get("theme"),
+                            "observation": insight.get("observation"),
+                            "suggested_action": insight.get("suggested_action"),
+                            "signals": signals,
+                        },
+                    )
+                )
+                await session.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("subconscious_alert_skipped", error=str(e))
+
 
 @lru_cache(maxsize=1)
 def get_subconscious_loop() -> SubconsciousLoop:

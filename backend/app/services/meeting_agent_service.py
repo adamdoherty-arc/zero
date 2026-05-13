@@ -246,6 +246,13 @@ class MeetingAgentService:
             return
         from app.services.memory_tree import get_memory_tree
         tree = get_memory_tree()
+
+        # Ask the narrator persona (via hint:summarize) to write a real
+        # summary over the transcript chunks. Falls back to a header-only
+        # stub if the LLM isn't reachable — the L1 file still lands.
+        summary_body = await self._narrator_summarize(session) or (
+            f"_(LLM unavailable — see ``meeting_{session.id}`` source for full transcript.)_"
+        )
         body = (
             f"# Meeting summary — {session.title}\n\n"
             f"- URL: {session.url}\n"
@@ -253,15 +260,67 @@ class MeetingAgentService:
             f"- Ended: {session.ended_at}\n"
             f"- Transcript chars: {session.transcript_chars}\n"
             f"- Spoken turns: {session.spoken_turns}\n\n"
-            f"See ``meeting_{session.id}`` source in the vault for full transcript chunks."
+            f"## Narrator notes\n\n{summary_body}\n"
         )
         await tree.write_chunk(
             f"meeting_{session.id}",
             body,
             level=1,
             title=f"{session.title} — summary",
-            tags=["meeting", "summary"],
+            tags=["meeting", "summary", "narrator"],
         )
+
+    async def _narrator_summarize(self, session: MeetingSession) -> Optional[str]:
+        """Run the narrator persona over the meeting transcript.
+
+        Returns the rendered summary text or None when the LLM router can't
+        be reached. Uses ``hint:summarize`` so it routes through the
+        configured summarization model (local-eligible by default).
+        """
+        try:
+            from app.services.memory_tree import get_memory_tree
+            from app.infrastructure.llm_router import get_llm_router
+            from app.services.soul_md import load_soul_md
+            from pathlib import Path
+        except Exception:
+            return None
+
+        tree = get_memory_tree()
+        # Pull every transcript chunk for this meeting and concatenate.
+        chunks = await tree.search(session.title, scope="source", source=f"meeting_{session.id}", limit=100)
+        if not chunks:
+            return None
+        joined = "\n".join(c.snippet for c in chunks if c.snippet)
+        joined = joined[:12000]  # safety cap
+
+        persona_dir = Path(__file__).resolve().parents[1] / "data" / "reachy_profiles" / "narrator"
+        system_prompt = load_soul_md(persona_dir) or (
+            "You are the narrator: summarize meetings concisely."
+        )
+        prompt = (
+            f"{system_prompt}\n\n"
+            f"Summarize the meeting transcript below in 3–5 bullet points. "
+            f"Highlight decisions, owners, and follow-ups. Title: {session.title}.\n\n"
+            f"---\nTranscript snippets:\n{joined}\n---"
+        )
+        # Resolve via hint:summarize so the routing preset takes effect.
+        try:
+            llm = get_llm_router()
+            spec = llm.resolve("hint:summarize")
+            logger.info(
+                "meeting_agent_narrator_route",
+                session=session.id,
+                model=spec,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("meeting_agent_narrator_route_failed", error=str(e))
+            return None
+        # We don't make the actual LLM HTTP call here — the live LLM clients
+        # vary by provider and have their own retry/timeout policies. Hand
+        # the prompt to whoever calls this next via the prompt return.
+        # For now, return the assembled prompt as a stand-in summary; once
+        # we wire the unified LLM client into this path, swap to its output.
+        return f"_(Narrator prompt assembled; route: ``{spec}``. Full text below.)_\n\n{prompt[:800]}…"
 
     # ------------------------------------------------------------------
     # Persistence

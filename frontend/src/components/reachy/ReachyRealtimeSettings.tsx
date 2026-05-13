@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
+import { HintPresetPicker } from '@/components/reachy/HintPresetPicker'
 
 /**
  * Settings dialog for the Reachy realtime voice bridge.
@@ -666,6 +667,11 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                 )}
               </div>
             </section>
+
+            {/* === Hint preset picker — biases the LLM router toward local
+                 or cloud for light tasks (reaction/classify/format/summarize).
+                 Affects every hint:* call across Zero, not just realtime. === */}
+            <HintPresetPicker />
 
             {/* === SECTION 3: Personality === */}
             <section>
