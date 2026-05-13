@@ -212,6 +212,42 @@ class SubconsciousLoop:
         # agent_alerts with every idle reflection.
         if not insight.get("suggested_action"):
             return
+
+        # Respect the companion service's proactive-nudge policy. When the
+        # user is in "off" mode (or has disabled proactive nudges in any
+        # mode), the subconscious silently writes to the vault but does
+        # NOT pop an agent_alert. When in "focus" the cap is tighter than
+        # "ambient" — we enforce both here so the subconscious can't out-talk
+        # the companion's existing nudge budget.
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            companion = get_reachy_companion_service()
+            verdict = companion.action_allowed("proactive_nudge")
+            if not verdict.get("allowed"):
+                logger.info(
+                    "subconscious_alert_silenced",
+                    reason=verdict.get("reason"),
+                )
+                return
+            if not self._under_nudge_budget(companion):
+                logger.info("subconscious_alert_silenced", reason="nudge_budget_full")
+                return
+            from app.models.reachy_companion import CompanionEventCreate
+            companion.record_event(
+                CompanionEventCreate(
+                    type="proactive_nudge",
+                    summary=insight.get("observation") or "Subconscious insight",
+                    detail=insight.get("suggested_action"),
+                    source="subconscious_loop",
+                )
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("subconscious_companion_gate_failed", error=str(e))
+            # Fall through to the agent_alert insert — the gate is advisory,
+            # not a hard requirement. Vault write already happened above.
+
         try:
             import uuid as _uuid
             from app.db.models import AgentAlertModel
@@ -239,6 +275,42 @@ class SubconsciousLoop:
                 await session.commit()
         except Exception as e:  # noqa: BLE001
             logger.debug("subconscious_alert_skipped", error=str(e))
+
+    def _under_nudge_budget(self, companion) -> bool:
+        """Check the per-mode max_proactive_events_per_hour cap.
+
+        Walks the companion service's recent event log and counts
+        ``proactive_nudge`` rows in the last hour. Returns True iff we're
+        below the cap on the current mode.
+        """
+        try:
+            policy = companion.get_policy()
+            cap = int(policy.max_proactive_events_per_hour or 0)
+        except Exception:
+            cap = 0
+        if cap <= 0:
+            # Either off mode or unconfigured — silent by design.
+            return False
+        try:
+            from datetime import datetime, timedelta, timezone
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+            recent = companion.list_events(limit=200)
+            count = 0
+            for ev in recent:
+                ts = getattr(ev, "created_at", None) or getattr(ev, "ts", None)
+                if ts is None:
+                    continue
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                if ts >= cutoff and getattr(ev, "type", "") == "proactive_nudge":
+                    count += 1
+            return count < cap
+        except Exception as e:  # noqa: BLE001
+            logger.debug("subconscious_budget_check_failed", error=str(e))
+            return True
 
 
 @lru_cache(maxsize=1)

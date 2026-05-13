@@ -49,6 +49,9 @@ from app.routers import (
     triggers,
     subconscious,
     meeting_agent,
+    skill_registry,
+    browser_control,
+    telegram_channel,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -271,6 +274,19 @@ async def lifespan(app: FastAPI):
                 logger.info("subconscious_autostart_enabled")
         except Exception as e:
             logger.warning("subconscious_autostart_failed", error=str(e))
+
+        # Telegram channel — starts itself iff TELEGRAM_BOT_TOKEN is set.
+        # Default handler writes inbound messages to the Memory Tree.
+        try:
+            from app.services.telegram_channel_service import (
+                get_telegram_channel_service,
+            )
+            tg = get_telegram_channel_service()
+            if tg.is_configured():
+                await tg.start()
+                logger.info("telegram_channel_started")
+        except Exception as e:
+            logger.warning("telegram_channel_start_failed", error=str(e))
 
         # Cross-session memory compaction: re-extract durable notes from
         # recent turns and age out low-confidence unused ones every 6 h.
@@ -583,6 +599,13 @@ async def lifespan(app: FastAPI):
             await get_subconscious_loop().stop()
         except Exception:
             pass
+        try:
+            from app.services.telegram_channel_service import (
+                get_telegram_channel_service,
+            )
+            await get_telegram_channel_service().stop()
+        except Exception:
+            pass
 
         # Close shared Ollama client
         try:
@@ -750,6 +773,9 @@ app.include_router(integrations.router, prefix="/api/integrations", tags=["Integ
 app.include_router(triggers.router, prefix="/api/triggers", tags=["Triggers"])
 app.include_router(subconscious.router, prefix="/api/subconscious", tags=["Subconscious"])
 app.include_router(meeting_agent.router, prefix="/api/meeting-agent", tags=["Meeting Agent"])
+app.include_router(skill_registry.router, prefix="/api/skills", tags=["Skills"])
+app.include_router(browser_control.router, prefix="/api/browser-control", tags=["Browser Control"])
+app.include_router(telegram_channel.router, prefix="/api/telegram", tags=["Telegram"])
 
 
 @app.get("/")

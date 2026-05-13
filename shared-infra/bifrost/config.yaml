@@ -1,0 +1,190 @@
+# Bifrost gateway config for Zero
+#
+# Bifrost (maximhq/bifrost) is the Go-written LLM gateway Zero will swap in
+# when LiteLLM's overhead becomes the latency floor. Claim: 11µs overhead at
+# 5k RPS, 50× faster than LiteLLM, drop-in OpenAI-compatible API.
+#
+# Layout mirrors what Bifrost expects at /etc/bifrost/config.yaml:
+#   • providers: upstream LLM backends Zero already uses
+#   • virtual_models: hint:* aliases that route to the right provider per
+#     the active preset (default / embeddings_only / memory_reflection /
+#     everything_local — flip via ZERO_HINT_PRESET env, the gateway reads
+#     /api/llm/hints/preset at startup OR honors the static map below).
+#   • fallbacks: per-virtual-model chains. Match what `LlmRouterConfig`
+#     ships in backend/app/models/llm.py so behavior is identical whether
+#     a call goes direct or via the gateway.
+#
+# Until Bifrost is actually deployed this file is documentation +
+# reference. The real source of truth at runtime is the FastAPI router
+# `/api/llm/hints` which any gateway can poll instead of pre-loading.
+
+version: 1
+
+providers:
+  vllm:
+    base_url: ${VLLM_CHAT_URL:-http://host.docker.internal:18800}
+    api_format: openai
+    default_model: qwen3-chat
+    timeout_ms: 600000
+
+  ollama:
+    base_url: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    api_format: openai
+    default_model: qwen3.6:35b-a3b-q8_0
+    timeout_ms: 600000
+
+  kimi:
+    base_url: https://api.moonshot.cn/v1
+    api_format: openai
+    api_key: ${KIMI_API_KEY}
+    default_model: kimi-k2.6
+    # Kimi K2.5/K2.6 require temperature=1 exactly — clamp here so the
+    # gateway can't accidentally send a different temp.
+    temperature_lock: 1.0
+
+  minimax:
+    base_url: https://api.minimax.chat/v1
+    api_format: openai
+    api_key: ${MINIMAX_API_KEY}
+    default_model: MiniMax-M2.7
+
+  gemini:
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    api_format: gemini
+    api_key: ${GEMINI_API_KEY}
+    default_model: gemini-3.1-flash
+
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_format: openai
+    api_key: ${OPENROUTER_API_KEY}
+    default_model: google/gemini-3.1-flash
+
+# Hint-based virtual models — exact mirror of the in-process LLM router.
+# Bifrost routes the model name through to the first reachable provider in
+# the fallback chain. The active hint preset can override the primary at
+# runtime via the gateway's admin API.
+virtual_models:
+  # Local-eligible hints
+  hint:reaction:
+    primary: vllm/qwen3-chat
+    fallbacks: [minimax/MiniMax-M2.7]
+    temperature: 0.7
+    num_predict: 256
+
+  hint:classify:
+    primary: vllm/qwen3-chat
+    fallbacks: [vllm/qwen3-chat]
+    temperature: 0.0
+    num_predict: 200
+
+  hint:format:
+    primary: minimax/MiniMax-M2.7
+    fallbacks: [kimi/kimi-k2.6, vllm/qwen3-chat]
+    temperature: 0.1
+    num_predict: 4096
+
+  hint:sentiment:
+    primary: vllm/qwen3-chat
+    fallbacks: [vllm/qwen3-chat]
+    temperature: 0.0
+    num_predict: 200
+
+  hint:summarize:
+    primary: vllm/qwen3-chat
+    fallbacks: [minimax/MiniMax-M2.7, vllm/qwen3-chat]
+    temperature: 0.1
+    num_predict: 1024
+
+  hint:medium:
+    primary: vllm/qwen3-chat
+    fallbacks: [minimax/MiniMax-M2.7, vllm/qwen3-chat]
+    temperature: 0.7
+    num_predict: 2048
+
+  hint:tool_lite:
+    primary: minimax/MiniMax-M2.7
+    fallbacks: [kimi/kimi-k2.6, vllm/qwen3-chat]
+    temperature: 0.2
+    num_predict: 4096
+
+  hint:reflection:
+    primary: vllm/qwen3-chat
+    fallbacks: [minimax/MiniMax-M2.7, vllm/qwen3-chat]
+    temperature: 0.1
+    num_predict: 2048
+
+  # Cloud-only hints — heavier reasoning routes to Kimi first.
+  hint:reasoning:
+    primary: kimi/kimi-k2.6
+    fallbacks: [minimax/MiniMax-M2.7, vllm/qwen3-chat]
+    temperature: 0.3
+    num_predict: 4096
+
+  hint:agentic:
+    primary: kimi/kimi-k2.6
+    fallbacks: [minimax/MiniMax-M2.7, vllm/qwen3-chat]
+    temperature: 0.3
+    num_predict: 4096
+
+  hint:coding:
+    primary: vllm/qwen3-chat
+    fallbacks: [kimi/kimi-k2.6, minimax/MiniMax-M2.7]
+    temperature: 0.2
+    num_predict: 4096
+
+  hint:vision:
+    primary: gemini/gemini-3.1-flash
+    fallbacks: [openrouter/google/gemini-3.1-pro]
+    temperature: 0.3
+    num_predict: 4096
+
+# Latest-pointer aliases — mirrored from the existing pattern documented
+# in CLAUDE.md so apps can target a moving target instead of pinning.
+aliases:
+  gemini-latest: gemini/gemini-3.1-pro
+  gemini-flash-latest: gemini/gemini-3.1-flash
+  claude-latest: openrouter/anthropic/claude-opus-4-7
+  claude-fast-latest: openrouter/anthropic/claude-haiku-4-5
+
+# Preset → which primary each local-eligible hint should resolve to.
+# The Bifrost admin API can hot-swap presets without restart; the active
+# preset is also reflected in the in-process router via ZERO_HINT_PRESET.
+presets:
+  default: {}  # use the per-hint primary above
+
+  embeddings_only:
+    hint:reaction: minimax/MiniMax-M2.7
+    hint:classify: minimax/MiniMax-M2.7
+    hint:format: minimax/MiniMax-M2.7
+    hint:sentiment: minimax/MiniMax-M2.7
+    hint:summarize: kimi/kimi-k2.6
+    hint:medium: kimi/kimi-k2.6
+    hint:tool_lite: minimax/MiniMax-M2.7
+    hint:reflection: kimi/kimi-k2.6
+
+  memory_reflection:
+    hint:summarize: vllm/qwen3-chat
+    hint:reflection: vllm/qwen3-chat
+    hint:tool_lite: vllm/qwen3-chat
+
+  everything_local:
+    hint:reaction: vllm/qwen3-chat
+    hint:classify: vllm/qwen3-chat
+    hint:format: vllm/qwen3-chat
+    hint:sentiment: vllm/qwen3-chat
+    hint:summarize: vllm/qwen3-chat
+    hint:medium: vllm/qwen3-chat
+    hint:tool_lite: vllm/qwen3-chat
+    hint:reflection: vllm/qwen3-chat
+
+# Per-day spend caps mirror LlmRouterConfig.daily_budget_usd. The gateway
+# enforces in addition to the in-process router so a downstream client
+# that bypasses Zero's router still respects the budget.
+budgets:
+  total_daily_usd: 5.0
+  per_provider_daily_usd:
+    kimi: 2.5
+    minimax: 1.5
+    gemini: 1.0
+    openrouter: 1.0

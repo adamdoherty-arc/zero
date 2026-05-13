@@ -336,12 +336,42 @@ class MeetingAgentService:
         except Exception as e:  # noqa: BLE001
             logger.debug("meeting_agent_narrator_route_failed", error=str(e))
             return None
-        # We don't make the actual LLM HTTP call here — the live LLM clients
-        # vary by provider and have their own retry/timeout policies. Hand
-        # the prompt to whoever calls this next via the prompt return.
-        # For now, return the assembled prompt as a stand-in summary; once
-        # we wire the unified LLM client into this path, swap to its output.
-        return f"_(Narrator prompt assembled; route: ``{spec}``. Full text below.)_\n\n{prompt[:800]}…"
+
+        # Prefer the Bifrost gateway when it's running (shared infra) —
+        # it handles fallbacks + circuit breakers + budget caps centrally.
+        # Falls back to a prompt-only return when neither Bifrost nor a
+        # direct provider call is wired here (the existing behavior).
+        try:
+            from app.infrastructure.bifrost_client import get_bifrost_client
+            bifrost = get_bifrost_client()
+            if bifrost.is_available():
+                content = await bifrost.complete(
+                    model="hint:summarize",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Summarize the meeting transcript below in 3–5 "
+                                "bullet points. Highlight decisions, owners, and "
+                                f"follow-ups. Title: {session.title}.\n\n"
+                                f"Transcript snippets:\n{joined}"
+                            ),
+                        },
+                    ],
+                    temperature=0.2,
+                    max_tokens=1024,
+                )
+                logger.info(
+                    "meeting_agent_narrator_via_bifrost",
+                    session=session.id,
+                    chars=len(content),
+                )
+                return content
+        except Exception as e:  # noqa: BLE001
+            logger.debug("meeting_agent_narrator_bifrost_failed", error=str(e))
+
+        return f"_(Narrator prompt assembled; route: ``{spec}``. Bifrost gateway unreachable; raw prompt below.)_\n\n{prompt[:800]}…"
 
     # ------------------------------------------------------------------
     # Persistence
