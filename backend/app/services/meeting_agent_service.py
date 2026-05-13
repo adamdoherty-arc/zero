@@ -219,7 +219,9 @@ class MeetingAgentService:
         """Called by the driver (or a test) whenever a transcript chunk arrives.
 
         Writes the chunk into the Memory Tree under a per-meeting source so
-        it's searchable + browsable in the MemoryVault UI.
+        it's searchable + browsable in the MemoryVault UI. Also scans for
+        wake-word note triggers ("Hey Zero, take a note ...") and surfaces
+        them as standalone Topic-tree entries.
         """
         session = self._sessions.get(session_id)
         if session is None or not text.strip():
@@ -238,6 +240,25 @@ class MeetingAgentService:
             session.transcript_chars += len(text)
             session.notes_vault_paths.extend(str(p) for p in paths)
             self._save()
+            # Wake-word: pull anything addressed at Zero with "take a note"
+            # into its own Topic-tree entry so it surfaces above the
+            # noise of the full transcript.
+            note = _extract_take_a_note(text)
+            if note:
+                try:
+                    await tree.write_topic(
+                        entity=f"meeting_notes_{session.id}",
+                        body=f"From meeting '{session.title}' — speaker: {speaker or 'unknown'}\n\n{note}",
+                        title=note[:60],
+                        tags=["meeting", "wake-word", "note"],
+                    )
+                    logger.info(
+                        "meeting_agent_note_captured",
+                        session=session_id,
+                        note_preview=note[:80],
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.debug("meeting_agent_note_write_failed", error=str(e))
         except Exception as e:  # noqa: BLE001
             logger.warning("meeting_agent_ingest_failed", error=str(e))
 
@@ -348,6 +369,35 @@ class MeetingAgentService:
             self._path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception as e:  # noqa: BLE001
             logger.warning("meeting_agent_save_failed", error=str(e))
+
+
+_TAKE_A_NOTE_RE = re.compile(
+    r"(?:hey|ok|okay)\s+zero[,\s]+"
+    r"(?:take|make|record|save|capture|note|jot)"
+    r"(?:\s+(?:down|a|this|that|the))?"  # optional filler word
+    r"(?:\s+(?:note|reminder))?"           # optional "note"/"reminder"
+    r"[:\s,;.-]+"                          # the separator(s)
+    r"(.+?)(?:[.?!]|$)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _extract_take_a_note(text: str) -> Optional[str]:
+    """Pull a 'Hey Zero, take a note: ...' instruction from raw transcript.
+
+    Returns the note body without the trigger phrase, or None if no trigger
+    is present. Tuned for spoken-language sloppiness — accepts "Hey Zero, take
+    a note that ...", "OK Zero, record this: ...", etc.
+    """
+    if not text:
+        return None
+    m = _TAKE_A_NOTE_RE.search(text)
+    if not m:
+        return None
+    body = m.group(1).strip()
+    # Strip leading filler words ("that", "this", "down", "of", "to")
+    body = re.sub(r"^(?:that|this|down|of|to)\s+", "", body, flags=re.IGNORECASE).strip()
+    return body or None
 
 
 def _infer_title(url: str) -> str:

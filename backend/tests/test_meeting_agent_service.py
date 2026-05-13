@@ -108,6 +108,54 @@ class TestLeave:
         hits = asyncio.run(tree.search("agreed"))
         assert len(hits) >= 1
 
+class TestWakeWordNote:
+    def test_extracts_standard_take_a_note(self):
+        from app.services.meeting_agent_service import _extract_take_a_note
+        assert (
+            _extract_take_a_note("Hey Zero, take a note: ship by Friday.")
+            == "ship by Friday"
+        )
+
+    def test_extracts_with_ok_zero(self):
+        from app.services.meeting_agent_service import _extract_take_a_note
+        assert (
+            _extract_take_a_note("Ok Zero, record this: budget approved.")
+            == "budget approved"
+        )
+
+    def test_no_trigger_returns_none(self):
+        from app.services.meeting_agent_service import _extract_take_a_note
+        assert _extract_take_a_note("So anyway, the next step is...") is None
+
+    def test_case_insensitive(self):
+        from app.services.meeting_agent_service import _extract_take_a_note
+        assert _extract_take_a_note("HEY ZERO, NOTE: launch is Q4.") == "launch is Q4"
+
+    def test_ingest_writes_topic_when_note_present(self, monkeypatch, tmp_path):
+        import asyncio
+        from app.services import meeting_agent_service as mod
+        from app.services.memory_tree import service as tree_mod
+        monkeypatch.setattr(mod, "_DATA_DIR", tmp_path / "meeting")
+        monkeypatch.setattr(tree_mod, "_DATA_DIR", tmp_path / "tree")
+        tree_mod.get_memory_tree.cache_clear()  # type: ignore[attr-defined]
+        _ = tree_mod.get_memory_tree()
+
+        svc = mod.MeetingAgentService()
+        session = asyncio.run(svc.join("https://meet.google.com/test"))
+        asyncio.run(
+            svc.ingest_transcript(
+                session.id,
+                "Hey Zero, take a note: review the Q3 numbers tomorrow.",
+                speaker="Alice",
+            )
+        )
+        tree = tree_mod.get_memory_tree()
+        hits = asyncio.run(tree.search("Q3 numbers"))
+        # Should appear under topics/meeting_notes_{id}
+        assert any("topics" in str(h.path) for h in hits)
+
+
+class TestLeaveUnknown:
     def test_leave_unknown_raises(self, monkeypatch, tmp_path):
         from app.services import meeting_agent_service as mod
         monkeypatch.setattr(mod, "_DATA_DIR", tmp_path)
