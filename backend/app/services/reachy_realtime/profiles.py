@@ -99,14 +99,27 @@ def _load_upstream_profile(dir_path: Path) -> Optional[Profile]:
             card = None
 
     if instructions is None:
-        instr_file = dir_path / "instructions.txt"
-        if not instr_file.exists():
-            return None
+        # SOUL.md takes precedence over instructions.txt — it's the canonical
+        # persona format from the openhuman / OpenClaw / Claude Code convention.
+        # Falls back to instructions.txt for legacy profiles that haven't
+        # migrated yet.
         try:
-            instructions = _expand_includes(instr_file.read_text(encoding="utf-8").strip())
+            from app.services.soul_md import load_soul_md
+            soul = load_soul_md(dir_path)
+            if soul:
+                instructions = _expand_includes(soul)
         except Exception as e:
-            logger.warning("upstream_profile_read_failed", profile=dir_path.name, error=str(e))
-            return None
+            logger.warning("soul_md_load_failed", profile=dir_path.name, error=str(e))
+
+        if instructions is None:
+            instr_file = dir_path / "instructions.txt"
+            if not instr_file.exists():
+                return None
+            try:
+                instructions = _expand_includes(instr_file.read_text(encoding="utf-8").strip())
+            except Exception as e:
+                logger.warning("upstream_profile_read_failed", profile=dir_path.name, error=str(e))
+                return None
 
     tools = _parse_tools_txt(dir_path / "tools.txt")
     # Card extensions provide DEFAULTS; voice.txt / model.txt / tools.txt

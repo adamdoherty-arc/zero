@@ -34,6 +34,7 @@ import {
   Mic,
   Network,
   PackageCheck,
+  Plug,
   Radio,
   Scale,
   Search,
@@ -91,6 +92,9 @@ export const navSections: NavSection[] = [
       { label: 'Meetings', href: '/meetings', icon: Mic },
       { label: 'Meeting Search', href: '/meeting-search', icon: AudioLines },
       { label: 'Meals', href: '/meals', icon: Utensils },
+      { label: 'Integrations', href: '/integrations', icon: Plug },
+      { label: 'Memory Vault', href: '/memory-vault', icon: FolderGit2 },
+      { label: 'Meeting Agent', href: '/meeting-agent', icon: Megaphone },
     ],
   },
   {

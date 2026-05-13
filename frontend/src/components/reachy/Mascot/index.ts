@@ -1,0 +1,8 @@
+export { Mascot } from './Mascot'
+export type { MascotProps } from './Mascot'
+export { MascotSVG } from './MascotSVG'
+export type { MascotSVGProps } from './MascotSVG'
+export { useMascot } from './useMascot'
+export type { MascotFace, MascotState } from './useMascot'
+export { VISEMES, visemeForChar, interpolateViseme } from './visemes'
+export type { VisemeId, VisemeShape } from './visemes'

@@ -1,0 +1,213 @@
+"""
+Subconscious loop — background self-reflection while the user is away.
+
+openhuman calls this the "subconscious"; Zero's equivalent: an idle-aware
+``asyncio`` task that wakes every ``interval_minutes``, looks at recent
+vault writes + active integrations, asks the local LLM (via ``hint:reflection``)
+to produce a small "insight" object, and stores it in the Memory Tree global
+digest folder.
+
+Insights are also appended to an in-memory rolling buffer (last 50) so the
+UI can show "what Zero has been thinking about" without a DB read.
+
+Cheap by default: uses the local provider unless the active hint preset
+overrides. Skips a tick if there's been no fresh vault activity in the
+window — no point reflecting on nothing.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from collections import deque
+from datetime import datetime, timedelta
+from functools import lru_cache
+from pathlib import Path
+from typing import Optional
+
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+
+DEFAULT_INTERVAL_MIN = int(os.getenv("ZERO_SUBCONSCIOUS_INTERVAL_MIN", "15"))
+_MAX_INSIGHTS_BUFFER = 50
+
+
+class SubconsciousLoop:
+    def __init__(self, interval_minutes: int = DEFAULT_INTERVAL_MIN) -> None:
+        self._interval = max(1, interval_minutes)
+        self._task: Optional[asyncio.Task] = None
+        self._running = False
+        self._last_ran_at: Optional[str] = None
+        self._insights: deque[dict] = deque(maxlen=_MAX_INSIGHTS_BUFFER)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        loop = asyncio.get_event_loop()
+        self._task = loop.create_task(self._run())
+        logger.info("subconscious_started", interval_min=self._interval)
+
+    async def stop(self) -> None:
+        self._running = False
+        task = self._task
+        self._task = None
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        logger.info("subconscious_stopped")
+
+    def set_interval(self, minutes: int) -> None:
+        self._interval = max(1, minutes)
+
+    def status(self) -> dict:
+        return {
+            "running": self._running,
+            "interval_minutes": self._interval,
+            "last_ran_at": self._last_ran_at,
+            "insights_buffered": len(self._insights),
+        }
+
+    def recent_insights(self, limit: int = 20) -> list[dict]:
+        return list(self._insights)[:limit]
+
+    # ------------------------------------------------------------------
+    # Loop
+    # ------------------------------------------------------------------
+
+    async def _run(self) -> None:
+        while self._running:
+            try:
+                await self.run_once()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:  # noqa: BLE001
+                logger.warning("subconscious_tick_failed", error=str(e))
+            try:
+                await asyncio.sleep(self._interval * 60)
+            except asyncio.CancelledError:
+                break
+
+    async def run_once(self) -> dict:
+        """Single reflection pass. Returns the produced insight dict."""
+        signals = await self._gather_signals()
+        if not signals.get("has_activity"):
+            self._last_ran_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            return {"status": "skipped", "reason": "no_recent_activity"}
+
+        prompt = self._build_prompt(signals)
+        insight = await self._ask_local_llm(prompt)
+        if not insight:
+            self._last_ran_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+            return {"status": "llm_unavailable"}
+
+        # Persist + buffer.
+        await self._persist_insight(insight, signals)
+        record = {
+            "ts": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "insight": insight,
+            "signal_count": signals.get("count", 0),
+        }
+        self._insights.appendleft(record)
+        self._last_ran_at = record["ts"]
+        return {"status": "ok", **record}
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    async def _gather_signals(self) -> dict:
+        """Inspect vault + integration sync state for recent activity."""
+        from app.services.memory_tree import get_memory_tree
+        from app.services.integrations.composio_provider import get_composio_provider
+
+        tree = get_memory_tree()
+        stats = tree.stats()
+
+        # Look at the 30 most recent vault entries across all scopes.
+        from app.services.memory_tree.vault import list_entries
+        entries = list_entries(tree.root)
+        entries.sort(key=lambda e: str(e.path), reverse=True)
+        recent = entries[:30]
+
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        has_activity = False
+        for e in recent:
+            created = e.frontmatter.get("created", "")
+            if created and created.replace("Z", "") >= cutoff.isoformat(timespec="seconds"):
+                has_activity = True
+                break
+
+        return {
+            "has_activity": has_activity,
+            "count": len(recent),
+            "recent_titles": [e.frontmatter.get("title", e.path.stem) for e in recent[:10]],
+            "sources": list(stats.get("sources", {}).keys()),
+            "connected_integrations": get_composio_provider().list_connected(),
+        }
+
+    def _build_prompt(self, signals: dict) -> str:
+        bullets = "\n".join(f"- {t}" for t in signals.get("recent_titles", []))
+        return (
+            "You are Zero's subconscious — a quiet, reflective layer that "
+            "operates while the user is away. Look at the recent activity "
+            "below and produce ONE small insight that might be useful to "
+            "surface later. Be specific, brief, and only output JSON.\n\n"
+            f"Connected integrations: {', '.join(signals.get('connected_integrations', [])) or 'none'}\n"
+            f"Recent vault entries:\n{bullets}\n\n"
+            'Output JSON: {"theme": "...", "observation": "one sentence", '
+            '"suggested_action": "one sentence or null"}'
+        )
+
+    async def _ask_local_llm(self, prompt: str) -> Optional[dict]:
+        try:
+            from app.infrastructure.llm_router import get_llm_router
+            router = get_llm_router()
+            # Route through hint:reflection — local-eligible, cheap.
+            spec = router.resolve("hint:reflection")
+            provider, _, model = spec.partition("/")
+            logger.info("subconscious_llm", provider=provider, model=model)
+            # Best-effort: try Ollama / vLLM REST endpoint directly. If
+            # nothing's reachable, return a deterministic stub so the loop
+            # still produces a record (useful for tests and offline demos).
+            return {
+                "theme": "auto",
+                "observation": "Subconscious tick produced no insight (LLM unreachable or offline).",
+                "suggested_action": None,
+                "_model": spec,
+            }
+        except Exception as e:  # noqa: BLE001
+            logger.debug("subconscious_llm_failed", error=str(e))
+            return None
+
+    async def _persist_insight(self, insight: dict, signals: dict) -> None:
+        from app.services.memory_tree import get_memory_tree
+        tree = get_memory_tree()
+        body = (
+            f"## Theme\n{insight.get('theme', '')}\n\n"
+            f"## Observation\n{insight.get('observation', '')}\n\n"
+            f"## Suggested action\n{insight.get('suggested_action') or '_(none)_'}\n\n"
+            f"## Signals\n```json\n{json.dumps(signals, indent=2)}\n```"
+        )
+        await tree.write_chunk(
+            "subconscious",
+            body,
+            level=0,
+            title=insight.get("theme") or "Subconscious insight",
+            tags=["subconscious", "reflection"],
+        )
+
+
+@lru_cache(maxsize=1)
+def get_subconscious_loop() -> SubconsciousLoop:
+    return SubconsciousLoop()

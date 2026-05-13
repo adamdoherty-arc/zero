@@ -1,0 +1,8 @@
+# Tools available to Buddy the Robot persona.
+# Movement is required for play; cloud/heavy tools are excluded for child safety.
+play_emotion
+play_dance
+look_at
+nod
+wake
+wave

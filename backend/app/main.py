@@ -44,6 +44,11 @@ from app.routers import (
     daily_brief,
     turn_outcomes,
     wake_presence,
+    memory_tree,
+    integrations,
+    triggers,
+    subconscious,
+    meeting_agent,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -246,6 +251,26 @@ async def lifespan(app: FastAPI):
             _asyncio.create_task(validate_persona_voices())
         except Exception as e:
             logger.debug("Persona voice validation skipped", error=str(e))
+
+        # Integrations auto-fetch loop (20-min walk over every connected
+        # service → Memory Tree). Off by default; ZERO_AUTO_FETCH_AUTOSTART=1
+        # to enable on every boot, or hit /api/integrations/auto-fetch/start.
+        try:
+            if os.environ.get("ZERO_AUTO_FETCH_AUTOSTART", "").lower() in ("1", "true"):
+                from app.services.integrations import get_auto_fetch_loop
+                await get_auto_fetch_loop().start()
+                logger.info("auto_fetch_autostart_enabled")
+        except Exception as e:
+            logger.warning("auto_fetch_autostart_failed", error=str(e))
+
+        # Subconscious idle reflection. Same toggle pattern.
+        try:
+            if os.environ.get("ZERO_SUBCONSCIOUS_AUTOSTART", "").lower() in ("1", "true"):
+                from app.services.subconscious_loop import get_subconscious_loop
+                await get_subconscious_loop().start()
+                logger.info("subconscious_autostart_enabled")
+        except Exception as e:
+            logger.warning("subconscious_autostart_failed", error=str(e))
 
         # Cross-session memory compaction: re-extract durable notes from
         # recent turns and age out low-confidence unused ones every 6 h.
@@ -547,6 +572,18 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+        # Stop integrations auto-fetch + subconscious loops.
+        try:
+            from app.services.integrations import get_auto_fetch_loop
+            await get_auto_fetch_loop().stop()
+        except Exception:
+            pass
+        try:
+            from app.services.subconscious_loop import get_subconscious_loop
+            await get_subconscious_loop().stop()
+        except Exception:
+            pass
+
         # Close shared Ollama client
         try:
             from app.infrastructure.ollama_client import get_llm_client
@@ -708,6 +745,11 @@ app.include_router(bookkeeper.router, prefix="/api/bookkeeper", tags=["Bookkeepe
 app.include_router(daily_brief.router, prefix="/api/daily-brief", tags=["Daily Brief"])
 app.include_router(turn_outcomes.router, prefix="/api/turn-outcomes", tags=["Turn Outcomes"])
 app.include_router(wake_presence.router, prefix="/api/wake-presence", tags=["Wake & Presence"])
+app.include_router(memory_tree.router, prefix="/api/memory-tree", tags=["Memory Tree"])
+app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
+app.include_router(triggers.router, prefix="/api/triggers", tags=["Triggers"])
+app.include_router(subconscious.router, prefix="/api/subconscious", tags=["Subconscious"])
+app.include_router(meeting_agent.router, prefix="/api/meeting-agent", tags=["Meeting Agent"])
 
 
 @app.get("/")

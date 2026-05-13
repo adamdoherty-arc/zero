@@ -269,3 +269,101 @@ async def available_models():
     ]
 
     return {"models_by_provider": result}
+
+
+# ----------------------------------------------------------------------
+# Hint-based routing surface
+# ----------------------------------------------------------------------
+
+@router.get("/hints")
+async def list_hints():
+    """List supported hints and the active preset."""
+    from app.infrastructure.llm_hints import (
+        HINT_TO_TASK_TYPE,
+        all_hints,
+        all_presets,
+        get_current_preset,
+        is_local_eligible,
+    )
+
+    llm = get_llm_router()
+    hints_out = []
+    for name in all_hints():
+        task_type = HINT_TO_TASK_TYPE[name]
+        resolved = llm.resolve(f"hint:{name}")
+        hints_out.append({
+            "name": name,
+            "task_type": task_type,
+            "resolved_model": resolved,
+            "local_eligible": is_local_eligible(name),
+        })
+
+    return {
+        "active_preset": get_current_preset().value,
+        "presets": all_presets(),
+        "hints": hints_out,
+    }
+
+
+class PresetUpdate(__import__("pydantic").BaseModel):
+    preset: str
+
+
+@router.put("/hints/preset")
+async def set_hint_preset(req: PresetUpdate):
+    """Switch the active hint preset. Persists via the env so a daemon
+    restart honors it; for stateful persistence add to LlmRouterConfig later.
+    """
+    import os
+    from app.infrastructure.llm_hints import HintPreset, get_current_preset
+
+    try:
+        target = HintPreset(req.preset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"unknown preset: {req.preset}") from e
+    os.environ["ZERO_HINT_PRESET"] = target.value
+    return {"status": "ok", "preset": get_current_preset().value}
+
+
+@router.get("/hints/resolve/{hint}")
+async def resolve_hint(hint: str):
+    """Resolve which provider/model a hint would currently route to."""
+    from app.infrastructure.llm_hints import resolve_hint_task_type
+
+    llm = get_llm_router()
+    spec = llm.resolve(f"hint:{hint}")
+    provider, model = (spec.split("/", 1) + ["", ""])[:2] if "/" in spec else ("ollama", spec)
+    return {
+        "hint": hint,
+        "task_type": resolve_hint_task_type(hint),
+        "resolved": spec,
+        "provider": provider,
+        "model": model,
+    }
+
+
+# ----------------------------------------------------------------------
+# TokenJuice compaction surface
+# ----------------------------------------------------------------------
+
+class CompactRequest(__import__("pydantic").BaseModel):
+    text: str
+    kind: str = "auto"
+    max_chars: int = 8000
+
+
+@router.post("/compact")
+async def compact_text(req: CompactRequest):
+    """Run TokenJuice on a chunk of text. Useful for tool wrappers."""
+    from app.services.tokenjuice_compactor import compact, estimate_savings
+
+    out = compact(req.text, kind=req.kind, max_chars=req.max_chars)
+    report = estimate_savings(req.text, out)
+    return {
+        "compacted": out,
+        "before_chars": report.before_chars,
+        "after_chars": report.after_chars,
+        "before_tokens_est": report.before_tokens_est,
+        "after_tokens_est": report.after_tokens_est,
+        "savings_ratio": round(report.savings_ratio, 3),
+    }

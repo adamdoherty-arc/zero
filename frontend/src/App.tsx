@@ -7,6 +7,7 @@ import { MobileHomePage } from '@/pages/MobileHomePage'
 import { MobileReviewPage } from '@/pages/MobileReviewPage'
 import { MobileVideosPage } from '@/pages/MobileVideosPage'
 import { MobileCharactersPage } from '@/pages/MobileCharactersPage'
+import MascotPopout from '@/pages/MascotPopout'
 import { MobileOnboardingPage } from '@/pages/MobileOnboardingPage'
 import { SharePage } from '@/pages/SharePage'
 import { BoardPage } from '@/pages/BoardPage'
@@ -22,6 +23,9 @@ import { ResearchPage } from '@/pages/ResearchPage'
 import { MoneyMakerPage } from '@/pages/MoneyMakerPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import IntegrationsPage from '@/pages/IntegrationsPage'
+import MemoryVaultPage from '@/pages/MemoryVaultPage'
+import MeetingAgentPage from '@/pages/MeetingAgentPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
 import { ArchitecturePage } from '@/pages/ArchitecturePage'
 import { QAPage } from '@/pages/QAPage'
@@ -103,6 +107,7 @@ function App() {
             <Route path="characters" element={<MobileCharactersPage />} />
           </Route>
           <Route path="/m/onboarding" element={<MobileOnboardingPage />} />
+          <Route path="/m/mascot" element={<MascotPopout />} />
           <Route path="/share" element={<SharePage />} />
 
           <Route element={<DashboardLayout />}>
@@ -122,6 +127,9 @@ function App() {
             <Route path="/research" element={<ResearchPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/integrations" element={<IntegrationsPage />} />
+            <Route path="/memory-vault" element={<MemoryVaultPage />} />
+            <Route path="/meeting-agent" element={<MeetingAgentPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
             <Route path="/qa" element={<QAPage />} />
             <Route path="/agent" element={<AgentPage />} />
