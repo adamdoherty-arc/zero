@@ -185,13 +185,13 @@ export function DaemonPanel() {
     ? 'Restart the daemon once and refresh hardware status without enabling motion'
     : useRelinkButton
       ? 'Re-probe Docker, clear watchdog churn, and restart the daemon when the backend is ready'
-      : 'Restart the Reachy daemon'
+      : 'Restart the Zero robot daemon'
   const describeRecovery = (r: unknown) => {
     if (shouldRetryScan) {
       const result = r as { detail?: string; ok?: boolean; assistant?: { robot_ready?: boolean; robot_detail?: string } }
       return result.detail ?? (
         result.ok || result.assistant?.robot_ready
-          ? 'Motor bus detected; Reachy body is ready.'
+          ? 'Motor bus detected; Zero body is ready.'
           : result.assistant?.robot_detail ?? 'Hardware scan completed.'
       )
     }
@@ -199,7 +199,7 @@ export function DaemonPanel() {
       const result = r as { action?: string; detail?: string }
       return result.detail ?? (result.action === 'waiting'
         ? 'Backend is still warming up. host_agent will keep checking and link automatically.'
-        : 'Backend is up; restarted the Reachy daemon.')
+        : 'Backend is up; restarted the Zero robot daemon.')
     }
     const pid = (r as { pid?: number })?.pid
     return pid ? `new pid ${pid}` : 'restarted'
@@ -227,7 +227,7 @@ export function DaemonPanel() {
           />
           <div className="text-left">
             <div className="text-sm font-semibold text-white">
-              Reachy daemon
+              Zero robot daemon
               <span
                 className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
                   running
@@ -298,10 +298,10 @@ export function DaemonPanel() {
               ? 'bg-amber-500/10 border-amber-500/30 text-amber-100'
               : 'bg-red-500/10 border-red-500/30 text-red-100'
             const title = dockerSucceededRecently
-              ? 'Reachy daemon probe is slow'
+              ? 'Zero robot daemon probe is slow'
               : "Host agent isn't responding"
             const detail = dockerSucceededRecently
-              ? 'host_agent is reachable but its supervisor probe to the Reachy daemon is taking too long. Click Smart Re-link to refresh the link.'
+              ? 'host_agent is reachable but its supervisor probe to the Zero robot daemon is taking too long. Click Smart Re-link to refresh the link.'
               : "host_agent on :18796 is unreachable. If this persists after a restart, repair via C:\\code\\zero\\start-zero.bat."
             return (
               <div className={`flex items-start justify-between gap-3 p-3 rounded-md border ${tone}`}>
@@ -592,7 +592,7 @@ function BackendStatusRow({
       : status.state === 'unreachable'
         ? `host_agent has been unable to reach ${status.backend_url} for ${status.consecutive_failures} probes. Click Smart Re-link or check that Docker Desktop is running.`
         : status.state === 'waiting'
-          ? `host_agent is polling ${status.backend_url} (next probe in ${Math.round(status.next_probe_in_s)}s). Reachy will link automatically once Docker is up.`
+          ? `host_agent is polling ${status.backend_url} (next probe in ${Math.round(status.next_probe_in_s)}s). Zero will link automatically once Docker is up.`
           : `Awaiting first probe of ${status.backend_url}.`
   return (
     <div className={`flex items-start gap-2 px-3 py-2 rounded-md border ${tone.border} ${tone.bg}`}>
@@ -651,7 +651,7 @@ function HardwareFaultBanner({
         <div className="flex items-start gap-2 min-w-0">
           <XCircle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
           <div className="min-w-0">
-            <div className="text-sm font-semibold text-red-100">Reachy hardware fault</div>
+            <div className="text-sm font-semibold text-red-100">Reachy Mini hardware fault</div>
             <div className="text-xs text-red-200 mt-0.5 break-words">{headline}</div>
             <div className="text-[11px] text-red-300/80 mt-0.5">
               Body motion is locked while this fault is active.
@@ -677,7 +677,7 @@ function HardwareFaultBanner({
       </button>
       {showFix && (
         <ol className="text-xs text-red-100 list-decimal list-inside space-y-1 pl-1">
-          <li>Power Reachy off completely (unplug the motor power supply).</li>
+          <li>Power the Reachy Mini off completely (unplug the motor power supply).</li>
           {parsed?.motor.includes('antenna') ? (
             <li>
               Inspect the <strong>{parsed.motor.replace('_', ' ')}</strong>: bent stem, hair/cable
@@ -685,7 +685,7 @@ function HardwareFaultBanner({
               Rotate the antenna by hand — it should turn freely with light resistance.
             </li>
           ) : motorBusMissing ? (
-            <li>Reconnect the motor power supply and the USB-to-serial bridge between Reachy and the host.</li>
+            <li>Reconnect the motor power supply and the USB-to-serial bridge between the Reachy Mini and the host.</li>
           ) : (
             <li>Inspect the affected motor for mechanical jam, loose connector, or damaged wiring.</li>
           )}
@@ -817,7 +817,7 @@ function DiagnosticsGrid({
             ))}
           </div>
         ) : (
-          <div className="text-yellow-400 mb-1">No Reachy audio device</div>
+          <div className="text-yellow-400 mb-1">No Reachy Mini audio device</div>
         )}
         {otherAudio.length > 0 && (
           <div className="text-gray-500 mt-1">
@@ -841,7 +841,7 @@ function DiagnosticsGrid({
             ))}
           </div>
         ) : (
-          <div className="text-yellow-400">No likely Reachy USB</div>
+          <div className="text-yellow-400">No likely Reachy Mini USB</div>
         )}
         <div className="text-gray-500 mt-1">{data.usb_devices.ports.length} total ports</div>
       </div>

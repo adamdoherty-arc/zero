@@ -34,7 +34,7 @@ async function motionFollowup(qc: QueryClient, label: string): Promise<void> {
           title: `${label} dispatched, but daemon is unreachable`,
           description:
             status.robot_detail ||
-            'The Reachy daemon stopped responding right after the motion was sent. Check daemon health.',
+            'The Zero robot daemon stopped responding right after the motion was sent. Check daemon health.',
           variant: 'destructive',
         })
         return

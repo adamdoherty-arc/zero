@@ -185,7 +185,7 @@ export function MeetingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Meetings</h1>
           <p className="text-sm text-gray-400">
-            Record, transcribe, summarise, and turn action items into tasks. Audio captures from the Reachy mic by default.
+            Record, transcribe, summarise, and turn action items into tasks. Audio captures from the Zero mic by default.
           </p>
         </div>
         <MeetingRecordingControls onStop={handleStop} />
@@ -239,10 +239,10 @@ export function MeetingsPage() {
             </div>
           ) : (
             <Link
-              to="/reachy/voice"
+              to="/zero/voice-settings"
               className="text-sm text-amber-300 hover:text-amber-200 underline-offset-2 hover:underline"
             >
-              Enroll yourself →
+              Enroll yourself {'->'}
             </Link>
           )}
         </div>

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Daily Automation Scheduler Service for ZERO.
 
 Handles scheduled automation tasks including:
@@ -287,7 +287,7 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "reachy_email_nudge": {
-        "cron": "*/5 * * * *",  # Every 5 minutes — aligned with gmail_check incremental sync
+        "cron": "*/5 * * * *",  # Every 5 minutes â€” aligned with gmail_check incremental sync
         "description": "Per-email voice triage: announce new arrivals through Reachy and drive read/ignore/delete/respond loop",
         "enabled": True
     },
@@ -312,7 +312,7 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "reachy_ambient_heartbeat": {
-        "cron": "*/2 * * * *",  # Every 2 minutes — frequent enough to feel alive without being annoying
+        "cron": "*/2 * * * *",  # Every 2 minutes â€” frequent enough to feel alive without being annoying
         "description": "In ambient mode and only when idle, play a small low-key emotion (attentive/curious/thoughtful) so Reachy doesn't sit perfectly still",
         "enabled": True
     },
@@ -422,7 +422,7 @@ DAILY_SCHEDULE = {
     },
     # Autonomous Task Worker
     "task_worker": {
-        "cron": "*/5 * * * *",  # Every 5 minutes (was 2min — too aggressive)
+        "cron": "*/5 * * * *",  # Every 5 minutes (was 2min â€” too aggressive)
         "description": "Pick up queued autonomous tasks and execute them",
         "enabled": True
     },
@@ -433,7 +433,7 @@ DAILY_SCHEDULE = {
     },
     # Continuous Enhancement Engine
     "continuous_enhancement_engine": {
-        "cron": "*/30 * * * *",  # Every 30 minutes (was 10min — too aggressive, hits SearXNG limits)
+        "cron": "*/30 * * * *",  # Every 30 minutes (was 10min â€” too aggressive, hits SearXNG limits)
         "description": "Continuous enhancement engine - scan, analyze, queue improvements for Zero and Legion",
         "enabled": True
     },
@@ -501,7 +501,7 @@ DAILY_SCHEDULE = {
     },
     # TikTok 24/7 Pipeline Automation
     "tiktok_continuous_research": {
-        "cron": "0 */4 * * *",  # Every 4 hours (was 2h — reduced to ease SearXNG load)
+        "cron": "0 */4 * * *",  # Every 4 hours (was 2h â€” reduced to ease SearXNG load)
         "description": "Continuous TikTok product discovery pipeline (6x daily)",
         "enabled": True
     },
@@ -578,7 +578,7 @@ DAILY_SCHEDULE = {
     },
     "meal_discovery": {
         "cron": "0 11 * * 0",  # Sunday 11:00 AM
-        "description": "Weekly discovery — search for new meal delivery services to track",
+        "description": "Weekly discovery â€” search for new meal delivery services to track",
         "enabled": True
     },
     "meal_daily_digest": {
@@ -619,7 +619,7 @@ DAILY_SCHEDULE = {
         "enabled": True
     },
     "prediction_price_snapshot": {
-        "cron": "*/30 * * * *",  # Every 30 minutes (was 15min — reduced API load)
+        "cron": "*/30 * * * *",  # Every 30 minutes (was 15min â€” reduced API load)
         "description": "Capture prediction market price snapshots",
         "enabled": True
     },
@@ -651,37 +651,37 @@ DAILY_SCHEDULE = {
     },
     # Daily Autonomous Report
     "daily_autonomous_report": {
-        "cron": "0 20 * * *",  # 8:00 PM daily — end-of-day summary
+        "cron": "0 20 * * *",  # 8:00 PM daily â€” end-of-day summary
         "description": "Generate daily report of all autonomous activity, failures, and missing jobs",
         "enabled": True
     },
-    # AI Company — Deep Research & Experiments
+    # AI Company â€” Deep Research & Experiments
     "ai_company_deep_research": {
         "cron": "0 */6 * * *",  # Every 6 hours
         "description": "Run deep research on highest-priority queued topic",
         "enabled": False
     },
-    # Autonomous Research Loop — 24/7 driver with concurrency + budget gates
+    # Autonomous Research Loop â€” 24/7 driver with concurrency + budget gates
     "autonomous_research_tick": {
         "cron": "*/15 * * * *",  # Every 15 minutes
         "description": "Drives continuous background research; picks eligible topic, dispatches deep research, writes results into the Obsidian vault",
         "enabled": False
     },
-    # Ambient vision loop — Phase 5 of the Meta-glasses / Reachy-camera plan.
+    # Ambient vision loop â€” Phase 5 of the Meta-glasses / Reachy-camera plan.
     # Pulls a frame from the active SightProvider, runs VLM, writes notable
     # observations to /vault/00_Meta/_agent/vision/. Skips when idle.
     "ambient_vision_tick": {
         "cron": "*/1 * * * *",  # every minute; the tick itself skips if <60s frame staleness, etc.
-        "description": "Ambient vision — capture a frame from the active sight provider, VLM-describe it, log to vault, surface actionable events",
+        "description": "Ambient vision â€” capture a frame from the active sight provider, VLM-describe it, log to vault, surface actionable events",
         "enabled": True
     },
-    # Vault indexer — SecondBrain Phase 2
+    # Vault indexer â€” SecondBrain Phase 2
     "vault_reindex_tick": {
         "cron": "*/2 * * * *",  # Every 2 minutes
         "description": "Walk the Obsidian vault for changed markdown files, re-chunk and re-embed into vault_chunks",
         "enabled": True
     },
-    # Vault task sync — SecondBrain Phase 3
+    # Vault task sync â€” SecondBrain Phase 3
     "vault_task_sync_tick": {
         "cron": "*/3 * * * *",  # Every 3 minutes
         "description": "Scan daily notes for checkbox tasks and bi-directionally sync with TaskModel",
@@ -692,7 +692,7 @@ DAILY_SCHEDULE = {
         "description": "Mark pending approvals past their expiry as expired",
         "enabled": True
     },
-    # SecondBrain Phase 4 — morning digest + weekly review + drift scan
+    # SecondBrain Phase 4 â€” morning digest + weekly review + drift scan
     "morning_digest_tick": {
         "cron": "30 6 * * *",  # 6:30 AM daily
         "description": "Aggregate overnight events into a 7-section digest written into today's daily note",
@@ -893,7 +893,7 @@ DAILY_SCHEDULE = {
     },
     # Media content automation (TV shows + movies)
     "media_auto_research": {
-        "cron": "*/2 * * * *",  # Every 2 minutes — keep the queue flowing
+        "cron": "*/2 * * * *",  # Every 2 minutes â€” keep the queue flowing
         "description": "Auto-research pending TV/movie titles (up to 6 per run, ~180/hr throughput)",
         "enabled": True
     },
@@ -1065,6 +1065,14 @@ DAILY_SCHEDULE = {
     "loop_health_5min": {
         "cron": "*/5 * * * *",
         "description": "Cross-project loops: replay buffer + Legion tripwire + circuit breaker telemetry",
+        "enabled": True,
+    },
+    # Memory Vault daily global digest â€” rolls up yesterday's vault entries
+    # into a single `global/{yyyymmdd}.md` chunk so the user has one place
+    # to read what Zero saw across all sources that day.
+    "memory_vault_daily_digest": {
+        "cron": "0 4 * * *",  # 04:00 UTC daily
+        "description": "Memory Vault: write daily global digest across all vault sources",
         "enabled": True,
     },
 }
@@ -1594,6 +1602,7 @@ class SchedulerService:
             "loop_promote_hourly": self._run_loop_promote,
             "loop_crosspoll_30m": self._run_loop_crosspoll,
             "loop_health_5min": self._run_loop_health,
+            "memory_vault_daily_digest": self._run_memory_vault_daily_digest,
         }
         return handlers.get(job_name)
 
@@ -1975,11 +1984,11 @@ Have a great evening!"""
                 continue
             self._reachy_nudged_events[key] = now_s
             if bucket == 1:
-                text = f"Heads up — {title} starts in one minute."
+                text = f"Heads up â€” {title} starts in one minute."
             elif bucket == 5:
-                text = f"Reminder — {title} starts in five minutes."
+                text = f"Reminder â€” {title} starts in five minutes."
             else:
-                text = f"Coming up — {title} starts in ten minutes."
+                text = f"Coming up â€” {title} starts in ten minutes."
             try:
                 import asyncio as _asyncio
                 _asyncio.create_task(reachy.say(text))
@@ -2066,7 +2075,7 @@ Have a great evening!"""
         """Start a recording for any flagged meeting whose start time just hit.
 
         Routes through the Zero Host Audio Agent when ZERO_HOST_AGENT_URL is
-        configured (the common case — pyaudiowpatch isn't available inside
+        configured (the common case â€” pyaudiowpatch isn't available inside
         zero-api's Linux container). Falls back to in-process capture only
         when the backend itself is running on a host with audio support.
         """
@@ -2136,7 +2145,7 @@ Have a great evening!"""
     async def _run_reachy_meeting_auto_stop(self):
         """Stop the recording for any auto-record meeting whose end time has passed.
 
-        Mirrors the routing in _run_reachy_meeting_auto_record — checks host_agent
+        Mirrors the routing in _run_reachy_meeting_auto_record â€” checks host_agent
         status when configured, local AudioCapture otherwise.
         """
         try:
@@ -2162,7 +2171,7 @@ Have a great evening!"""
 
             use_host_agent = _host_agent_base() is not None
 
-            # One status probe per tick — cheap and avoids stopping a recording
+            # One status probe per tick â€” cheap and avoids stopping a recording
             # that wasn't ours (e.g. manual Quick Meeting still in progress).
             if use_host_agent:
                 status = await get_recording_status_via_host_agent()
@@ -2345,7 +2354,7 @@ Have a great evening!"""
             logger.debug("reachy_ambient_heartbeat_emotion_failed", error=str(e))
 
     async def _run_gmail_check(self):
-        """Incremental Gmail sync — runs against EVERY connected account."""
+        """Incremental Gmail sync â€” runs against EVERY connected account."""
         logger.info("running_gmail_check")
         try:
             from app.services.gmail_service import get_gmail_service
@@ -2436,7 +2445,7 @@ Have a great evening!"""
             logger.error("gmail_digest_failed", error=str(e))
 
     async def _run_calendar_check(self):
-        """Calendar sync — runs against EVERY connected account.
+        """Calendar sync â€” runs against EVERY connected account.
 
         Mirrors `_run_gmail_check`: iterate `oauth_accounts`, call
         `CalendarService.sync_events(account_id=...)` per row. Each event is
@@ -2472,7 +2481,7 @@ Have a great evening!"""
                         error=str(e),
                     )
 
-            # Phase 6: auto-record-all — when the user has enabled it, every
+            # Phase 6: auto-record-all â€” when the user has enabled it, every
             # newly-synced calendar event with attendees becomes a Meeting row
             # with auto_record=True. Per-event override stays usable.
             try:
@@ -2769,7 +2778,7 @@ Have a great evening!"""
     # ============================================
 
     async def _run_ecosystem_quick_sync(self):
-        """Quick ecosystem sync — lightweight poll of Legion."""
+        """Quick ecosystem sync â€” lightweight poll of Legion."""
         logger.info("running_ecosystem_quick_sync")
         try:
             from app.services.ecosystem_sync_service import get_ecosystem_sync_service
@@ -2780,7 +2789,7 @@ Have a great evening!"""
             logger.error("ecosystem_quick_sync_failed", error=str(e))
 
     async def _run_ecosystem_full_sync(self):
-        """Full ecosystem sync — deep fetch of all project data."""
+        """Full ecosystem sync â€” deep fetch of all project data."""
         logger.info("running_ecosystem_full_sync")
         try:
             from app.services.ecosystem_sync_service import get_ecosystem_sync_service
@@ -3234,7 +3243,7 @@ Have a great evening!"""
                     lines.append(f"- [{p.opportunity_score:.0f}] {p.name} ({p.niche or 'general'})")
                 if len(pending) > 10:
                     lines.append(f"\n...and {len(pending) - 10} more")
-                lines.append("\nReview in the TikTok Shop dashboard → Approval Queue tab.")
+                lines.append("\nReview in the TikTok Shop dashboard â†’ Approval Queue tab.")
                 await self._send_to_discord(
                     "TikTok Approval Reminder",
                     "\n".join(lines),
@@ -3301,7 +3310,7 @@ Have a great evening!"""
             logger.error("tiktok_performance_sync_failed", error=str(e))
 
     async def _run_tiktok_pipeline_health(self):
-        """Health check for TikTok pipeline — alert on failures, retry stuck jobs."""
+        """Health check for TikTok pipeline â€” alert on failures, retry stuck jobs."""
         logger.info("running_tiktok_pipeline_health")
         try:
             from app.services.tiktok_video_service import get_tiktok_video_service
@@ -3481,7 +3490,7 @@ Have a great evening!"""
             logger.error("meal_shipment_scan_failed", error=str(e))
 
     async def _run_meal_discovery(self):
-        """Weekly discovery — search for new meal delivery services to track."""
+        """Weekly discovery â€” search for new meal delivery services to track."""
         logger.info("running_meal_discovery")
         try:
             from app.services.meal_scraper_service import get_meal_scraper
@@ -3517,7 +3526,7 @@ Have a great evening!"""
                     md = "# New meal service candidates\n\n"
                     md += "Scheduler found these possible new services. Approve in /meals.\n\n"
                     for c in candidates[:40]:
-                        md += f"- [{c.get('title','?')}]({c.get('url','')}) — {c.get('snippet','')[:160]}\n"
+                        md += f"- [{c.get('title','?')}]({c.get('url','')}) â€” {c.get('snippet','')[:160]}\n"
                     writer.write_agent_file(
                         "00_Meta/_agent/meals/discovery_candidates.md",
                         md,
@@ -3554,7 +3563,7 @@ Have a great evening!"""
                 )).scalars().all()
 
             md_lines = [
-                "# Meal digest — " + datetime.utcnow().strftime("%Y-%m-%d"),
+                "# Meal digest â€” " + datetime.utcnow().strftime("%Y-%m-%d"),
                 "",
                 "## Cheapest per meal (stacked, 6 meals)",
                 "",
@@ -3568,14 +3577,14 @@ Have a great evening!"""
             md_lines += ["", "## Top promo codes", ""]
             for p in promos:
                 md_lines.append(
-                    f"- `{p.code or 'auto'}` ({p.source}) — {p.discount_type} {p.discount_value}"
+                    f"- `{p.code or 'auto'}` ({p.source}) â€” {p.discount_type} {p.discount_value}"
                     + (f", expires {p.expires_at:%Y-%m-%d}" if p.expires_at else "")
                 )
             md_lines += ["", "## In-transit shipments", ""]
             for s in in_transit:
                 md_lines.append(
-                    f"- service={s.service_id}, order={s.order_number or '—'}, "
-                    f"carrier={s.carrier or '—'}, status={s.status}"
+                    f"- service={s.service_id}, order={s.order_number or 'â€”'}, "
+                    f"carrier={s.carrier or 'â€”'}, status={s.status}"
                 )
 
             writer = get_vault_writer()
@@ -3740,7 +3749,7 @@ Have a great evening!"""
 
             if issues:
                 await self._send_to_discord(
-                    "⚠️ Prediction Market Issues",
+                    "âš ï¸ Prediction Market Issues",
                     "\n".join(issues),
                     color=0xFF9900
                 )
@@ -3780,7 +3789,7 @@ Have a great evening!"""
             # Deliver to Discord
             message = service.format_discord_message(report)
             await self._send_to_discord(
-                title=f"Daily Report — Grade: {report['grade']}/100",
+                title=f"Daily Report â€” Grade: {report['grade']}/100",
                 message=message,
                 color=0x57F287 if report["grade"] >= 80 else (
                     0xFEE75C if report["grade"] >= 50 else 0xED4245
@@ -3790,7 +3799,7 @@ Have a great evening!"""
             # Store as notification in DB
             notification_service = get_notification_service()
             await notification_service.create_notification(
-                title=f"Daily Report — {report['grade']}/100",
+                title=f"Daily Report â€” {report['grade']}/100",
                 message=message,
                 channel="discord",
                 source="daily_report",
@@ -3819,7 +3828,7 @@ Have a great evening!"""
             generated = int(report.get("carousels", {}).get("generated", 0))
             avg = report.get("carousels", {}).get("stage2_avg_score")
             color = 0x57F287 if (avg or 0) >= 80 else (0xFEE75C if generated > 0 else 0xED4245)
-            title = f"Zero Carousel Employee — {label} Report"
+            title = f"Zero Carousel Employee â€” {label} Report"
             try:
                 await self._send_to_discord(title=title, message=message, color=color)
             except Exception as exc:
@@ -4004,7 +4013,7 @@ Have a great evening!"""
             reports = await research.list_reports(status="completed", limit=3)
             for report in reports:
                 # Propose a council decision based on research findings
-                topic = f"Strategic review: {report.query[:200]} — Should we act on these findings?"
+                topic = f"Strategic review: {report.query[:200]} â€” Should we act on these findings?"
                 await council.propose(CouncilProposal(
                     topic=topic,
                     context={"research_id": report.id, "source": "daily_council_auto"}
@@ -4034,7 +4043,7 @@ Have a great evening!"""
                     from dateutil.parser import parse
                     started = parse(started)
                 if started and (datetime.utcnow() - started.replace(tzinfo=None)) > timedelta(hours=24):
-                    # Flag as stale — mark failed with timeout note
+                    # Flag as stale â€” mark failed with timeout note
                     logger.warning("experiment_stale", exp_id=exp.id, title=exp.title)
                     stale_count += 1
             logger.info("ai_company_experiment_monitor_done", running=len(running), stale=stale_count)
@@ -4132,7 +4141,7 @@ Have a great evening!"""
     # ============================================
 
     async def _run_character_research_refresh(self):
-        """Re-research characters with stale data — episode-aware.
+        """Re-research characters with stale data â€” episode-aware.
 
         Characters linked to a recent or upcoming release signal (via
         TrendingSignalModel populated by trend_tvmaze_schedule) are treated
@@ -4150,7 +4159,7 @@ Have a great evening!"""
             svc = get_character_content_service()
 
             # Build the set of character_ids tied to recent/upcoming release
-            # signals (±14 days). Cheap single query.
+            # signals (Â±14 days). Cheap single query.
             today = date.today()
             window_start = today - timedelta(days=14)
             window_end = today + timedelta(days=14)
@@ -4300,7 +4309,7 @@ Have a great evening!"""
                         generated=generated,
                     )
                     break
-                # Skip characters with empty image pool — generating their
+                # Skip characters with empty image pool â€” generating their
                 # carousels would just be blocked by CarouselImageMissingError.
                 # Image bootstrap fires asynchronously; they'll be eligible on
                 # a later tick.
@@ -4601,7 +4610,7 @@ Have a great evening!"""
 
             # Candidates: published carousels with a publish_url and either no
             # views yet OR last sync > 6h old (heuristic: use published_at as
-            # proxy — we re-sync any row whose published_at is within 30 days
+            # proxy â€” we re-sync any row whose published_at is within 30 days
             # so recent content gets fresh numbers; older rows skip).
             cutoff = _dt.now(_tz.utc) - _td(days=30)
             async with get_session() as session:
@@ -4998,7 +5007,7 @@ Have a great evening!"""
     async def _run_media_auto_research(self):
         """Auto-research pending media titles (TV/movie), up to 3 per run.
 
-        Resets any title stuck in 'researching' for >30 min to 'pending' first —
+        Resets any title stuck in 'researching' for >30 min to 'pending' first â€”
         `research_media_title` sets the status at the start of its run and
         leaves it there if the process is killed mid-pipeline (e.g. container
         restart), so without this reset orphaned titles stay stuck forever.
@@ -5314,7 +5323,7 @@ Have a great evening!"""
                             # Pull hook_style + story_template from the
                             # Thompson picker so release-prep bursts inherit
                             # the same variety/learning as the main generation
-                            # loop (was previously skipping both → most of
+                            # loop (was previously skipping both â†’ most of
                             # these rows had hook_style=NULL, which silently
                             # disables PromptBreeder evaluation).
                             variant_pick = {}
@@ -5690,7 +5699,7 @@ Have a great evening!"""
                 lines.append(f"  {item}")
 
         if briefing.suggestions:
-            lines.append("\n💡 **Suggestions**")
+            lines.append("\nðŸ’¡ **Suggestions**")
             for suggestion in briefing.suggestions[:3]:
                 lines.append(f"  - {suggestion}")
 
@@ -5963,6 +5972,62 @@ Have a great evening!"""
             legion_consecutive_failures=state.get("consecutive_failures", 0),
             **replay,
         )
+
+    async def _run_memory_vault_daily_digest(self):
+        """Roll up yesterday's vault entries into one global digest file.
+
+        Walks every Source-tree entry created in the last 24 h, formats a
+        short markdown summary per source, and writes the combined text to
+        ``vault/global/{yyyymmdd}.md`` via the Memory Vault service. This is
+        the openhuman "Global tree" pattern â€” one place to read what the
+        agent saw across all sources for the day.
+        """
+        from datetime import datetime, timedelta, timezone
+        try:
+            from app.services.memory_tree import get_memory_tree
+            from app.services.memory_tree.vault import list_entries
+        except Exception as e:
+            logger.warning("memory_vault_digest_import_failed", error=str(e))
+            return
+
+        tree = get_memory_tree()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_iso = cutoff.isoformat(timespec="seconds")
+
+        entries = list_entries(tree.root, scope="source")
+        recent_by_source: dict[str, list] = {}
+        for entry in entries:
+            created = entry.frontmatter.get("created", "")
+            if not created or created.replace("Z", "") < cutoff_iso:
+                continue
+            src = entry.frontmatter.get("source", "unknown")
+            recent_by_source.setdefault(src, []).append(entry)
+
+        if not recent_by_source:
+            logger.info("memory_vault_digest_skipped", reason="no_fresh_chunks")
+            return
+
+        sections: list[str] = []
+        for src, items in sorted(recent_by_source.items()):
+            lines = [f"## {src} ({len(items)} chunk(s))"]
+            for e in items[:10]:
+                title = e.frontmatter.get("title", e.path.stem)
+                preview = e.body[:160].replace("\n", " ")
+                lines.append(f"- **{title}** â€” {preview}â€¦")
+            sections.append("\n".join(lines))
+
+        body = (
+            f"Daily digest for {datetime.utcnow().strftime('%Y-%m-%d')} UTC.\n"
+            f"Sources covered: {len(recent_by_source)}, chunks: "
+            f"{sum(len(v) for v in recent_by_source.values())}.\n\n"
+            + "\n\n".join(sections)
+        )
+        path = await tree.write_global_digest(
+            body,
+            title=f"Daily digest {datetime.utcnow().strftime('%Y-%m-%d')}",
+            sources=sorted(recent_by_source.keys()),
+        )
+        logger.info("memory_vault_digest_written", path=str(path))
 
 
 # ============================================

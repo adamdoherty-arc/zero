@@ -1811,6 +1811,16 @@ class LocalRealtimeHandler:
             self._assistant_audio_active_until,
             time.monotonic() + speech_seconds + OUTPUT_ECHO_GUARD_S,
         )
+        # Pre-compute mascot viseme frames aligned to the same 50 ms chunk
+        # boundary we emit audio.delta on. Surfaces an on-screen mouth shape
+        # without the frontend having to redo char-walking. See
+        # backend/app/services/reachy_realtime/visemes.py.
+        from app.services.reachy_realtime.visemes import (
+            viseme_frames_for_speech,
+        )
+        viseme_frames = list(
+            viseme_frames_for_speech(text, speech_seconds, frame_rate_hz=20.0)
+        )
         # Emit in 50 ms chunks so the head wobbler animates smoothly and the
         # speaker pipe doesn't get flooded.
         chunk_samples = OUTPUT_RATE // 20  # 50 ms
@@ -1825,6 +1835,13 @@ class LocalRealtimeHandler:
                 "rate": OUTPUT_RATE,
                 "audio_b64": base64.b64encode(piece).decode("ascii"),
             })
+            frame_idx = i // chunk_bytes
+            if frame_idx < len(viseme_frames):
+                vf = viseme_frames[frame_idx]
+                await self._emit({
+                    "type": "mascot.viseme",
+                    **vf,
+                })
             if self._on_assistant_audio is not None:
                 try:
                     self._assistant_audio_active_until = max(

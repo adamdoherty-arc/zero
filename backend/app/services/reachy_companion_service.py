@@ -630,9 +630,9 @@ class ReachyCompanionService:
             elif connected:
                 detail = "Robot body is reachable but not fully ready."
             elif host_daemon and host_daemon.get("running"):
-                detail = "Reachy daemon is running, but robot state is not responding."
+                detail = "Zero robot daemon is running, but robot state is not responding."
             else:
-                detail = "Reachy daemon is stopped or unavailable."
+                detail = "Zero robot daemon is stopped or unavailable."
             return {
                 "connected": connected,
                 "ready": ready,
@@ -744,7 +744,7 @@ class ReachyCompanionService:
                 ),
                 "repair": None
                 if body_motion_locked
-                else "Wake the body or check Reachy daemon/USB if this stays degraded.",
+                else "Wake the body or check Zero robot daemon/USB if this stays degraded.",
             },
             {
                 "id": "wake_word",

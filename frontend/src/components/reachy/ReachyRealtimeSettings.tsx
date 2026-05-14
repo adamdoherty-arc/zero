@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
+import { HintPresetPicker } from '@/components/reachy/HintPresetPicker'
 
 /**
  * Settings dialog for the Reachy realtime voice bridge.
@@ -505,7 +506,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
               <SectionHeader
                 icon={Mic}
                 title="Voice"
-                hint="Pick which provider speaks for Reachy."
+                hint="Pick which provider speaks for Zero."
               />
               <div className="grid grid-cols-3 gap-2">
                 {(['openai', 'gemini', 'local'] as const).map((b) => {
@@ -667,12 +668,17 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
               </div>
             </section>
 
+            {/* === Hint preset picker — biases the LLM router toward local
+                 or cloud for light tasks (reaction/classify/format/summarize).
+                 Affects every hint:* call across Zero, not just realtime. === */}
+            <HintPresetPicker />
+
             {/* === SECTION 3: Personality === */}
             <section>
               <SectionHeader
                 icon={Sparkles}
                 title="Personality"
-                hint="Pick the role you want Reachy in. Memory carries across all of them."
+                hint="Pick the role you want Zero in. Memory carries across all of them."
               />
               <div className="grid grid-cols-2 gap-2">
                 {profiles.map((p) => {

@@ -11,7 +11,7 @@ import { useSharedRealtimeVoice } from '@/hooks/useSharedRealtimeVoice'
  * app. No settings-cog navigation required.
  *
  * States:
- *   off         — grey, "Talk to Reachy" pill. Space / Ctrl+Shift+J to start.
+ *   off         — grey, "Talk to Zero" pill. Space / Ctrl+Shift+J to start.
  *   connecting  — amber pulsing dot, "Connecting…"
  *   listening   — emerald dot + pulse, shows session duration + cost. Robot
  *                 is awake and listening; speak naturally.
@@ -206,7 +206,7 @@ export function InteractiveModeBar() {
       : errored
         ? 'Error'
         : realtimeAvailable
-          ? 'Talk to Reachy'
+          ? 'Talk to Zero'
           : 'Interactive Mode off'
 
   const title = connecting
@@ -222,6 +222,31 @@ export function InteractiveModeBar() {
     const r = s % 60
     return `${m}:${r.toString().padStart(2, '0')}`
   }
+
+  // Cost-per-minute ticker — derived from total cost / elapsed seconds.
+  // Only shown when we have at least 5 s of session so the ratio isn't noise.
+  const costPerMin = (() => {
+    if (durationSec < 5 || voice.cost <= 0) return null
+    return (voice.cost / durationSec) * 60
+  })()
+
+  // "Switched provider mid-session" chip. The voice hook exposes the active
+  // model name; if it differs from the configured backend's default model
+  // we surface a small note so the user knows the router rerouted them.
+  const initialBackendRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!connected) {
+      initialBackendRef.current = null
+      return
+    }
+    if (initialBackendRef.current === null && voice.model) {
+      initialBackendRef.current = voice.model
+    }
+  }, [connected, voice.model])
+  const switchedFrom =
+    connected && initialBackendRef.current && voice.model && voice.model !== initialBackendRef.current
+      ? initialBackendRef.current
+      : null
 
   return (
     <button
@@ -263,7 +288,25 @@ export function InteractiveModeBar() {
         <>
           <span className="text-emerald-300/80 font-mono">{fmtDuration(durationSec)}</span>
           {voice.cost > 0 && (
-            <span className="text-emerald-300/80 font-mono">${voice.cost.toFixed(3)}</span>
+            <span
+              className="text-emerald-300/80 font-mono"
+              title={costPerMin !== null ? `~$${costPerMin.toFixed(3)}/min` : undefined}
+            >
+              ${voice.cost.toFixed(3)}
+            </span>
+          )}
+          {costPerMin !== null && (
+            <span className="hidden lg:inline text-emerald-400/60 font-mono text-[10px]">
+              ${costPerMin.toFixed(2)}/min
+            </span>
+          )}
+          {switchedFrom && (
+            <span
+              className="hidden md:inline-flex items-center gap-1 rounded-full border border-amber-700 bg-amber-900/40 px-2 py-0.5 text-[10px] text-amber-100"
+              title={`Mid-session swap: ${switchedFrom} → ${voice.model}`}
+            >
+              ↻ {voice.model}
+            </span>
           )}
           {partial?.content && (
             <span className="max-w-[160px] truncate text-emerald-200/80 italic hidden md:inline">

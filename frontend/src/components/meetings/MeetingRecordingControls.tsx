@@ -129,7 +129,7 @@ function ReachyBadge({ connected }: { connected: boolean }) {
       title={connected ? 'Reachy Mini daemon reachable on :8000' : 'Reachy Mini daemon not reachable'}
     >
       <Bot className="w-3.5 h-3.5" />
-      Reachy: {connected ? 'Connected' : 'Offline'}
+      Zero: {connected ? 'Connected' : 'Offline'}
     </span>
   )
 }

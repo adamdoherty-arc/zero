@@ -13,7 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Download the display font family used by the carousel renderer.
 # The script is idempotent and uses github.com/google/fonts raw URLs (OFL/Apache).
 COPY scripts/download_fonts.sh /tmp/download_fonts.sh
-RUN chmod +x /tmp/download_fonts.sh && FONTS_DIR=/app/backend/assets/fonts /tmp/download_fonts.sh
+RUN sed -i 's/\r$//' /tmp/download_fonts.sh \
+    && chmod +x /tmp/download_fonts.sh \
+    && FONTS_DIR=/app/backend/assets/fonts /bin/sh /tmp/download_fonts.sh
 
 # Install dependencies in two passes so pip's resolver has a smaller search
 # space per call. Pass 1 = the legacy stack (LangGraph, Whisper, Reachy
@@ -21,12 +23,15 @@ RUN chmod +x /tmp/download_fonts.sh && FONTS_DIR=/app/backend/assets/fonts /tmp/
 # aioboto3, etc.). One-shot resolution of the combined graph trips
 # ``ResolutionTooDeep`` on pip 24.0.
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+ENV PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN pip install --no-cache-dir --timeout=300 --retries=10 --upgrade pip setuptools wheel \
     && (sed -n '1,144p' requirements.txt > /tmp/legacy.txt) \
     && (sed -n '145,$p' requirements.txt > /tmp/carousel_v2.txt) \
-    && pip install --no-cache-dir --timeout=300 -r /tmp/legacy.txt \
-    && pip install --no-cache-dir --timeout=300 -r /tmp/carousel_v2.txt \
-    && pip install --no-cache-dir --no-deps "protobuf>=4.25.3,<5"
+    && pip install --no-cache-dir --timeout=300 --retries=10 -r /tmp/legacy.txt \
+    && pip install --no-cache-dir --timeout=300 --retries=10 -r /tmp/carousel_v2.txt \
+    && pip install --no-cache-dir --timeout=300 --retries=10 --no-deps "protobuf>=4.25.3,<5"
 
 # Pre-download openWakeWord ONNX models so the wake-word service can lazy-load
 # without a network call on first request. Idempotent — no-op if files exist.

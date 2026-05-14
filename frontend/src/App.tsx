@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { MobileLayout } from '@/layouts/MobileLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -7,6 +7,7 @@ import { MobileHomePage } from '@/pages/MobileHomePage'
 import { MobileReviewPage } from '@/pages/MobileReviewPage'
 import { MobileVideosPage } from '@/pages/MobileVideosPage'
 import { MobileCharactersPage } from '@/pages/MobileCharactersPage'
+import MascotPopout from '@/pages/MascotPopout'
 import { MobileOnboardingPage } from '@/pages/MobileOnboardingPage'
 import { SharePage } from '@/pages/SharePage'
 import { BoardPage } from '@/pages/BoardPage'
@@ -22,6 +23,10 @@ import { ResearchPage } from '@/pages/ResearchPage'
 import { MoneyMakerPage } from '@/pages/MoneyMakerPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import IntegrationsPage from '@/pages/IntegrationsPage'
+import MemoryVaultPage from '@/pages/MemoryVaultPage'
+import MeetingAgentPage from '@/pages/MeetingAgentPage'
+import OpenHandsTasksPage from '@/pages/OpenHandsTasksPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
 import { ArchitecturePage } from '@/pages/ArchitecturePage'
 import { QAPage } from '@/pages/QAPage'
@@ -103,6 +108,7 @@ function App() {
             <Route path="characters" element={<MobileCharactersPage />} />
           </Route>
           <Route path="/m/onboarding" element={<MobileOnboardingPage />} />
+          <Route path="/m/mascot" element={<MascotPopout />} />
           <Route path="/share" element={<SharePage />} />
 
           <Route element={<DashboardLayout />}>
@@ -122,6 +128,10 @@ function App() {
             <Route path="/research" element={<ResearchPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/integrations" element={<IntegrationsPage />} />
+            <Route path="/memory-vault" element={<MemoryVaultPage />} />
+            <Route path="/meeting-agent" element={<MeetingAgentPage />} />
+            <Route path="/openhands" element={<OpenHandsTasksPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
             <Route path="/qa" element={<QAPage />} />
             <Route path="/agent" element={<AgentPage />} />
@@ -165,13 +175,20 @@ function App() {
             <Route path="/brain" element={<BrainDashboardPage />} />
             <Route path="/brain/employee" element={<BrainEmployeePage />} />
             <Route path="/employee" element={<EmployeeDashboardPage />} />
-            <Route path="/reachy" element={<ReachyMotionLibraryPage />} />
-            <Route path="/reachy/teleop" element={<ReachyTeleopPage />} />
-            <Route path="/reachy/meetings" element={<ReachyMeetingsPage />} />
-            <Route path="/reachy/home-assistant" element={<ReachyHomeAssistantPage />} />
-            <Route path="/reachy/voice-settings" element={<ReachyVoiceSettingsPage />} />
-            <Route path="/reachy/radio" element={<ReachyRadioPage />} />
-            <Route path="/reachy/memory" element={<ReachyMemoryPage />} />
+            <Route path="/zero" element={<ReachyMotionLibraryPage />} />
+            <Route path="/zero/teleop" element={<ReachyTeleopPage />} />
+            <Route path="/zero/meetings" element={<ReachyMeetingsPage />} />
+            <Route path="/zero/home-assistant" element={<ReachyHomeAssistantPage />} />
+            <Route path="/zero/voice-settings" element={<ReachyVoiceSettingsPage />} />
+            <Route path="/zero/radio" element={<ReachyRadioPage />} />
+            <Route path="/zero/memory" element={<ReachyMemoryPage />} />
+            <Route path="/reachy" element={<Navigate to="/zero" replace />} />
+            <Route path="/reachy/teleop" element={<Navigate to="/zero/teleop" replace />} />
+            <Route path="/reachy/meetings" element={<Navigate to="/zero/meetings" replace />} />
+            <Route path="/reachy/home-assistant" element={<Navigate to="/zero/home-assistant" replace />} />
+            <Route path="/reachy/voice-settings" element={<Navigate to="/zero/voice-settings" replace />} />
+            <Route path="/reachy/radio" element={<Navigate to="/zero/radio" replace />} />
+            <Route path="/reachy/memory" element={<Navigate to="/zero/memory" replace />} />
             <Route path="/meals" element={<ErrorBoundary pageName="Meals"><MealsPage /></ErrorBoundary>} />
             <Route path="/characters" element={<CharacterContentLayout />}>
               <Route index element={<ErrorBoundary pageName="CharacterContent"><CharacterContentPage /></ErrorBoundary>} />

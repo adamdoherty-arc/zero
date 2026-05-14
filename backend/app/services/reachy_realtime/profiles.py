@@ -99,14 +99,27 @@ def _load_upstream_profile(dir_path: Path) -> Optional[Profile]:
             card = None
 
     if instructions is None:
-        instr_file = dir_path / "instructions.txt"
-        if not instr_file.exists():
-            return None
+        # SOUL.md takes precedence over instructions.txt — it's the canonical
+        # persona format from the openhuman / OpenClaw / Claude Code convention.
+        # Falls back to instructions.txt for legacy profiles that haven't
+        # migrated yet.
         try:
-            instructions = _expand_includes(instr_file.read_text(encoding="utf-8").strip())
+            from app.services.soul_md import load_soul_md
+            soul = load_soul_md(dir_path)
+            if soul:
+                instructions = _expand_includes(soul)
         except Exception as e:
-            logger.warning("upstream_profile_read_failed", profile=dir_path.name, error=str(e))
-            return None
+            logger.warning("soul_md_load_failed", profile=dir_path.name, error=str(e))
+
+        if instructions is None:
+            instr_file = dir_path / "instructions.txt"
+            if not instr_file.exists():
+                return None
+            try:
+                instructions = _expand_includes(instr_file.read_text(encoding="utf-8").strip())
+            except Exception as e:
+                logger.warning("upstream_profile_read_failed", profile=dir_path.name, error=str(e))
+                return None
 
     tools = _parse_tools_txt(dir_path / "tools.txt")
     # Card extensions provide DEFAULTS; voice.txt / model.txt / tools.txt
@@ -306,7 +319,11 @@ def _make_realtime_spoken_prompt(text: str) -> str:
     return cleaned.strip() + _REALTIME_SHORT_REPLY_SUFFIX + _REALTIME_SPOKEN_SAFETY_SUFFIX
 
 
-def resolve_instructions(profile_id: Optional[str]) -> str:
+def resolve_instructions(
+    profile_id: Optional[str],
+    *,
+    seed_text: Optional[str] = None,
+) -> str:
     """Resolve the full system prompt for a realtime session.
 
     For Zero personas (companion, assistant, deep_work, …) the prompt is
@@ -314,26 +331,70 @@ def resolve_instructions(profile_id: Optional[str]) -> str:
     shares the same identity / human / relationship blocks as the classic
     voice loop. For any non-Zero upstream profile we fall back to the raw
     instructions text so external HF Spaces apps still work.
+
+    When ``seed_text`` is provided (e.g. the user's opening utterance, a
+    persona-bound seed phrase, or a known topic), microagents whose
+    triggers match are injected as additional context. This is the
+    openhuman/OpenHands microagent pattern: triggered knowledge bundles
+    that load only when relevant, keeping the default prompt slim.
     """
     prof = get_profile(profile_id)
-    # If this is one of our seven personas, use the unified composer so the
-    # human block, relationship block, and persona tweaks all apply. The
-    # working_context is left empty here because realtime instructions are
-    # locked at session start — turn-time vault retrieval is delivered via
-    # the ``lookup_my_notes`` tool registered in the realtime tool catalog.
+
+    base: str
     try:
         from app.services.reachy_personas import get_persona
         if get_persona(prof.id) is not None:
             from app.services.reachy_memory_blocks import compose_system_prompt
-            return _make_realtime_spoken_prompt(compose_system_prompt(
+            base = _make_realtime_spoken_prompt(compose_system_prompt(
                 prof.id,
                 working_context="",
                 include_voice_suffix=False,
             ))
+        else:
+            base = _make_realtime_spoken_prompt(prof.instructions or "")
     except Exception as e:  # noqa: BLE001
         logger.debug("realtime_compose_fallback", error=str(e))
+        base = _make_realtime_spoken_prompt(prof.instructions or "")
 
-    return _make_realtime_spoken_prompt(prof.instructions or "")
+    if seed_text:
+        try:
+            from app.services.microagents_service import get_microagents_service
+            microagents = get_microagents_service()
+            context = microagents.compose_context_for(
+                seed_text, agent_persona=prof.id, max_chars=2000
+            )
+            if context:
+                base = f"{base}\n\n{context}"
+                logger.info(
+                    "microagent_context_injected",
+                    profile=prof.id,
+                    chars=len(context),
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.debug("microagent_inject_failed", error=str(e))
+
+    return base
+
+
+def compose_turn_context(text: str, *, profile_id: Optional[str] = None) -> str:
+    """Per-turn microagent context for chat / classic-voice paths.
+
+    Realtime LLM sessions lock the system prompt at start, so they use
+    ``resolve_instructions(seed_text=...)`` once. Non-realtime callers
+    (chat router, classic STT→Intent→LLM) can call this each turn and
+    inject the returned string just before the user message.
+    """
+    if not text:
+        return ""
+    persona = profile_id or "any"
+    try:
+        from app.services.microagents_service import get_microagents_service
+        return get_microagents_service().compose_context_for(
+            text, agent_persona=persona, max_chars=2000
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("compose_turn_context_failed", error=str(e))
+        return ""
 
 
 def resolve_tools(profile_id: Optional[str]) -> tuple[str, ...]:

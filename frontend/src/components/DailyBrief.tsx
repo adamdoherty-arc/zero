@@ -10,7 +10,7 @@ import {
  * Daily-brief dashboard tile.
  *
  * Renders today's composed brief (sections + bullets), a "speak it" button
- * that streams Reachy/Piper TTS to the browser, "send by email", and a
+ * that streams Zero/Piper TTS to the browser, "send by email", and a
  * manual "regenerate" trigger. Used on the main dashboard plus the
  * exec-dashboard page.
  */

@@ -28,7 +28,7 @@ const STATUS_COLOR: Record<string, string> = {
 /**
  * Per-account email drafts inbox.
  *
- * Reachy drops drafts here (via the supervisor email adapter or the voice
+ * Zero drops drafts here (via the supervisor email adapter or the voice
  * loop). Adam approves/edits/rejects. Approving sends through Gmail using
  * the right account token; rejecting marks discarded.
  */

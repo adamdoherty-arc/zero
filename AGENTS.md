@@ -131,8 +131,8 @@ docker compose -f docker-compose.sprint.yml build --no-cache zero-api
 # View backend logs
 docker logs -f zero-api
 
-# Restart gateway after config changes
-docker compose restart zero-gateway
+# Restart shared LiteLLM/Bifrost after config changes
+docker compose restart shared-litellm shared-bifrost
 
 # Check vLLM served models (qwen3-chat / qwen3-coder)
 curl http://localhost:18800/v1/models
@@ -183,11 +183,14 @@ Before using Glob/Grep to explore the codebase, use QMD MCP tools for documentat
 
 When starting a session or checking the system:
 1. `docker ps --format "table {{.Names}}\t{{.Status}}"`
-2. `docker logs --tail 100 zero-gateway 2>&1 | grep -i "error\|fail\|warn"`
+2. Check active runtime logs, not archived services:
+   - `docker logs --tail 100 zero-api 2>&1 | grep -i "error\|fail\|warn"`
+   - `docker logs --tail 100 shared-litellm 2>&1 | grep -i "error\|fail\|warn"`
+   - `docker logs --tail 100 shared-bifrost 2>&1 | grep -i "error\|fail\|warn"`
 3. Report and fix any issues before proceeding
 
 ## Common Issues
 - **No response**: Check auth-profiles.json exists and shared-litellm + vllm-chat are healthy (`curl http://localhost:4444/health/liveliness`, `curl http://localhost:18800/v1/models`)
-- **WhatsApp disconnected**: `docker exec -it zero-gateway node dist/index.js configure --section channels`
+- **WhatsApp disconnected**: `zero-gateway` is not part of the sprint stack; only run gateway commands if the archived OpenClaw compose file has been explicitly re-enabled.
 - **API 500 errors**: Check `docker logs zero-api` for tracebacks
 - **Frontend not loading**: Verify zero-api is running on port 18792

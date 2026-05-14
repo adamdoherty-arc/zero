@@ -185,12 +185,13 @@ class SearXNGService:
 
         return research
 
-    def format_research_for_llm(self, research: Dict[str, Any]) -> str:
+    def format_research_for_llm(self, research: Dict[str, Any], *, compact_output: bool = True) -> str:
         """
         Format research results into a string for LLM analysis.
 
         Args:
             research: Research dict from research_topic()
+            compact_output: run the result through TokenJuice before returning
 
         Returns:
             Formatted string with research findings
@@ -210,7 +211,16 @@ class SearXNGService:
                     lines.append(f"{r['snippet'][:300]}...")
                 lines.append(f"Source: {r['url']}\n")
 
-        return "\n".join(lines)
+        out = "\n".join(lines)
+        if compact_output:
+            try:
+                from app.services.tokenjuice_compactor import compact_with_telemetry
+                return compact_with_telemetry(
+                    out, kind="text", max_chars=12000, label="searxng_research"
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("searxng_compact_failed", error=str(e))
+        return out
 
     async def health_check(self) -> bool:
         """Check if SearXNG is reachable."""

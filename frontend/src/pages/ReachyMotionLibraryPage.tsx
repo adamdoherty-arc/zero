@@ -66,14 +66,14 @@ function ConnectionBadge() {
     : bodyActivity === 'shaky'
       ? 'Needs Settle'
       : bodyReady
-    ? 'Reachy ready'
+    ? 'Zero ready'
     : asleep
-      ? 'Reachy asleep'
+      ? 'Zero asleep'
       : bodyConnected
         ? 'Body not ready'
         : daemonConnected
           ? 'Daemon only'
-          : 'Reachy offline'
+          : 'Zero offline'
   const tint = hardwareFault || bodyActivity === 'shaky'
     ? 'bg-red-500/20 text-red-300'
     : staleHardwareFault
@@ -135,7 +135,7 @@ function phaseLabel(p: UiPhase): string {
     case 'done':
     case 'idle':
     default:
-      return 'Hold to talk to Reachy'
+      return 'Hold to talk to Zero'
   }
 }
 
@@ -374,7 +374,7 @@ function PushToTalk() {
             {showSettings ? <X className="w-4 h-4" /> : <Settings2 className="w-4 h-4" />}
           </button>
           <Link
-            to="/reachy/voice-settings"
+            to="/zero/voice-settings"
             className="text-[10px] px-2 py-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-800"
             title="Open full voice-settings page"
           >
@@ -427,7 +427,7 @@ function PushToTalk() {
           )}
           {lastResult?.said && (
             <div className="text-xs text-white truncate">
-              <span className="text-gray-500">reachy: </span>
+              <span className="text-gray-500">zero: </span>
               {lastResult.said}
             </div>
           )}
@@ -638,7 +638,7 @@ function ClipCard({
           e.stopPropagation()
           onToggleFavorite()
         }}
-        title={isFavorite ? 'Reachy knows you like this. Click to forget.' : 'Tell Reachy you prefer this clip'}
+        title={isFavorite ? 'Zero knows you like this. Click to forget.' : 'Tell Zero you prefer this clip'}
         className={`absolute top-1.5 right-1.5 p-1 rounded hover:bg-white/10 ${
           isFavorite ? 'text-amber-300' : 'text-gray-600 hover:text-amber-300'
         }`}
@@ -745,7 +745,7 @@ export function ReachyMotionLibraryPage() {
           text: `${FAVORITE_CLIP_PREFIX}${clip.name}`,
           confidence: 1.0,
         })
-        toast({ title: `Reachy will remember you like ${clip.name}` })
+        toast({ title: `Zero will remember you like ${clip.name}` })
       }
     } catch (err) {
       toast({ title: 'Favorite update failed', description: String(err), variant: 'destructive' })
@@ -807,7 +807,7 @@ export function ReachyMotionLibraryPage() {
         reason: 'body_tab',
       })
       toast({
-        title: result.body_activity === 'shaky' ? 'Reachy settled, but jitter remains' : 'Reachy settled',
+        title: result.body_activity === 'shaky' ? 'Zero settled, but jitter remains' : 'Zero settled',
         description:
           result.active_source_ids.length > 0
             ? `Still active: ${result.active_source_ids.join(', ')}`
@@ -827,7 +827,7 @@ export function ReachyMotionLibraryPage() {
             <Bot className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Reachy Assistant Console</h1>
+            <h1 className="text-2xl font-bold text-white">Zero Assistant Console</h1>
             <p className="text-sm text-gray-400">
               {data
                 ? 'Start a live assistant, keep the body calm, then open controls only when you need them.'
@@ -866,7 +866,7 @@ export function ReachyMotionLibraryPage() {
       <InteractiveModeHero />
 
       {/* === SUB-PAGES === quick nav to Teleop / Meetings / HA / Voice / Radio */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-1">More Reachy</div>
+      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-1">More Zero</div>
       <SubPagesNav />
 
       {/* === PRESENCE === daemon, persona, context */}
@@ -915,7 +915,7 @@ export function ReachyMotionLibraryPage() {
             <button
               onClick={() => wakeUp.mutate()}
               disabled={bodyMotionLocked || wakeUp.isPending}
-              title={bodyMotionLocked ? 'Body motion is locked' : 'Wake Reachy'}
+              title={bodyMotionLocked ? 'Body motion is locked' : 'Wake Zero'}
               className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
             >
               <Sun className="w-4 h-4" /> Wake
@@ -923,7 +923,7 @@ export function ReachyMotionLibraryPage() {
             <button
               onClick={() => sleep.mutate()}
               disabled={bodyMotionLocked || sleep.isPending}
-              title={bodyMotionLocked ? 'Body motion is locked' : 'Sleep Reachy'}
+              title={bodyMotionLocked ? 'Body motion is locked' : 'Sleep Zero'}
               className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
             >
               <MoonStar className="w-4 h-4" /> Sleep
@@ -1111,7 +1111,7 @@ function ModesPanel() {
               <div className="text-xs text-gray-400 font-mono">{formatElapsed(meeting.data?.elapsed_s)}</div>
               {meeting.data?.doa_available === false && (
                 <div className="text-[10px] text-amber-400/80 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-1">
-                  DoA unavailable. Head-tracking is off. Check host_agent + Reachy daemon mics.
+                  DoA unavailable. Head-tracking is off. Check host_agent + robot daemon mics.
                 </div>
               )}
               <button
@@ -1175,7 +1175,7 @@ function MemoryCard() {
     try {
       await add.mutateAsync({ category: draftCat, text })
       setDraft('')
-      toast({ title: 'Reachy will remember that.' })
+      toast({ title: 'Zero will remember that.' })
     } catch (e) {
       toast({ title: 'Could not save note', description: String(e), variant: 'destructive' })
     }
@@ -1200,7 +1200,7 @@ function MemoryCard() {
     <div className="glass-card p-4 mb-4">
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide flex items-center gap-2">
-          <Brain className="w-4 h-4" /> Reachy remembers
+          <Brain className="w-4 h-4" /> Zero remembers
         </h2>
         {stats && (
           <div className="text-[11px] text-gray-500">
@@ -1211,7 +1211,7 @@ function MemoryCard() {
 
       {notes.length === 0 ? (
         <p className="text-xs text-gray-500 italic mb-3">
-          No notes yet. After a few turns Reachy will start remembering things about you
+          No notes yet. After a few turns Zero will start remembering things about you
           automatically, or add one below.
         </p>
       ) : (
@@ -1265,7 +1265,7 @@ function MemoryCard() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') onAdd()
           }}
-          placeholder="Teach Reachy something durable about you…"
+          placeholder="Teach Zero something durable about you…"
           className="flex-1 text-xs bg-gray-800/70 border border-gray-700 rounded px-2 py-1.5 text-white focus:outline-none focus:border-fuchsia-500"
         />
         <button
@@ -1324,7 +1324,7 @@ function ContextChips() {
   }
   if (ctx.attention) {
     const map: Record<string, string> = {
-      with_reachy: 'Engaged with you',
+      with_reachy: 'Engaged with Zero',
       at_screen: 'At screen',
       moving: 'Moving around',
       away: 'Away from desk',
@@ -1343,7 +1343,7 @@ function ContextChips() {
       <div className="flex items-center gap-2 mb-2">
         <CalendarClock className="w-4 h-4 text-indigo-400" />
         <h2 className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
-          What Reachy knows right now
+          What Zero knows right now
         </h2>
       </div>
       <div className="flex items-center gap-1.5 flex-wrap">

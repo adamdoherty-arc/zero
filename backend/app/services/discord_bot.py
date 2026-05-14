@@ -50,9 +50,16 @@ def _load_dotenv():
 _load_dotenv()
 
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN", "")
-ALLOWED_USER_ID = int(os.getenv("DISCORD_USER_ID", "0"))
-GUILD_ID = int(os.getenv("DISCORD_GUILD_ID", "0"))
-NOTIFICATION_CHANNEL_ID = int(os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID", "0"))
+
+
+def _env_int(name: str) -> int:
+    raw = (os.getenv(name) or "").strip()
+    return int(raw) if raw else 0
+
+
+ALLOWED_USER_ID = _env_int("DISCORD_USER_ID")
+GUILD_ID = _env_int("DISCORD_GUILD_ID")
+NOTIFICATION_CHANNEL_ID = _env_int("DISCORD_NOTIFICATION_CHANNEL_ID")
 
 # Discord intents
 intents = discord.Intents.default()

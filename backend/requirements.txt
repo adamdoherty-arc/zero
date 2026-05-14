@@ -178,3 +178,8 @@ stamina>=24.3.0
 
 # purgatory — async circuit breaker (Phase 6 production hardening).
 purgatory>=3.0.0
+
+# composio-core — 118+ third-party integrations with one-click OAuth.
+# Optional: the provider degrades gracefully when missing or when
+# COMPOSIO_API_KEY is unset (falls back to Zero's native code paths).
+composio-core>=0.7.21; python_version >= "3.10"

@@ -33,7 +33,7 @@ interface Snapshot {
 const BLOCK_LABELS: Record<string, { title: string; hint: string }> = {
   persona: {
     title: 'Persona tuning',
-    hint: 'Persistent overrides on top of the active persona ("user prefers I skip greetings", "always speak in short sentences"). Reachy obeys these every turn.',
+    hint: 'Persistent overrides on top of the active persona ("user prefers I skip greetings", "always speak in short sentences"). Zero obeys these every turn.',
   },
   human: {
     title: 'Who you are',
@@ -185,7 +185,7 @@ export function ReachyMemoryPage() {
     <div className="p-4 md:p-6 space-y-6">
       <header className="flex items-center gap-2">
         <Brain className="w-5 h-5 text-indigo-400" />
-        <h1 className="text-xl font-semibold text-gray-100">Reachy Memory</h1>
+        <h1 className="text-xl font-semibold text-gray-100">Zero Memory</h1>
         <span className="text-xs text-gray-500">Long-term memory blocks composed into every voice turn</span>
       </header>
 

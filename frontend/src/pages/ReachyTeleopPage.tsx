@@ -114,7 +114,7 @@ export function ReachyTeleopPage() {
           <Gamepad2 className="w-6 h-6 text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Reachy Teleop</h1>
+          <h1 className="text-2xl font-bold text-white">Zero Teleop</h1>
           <p className="text-sm text-gray-400">
             {status.data?.connected ? 'Connected' : 'Offline'} · keyboard or sliders
           </p>
@@ -197,7 +197,7 @@ function MoveRecorderPanel() {
     }
     try {
       const res = await start.mutateAsync({ library, name, description })
-      toast({ title: `Recording "${name}"`, description: 'Move Reachy by hand. Torque is released.' })
+      toast({ title: `Recording "${name}"`, description: 'Move Zero by hand. Torque is released.' })
       return res
     } catch (e) {
       toast({ title: 'Start failed', description: String(e), variant: 'destructive' })

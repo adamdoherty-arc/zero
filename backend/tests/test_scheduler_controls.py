@@ -21,7 +21,7 @@ def _small_schedule() -> dict:
         },
         "reachy_email_nudge": {
             "cron": "*/5 * * * *",
-            "description": "Reachy email voice",
+            "description": "Zero email voice",
             "enabled": True,
         },
         "tiktok_niche_deep_dive": {

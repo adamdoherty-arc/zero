@@ -56,7 +56,7 @@ export function DashboardPage() {
         <TaskSubmitForm />
       </div>
 
-      {/* System Status + Reachy live view */}
+      {/* System Status + Zero robot live view */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
         <div className="lg:col-span-1 flex">
           <div className="flex-1 flex flex-col gap-4">

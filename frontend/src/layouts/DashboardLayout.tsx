@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { CommandMenu } from '@/components/layout/CommandMenu'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { FloatingVoiceButton } from '@/components/reachy/FloatingVoiceButton'
+import { MascotDock } from '@/components/reachy/Mascot/MascotDock'
 import { RealtimeVoiceProvider } from '@/hooks/useSharedRealtimeVoice'
 
 export function DashboardLayout() {
@@ -25,6 +26,7 @@ export function DashboardLayout() {
         </SidebarInset>
         <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
         <FloatingVoiceButton />
+        <MascotDock />
       </SidebarProvider>
     </RealtimeVoiceProvider>
   )

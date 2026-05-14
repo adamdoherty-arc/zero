@@ -2,9 +2,10 @@
 owner: company
 status: canonical
 source_of_truth: topology
-last_verified: 2026-05-02
+last_verified: 2026-05-14
 verified_against:
   - C:\code\shared-infra\litellm\config.yaml
+  - C:\code\shared-infra\bifrost\config.json
   - C:\code\shared-infra\docker-compose.vllm.yml
   - C:\code\Legion\docs\LEGION_OVERVIEW.md
 drift_policy: Legion may propose doc updates after runtime verification
@@ -87,7 +88,7 @@ MCP tool fabric (NEW)
 Approval queue (Postgres `approvals` table) + Agent Inbox UI (extends Legion's)
   Tiers enforced:
     read           — no gate
-    write_local    — auto if salience < 0.6 in DND, else inbox
+    write_local    — mature internal schedulers only; new integration surfaces queue approval
     write_external — always interrupt, salience-batched
     financial      — always interrupt, never auto, requires explicit confirm
                       ↓
@@ -110,13 +111,21 @@ Observability
 
 Zero is the active control plane for the company. The Company Operator service
 uses Zero's scheduler, task database, approval queue, prompt run tables,
-company docs, and Reachy voice surface. Legion remains the evaluation and
+company docs, and Zero voice surface through Reachy Mini hardware. Legion remains the evaluation and
 implementation-execution partner: it grades prompt outcomes, runs engineering
 sprints, and provides read-only status to the company dashboard.
 
 Operator rule: internal work can run overnight; external, legal, financial,
 client, public, account, and credential actions require approval records before
 execution.
+
+PR #1 integration rule: new Zero surfaces must be honest and gated. The Memory
+Vault lives at `/vault/00_Meta/_agent/memory_vault/` and HTTP writes queue
+approval through `/api/memory-vault/*`. Gmail/Calendar cannot report connected
+without real OAuth. Browser control, Telegram send, trigger webhooks/tools,
+OpenHands dispatch, and local vault writes must either create approval records
+or return `unavailable`. Meeting Agent remains unavailable unless a real
+join/audio/transcript driver is enabled.
 
 ## Model routing table (canonical names → backend)
 
@@ -138,7 +147,7 @@ Privacy gate: anything tagged `vault-write | trading-decision | personal-journal
 
 ## Partition tags
 
-Every event producer (Zero, Ada, Legion, Reachy, MCP servers) attaches one of:
+Every event producer (Zero, Ada, Legion, Reachy Mini hardware services, MCP servers) attaches one of:
 
 - `partition: personal` — life, journal, vault
 - `partition: zero-dev` — Zero codebase work
@@ -152,7 +161,7 @@ The vault constitution at `C:\code\vault\ObsidianZero\00_Meta\CLAUDE.md` enforce
 | Tier | Examples | Default behavior |
 |---|---|---|
 | `read` | vault read, FRED query, Tradier positions | No gate |
-| `write_local` | vault `_agent/` write, Postgres update, daily-note `## Agent Summary` append | Auto if salience < 0.6 OR DND active → batch to inbox; else execute |
+| `write_local` | vault `_agent/` write, Memory Vault write, Postgres update, daily-note `## Agent Summary` append | Mature internal schedulers may execute only under their approved contract; new integration/HTTP surfaces queue approval first |
 | `write_external` | git push, gh PR create, GCal event create, gmail send, Discord post | Always `interrupt()`, batched if salience < 0.6 |
 | `financial` | `place_live_order` on any broker, large fund moves | Always `interrupt()` + explicit `confirm: True` flag, never auto |
 
@@ -168,6 +177,6 @@ The vault constitution at `C:\code\vault\ObsidianZero\00_Meta\CLAUDE.md` enforce
 
 - Mermaid only (renders in GitHub, Obsidian, Logseq).
 - Subgraphs grouped by lifecycle layer (perception → cognition → action → integration).
-- Color scheme: Zero blue, Ada green, Legion purple, Reachy red, infra amber.
+- Color scheme: Zero blue, Ada green, Legion purple, robot hardware red, infra amber.
 
 

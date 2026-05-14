@@ -1,4 +1,4 @@
-"""
+﻿"""
 ZERO API - FastAPI Backend
 
 Personal AI Assistant API providing sprint management, task tracking,
@@ -44,6 +44,15 @@ from app.routers import (
     daily_brief,
     turn_outcomes,
     wake_presence,
+    memory_tree,
+    integrations,
+    triggers,
+    subconscious,
+    meeting_agent,
+    skill_registry,
+    browser_control,
+    telegram_channel,
+    openhands,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -86,7 +95,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize PostgreSQL database
     from app.infrastructure.database import init_database, close_database, create_tables
-    import app.db.models  # noqa: F401 — register ORM models with Base.metadata
+    import app.db.models  # noqa: F401 â€” register ORM models with Base.metadata
     try:
         await init_database(settings.postgres_url)
         await create_tables()
@@ -187,7 +196,7 @@ async def lifespan(app: FastAPI):
 
     # Load Reachy voice-stack config (STT / TTS selections) and pre-warm the
     # Whisper + Piper models so the first voice turn doesn't pay a 9-10 s
-    # cold start. Both warmups are background tasks — startup keeps moving if
+    # cold start. Both warmups are background tasks â€” startup keeps moving if
     # either model is missing.
     try:
         from app.services.reachy_voice_config_service import get_reachy_voice_config
@@ -215,7 +224,7 @@ async def lifespan(app: FastAPI):
     from app.infrastructure.startup import run_startup_checks
     checks_passed = await run_startup_checks()
     if not checks_passed:
-        logger.error("CRITICAL: Startup checks failed — some features may not work correctly")
+        logger.error("CRITICAL: Startup checks failed â€” some features may not work correctly")
 
     # Start the daily automation scheduler (skip in research mode to prevent conflicts)
     research_mode = os.environ.get("ZERO_RESEARCH_MODE", "").lower() in ("1", "true", "yes")
@@ -247,6 +256,39 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.debug("Persona voice validation skipped", error=str(e))
 
+        # Integrations auto-fetch loop (20-min walk over every connected
+        # service â†’ Memory Vault). Off by default; ZERO_AUTO_FETCH_AUTOSTART=1
+        # to enable on every boot, or hit /api/integrations/auto-fetch/start.
+        try:
+            if os.environ.get("ZERO_AUTO_FETCH_AUTOSTART", "").lower() in ("1", "true"):
+                from app.services.integrations import get_auto_fetch_loop
+                await get_auto_fetch_loop().start()
+                logger.info("auto_fetch_autostart_enabled")
+        except Exception as e:
+            logger.warning("auto_fetch_autostart_failed", error=str(e))
+
+        # Subconscious idle reflection. Same toggle pattern.
+        try:
+            if os.environ.get("ZERO_SUBCONSCIOUS_AUTOSTART", "").lower() in ("1", "true"):
+                from app.services.subconscious_loop import get_subconscious_loop
+                await get_subconscious_loop().start()
+                logger.info("subconscious_autostart_enabled")
+        except Exception as e:
+            logger.warning("subconscious_autostart_failed", error=str(e))
+
+        # Telegram channel â€” starts itself iff TELEGRAM_BOT_TOKEN is set.
+        # Default handler writes inbound messages to the Memory Vault.
+        try:
+            from app.services.telegram_channel_service import (
+                get_telegram_channel_service,
+            )
+            tg = get_telegram_channel_service()
+            if tg.is_configured():
+                await tg.start()
+                logger.info("telegram_channel_started")
+        except Exception as e:
+            logger.warning("telegram_channel_start_failed", error=str(e))
+
         # Cross-session memory compaction: re-extract durable notes from
         # recent turns and age out low-confidence unused ones every 6 h.
         try:
@@ -275,7 +317,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Failed to schedule Reachy memory compaction", error=str(e))
 
         # One-shot migration: pull existing user_memory.json _notes into the
-        # new Letta-style human block. Idempotent — guarded by a flag inside
+        # new Letta-style human block. Idempotent â€” guarded by a flag inside
         # the store so it only runs the first time after the schema change.
         try:
             from app.services.reachy_memory_blocks import get_reachy_memory_blocks
@@ -318,7 +360,7 @@ async def lifespan(app: FastAPI):
                 error=str(e),
             )
 
-        # Home Assistant → Reachy gesture watcher (Wave 6). Inert when HA is
+        # Home Assistant â†’ Reachy gesture watcher (Wave 6). Inert when HA is
         # not configured or the gesture map is empty.
         try:
             from app.services.home_assistant_watcher import get_ha_watcher
@@ -326,7 +368,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to start HA gesture watcher", error=str(e))
 
-        # Daily brief — composes the morning report and emails it. Runs at
+        # Daily brief â€” composes the morning report and emails it. Runs at
         # 07:00 server-local time. Hour overridable via ZERO_DAILY_BRIEF_HOUR.
         try:
             from app.services.scheduler_service import get_scheduler_service
@@ -342,7 +384,7 @@ async def lifespan(app: FastAPI):
                     if os.environ.get("ZERO_DAILY_BRIEF_EMAIL", "1") not in ("0", "false", "no"):
                         await get_digest_email_service().send(
                             markdown=payload.markdown,
-                            subject=f"Daily brief — {payload.date}",
+                            subject=f"Daily brief â€” {payload.date}",
                         )
                 except Exception as exc:
                     logger.warning("daily_brief_job_failed", error=str(exc))
@@ -363,7 +405,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to schedule daily brief", error=str(e))
 
-        # Weekly reflection — drives the closed-loop learning. Sunday 22:00.
+        # Weekly reflection â€” drives the closed-loop learning. Sunday 22:00.
         try:
             from app.services.scheduler_service import get_scheduler_service
             sched = get_scheduler_service().scheduler
@@ -492,7 +534,7 @@ async def lifespan(app: FastAPI):
     # Start Discord bot (Claude Agent SDK messaging bridge)
     # NOTE: The bot uses claude-agent-sdk which requires the `claude` CLI binary.
     # With the Max plan, auth is handled by the local Claude Code installation.
-    # In Docker, `claude` CLI isn't available — run the bot standalone on the host:
+    # In Docker, `claude` CLI isn't available â€” run the bot standalone on the host:
     #   cd backend && python -m app.services.discord_bot
     discord_task = None
     try:
@@ -544,6 +586,25 @@ async def lifespan(app: FastAPI):
             from app.services.discord_bot import stop_bot
             await stop_bot()
             logger.info("Discord bot stopped")
+        except Exception:
+            pass
+
+        # Stop integrations auto-fetch + subconscious loops.
+        try:
+            from app.services.integrations import get_auto_fetch_loop
+            await get_auto_fetch_loop().stop()
+        except Exception:
+            pass
+        try:
+            from app.services.subconscious_loop import get_subconscious_loop
+            await get_subconscious_loop().stop()
+        except Exception:
+            pass
+        try:
+            from app.services.telegram_channel_service import (
+                get_telegram_channel_service,
+            )
+            await get_telegram_channel_service().stop()
         except Exception:
             pass
 
@@ -708,6 +769,16 @@ app.include_router(bookkeeper.router, prefix="/api/bookkeeper", tags=["Bookkeepe
 app.include_router(daily_brief.router, prefix="/api/daily-brief", tags=["Daily Brief"])
 app.include_router(turn_outcomes.router, prefix="/api/turn-outcomes", tags=["Turn Outcomes"])
 app.include_router(wake_presence.router, prefix="/api/wake-presence", tags=["Wake & Presence"])
+app.include_router(memory_tree.router, prefix="/api/memory-vault", tags=["Memory Vault"])
+app.include_router(memory_tree.router, prefix="/api/memory-tree", tags=["Memory Tree (deprecated alias)"])
+app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
+app.include_router(triggers.router, prefix="/api/triggers", tags=["Triggers"])
+app.include_router(subconscious.router, prefix="/api/subconscious", tags=["Subconscious"])
+app.include_router(meeting_agent.router, prefix="/api/meeting-agent", tags=["Meeting Agent"])
+app.include_router(skill_registry.router, prefix="/api/skills", tags=["Skills"])
+app.include_router(browser_control.router, prefix="/api/browser-control", tags=["Browser Control"])
+app.include_router(telegram_channel.router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(openhands.router, prefix="/api", tags=["OpenHands"])
 
 
 @app.get("/")
@@ -738,14 +809,14 @@ async def health():
 
 @app.get("/health/live")
 async def health_live():
-    """Liveness probe — process is running."""
+    """Liveness probe â€” process is running."""
     return {"alive": True}
 
 
 @app.get("/health/ready")
 async def health_ready():
     """
-    Readiness probe — checks critical dependencies.
+    Readiness probe â€” checks critical dependencies.
     Used by Docker health checks to determine if container is healthy.
     Returns 503 if any critical dependency is down.
     """
@@ -796,7 +867,7 @@ async def health_ready():
     except Exception:
         checks["legion"] = "unavailable"
 
-    # Check SearXNG (non-blocking, 2s timeout — try both health endpoints)
+    # Check SearXNG (non-blocking, 2s timeout â€” try both health endpoints)
     try:
         import httpx
         async with httpx.AsyncClient(timeout=2) as client:

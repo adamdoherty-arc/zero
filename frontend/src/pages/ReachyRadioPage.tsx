@@ -99,7 +99,7 @@ export function ReachyRadioPage() {
     <div className="p-4 md:p-6 space-y-6">
       <header className="flex items-center gap-2">
         <Radio className="w-5 h-5 text-indigo-400" />
-        <h1 className="text-xl font-semibold text-gray-100">Reachy Radio</h1>
+        <h1 className="text-xl font-semibold text-gray-100">Zero Radio</h1>
         <span
           className={`text-[10px] px-2 py-0.5 rounded-full ${
             running ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-700 text-gray-400'

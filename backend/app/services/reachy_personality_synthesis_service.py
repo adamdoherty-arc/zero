@@ -205,6 +205,39 @@ class ReachyPersonalitySynthesisService:
                         "reachy_personality_review_alert_failed", error=str(e)
                     )
 
+            # ---- Mirror snapshot into the Memory Vault ----
+            # openhuman-style: every distilled snapshot also lands as a
+            # browsable .md file under ``sources/personality/L0/`` so the
+            # user can read what Zero learned today in the MemoryVault UI.
+            try:
+                from app.services.memory_tree import get_memory_tree
+                tree = get_memory_tree()
+                body_parts: list[str] = [
+                    f"# Personality synthesis — {today}",
+                    "",
+                    f"## What I noticed\n{noticed or '_(nothing noted)_'}",
+                ]
+                if new_human and new_human != current_human:
+                    body_parts.append("\n## Updated human block\n" + new_human)
+                if new_rel and new_rel != current_rel:
+                    body_parts.append("\n## Updated relationship block\n" + new_rel)
+                if drafts:
+                    bullets = "\n".join(
+                        f"- ({d.get('category', '?')}) {d.get('text', '')}" for d in drafts
+                    )
+                    body_parts.append(f"\n## Drafts for review\n{bullets}")
+                await tree.write_chunk(
+                    "personality",
+                    "\n".join(body_parts),
+                    level=0,
+                    title=f"Synthesis {today}",
+                    tags=["personality", "synthesis"],
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.debug(
+                    "reachy_personality_vault_write_failed", error=str(e)
+                )
+
             logger.info(
                 "reachy_personality_synthesis_done",
                 snapshot=snap.get("relative"),

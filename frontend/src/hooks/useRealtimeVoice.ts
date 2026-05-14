@@ -143,6 +143,17 @@ const OUTPUT_RATE_BY_BACKEND: Record<VoiceBackend, number> = {
   local: 24000,
 }
 
+export interface VisemeFrame {
+  viseme_id: string
+  openness: number
+  width: number
+  offset_ms?: number
+  char?: string
+  /** Wall-clock timestamp when this frame was received. Used by the mascot
+   * hook to decide whether to fall back to procedural text-walking. */
+  received_at: number
+}
+
 export interface UseRealtimeVoice {
   state: VoiceState
   transcripts: VoiceTranscript[]
@@ -163,6 +174,8 @@ export interface UseRealtimeVoice {
   inputHealth: VoiceInputHealth | null
   outputHealth: VoiceOutputHealth | null
   localPlayback: boolean
+  /** Most-recent backend-emitted mascot viseme. Null until the first frame. */
+  latestViseme: VisemeFrame | null
   start: (overrides?: VoiceStartArgs) => Promise<void>
   stop: () => Promise<void>
   cancel: () => Promise<void>
@@ -203,6 +216,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const [stalledReason, setStalledReason] = useState<string | null>(null)
   const [inputHealth, setInputHealth] = useState<VoiceInputHealth | null>(null)
   const [outputHealth, setOutputHealth] = useState<VoiceOutputHealth | null>(null)
+  const [latestViseme, setLatestViseme] = useState<VisemeFrame | null>(null)
   // Reachy should speak through its own USB speaker by default. Browser
   // playback is a manual fallback so we do not get double audio or route the
   // assistant through the computer without making that explicit.
@@ -506,6 +520,20 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
         setState('connected')
       }
       switch (type) {
+        case 'mascot.viseme': {
+          const id = typeof evt.viseme_id === 'string' ? evt.viseme_id : 'REST'
+          const openness = typeof evt.openness === 'number' ? evt.openness : 0
+          const width = typeof evt.width === 'number' ? evt.width : 0.3
+          setLatestViseme({
+            viseme_id: id,
+            openness,
+            width,
+            offset_ms: typeof evt.offset_ms === 'number' ? evt.offset_ms : undefined,
+            char: typeof evt.char === 'string' ? evt.char : undefined,
+            received_at: Date.now(),
+          })
+          break
+        }
         case 'session.phase': {
           const phase = evt.phase as SessionPhase
           if (phase) setSessionPhase(phase)
@@ -605,9 +633,9 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
             ready: false,
             queued_ms: 0,
             last_error:
-              (evt.message as string) || 'Reachy speaker is unavailable.',
+              (evt.message as string) || 'Zero speaker is unavailable.',
           })
-          // Reachy speaker failed — make sure computer playback is on so
+          // Zero speaker failed — make sure computer playback is on so
           // the user can still hear the assistant.
           if (!localPlaybackRef.current) {
             localPlaybackRef.current = true
@@ -615,7 +643,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           }
           setError(
             (evt.message as string) ||
-              'Reachy speaker is unavailable. Routing audio to computer speaker.',
+              'Zero speaker is unavailable. Routing audio to computer speaker.',
           )
           break
         case 'input.warning':
@@ -631,7 +659,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
               last_error: (evt.message as string) || null,
             }
             setInputHealth(nextHealth)
-            setError((evt.message as string) || 'Reachy microphone input is degraded.')
+            setError((evt.message as string) || 'Zero microphone input is degraded.')
             const needsBrowserFallback =
               nextHealth.confidence_state === 'no_signal' &&
               nextHealth.suggested_action === 'switch_to_browser_mic' &&
@@ -734,7 +762,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           if (evt.code === 'input_unavailable' && inputSourceRef.current !== 'browser') {
             const message =
               (evt.message as string) ||
-              'Reachy microphone is unavailable; switching to computer mic.'
+              'Zero microphone is unavailable; switching to computer mic.'
             setError(message)
             autoMicFallbackRef.current = true
             inputReadyRef.current = true
@@ -809,7 +837,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       connectTimerRef.current = window.setTimeout(() => {
         connectTimerRef.current = null
         setError(
-          'Connection timed out while opening the model, Reachy mic, or Reachy speaker. Try again or switch backend.',
+          'Connection timed out while opening the model, Zero mic, or Zero speaker. Try again or switch backend.',
         )
         setState('error')
         void cleanupEverything()
@@ -1023,7 +1051,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       inputHealth.suggested_action === 'switch_to_browser_mic'
     if (!needsFallback) return
     autoMicFallbackRef.current = true
-    setError(inputHealth.last_error || 'Reachy microphone is silent; switching to computer mic.')
+    setError(inputHealth.last_error || 'Zero microphone is silent; switching to computer mic.')
     void switchInputSource('browser')
   }, [
     inputHealth?.confidence_state,
@@ -1066,6 +1094,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     inputHealth,
     outputHealth,
     localPlayback,
+    latestViseme,
     start,
     stop,
     cancel,

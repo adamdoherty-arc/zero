@@ -54,7 +54,7 @@ import {
 } from '@/hooks/useReachyApi'
 
 /**
- * Three panels that round out the Reachy Assistant page so it surfaces
+ * Three panels that round out the Zero Assistant page so it surfaces
  * every backend capability the user can actually drive from the UI:
  *
  *  - <InteractiveModeHero/>: page-level live-conversation toggle. Bigger
@@ -119,7 +119,7 @@ function formatLiveIssue(
 ) {
   if (inputHealth?.last_error) {
     if (/no usable microphone stream|digital silence|no audio frames/i.test(inputHealth.last_error)) {
-      return 'Reachy mic is connected but sending silence/no frames. Use Computer mic, then replug or repair the Reachy audio device.'
+      return 'Zero mic is connected but sending silence/no frames. Use Computer mic, then replug or repair the Reachy audio device.'
     }
     return inputHealth.last_error
   }
@@ -128,7 +128,7 @@ function formatLiveIssue(
     stalledReason === 'reachy_mic_no_signal' ||
     inputHealth?.suggested_action === 'switch_to_browser_mic'
   ) {
-    return 'Reachy microphone is open but no speech signal is arriving. Switch to Computer mic.'
+    return 'Zero microphone is open but no speech signal is arriving. Switch to Computer mic.'
   }
   return stalledReason
 }
@@ -361,13 +361,13 @@ export function InteractiveModeHero() {
   const hardwareIssueTitle =
     firstHardwareIssue?.title ??
     (hardwarePowerIssue
-      ? 'Reachy motor bus is not detected'
+      ? 'Zero motor bus is not detected'
       : firstHardwareFault?.motor
         ? hardwareStaleFault
-          ? `Previous Reachy motor overload: ${firstHardwareFault.motor}`
-          : `Reachy motor overload: ${firstHardwareFault.motor}`
+          ? `Previous Zero motor overload: ${firstHardwareFault.motor}`
+          : `Zero motor overload: ${firstHardwareFault.motor}`
         : hardwareActiveFault
-          ? 'Reachy motor overload detected'
+          ? 'Zero motor overload detected'
           : null)
   const hardwareIssueDetail =
     firstHardwareIssue?.detail ??
@@ -501,7 +501,7 @@ export function InteractiveModeHero() {
       reason: connected ? 'live_console' : 'user',
     })
     toast({
-      title: result.body_activity === 'shaky' ? 'Reachy settled, but jitter remains' : 'Reachy settled',
+      title: result.body_activity === 'shaky' ? 'Zero settled, but jitter remains' : 'Zero settled',
       description:
         result.active_source_ids.length > 0
           ? `Still active: ${result.active_source_ids.join(', ')}`
@@ -583,7 +583,7 @@ export function InteractiveModeHero() {
     }
     chooseInputSource(next)
     toast({
-      title: next === 'browser' ? 'Using computer mic' : 'Using Reachy mic',
+      title: next === 'browser' ? 'Using computer mic' : 'Using Zero mic',
       description: connected ? 'Live session kept open.' : 'Mic source will be used on next start.',
     })
   }
@@ -713,7 +713,7 @@ export function InteractiveModeHero() {
               {connected
                 ? 'Robot Assistant - listening'
                 : connecting
-                  ? `Opening ${inputSource === 'browser' ? 'computer mic' : 'Reachy mic'}… (${connectingSec}s)`
+                  ? `Opening ${inputSource === 'browser' ? 'computer mic' : 'Zero mic'}… (${connectingSec}s)`
                   : errored
                     ? 'Robot Assistant - error'
                     : 'Robot Assistant'}
@@ -734,7 +734,7 @@ export function InteractiveModeHero() {
                 {voice.inputReady && (
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded ${micTone}`}
-                    title={liveInputHealth?.last_error ?? voice.inputDevice ?? 'Reachy microphone'}
+                    title={liveInputHealth?.last_error ?? voice.inputDevice ?? 'Zero microphone'}
                   >
                     {micLabel}
                   </span>
@@ -768,7 +768,7 @@ export function InteractiveModeHero() {
               <span className="text-[11px] text-amber-300/80">
                 {inputSource === 'browser'
                   ? 'Waiting for model and browser microphone.'
-                  : 'Waiting for model and Reachy microphone over host_agent.'}
+                  : 'Waiting for model and Zero microphone over host_agent.'}
               </span>
             )}
             {errored && voice.error && (
@@ -780,7 +780,7 @@ export function InteractiveModeHero() {
             {!connected && !connecting && !errored && (
               <span className="text-[11px] text-zinc-500">
                 {repairRequired
-                  ? 'Host agent repair required before Reachy can speak.'
+                  ? 'Host agent repair required before Zero can speak.'
                   : realtimeAvailable
                     ? `One-click live assistant (${BACKEND_LABEL[effectiveBackend]})`
                     : 'Add a key in voice settings to enable.'}
@@ -863,7 +863,7 @@ export function InteractiveModeHero() {
             title={
               hardwareUnavailable
                 ? 'Software motion is already stopped; restore motor power before settling the body'
-                : 'Stop body motion sources and return Reachy to a calm neutral pose'
+                : 'Stop body motion sources and return Zero to a calm neutral pose'
             }
           >
             {settleAssistant.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
@@ -990,12 +990,12 @@ export function InteractiveModeHero() {
                 ].join(' ')}
                 title={
                   source === 'reachy'
-                    ? 'Use the Reachy microphone'
+                    ? 'Use the Zero microphone'
                     : 'Use this browser microphone'
                 }
               >
                 <Mic className="w-3.5 h-3.5" />
-                {source === 'reachy' ? 'Reachy mic' : 'Computer mic'}
+                {source === 'reachy' ? 'Zero mic' : 'Computer mic'}
               </button>
             )
           })}
@@ -1063,7 +1063,7 @@ export function InteractiveModeHero() {
                 ? 'bg-amber-900/40 border-amber-700 text-amber-100'
                 : 'bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800',
             ].join(' ')}
-            title={connected ? (voice.muted ? 'Reachy mic muted - click to unmute' : 'Mute Reachy mic (session stays open)') : 'Start a session to control the live mic'}
+            title={connected ? (voice.muted ? 'Zero mic muted - click to unmute' : 'Mute Zero mic (session stays open)') : 'Start a session to control the live mic'}
           >
             {voice.muted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
             {!connected ? 'Mic standby' : voice.muted ? 'Muted' : micLabel}
@@ -1095,10 +1095,10 @@ export function InteractiveModeHero() {
             type="button"
             onClick={() => void handleSwitchMic()}
             className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
-            title="Switch between Reachy mic and computer mic without closing the session"
+            title="Switch between Zero mic and computer mic without closing the session"
           >
             <Mic className="w-3.5 h-3.5" />
-            {currentInputSource === 'reachy' ? 'Computer mic' : 'Reachy mic'}
+            {currentInputSource === 'reachy' ? 'Computer mic' : 'Zero mic'}
           </button>
 
           <button
@@ -1117,7 +1117,7 @@ export function InteractiveModeHero() {
           </button>
 
           <Link
-            to="/reachy/voice-settings"
+            to="/zero/voice-settings"
             className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
             title="Tune companion personality and voice"
           >
@@ -1187,7 +1187,7 @@ export function InteractiveModeHero() {
           </button>
 
           <Link
-            to="/reachy/voice-settings"
+            to="/zero/voice-settings"
             className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5"
             title="Open voice settings (voice, persona, idle timer, cost cap)"
           >
@@ -1206,10 +1206,10 @@ export function InteractiveModeHero() {
             ].join(' ')}
             title={
               voice.outputSink === 'reachy_speaker'
-                ? `Assistant voice is routed to ${voice.outputDevice ?? 'the Reachy speaker'}`
+                ? `Assistant voice is routed to ${voice.outputDevice ?? 'the Zero speaker'}`
                 : voice.outputSink === 'unavailable'
-                  ? 'Reachy speaker stream did not start'
-                  : 'Waiting for Reachy speaker status'
+                  ? 'Zero speaker stream did not start'
+                  : 'Waiting for Zero speaker status'
             }
           >
             <Speaker className="w-3.5 h-3.5" />
@@ -1239,7 +1239,7 @@ export function InteractiveModeHero() {
             {voice.localPlayback ? 'Computer on' : 'Computer muted'}
           </button>
 
-          {/* Reachy speaker volume — controls the robot's own speaker via daemon. */}
+          {/* Zero speaker volume — controls the robot's own speaker via daemon. */}
           {/* Daemon returns volume in 0..100 already; older code multiplied by 100 */}
           {/* on top of that and showed "10000%". Treat ``volume`` as percent. */}
           <div className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 flex items-center gap-1.5">
@@ -1252,7 +1252,7 @@ export function InteractiveModeHero() {
               value={speakerVol?.volume != null ? Math.round(speakerVol.volume) : 70}
               onChange={(e) => setSpeakerVol.mutate(Number(e.target.value))}
               className="w-20 accent-indigo-500"
-              title="Reachy speaker volume"
+              title="Zero speaker volume"
             />
             <span className="font-mono text-[10px] text-indigo-300 w-9 text-right">
               {speakerVol?.volume != null ? `${Math.round(speakerVol.volume)}%` : '—'}
@@ -1320,8 +1320,8 @@ export function InteractiveModeHero() {
             {recentTurns.length === 0 ? (
               <div className="text-[11px] text-zinc-500 italic">
                 {inputConfidence === 'no_signal'
-                  ? 'No turns yet - Reachy mic is silent; computer mic fallback is starting.'
-                  : 'No turns yet - speak toward Reachy\'s mic or type a message.'}
+                  ? 'No turns yet - Zero mic is silent; computer mic fallback is starting.'
+                  : 'No turns yet - speak toward Zero\'s mic or type a message.'}
               </div>
             ) : (
               recentTurns.map((t) => (
@@ -1333,7 +1333,7 @@ export function InteractiveModeHero() {
                         : 'text-emerald-300 font-medium'
                     }
                   >
-                    {t.role === 'user' ? 'you' : 'reachy'}:
+                    {t.role === 'user' ? 'you' : 'zero'}:
                   </span>{' '}
                   <span className="text-zinc-300">{t.content}</span>
                 </div>
@@ -1723,7 +1723,7 @@ export function HardwarePanel() {
           {cameraOk ? (
             <img
               src="/api/reachy/camera/mjpeg"
-              alt="Reachy live camera"
+              alt="Zero live camera"
               className="w-full max-h-64 object-contain rounded border border-zinc-800 bg-black"
             />
           ) : (
@@ -1747,33 +1747,33 @@ export function HardwarePanel() {
 
 const SUBPAGES: { href: string; label: string; description: string; icon: typeof Gamepad2 }[] = [
   {
-    href: '/reachy/teleop',
+    href: '/zero/teleop',
     label: 'Teleop',
     description: 'Direct head, body, antenna control with sliders and target pose.',
     icon: Gamepad2,
   },
   {
-    href: '/reachy/meetings',
+    href: '/zero/meetings',
     label: 'Meetings',
-    description: 'Meeting recording with Reachy presence and direction-of-arrival tracking.',
+    description: 'Meeting recording with Zero presence and direction-of-arrival tracking.',
     icon: CalendarClock,
   },
   {
-    href: '/reachy/voice-settings',
+    href: '/zero/voice-settings',
     label: 'Voice Settings',
     description: 'STT/LLM/TTS picker for the classic push-to-talk pipeline.',
     icon: AudioLines,
   },
   {
-    href: '/reachy/home-assistant',
+    href: '/zero/home-assistant',
     label: 'Home Assistant',
-    description: 'Bridge Reachy to your HA entities (lights, locks, sensors).',
+    description: 'Bridge Zero to your HA entities (lights, locks, sensors).',
     icon: Home,
   },
   {
-    href: '/reachy/radio',
+    href: '/zero/radio',
     label: 'Radio',
-    description: 'Beat-tracked dance mode — Reachy moves to the music.',
+    description: 'Beat-tracked dance mode — Zero moves to the music.',
     icon: Radio,
   },
 ]

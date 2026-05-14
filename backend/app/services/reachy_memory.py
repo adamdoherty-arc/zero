@@ -196,6 +196,44 @@ class ReachyMemoryService:
         except Exception as e:
             logger.warning("reachy_summary_save_failed", path=str(p), error=str(e))
 
+        # Vault mirror — every snapshot also lands as a browsable Markdown
+        # chunk in ``vault/sources/episodic_{persona}/L0/`` so the MemoryVault
+        # UI can show the user what Zero remembers across sessions.
+        # Best-effort: failures here never block the JSON write.
+        try:
+            import asyncio as _asyncio
+            from app.services.memory_tree import get_memory_tree
+            tree = get_memory_tree()
+            body_parts = [
+                f"# Episodic snapshot — {user_id} / {persona_id}",
+                "",
+                summary.render_block(),
+            ]
+            if summary.shared_moments:
+                body_parts.append(
+                    "\n## Recent shared moments\n"
+                    + "\n".join(f"- {m}" for m in summary.shared_moments[:20])
+                )
+            if summary.user_likes:
+                body_parts.append(
+                    "\n## User likes\n" + "\n".join(f"- {x}" for x in summary.user_likes[:20])
+                )
+            coro = tree.write_chunk(
+                f"episodic_{persona_id}",
+                "\n".join(body_parts),
+                level=0,
+                title=f"{user_id} relationship state",
+                tags=["episodic", persona_id, user_id],
+            )
+            try:
+                loop = _asyncio.get_running_loop()
+                loop.create_task(coro)
+            except RuntimeError:
+                # No running loop (sync caller) — run it directly.
+                _asyncio.run(coro)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("reachy_summary_vault_mirror_failed", error=str(e))
+
     async def maybe_summarize(
         self,
         user_id: str,

@@ -91,3 +91,9 @@ reachy_*.png
 # Recorded / cloned voice samples — don't commit user audio
 backend/voices/
 .gstack/
+
+# Runtime data directories — created on demand, never checked in
+backend/app/data/vault/
+backend/app/data/integrations/
+backend/app/data/meeting_agent/
+backend/app/data/triggers/

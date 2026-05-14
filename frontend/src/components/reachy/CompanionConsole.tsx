@@ -136,7 +136,7 @@ function formatLiveIssue(
   if (inputHealth?.last_error) return inputHealth.last_error
   if (outputHealth?.last_error) return outputHealth.last_error
   if (stalledReason === 'reachy_mic_no_signal') {
-    return 'Reachy microphone is open but no speech signal is arriving.'
+    return 'Zero microphone is open but no speech signal is arriving.'
   }
   return stalledReason
 }
@@ -265,11 +265,11 @@ export function CompanionConsole() {
       await createEvent.mutateAsync({
         type: 'notice',
         source: 'mobile_or_console',
-        summary: 'User asked what Reachy noticed.',
+        summary: 'User asked what Zero noticed.',
         payload: { mode },
         importance: 0.5,
       })
-      toast({ title: 'Noted', description: data?.next_suggested_action?.label ?? 'Reachy is watching local signals.' })
+      toast({ title: 'Noted', description: data?.next_suggested_action?.label ?? 'Zero is watching local signals.' })
     } catch (err) {
       toast({ title: 'Could not record notice', description: String(err), variant: 'destructive' })
     }
@@ -292,7 +292,7 @@ export function CompanionConsole() {
     try {
       const next = liveVoice.inputSource === 'browser' ? 'reachy' : 'browser'
       await liveVoice.switchInputSource(next)
-      toast({ title: next === 'browser' ? 'Computer mic selected' : 'Reachy mic selected' })
+      toast({ title: next === 'browser' ? 'Computer mic selected' : 'Zero mic selected' })
     } catch (err) {
       toast({ title: 'Mic switch failed', description: String(err), variant: 'destructive' })
     }
@@ -359,7 +359,7 @@ export function CompanionConsole() {
                 <Bot className="w-4 h-4 text-indigo-300" />
                 Robot Assistant Console
               </div>
-              <h2 className="mt-1 text-xl font-bold text-white">Reachy is in {mode} mode</h2>
+              <h2 className="mt-1 text-xl font-bold text-white">Zero is in {mode} mode</h2>
               <p className="text-sm text-gray-400 truncate">
                 {data?.next_suggested_action?.label ?? 'Loading companion state...'}
               </p>
@@ -479,7 +479,7 @@ export function CompanionConsole() {
               onClick={() => void switchMic()}
               disabled={!liveVoice.isActive}
               className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-500/20 disabled:opacity-50 flex items-center gap-2"
-              title="Switch between Reachy mic and computer mic during the live session"
+              title="Switch between Zero mic and computer mic during the live session"
             >
               <Mic2 className="w-4 h-4" />
               Switch Mic
@@ -509,7 +509,7 @@ export function CompanionConsole() {
               {bodyMotionEnabled ? (bodyReady ? 'Body On' : 'Body Enabled') : 'Enable Body'}
             </button>
             <Link
-              to="/reachy/voice-settings"
+              to="/zero/voice-settings"
               className="rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/20 flex items-center gap-2"
               title="Open personality and voice settings"
             >
@@ -525,7 +525,7 @@ export function CompanionConsole() {
               })}
               disabled={settle.isPending}
               className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-2"
-              title="Settle Reachy's body into a calm neutral posture"
+              title="Settle Zero's body into a calm neutral posture"
             >
               {settle.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
               Settle
@@ -548,7 +548,7 @@ export function CompanionConsole() {
               title="Ask for a compact view of recent companion signals"
             >
               <Activity className="w-4 h-4" />
-              What Did Reachy Notice?
+              What Did Zero Notice?
             </button>
           </div>
         </div>

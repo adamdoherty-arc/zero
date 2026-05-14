@@ -108,7 +108,7 @@ export function FloatingVoiceButton() {
       return (await res.json()) as T
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        throw new Error(`Reachy took more than ${VOICE_STOP_TIMEOUT_MS / 1000}s to respond.`)
+        throw new Error(`Zero took more than ${VOICE_STOP_TIMEOUT_MS / 1000}s to respond.`)
       }
       throw err
     } finally {

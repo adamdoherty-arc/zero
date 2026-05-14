@@ -9,7 +9,7 @@ import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 
 /**
- * Reachy Voice Settings — single page hosting everything voice + LLM.
+ * Zero Voice Settings — single page hosting everything voice + LLM.
  *
  * Sections (top to bottom, all inline, no extra clicks):
  *  1. Active stack — read-only chips showing what's currently in use.
@@ -233,7 +233,7 @@ function PersonaPanel() {
   return (
     <div className="space-y-3">
       <div className="text-xs text-gray-400">
-        Pick which persona Reachy wears. Voice + brain edits below save to the persona's
+        Pick which persona Zero wears. Voice + brain edits below save to the persona's
         files and apply to the next live session immediately. Picking a persona here
         also updates the realtime config so Interactive Mode uses her too.
       </div>
@@ -352,7 +352,7 @@ export function ReachyVoiceSettingsPage() {
     <div className="p-4 md:p-6 space-y-6 max-w-4xl">
       <header className="flex items-center gap-2">
         <AudioLines className="w-5 h-5 text-indigo-400" />
-        <h1 className="text-xl font-semibold text-gray-100">Reachy Voice Settings</h1>
+        <h1 className="text-xl font-semibold text-gray-100">Zero Voice Settings</h1>
       </header>
 
       <section>

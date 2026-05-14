@@ -89,14 +89,14 @@ function ReachyQuickControls() {
     const createEvent = useCreateCompanionEvent()
     const { toast } = useToast()
     const mode = companion.data?.mode ?? 'ambient'
-    const next = companion.data?.next_suggested_action?.label ?? 'Reachy is checking local signals'
+    const next = companion.data?.next_suggested_action?.label ?? 'Zero is checking local signals'
 
     const switchMode = async (nextMode: CompanionMode) => {
         try {
             await setMode.mutateAsync({ mode: nextMode, reason: 'mobile' })
-            toast({ title: `Reachy: ${nextMode}` })
+            toast({ title: `Zero: ${nextMode}` })
         } catch (err) {
-            toast({ title: 'Reachy mode failed', description: String(err), variant: 'destructive' })
+            toast({ title: 'Zero mode failed', description: String(err), variant: 'destructive' })
         }
     }
 
@@ -105,13 +105,13 @@ function ReachyQuickControls() {
             await createEvent.mutateAsync({
                 type: 'notice',
                 source: 'mobile',
-                summary: 'Mobile user asked what Reachy noticed.',
+                summary: 'Mobile user asked what Zero noticed.',
                 payload: { mode },
                 importance: 0.5,
             })
-            toast({ title: 'Reachy noticed', description: next })
+            toast({ title: 'Zero noticed', description: next })
         } catch (err) {
-            toast({ title: 'Could not ask Reachy', description: String(err), variant: 'destructive' })
+            toast({ title: 'Could not ask Zero', description: String(err), variant: 'destructive' })
         }
     }
 
@@ -149,7 +149,7 @@ function ReachyQuickControls() {
                 <div>
                     <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-indigo-300">
                         <Bot className="w-3.5 h-3.5" />
-                        Reachy
+                        Zero
                     </div>
                     <h2 className="mt-1 text-lg font-bold text-white capitalize">{mode} mode</h2>
                     <p className="mt-0.5 text-xs text-gray-400 line-clamp-2">{next}</p>
@@ -159,7 +159,7 @@ function ReachyQuickControls() {
 
             <div className="mt-4 grid grid-cols-4 gap-2">
                 <Link
-                    to="/reachy"
+                    to="/zero"
                     className="min-h-14 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-100 flex flex-col items-center justify-center gap-1 active:scale-[0.98]"
                 >
                     <Mic className="w-4 h-4" />

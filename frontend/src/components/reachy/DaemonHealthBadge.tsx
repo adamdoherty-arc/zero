@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast'
  * - Red: daemon unreachable OR host_agent unreachable AND no recent cache.
  * - Grey: still loading (first poll has not landed).
  *
- * Click navigates to /reachy where DaemonPanel exposes restart, watchdog,
+ * Click navigates to /zero where DaemonPanel exposes restart, watchdog,
  * audio reset, logs, and diagnostics. When the dot is amber/red, a
  * companion Smart Re-link button appears so recovery is one click away
  * without navigating into the page. Pairs with LLMStatusBadge in TopBar so
@@ -28,8 +28,8 @@ export function DaemonHealthBadge() {
     if (isLoading || !status) {
       return {
         dotClass: 'bg-zinc-500',
-        label: 'Reachy …',
-        tooltip: 'Probing Reachy daemon and host_agent…',
+        label: 'Zero ...',
+        tooltip: 'Probing Zero robot daemon and host_agent...',
         healthy: true, // suppress the recovery button while we don't know
       }
     }
@@ -44,10 +44,10 @@ export function DaemonHealthBadge() {
     if (!daemonOk) {
       return {
         dotClass: 'bg-red-500',
-        label: 'Reachy down',
+        label: 'Zero down',
         tooltip:
           status.robot_detail ||
-          'Reachy daemon is not reachable. Click Re-link to recover or open the panel.',
+          'Zero robot daemon is not reachable. Click Re-link to recover or open the panel.',
         healthy: false,
       }
     }
@@ -68,14 +68,14 @@ export function DaemonHealthBadge() {
           : status.robot_detail || 'robot not ready'
       return {
         dotClass: 'bg-amber-400',
-        label: `Reachy · ${reason}`,
-        tooltip: status.robot_detail || `Reachy is degraded: ${reason}.`,
+        label: `Zero - ${reason}`,
+        tooltip: status.robot_detail || `Zero is degraded: ${reason}.`,
         healthy: false,
       }
     }
     return {
       dotClass: 'bg-emerald-500',
-      label: 'Reachy ready',
+      label: 'Zero ready',
       tooltip: 'Daemon connected, host_agent reachable, motors ready.',
       healthy: true,
     }
@@ -87,7 +87,7 @@ export function DaemonHealthBadge() {
     try {
       const res = await relink.mutateAsync()
       toast({
-        title: res.action === 'restarted' ? 'Re-linked Reachy' : 'Waiting for Docker',
+        title: res.action === 'restarted' ? 'Re-linked Zero' : 'Waiting for Docker',
         description: res.detail,
       })
     } catch (err) {
@@ -102,7 +102,7 @@ export function DaemonHealthBadge() {
   return (
     <div className="flex items-center gap-1.5">
       <Link
-        to="/reachy"
+        to="/zero"
         title={tooltip}
         className="flex items-center gap-2 rounded-full border px-3 py-1 text-xs bg-zinc-900 hover:bg-zinc-800 border-zinc-700 text-zinc-100 transition-colors"
       >
@@ -115,7 +115,7 @@ export function DaemonHealthBadge() {
           type="button"
           onClick={handleRelink}
           disabled={relink.isPending}
-          title="Smart Re-link: re-probe Docker and refresh the Reachy daemon link"
+          title="Smart Re-link: re-probe Docker and refresh the Zero robot daemon link"
           className="flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs bg-amber-500/10 border-amber-500/40 text-amber-100 hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
         >
           <RefreshCw className={`w-3 h-3 ${relink.isPending ? 'animate-spin' : ''}`} aria-hidden />

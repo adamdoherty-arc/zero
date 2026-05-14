@@ -139,6 +139,33 @@ The vault constitution at `00_Meta/CLAUDE.md` enforces:
 
 Stage 1 replaces the filesystem-direct `vault_writer_service` with a cyanheads-obsidian MCP client for writes outside `_agent/`. Reads continue through `vault_indexer_service` (filesystem-direct, watchdog-driven, polling-fallback for OneDrive).
 
+## PR #1 integration guardrails
+
+PR #1 is integrated as production slices only. These contracts are now part of
+the architecture and should block future regressions:
+
+1. **Identity:** the assistant and robot persona users interact with is Zero.
+   Reachy Mini remains the vendor/hardware name and `reachy_*` remains the
+   compatibility namespace for SDK, daemon, API, and DB identifiers.
+2. **Routes:** user-facing robot pages live under `/zero*`. Legacy `/reachy*`
+   UI routes are compatibility redirects.
+3. **Memory Vault:** the PR's Memory Tree is canonically the Memory Vault.
+   Production writes land under `/vault/00_Meta/_agent/memory_vault/`, not
+   `backend/app/data/vault`. Internal writers add `partition: personal`,
+   `agent_run_id`, `agent_writable: []`, unique part/hash filenames, and an
+   audit footer. HTTP writes use `/api/memory-vault/*`; `/api/memory-tree/*`
+   is a deprecated read/write-compatible alias only.
+4. **Approval gates:** browser control, Telegram outbound send, trigger
+   webhook/tool/agent actions, OpenHands dispatch, and HTTP Memory Vault writes
+   must create approval records or return `approval_required`/`unavailable`.
+   They must not execute external/local-write side effects silently.
+5. **Honest availability:** Gmail/Calendar integrations are connected only
+   after real OAuth tokens exist. OpenHands and Meeting Agent stay unavailable
+   unless explicitly enabled with real runtime drivers.
+6. **Shared routing:** Bifrost and LiteLLM are shared infrastructure. Zero may
+   call configured gateway aliases, but must not ship a local runtime Bifrost
+   config. The live Bifrost config is `C:\code\shared-infra\bifrost\config.json`.
+
 ## Retrieval architecture
 
 ```
@@ -163,22 +190,22 @@ Partitions:
 ## Voice stack
 
 ```
-Reachy mic (4x MEMS + DoA)
+Reachy Mini mic (4x MEMS + DoA)
   → Silero VAD (Stage 5 verify)
   → openWakeWord ("Hey Zero")  [reachy_wake_word_service.py]
   → faster-whisper distil-large-v3                    [warmed at startup]
   → voice_loop_service → LiteLLM :4444 → vLLM Qwen3-32B chat
   → tts_service (Stage 5 → Kokoro 82M via :8880)
-  → Reachy speaker + reachy_motion_library / reachy_emotion_parser cues
+  → Reachy Mini speaker + reachy_motion_library / reachy_emotion_parser cues
   → voice_bridge_service appends turn to today's daily note '## 🎙️'
 ```
 
-Reachy daemon listens on host `:8000` (USB-C). Zero connects via `ZERO_REACHY_API_URL=http://host.docker.internal:8000`. `ZeroHostAgent` Windows Scheduled Task supervises Reachy on the host.
+The Reachy Mini daemon listens on host `:8000` (USB-C). Zero connects via `ZERO_REACHY_API_URL=http://host.docker.internal:8000`. `ZeroHostAgent` Windows Scheduled Task supervises the hardware bridge on the host.
 
 ## 24/7 substrate (Zero side)
 
 - Backend container: `restart: unless-stopped` (docker-compose.sprint.yml).
-- APScheduler in-process with Postgres job store: morning digest, Reachy memory compaction (6h), HA gesture watcher, Reachy presence scheduler.
+- APScheduler in-process with Postgres job store: morning digest, Zero memory compaction (6h), HA gesture watcher, Zero presence scheduler.
 - Stage 0 adds: NSSM service `Zero-Stack` for unattended boot, ecosystem health watchdog writing to today's daily note.
 
 ## Storage

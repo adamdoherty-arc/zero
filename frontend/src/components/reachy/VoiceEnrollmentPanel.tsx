@@ -99,7 +99,7 @@ export function VoiceEnrollmentPanel() {
 
       {isRecording && (
         <div className="text-xs text-emerald-300">
-          Speak naturally for the full {ENROLL_DURATION} seconds. The Reachy mic is listening.
+          Speak naturally for the full {ENROLL_DURATION} seconds. The Zero mic is listening.
         </div>
       )}
 

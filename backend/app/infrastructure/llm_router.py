@@ -26,6 +26,11 @@ from typing import Dict, List, Optional, Tuple
 import structlog
 
 from app.infrastructure.config import get_workspace_path
+from app.infrastructure.llm_hints import (
+    HINT_PREFIX,
+    resolve_hint_override,
+    resolve_hint_task_type,
+)
 from app.infrastructure.storage import JsonStorage
 from app.models.llm import LlmRouterConfig, ModelAssignment, parse_provider_model
 
@@ -99,13 +104,39 @@ class LlmRouter:
 
         Returns the raw model string (may include provider prefix).
         For backward compat with OllamaClient which strips provider prefix.
+
+        Accepts hint-style strings too: ``"hint:summarize"`` maps through
+        ``llm_hints`` to an existing task_type and honors the active preset
+        override.
         """
+        if task_type and task_type.startswith(HINT_PREFIX):
+            override = resolve_hint_override(task_type)
+            if override:
+                return override
+            task_type = resolve_hint_task_type(task_type)
         if task_type and task_type in self._config.task_assignments:
             return self._config.task_assignments[task_type].model
         return self._config.default_model
 
     def resolve_with_params(self, task_type: Optional[str] = None) -> Tuple[str, Optional[ModelAssignment]]:
         """Resolve model and full assignment params for a task type."""
+        if task_type and task_type.startswith(HINT_PREFIX):
+            override = resolve_hint_override(task_type)
+            mapped = resolve_hint_task_type(task_type)
+            if override:
+                # Wrap the override in an ad-hoc assignment so callers still get
+                # a temperature/num_predict default from the underlying task.
+                base = self._config.task_assignments.get(mapped)
+                if base is not None:
+                    return override, ModelAssignment(
+                        model=override,
+                        fallbacks=base.fallbacks,
+                        temperature=base.temperature,
+                        num_predict=base.num_predict,
+                        keep_alive=base.keep_alive,
+                    )
+                return override, ModelAssignment(model=override)
+            task_type = mapped
         if task_type and task_type in self._config.task_assignments:
             assignment = self._config.task_assignments[task_type]
             return assignment.model, assignment

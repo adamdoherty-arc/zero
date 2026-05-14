@@ -178,12 +178,12 @@ export function ReachyMeetingsPage() {
           <CalendarClock className="w-6 h-6 text-emerald-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Reachy Meetings</h1>
+          <h1 className="text-2xl font-bold text-white">Zero Meetings</h1>
           <p className="text-sm text-gray-400">
             {reachy.data?.connected ? (
-              <span className="text-emerald-400">Reachy connected</span>
+              <span className="text-emerald-400">Zero connected</span>
             ) : (
-              <span className="text-gray-500">Reachy offline</span>
+              <span className="text-gray-500">Zero offline</span>
             )}
             {` · ${totalEvents} event${totalEvents === 1 ? '' : 's'} in the next 7 days`}
           </p>
@@ -269,7 +269,7 @@ export function ReachyMeetingsPage() {
           </div>
         </div>
         <div className="glass-card px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-gray-500">Reachy</div>
+          <div className="text-[10px] uppercase tracking-wide text-gray-500">Zero</div>
           <div className="text-sm">
             {reachy.data?.connected ? (
               <span className="text-emerald-300">Connected</span>
@@ -285,7 +285,7 @@ export function ReachyMeetingsPage() {
         <div className="glass-card p-5 mb-4 border border-emerald-500/30 bg-emerald-500/5">
           <h2 className="text-lg font-semibold text-white mb-1">Connect your Google Calendar</h2>
           <p className="text-sm text-gray-300 mb-3">
-            Reachy Meetings pulls upcoming events from Google Calendar so it can announce, auto-record, and summarise them. Connect once and you're done.
+            Zero Meetings pulls upcoming events from Google Calendar so it can announce, auto-record, and summarise them. Connect once and you're done.
           </p>
           <button
             onClick={handleConnectCalendar}

@@ -165,7 +165,7 @@ export function EmailPage() {
             type="button"
             variant="outline"
             size="sm"
-            aria-label={`${voiceReadingEnabled ? 'Disable' : 'Enable'} Reachy email reading`}
+            aria-label={`${voiceReadingEnabled ? 'Disable' : 'Enable'} Zero email reading`}
             disabled={!voiceJob || voiceToggleBusy}
             onClick={() =>
               setSchedulerJobEnabled.mutate({
@@ -182,7 +182,7 @@ export function EmailPage() {
             ) : (
               <VolumeX className="w-4 h-4 text-zinc-400" />
             )}
-            Reachy email reading
+            Zero email reading
             <Badge variant="outline" className={voiceReadingEnabled ? 'text-green-300' : 'text-zinc-400'}>
               {voiceReadingEnabled ? 'On' : 'Off'}
             </Badge>

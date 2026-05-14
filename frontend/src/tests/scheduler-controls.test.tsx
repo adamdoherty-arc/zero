@@ -61,8 +61,8 @@ const schedulerStatus: SchedulerStatus = {
     {
       id: 'reachy_email_nudge',
       name: 'reachy_email_nudge',
-      display_name: 'Reachy email voice',
-      description: 'Reachy email voice',
+      display_name: 'Zero email voice',
+      description: 'Zero email voice',
       category: 'Email',
       schedule: '*/5 * * * *',
       next_run: null,
@@ -159,7 +159,7 @@ describe('SchedulerTab', () => {
   })
 })
 
-describe('EmailPage Reachy email reading switch', () => {
+describe('EmailPage Zero email reading switch', () => {
   it('reflects the voice scheduler job and toggles reachy_email_nudge', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -193,7 +193,7 @@ describe('EmailPage Reachy email reading switch', () => {
 
     render(<EmailPage />)
 
-    const voiceSwitch = await screen.findByRole('button', { name: 'Enable Reachy email reading' })
+    const voiceSwitch = await screen.findByRole('button', { name: 'Enable Zero email reading' })
     expect(screen.getByText('Off')).toBeInTheDocument()
     expect(await screen.findByText('awaiting decision - 2 queued')).toBeInTheDocument()
 

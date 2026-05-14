@@ -698,19 +698,19 @@ def _reachy_recommended_action(
     if body_connected and not body_ready and control_mode == "disabled":
         return {
             "id": "wake_robot",
-            "label": "Wake Reachy",
+            "label": "Wake Zero",
             "detail": "The daemon and body are reachable; enable motors before moving.",
         }
     if not daemon_api_reachable and not body_connected:
         return {
             "id": "start_daemon",
             "label": "Start daemon",
-            "detail": "Start or restart the Reachy daemon before probing the body.",
+            "detail": "Start or restart the Zero robot daemon before probing the body.",
         }
     return {
         "id": "none",
         "label": "No action",
-        "detail": "Reachy status is consistent.",
+        "detail": "Zero robot status is consistent.",
     }
 
 
@@ -1932,7 +1932,7 @@ async def _assistant_status_payload(
         ),
         _assistant_step(
             "reachy_daemon",
-            "Reachy daemon",
+            "Zero robot daemon",
             daemon_state,
             daemon_detail,
         ),

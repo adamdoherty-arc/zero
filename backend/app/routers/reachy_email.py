@@ -1,5 +1,5 @@
 """
-Reachy email voice triage endpoints.
+Zero email voice triage endpoints.
 
 Surface for the multi-turn email session driven by the wake-word loop and the
 push-to-talk button. The session itself lives in

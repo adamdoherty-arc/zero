@@ -94,7 +94,7 @@ export function ReachyHomeAssistantPage() {
         ) : (
           <div className="text-xs text-gray-500">
             <p className="mb-2">
-              No gesture rules configured. To map entity state → Reachy gesture, create{' '}
+              No gesture rules configured. To map entity state to a Zero gesture, create{' '}
               <code className="bg-gray-800 px-1 rounded">workspace/home_assistant/gesture_map.json</code>:
             </p>
             <pre className="bg-gray-900/50 p-2 rounded text-[10px] overflow-x-auto">{`{

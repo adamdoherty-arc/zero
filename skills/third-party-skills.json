@@ -1,0 +1,29 @@
+[
+  {
+    "slug": "openhuman-server-ping",
+    "name": "Server Ping (reference)",
+    "description": "Minimal reference skill from the openhuman-skills repo.",
+    "repository": "https://github.com/tinyhumansai/openhuman-skills",
+    "subpath": "src/core/server-ping",
+    "version": "1.0.0",
+    "tags": ["reference", "demo"]
+  },
+  {
+    "slug": "openhuman-notion",
+    "name": "Notion (openhuman)",
+    "description": "OAuth-backed Notion read/write tools from the openhuman-skills repo.",
+    "repository": "https://github.com/tinyhumansai/openhuman-skills",
+    "subpath": "src/core/notion",
+    "version": "1.0.0",
+    "tags": ["notion", "oauth"]
+  },
+  {
+    "slug": "openhuman-gmail",
+    "name": "Gmail (openhuman)",
+    "description": "OAuth-backed Gmail mail tools from the openhuman-skills repo.",
+    "repository": "https://github.com/tinyhumansai/openhuman-skills",
+    "subpath": "src/core/gmail",
+    "version": "1.0.0",
+    "tags": ["gmail", "oauth"]
+  }
+]

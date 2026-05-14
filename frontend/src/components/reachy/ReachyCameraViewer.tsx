@@ -103,7 +103,7 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
     <div className="glass-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wide flex items-center gap-2">
-          <Camera className="w-4 h-4" /> Reachy sees
+          <Camera className="w-4 h-4" /> Zero sees
         </h2>
         <div className="flex items-center gap-2 text-[11px] text-gray-500">
           {active ? (
@@ -133,7 +133,7 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
           <img
             ref={imgRef}
             src={src}
-            alt="Reachy live camera"
+            alt="Zero live camera"
             className="max-h-full max-w-full object-contain"
             onError={() => setImgError('stream unavailable')}
           />

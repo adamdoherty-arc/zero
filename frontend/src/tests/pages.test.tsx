@@ -57,7 +57,7 @@ describe('ReachyMotionLibraryPage', () => {
           steps: [
             { id: 'zero_api', label: 'Zero API', state: 'ready', detail: 'ok' },
             { id: 'host_agent', label: 'Windows host agent', state: 'ready', detail: 'ok' },
-            { id: 'reachy_daemon', label: 'Reachy daemon', state: 'ready', detail: 'ok' },
+            { id: 'reachy_daemon', label: 'Zero robot daemon', state: 'ready', detail: 'ok' },
             { id: 'watchdog', label: 'Auto-restart watchdog', state: 'ready', detail: 'ok' },
             { id: 'robot', label: 'Robot connection', state: 'ready', detail: 'ok' },
             { id: 'voice_backend', label: 'Live voice backend', state: 'ready', detail: 'ok' },
@@ -114,13 +114,13 @@ describe('ReachyMotionLibraryPage', () => {
 
     render(<ReachyMotionLibraryPage />)
 
-    expect(await screen.findByText('Reachy Assistant Console')).toBeInTheDocument()
+    expect(await screen.findByText('Zero Assistant Console')).toBeInTheDocument()
     expect(await screen.findByText('Start Robot Assistant')).toBeInTheDocument()
     expect(screen.getAllByText('Settle').length).toBeGreaterThan(0)
     expect(screen.getByText('Still Ready')).toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Diagnostics'))
-    expect((await screen.findAllByText('Reachy daemon')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Zero robot daemon')).length).toBeGreaterThan(0)
   })
 
   it('shows hardware retry controls and compact API errors', async () => {
@@ -201,11 +201,11 @@ describe('ReachyMotionLibraryPage', () => {
 
     render(<DaemonPanel />)
 
-    expect(await screen.findByText('Retry hardware scan')).toBeInTheDocument()
+    expect((await screen.findAllByText('Retry hardware scan')).length).toBeGreaterThan(0)
     expect(screen.getByText('Pause watchdog')).toBeInTheDocument()
     expect(screen.getByText(/USB\/audio are visible; motor power\/bus is missing/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Retry hardware scan'))
+    fireEvent.click(screen.getAllByText('Retry hardware scan')[0])
 
     await waitFor(() => {
       expect(screen.getByText(/Body motion locked \(daemon restart\)/)).toBeInTheDocument()
