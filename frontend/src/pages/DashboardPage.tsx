@@ -7,6 +7,7 @@ import { AgentStatusCard } from '@/components/agent/AgentStatusCard'
 import { TaskSubmitForm } from '@/components/agent/TaskSubmitForm'
 import { TaskHistory } from '@/components/agent/TaskHistory'
 import { ReachyCameraViewer } from '@/components/reachy/ReachyCameraViewer'
+import { DailyBrief } from '@/components/DailyBrief'
 
 function SystemStatusCard() {
   const { data: health } = useHealthReady()
@@ -66,6 +67,11 @@ export function DashboardPage() {
         <div className="lg:col-span-2">
           <ReachyCameraViewer height={240} compact />
         </div>
+      </div>
+
+      {/* Zero Daily Brief — composed by daily_brief_service at 7am */}
+      <div className="mb-8">
+        <DailyBrief />
       </div>
 
       {/* Daily Briefing Card */}

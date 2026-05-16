@@ -41,7 +41,7 @@ describe('BoardPage', () => {
 })
 
 describe('ReachyMotionLibraryPage', () => {
-  it('surfaces assistant console controls before diagnostics', async () => {
+  it('renders console at the top with no tab navigation', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input)
       const json = (body: unknown) => ({
@@ -58,7 +58,6 @@ describe('ReachyMotionLibraryPage', () => {
             { id: 'zero_api', label: 'Zero API', state: 'ready', detail: 'ok' },
             { id: 'host_agent', label: 'Windows host agent', state: 'ready', detail: 'ok' },
             { id: 'reachy_daemon', label: 'Zero robot daemon', state: 'ready', detail: 'ok' },
-            { id: 'watchdog', label: 'Auto-restart watchdog', state: 'ready', detail: 'ok' },
             { id: 'robot', label: 'Robot connection', state: 'ready', detail: 'ok' },
             { id: 'voice_backend', label: 'Live voice backend', state: 'ready', detail: 'ok' },
             { id: 'persona', label: 'Persona', state: 'ready', detail: 'assistant' },
@@ -69,7 +68,6 @@ describe('ReachyMotionLibraryPage', () => {
           daemon_connected: true,
           robot_ready: true,
           daemon: {},
-          watchdog: {},
           host_agent: {},
           realtime: {},
           persona: 'assistant',
@@ -102,6 +100,8 @@ describe('ReachyMotionLibraryPage', () => {
       }
       if (url.includes('/api/reachy/realtime/models')) return json({ backends: { local: [] } })
       if (url.includes('/api/reachy/realtime/profiles')) return json({ profiles: [{ id: 'assistant', label: 'Assistant' }] })
+      if (url.includes('/api/reachy/host-agent/status')) return json({ reachable: true, url: 'http://localhost:18796', last_error: null })
+      if (url.includes('/api/reachy/camera/status')) return json({ active: true, fps: 18.4, width: 640, height: 480, backend: 'dshow' })
       if (url.includes('/api/reachy/status')) return json({ connected: true, daemon_connected: true, robot_ready: true, daemon: {}, base_url: '' })
       if (url.includes('/api/reachy/motion/library')) return json({ total: 0, emotions: 81, dances: 19, clips: [], by_category: {} })
       if (url.includes('/api/reachy/personas/intros')) return json({ map: {} })
@@ -114,17 +114,60 @@ describe('ReachyMotionLibraryPage', () => {
 
     render(<ReachyMotionLibraryPage />)
 
-    expect(await screen.findByText('Zero Assistant Console')).toBeInTheDocument()
-    expect(await screen.findByText('Start Robot Assistant')).toBeInTheDocument()
-    expect(screen.getAllByText('Settle').length).toBeGreaterThan(0)
-    expect(screen.getByText('Still Ready')).toBeInTheDocument()
+    // Page title is the new cockpit branding.
+    expect(await screen.findByText('Zero Cockpit')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Diagnostics'))
-    expect((await screen.findAllByText('Zero robot daemon')).length).toBeGreaterThan(0)
+    // Hero is present (one Start Robot Assistant button comes from the merged hero).
+    expect(await screen.findByText('Start Robot Assistant')).toBeInTheDocument()
+
+    // Camera viewer's header is in the right column.
+    expect(await screen.findByText('Zero sees')).toBeInTheDocument()
+
+    // Daemon status bar is visible with a [Debug] toggle.
+    expect((await screen.findAllByText(/Daemon ·/i)).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Debug$/i)).toBeInTheDocument()
+
+    // Debug panel is hidden by default — its distinctive headers don't render.
+    expect(screen.queryByText('Recent assistant activity')).toBeNull()
+    expect(screen.queryByText(/^Session$/i)).toBeNull()
+
+    // No old tab buttons.
+    expect(screen.queryByRole('button', { name: 'Body Controls' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Motion Library' })).toBeNull()
+  })
+
+  it('shows the host-agent offline banner when the probe returns unreachable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const json = (body: unknown) => ({
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      } as Response)
+      if (url.includes('/api/reachy/host-agent/status')) {
+        return json({ reachable: false, url: 'http://localhost:18796', last_error: 'ECONNREFUSED' })
+      }
+      if (url.includes('/api/reachy/motion/library')) {
+        return json({ total: 0, emotions: 0, dances: 0, clips: [], by_category: {} })
+      }
+      if (url.includes('/api/reachy/personas/intros')) return json({ map: {} })
+      if (url.includes('/api/reachy/personas')) return json({ active_id: 'assistant', personas: [] })
+      if (url.includes('/api/reachy/memory')) return json({ notes: [], stats: { total: 0, by_category: {} } })
+      if (url.includes('/api/reachy/sequences')) return json({ sequences: [] })
+      if (url.includes('/api/reachy/status')) {
+        return json({ connected: false, daemon_connected: false, robot_ready: false, daemon: {}, base_url: '' })
+      }
+      return json({})
+    })
+
+    render(<ReachyMotionLibraryPage />)
+
+    expect(await screen.findByText(/Reachy stack is not running/i)).toBeInTheDocument()
   })
 
   it('shows hardware retry controls and compact API errors', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input)
       const json = (body: unknown) => ({
         ok: true,
@@ -172,18 +215,6 @@ describe('ReachyMotionLibraryPage', () => {
           log_path: 'C:\\code\\zero\\host_agent\\logs\\reachy-daemon-20260506.log',
         })
       }
-      if (url.includes('/api/reachy/daemon/watchdog')) {
-        if (init?.method === 'POST') return json({ enabled: false, restart_history: [] })
-        return json({
-          enabled: true,
-          consecutive_failures: 5,
-          failure_threshold: 6,
-          poll_interval_s: 10,
-          last_check: null,
-          last_daemon_up: null,
-          restart_history: [],
-        })
-      }
       if (url.includes('/api/reachy/daemon/retry-scan')) {
         return apiError(423, {
           error: {
@@ -202,7 +233,9 @@ describe('ReachyMotionLibraryPage', () => {
     render(<DaemonPanel />)
 
     expect((await screen.findAllByText('Retry hardware scan')).length).toBeGreaterThan(0)
-    expect(screen.getByText('Pause watchdog')).toBeInTheDocument()
+    // Watchdog UI removed in 2026-05-15; "Pause watchdog" no longer exists.
+    expect(screen.queryByText('Pause watchdog')).toBeNull()
+    expect(screen.queryByText('Auto-restart watchdog')).toBeNull()
     expect(screen.getByText(/USB\/audio are visible; motor power\/bus is missing/)).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByText('Retry hardware scan')[0])

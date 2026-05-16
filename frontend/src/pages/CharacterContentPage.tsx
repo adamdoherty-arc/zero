@@ -76,6 +76,11 @@ import { ContentRequestBar } from '@/components/character-content/ContentRequest
 import { AlphabetFilter, bucketOf, sortByName } from '@/components/character-content/AlphabetFilter'
 import TikTokPhonePreview from '@/components/character-content/TikTokPhonePreview'
 import MusicPickerModal from '@/components/character-content/MusicPickerModal'
+import { ContentProductionPausedBanner } from '@/components/content-control/ContentProductionPausedBanner'
+import {
+  CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+  useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
 
 class CharacterContentErrorBoundary extends Component<
   { children: ReactNode },
@@ -191,16 +196,19 @@ export function CharacterContentPage() {
 
   return (
     <CharacterContentErrorBoundary>
-      {tab === 'characters' && <CharactersTab />}
-      {tab === 'tv-shows' && <MediaContentTab mediaTypeFilter="tv_show" />}
-      {tab === 'movies' && <MediaContentTab mediaTypeFilter="movie" />}
-      {tab === 'reference-videos' && <ReferenceVideosTab />}
-      {tab === 'research' && <ResearchQueueTab />}
-      {tab === 'studio' && <ContentStudioTab />}
-      {tab === 'review' && <ReviewQueueTab />}
-      {tab === 'inspiration' && <InspirationTab />}
-      {tab === 'analytics' && <AnalyticsTab />}
-      {tab === 'employee-report' && <EmployeeReportTab />}
+      <div className="space-y-4">
+        <ContentProductionPausedBanner />
+        {tab === 'characters' && <CharactersTab />}
+        {tab === 'tv-shows' && <MediaContentTab mediaTypeFilter="tv_show" />}
+        {tab === 'movies' && <MediaContentTab mediaTypeFilter="movie" />}
+        {tab === 'reference-videos' && <ReferenceVideosTab />}
+        {tab === 'research' && <ResearchQueueTab />}
+        {tab === 'studio' && <ContentStudioTab />}
+        {tab === 'review' && <ReviewQueueTab />}
+        {tab === 'inspiration' && <InspirationTab />}
+        {tab === 'analytics' && <AnalyticsTab />}
+        {tab === 'employee-report' && <EmployeeReportTab />}
+      </div>
     </CharacterContentErrorBoundary>
   )
 }
@@ -356,6 +364,8 @@ function CharactersTab() {
   const researchMutation = useResearchCharacter()
   const batchResearchMutation = useBatchResearch()
   const deleteCharacterMutation = useDeleteCharacter()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const sortedCharacters = characters ? sortByName(characters, (c) => c.name) : []
   const visibleCharacters = letterFilter
@@ -390,17 +400,19 @@ function CharactersTab() {
           <Button
             variant="outline"
             onClick={() => batchResearchMutation.mutate({})}
-            disabled={batchResearchMutation.isPending}
+            disabled={batchResearchMutation.isPending || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Research all characters'}
             aria-label="Research all characters"
           >
             {batchResearchMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
             Research All
           </Button>
-          <AddCharacterDialog />
+          <AddCharacterDialog productionPaused={productionPaused} />
           <Button
             variant="outline"
             onClick={() => seedMutation.mutate()}
-            disabled={seedMutation.isPending}
+            disabled={seedMutation.isPending || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Seed character library'}
             aria-label="Seed character library"
           >
             {seedMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
@@ -442,6 +454,7 @@ function CharactersTab() {
                   }
                 }}
                 isDeleting={deleteCharacterMutation.isPending && deleteCharacterMutation.variables === char.id}
+                productionPaused={productionPaused}
               />
             ))}
           </div>
@@ -451,13 +464,14 @@ function CharactersTab() {
   )
 }
 
-function CharacterCard({ character, onResearch, isResearching, onClick, onDelete, isDeleting }: {
+function CharacterCard({ character, onResearch, isResearching, onClick, onDelete, isDeleting, productionPaused }: {
   character: Character
   onResearch: (e: React.MouseEvent) => void
   isResearching: boolean
   onClick: () => void
   onDelete: (e: React.MouseEvent) => void
   isDeleting: boolean
+  productionPaused: boolean
 }) {
   const factCount = character.fact_bank?.length || 0
 
@@ -555,7 +569,8 @@ function CharacterCard({ character, onResearch, isResearching, onClick, onDelete
           className="w-full"
           variant={character.research_status === 'completed' ? 'outline' : 'default'}
           onClick={onResearch}
-          disabled={isResearching || character.research_status === 'researching'}
+          disabled={isResearching || character.research_status === 'researching' || productionPaused}
+          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : undefined}
           aria-label={character.research_status === 'researching' ? `Researching ${character.name}` : character.research_status === 'completed' ? `Re-research ${character.name}` : `Research ${character.name}`}
         >
           {character.research_status === 'researching' ? (
@@ -571,7 +586,7 @@ function CharacterCard({ character, onResearch, isResearching, onClick, onDelete
   )
 }
 
-function AddCharacterDialog() {
+function AddCharacterDialog({ productionPaused = false }: { productionPaused?: boolean }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [universe, setUniverse] = useState<CharacterUniverse>('marvel')
@@ -589,7 +604,13 @@ function AddCharacterDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button aria-label="Add new character"><Plus className="w-4 h-4 mr-2" />Add Character</Button>
+        <Button
+          aria-label="Add new character"
+          disabled={productionPaused}
+          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Add new character'}
+        >
+          <Plus className="w-4 h-4 mr-2" />Add Character
+        </Button>
       </DialogTrigger>
       <DialogContent className="bg-gray-800 border-gray-700" aria-label="Add character dialog">
         <DialogHeader>
@@ -607,7 +628,12 @@ function AddCharacterDialog() {
           </Select>
           <Input placeholder="Franchise (e.g., Avengers)" value={franchise} onChange={(e) => setFranchise(e.target.value)} className="bg-gray-900 border-gray-700" aria-label="Franchise name" />
           <Input placeholder="Real name (e.g., Tony Stark)" value={realName} onChange={(e) => setRealName(e.target.value)} className="bg-gray-900 border-gray-700" aria-label="Real name" />
-          <Button onClick={handleSubmit} disabled={!name || createMutation.isPending} className="w-full" aria-label="Create character">
+          <Button
+            onClick={handleSubmit}
+            disabled={!name || createMutation.isPending || productionPaused}
+            className="w-full"
+            aria-label="Create character"
+          >
             {createMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
             Create Character
           </Button>
@@ -641,6 +667,8 @@ function ResearchQueueTab() {
   const [filterUniverse, setFilterUniverse] = useState<string>('')
   const [limit, setLimit] = useState<number>(0)
   const navigate = useNavigate()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const isRunning = (queue?.queued ?? 0) > 0 || (queue?.researching ?? 0) > 0
 
@@ -653,6 +681,7 @@ function ResearchQueueTab() {
 
   const handleStart = () => {
     const params: { universe?: string; limit?: number } = {}
+    if (productionPaused) return
     if (filterUniverse && filterUniverse !== 'all') params.universe = filterUniverse
     if (limit > 0) params.limit = limit
     startMutation.mutate(params)
@@ -699,7 +728,8 @@ function ResearchQueueTab() {
           <Button
             className="bg-green-600 hover:bg-green-700 h-9"
             onClick={handleStart}
-            disabled={startMutation.isPending || isRunning}
+            disabled={startMutation.isPending || isRunning || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Start research queue'}
             aria-label="Start research queue"
           >
             {startMutation.isPending ? (
@@ -814,7 +844,7 @@ function ResearchQueueTab() {
 
           <TabsContent value="all" className="space-y-2">
             {queue.jobs.map((job) => (
-              <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
+              <ResearchJobCard key={job.id} job={job} productionPaused={productionPaused} onSelect={() => navigate(`/characters/${job.character_id}`)} />
             ))}
           </TabsContent>
 
@@ -826,7 +856,7 @@ function ResearchQueueTab() {
               </div>
             ) : (
               queuedJobs.map((job) => (
-                <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
+                <ResearchJobCard key={job.id} job={job} productionPaused={productionPaused} onSelect={() => navigate(`/characters/${job.character_id}`)} />
               ))
             )}
           </TabsContent>
@@ -839,7 +869,7 @@ function ResearchQueueTab() {
               </div>
             ) : (
               inProgressJobs.map((job) => (
-                <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
+                <ResearchJobCard key={job.id} job={job} productionPaused={productionPaused} onSelect={() => navigate(`/characters/${job.character_id}`)} />
               ))
             )}
           </TabsContent>
@@ -852,7 +882,7 @@ function ResearchQueueTab() {
               </div>
             ) : (
               completedJobs.map((job) => (
-                <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
+                <ResearchJobCard key={job.id} job={job} productionPaused={productionPaused} onSelect={() => navigate(`/characters/${job.character_id}`)} />
               ))
             )}
           </TabsContent>
@@ -860,7 +890,7 @@ function ResearchQueueTab() {
           {failedJobs.length > 0 && (
             <TabsContent value="failed" className="space-y-2">
               {failedJobs.map((job) => (
-                <ResearchJobCard key={job.id} job={job} onSelect={() => navigate(`/characters/${job.character_id}`)} />
+                <ResearchJobCard key={job.id} job={job} productionPaused={productionPaused} onSelect={() => navigate(`/characters/${job.character_id}`)} />
               ))}
             </TabsContent>
           )}
@@ -881,7 +911,11 @@ function useLiveTimer(active: boolean) {
   }, [active])
 }
 
-function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
+function ResearchJobCard({ job, productionPaused }: {
+  job: ResearchJob
+  productionPaused: boolean
+  onSelect: () => void
+}) {
   const navigate = useNavigate()
   const isActive = job.status === 'researching'
   const isFailed = job.status === 'failed'
@@ -1028,7 +1062,8 @@ function ResearchJobCard({ job }: { job: ResearchJob; onSelect: () => void }) {
                 variant="outline"
                 className="h-7 text-xs border-gray-600 hover:bg-gray-700"
                 onClick={(e) => { e.stopPropagation(); retryMutation.mutate(job.character_id) }}
-                disabled={retryMutation.isPending}
+                disabled={retryMutation.isPending || productionPaused}
+                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Retry research'}
                 aria-label={`Retry research for ${job.character_name}`}
               >
                 {retryMutation.isPending ? (
@@ -1370,6 +1405,8 @@ function ContentStudioTab() {
   const smartBatchMutation = useSmartBatchGenerate()
   const seedTemplatesMutation = useSeedTemplates()
   const seedMusicMutation = useSeedMusic()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   return (
     <div className="space-y-3">
@@ -1458,7 +1495,8 @@ function ContentStudioTab() {
                 slide_count: slideCount,
                 hook_style: selectedHookStyle === 'auto' || !selectedHookStyle ? undefined : selectedHookStyle,
               })}
-              disabled={!selectedCharId || generateMutation.isPending}
+              disabled={!selectedCharId || generateMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate carousel'}
               aria-label="Generate single carousel"
             >
               {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
@@ -1472,7 +1510,8 @@ function ContentStudioTab() {
                 angle: selectedAngle,
                 parts: 3,
               })}
-              disabled={!selectedCharId || seriesMutation.isPending}
+              disabled={!selectedCharId || seriesMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate carousel series'}
               aria-label="Generate 3-part carousel series"
             >
               {seriesMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Layers className="w-4 h-4 mr-2" />}
@@ -1481,16 +1520,31 @@ function ContentStudioTab() {
             <Button
               variant="outline"
               onClick={() => smartBatchMutation.mutate({ count: 12 })}
-              disabled={smartBatchMutation.isPending}
+              disabled={smartBatchMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Smart batch generate carousels'}
               aria-label="Smart batch generate 12 carousels"
             >
               {smartBatchMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
               Smart Batch (12)
             </Button>
-            <Button variant="outline" size="sm" onClick={() => seedTemplatesMutation.mutate()} disabled={seedTemplatesMutation.isPending} aria-label="Seed story templates">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => seedTemplatesMutation.mutate()}
+              disabled={seedTemplatesMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Seed story templates'}
+              aria-label="Seed story templates"
+            >
               Seed Templates
             </Button>
-            <Button variant="outline" size="sm" onClick={() => seedMusicMutation.mutate()} disabled={seedMusicMutation.isPending} aria-label="Seed music library">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => seedMusicMutation.mutate()}
+              disabled={seedMusicMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Seed music library'}
+              aria-label="Seed music library"
+            >
               Seed Music
             </Button>
           </div>
@@ -1579,6 +1633,8 @@ function ReviewQueueTab() {
   const [draft, setDraft] = useState<Partial<CharacterCarousel>>({})
   const [musicPickerForId, setMusicPickerForId] = useState<string | null>(null)
   const [reimagingSlide, setReimagingSlide] = useState<{ id: string; idx: number } | null>(null)
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const queue = useSmartQueue ? smartQueue : regularQueue
   const isLoading = useSmartQueue ? smartLoading : regularLoading
@@ -1612,6 +1668,7 @@ function ReviewQueueTab() {
   }
 
   const handleReimageSlide = (carouselId: string, slideIdx: number, query?: string) => {
+    if (productionPaused) return
     setReimagingSlide({ id: carouselId, idx: slideIdx })
     reimageMutation.mutate(
       { carouselId, slideIndex: slideIdx, query },
@@ -1711,8 +1768,14 @@ function ReviewQueueTab() {
                     carousel={carousel}
                     editMode={isEditing}
                     onChange={patch => setDraft(d => ({ ...d, ...patch }))}
-                    onReimageSlide={(idx, q) => handleReimageSlide(carousel.id, idx, q)}
-                    onOpenMusicPicker={() => setMusicPickerForId(carousel.id)}
+                    onReimageSlide={
+                      productionPaused
+                        ? undefined
+                        : (idx, q) => handleReimageSlide(carousel.id, idx, q)
+                    }
+                    onOpenMusicPicker={
+                      productionPaused ? undefined : () => setMusicPickerForId(carousel.id)
+                    }
                     reimagingSlideIdx={reimagingIdx}
                   />
                 </div>
@@ -1805,7 +1868,8 @@ function ReviewQueueTab() {
                         <Button
                           className="flex-1 min-w-[120px] bg-indigo-600 hover:bg-indigo-500"
                           onClick={() => saveEdit(carousel.id)}
-                          disabled={updateMutation.isPending || Object.keys(draft).length === 0}
+                          disabled={updateMutation.isPending || Object.keys(draft).length === 0 || productionPaused}
+                          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Save carousel changes'}
                         >
                           <Save className="w-4 h-4 mr-2" />
                           Save changes
@@ -1826,6 +1890,8 @@ function ReviewQueueTab() {
                           variant="outline"
                           className="flex-1 min-w-[120px]"
                           onClick={() => startEdit(carousel.id)}
+                          disabled={productionPaused}
+                          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Edit carousel'}
                         >
                           <Pencil className="w-4 h-4 mr-2" />
                           Edit
@@ -1834,14 +1900,16 @@ function ReviewQueueTab() {
                           variant="outline"
                           size="sm"
                           onClick={() => setMusicPickerForId(carousel.id)}
-                          title="Change music"
+                          disabled={productionPaused}
+                          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Change music'}
                         >
                           <Music2 className="w-4 h-4" />
                         </Button>
                         <Button
                           className="flex-1 min-w-[120px] bg-green-600 hover:bg-green-700"
                           onClick={() => approveMutation.mutate({ id: carousel.id })}
-                          disabled={approveMutation.isPending}
+                          disabled={approveMutation.isPending || productionPaused}
+                          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Approve carousel'}
                           aria-label={`Approve carousel for ${carousel.character_name}`}
                         >
                           <CheckCircle className="w-4 h-4 mr-2" />
@@ -1851,7 +1919,8 @@ function ReviewQueueTab() {
                           variant="destructive"
                           className="flex-1 min-w-[120px]"
                           onClick={() => rejectMutation.mutate({ id: carousel.id, reason: 'Not engaging enough' })}
-                          disabled={rejectMutation.isPending}
+                          disabled={rejectMutation.isPending || productionPaused}
+                          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Reject carousel'}
                           aria-label={`Reject carousel for ${carousel.character_name}`}
                         >
                           <XCircle className="w-4 h-4 mr-2" />

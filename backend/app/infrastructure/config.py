@@ -22,20 +22,28 @@ class Settings(BaseSettings):
 
     # Local LLM backend — vLLM only (Ollama retired ecosystem-wide 2026-04-27).
     # Field kept for backwards-compat with code that reads it; value is locked
-    # to "vllm". Cloud providers (Gemini, Kimi, OpenRouter, MiniMax, HuggingFace)
-    # are unaffected and route via shared-litellm at :4444.
+    # to "vllm". Post 2026-05-14 Bifrost migration, the "vllm" backend points
+    # at the Bifrost gateway at :4445, which fronts the actual vllm-local
+    # container. No cloud providers exist as standalone clients any more.
     local_llm_backend: str = "vllm"
 
-    # vLLM Settings (pinned local backend — shared containers from shared-infra)
-    vllm_chat_url: str = "http://localhost:18800/v1"
-    vllm_chat_base_url: str = "http://localhost:18800/v1"
-    vllm_chat_model: str = "qwen3-chat"
-    vllm_embed_url: str = "http://localhost:8001/v1"
-    vllm_embed_base_url: str = "http://localhost:8001/v1"
-    vllm_embed_model: str = "Qwen/Qwen3-Embedding-0.6B"
+    # vLLM Settings — names retained for backwards compat with code that
+    # reads them, but URLs now point at the Bifrost gateway. Bifrost
+    # requires provider-prefixed model names (vllm-local/..., embed-local/...).
+    vllm_chat_url: str = "http://host.docker.internal:4445/v1"
+    vllm_chat_base_url: str = "http://host.docker.internal:4445/v1"
+    vllm_chat_model: str = "vllm-local/qwen3-chat"
+    vllm_embed_url: str = "http://host.docker.internal:4445/v1"
+    vllm_embed_base_url: str = "http://host.docker.internal:4445/v1"
+    vllm_embed_model: str = "embed-local/Qwen/Qwen3-Embedding-0.6B"
     vllm_api_key: str = "EMPTY"
     vllm_timeout: int = 600
-    embed_provider: str = "vllm"  # vLLM only post-2026-04-27
+    embed_provider: str = "vllm"  # routes through Bifrost embed-local
+
+    # Bifrost gateway (shared-infra). All cloud + local LLM traffic exits here.
+    bifrost_url: str = "http://host.docker.internal:4445/v1"
+    bifrost_api_key: str = ""
+    bifrost_timeout: int = 120
 
     # Legion Sprint Manager
     # Use host.docker.internal for Docker environments, localhost for local development
@@ -150,33 +158,24 @@ class Settings(BaseSettings):
     # Polymarket API
     polymarket_gamma_url: str = "https://gamma-api.polymarket.com"
 
-    # Multi-Provider LLM API Keys
+    # Multi-Provider LLM API Keys — REMOVED 2026-05-14 Bifrost migration.
+    # Bifrost (shared-infra/.env) is the single owner of upstream creds.
+    # Fields retained here so attribute access in stale code paths returns
+    # None instead of AttributeError; remove once those code paths are
+    # rewritten or deleted.
     gemini_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
-    # Plural form — comma-separated keys. Carousel V2 free-tier rotation
-    # pool multiplies throughput across multiple OpenRouter accounts. Falls
-    # back to ``[openrouter_api_key]`` when this is empty.
     openrouter_api_keys: str = ""
     huggingface_api_key: Optional[str] = None
     kimi_api_key: Optional[str] = None
-    kimi_base_url: str = "https://api.moonshot.ai/v1"
-    # Kimi multimodal model used by Stage-8 image verification. Moonshot's
-    # public chat-completions API doesn't yet expose a stable vision SKU,
-    # so the carousel V2 router currently routes Stage 8 through Gemini Flash
-    # (Tier 0) + OpenRouter free pool (Tier 1). When Moonshot ships a public
-    # vision alias, set ZERO_KIMI_VISION_MODEL to enable it as an extra tier.
-    kimi_vision_model: str = "moonshot-v1-8k-vision-preview"
+    kimi_base_url: str = "http://host.docker.internal:4445/v1"  # repointed to Bifrost
+    kimi_vision_model: str = "moonshot/kimi-k2.6"  # vision routes through Bifrost
 
     # ----- Stage-8 VLM budget caps (carousel V2 cheap-VLM router) -----------
-    # Daily ceiling on PAID VLM spend. Free-tier OpenRouter calls are exempt.
-    # When the daily total would exceed this, paid tiers (Gemini) are skipped
-    # and the router falls through to free pool / failure-soft no-VLM ranking.
     vlm_daily_budget_usd: float = 1.0
-    # Per-carousel ceiling — prevents one runaway generation from eating the
-    # whole daily budget. Defaults to ~10% of the daily cap.
     vlm_per_carousel_cap_usd: float = 0.10
     minimax_api_key: Optional[str] = None
-    minimax_base_url: str = "https://api.minimax.io/v1"
+    minimax_base_url: str = "http://host.docker.internal:4445/v1"  # repointed to Bifrost
 
     # TMDB (The Movie Database) - free API for movie/TV images
     tmdp_api_key: Optional[str] = None
@@ -251,13 +250,13 @@ class Settings(BaseSettings):
     character_discovery_enabled: bool = True
     character_discovery_daily_cap: int = 20
     ollama_concurrency: int = 2
-    # Ollama HTTP fallback. Used by ollama_client.py for legacy embed/chat
-    # paths and as the dense-vector source for vault retrieval. Routes via
-    # host.docker.internal in Docker; localhost on host. ZERO_OLLAMA_BASE_URL
-    # in env wins. Without these fields, every dense vault search raised
-    # AttributeError("'Settings' object has no attribute 'ollama_base_url'").
-    ollama_base_url: str = "http://host.docker.internal:11434/v1"
-    ollama_model: str = "qwen3-chat"
+    # Legacy Ollama settings — direct :11434 access was removed 2026-05-14.
+    # The fields remain so existing code that reads them doesn't crash; the
+    # URL now points at the Bifrost gateway and the model name uses the
+    # bifrost-prefixed form. ollama_client.py is now a thin shim over the
+    # multi-provider UnifiedLLMClient and never opens a raw :11434 socket.
+    ollama_base_url: str = "http://host.docker.internal:4445/v1"
+    ollama_model: str = "vllm-local/qwen3-chat"
     ollama_timeout: int = 900
 
     # Autonomous content loop (migration 035 / orchestration hardening W2)

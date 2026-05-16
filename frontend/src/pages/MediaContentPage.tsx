@@ -11,6 +11,11 @@ import { MediaTitleCard } from '@/components/media-content/MediaTitleCard'
 import { TMDBSearchModal } from '@/components/media-content/TMDBSearchModal'
 import { ContentRequestBar } from '@/components/character-content/ContentRequestBar'
 import { AlphabetFilter, bucketOf, sortByName } from '@/components/character-content/AlphabetFilter'
+import { ContentProductionPausedBanner } from '@/components/content-control/ContentProductionPausedBanner'
+import {
+  CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+  useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
 
 interface MediaContentTabProps {
   mediaTypeFilter?: 'tv_show' | 'movie'
@@ -32,8 +37,11 @@ export function MediaContentTab({ mediaTypeFilter }: MediaContentTabProps) {
   const researchMutation = useResearchMediaTitle()
   const generateMutation = useGenerateMediaCarousel()
   const seedMutation = useSeedMediaTitles()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const handleResearch = async (id: string) => {
+    if (productionPaused) return
     setResearchingId(id)
     try {
       await researchMutation.mutateAsync(id)
@@ -43,6 +51,7 @@ export function MediaContentTab({ mediaTypeFilter }: MediaContentTabProps) {
   }
 
   const handleGenerate = async (id: string) => {
+    if (productionPaused) return
     setGeneratingId(id)
     try {
       await generateMutation.mutateAsync({ media_title_id: id })
@@ -52,11 +61,14 @@ export function MediaContentTab({ mediaTypeFilter }: MediaContentTabProps) {
   }
 
   const handleSeed = async (mediaType: string) => {
+    if (productionPaused) return
     await seedMutation.mutateAsync({ count: 10, media_type: mediaType })
   }
 
   return (
     <div className="space-y-6">
+      <ContentProductionPausedBanner />
+
       {/* Content request bar */}
       <ContentRequestBar
         placeholder={mediaTypeFilter === 'tv_show'
@@ -97,7 +109,8 @@ export function MediaContentTab({ mediaTypeFilter }: MediaContentTabProps) {
         <div className="flex gap-2">
           <button
             onClick={() => handleSeed(mediaTypeFilter || 'movie')}
-            disabled={seedMutation.isPending}
+            disabled={seedMutation.isPending || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Seed popular media'}
             className="px-3 py-1.5 text-sm rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 border border-gray-700 flex items-center gap-1.5 disabled:opacity-50 transition-colors"
           >
             <Download className="w-4 h-4" />
@@ -137,6 +150,7 @@ export function MediaContentTab({ mediaTypeFilter }: MediaContentTabProps) {
                 onClick={(id) => navigate(`/characters/media/${id}`)}
                 isResearching={researchingId === title.id}
                 isGenerating={generatingId === title.id}
+                productionPaused={productionPaused}
               />
             ))}
           </div>

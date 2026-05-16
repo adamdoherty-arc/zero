@@ -7,6 +7,10 @@ import { Badge } from '@/components/ui/badge'
 import TikTokPhonePreview from './TikTokPhonePreview'
 import type { CharacterCarousel, AIReview } from '@/hooks/useCharacterContentApi'
 import {
+  CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+  useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
+import {
   useApplyEnhanceVariant,
   useDeleteCarousel,
   useEnhanceCarouselPiece,
@@ -119,6 +123,8 @@ export function CarouselCard({
   const displayName = carousel.character_name || characterName || ''
   const deleteCarousel = useDeleteCarousel()
   const { toast } = useToast()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const handleDelete = () => {
     const label = carousel.title || displayName || 'this carousel'
@@ -188,8 +194,9 @@ export function CarouselCard({
                 size="sm"
                 variant="outline"
                 onClick={onAiReview}
-                disabled={isReviewing}
+                disabled={isReviewing || productionPaused}
                 aria-label={`AI review carousel for ${displayName}`}
+                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'AI review carousel'}
               >
                 {isReviewing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Brain className="w-3 h-3 mr-1" />}
                 AI Review
@@ -216,9 +223,9 @@ export function CarouselCard({
               size="sm"
               variant="outline"
               onClick={handleDelete}
-              disabled={deleteCarousel.isPending}
+              disabled={deleteCarousel.isPending || productionPaused}
               aria-label={`Delete carousel ${carousel.title || displayName}`}
-              title="Delete permanently"
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Delete permanently'}
               className="border-red-500/40 text-red-300 hover:bg-red-500/10 hover:text-red-200"
             >
               {deleteCarousel.isPending
@@ -234,7 +241,11 @@ export function CarouselCard({
             <TikTokPhonePreview
               carousel={{ ...carousel, character_name: displayName }}
               editMode={false}
-              onReimageSlide={onReimageSlide ? (slideIdx) => onReimageSlide(carousel.id, slideIdx) : undefined}
+              onReimageSlide={
+                onReimageSlide && !productionPaused
+                  ? (slideIdx) => onReimageSlide(carousel.id, slideIdx)
+                  : undefined
+              }
               reimagingSlideIdx={
                 reimagingSlideKey && reimagingSlideKey.startsWith(`${carousel.id}:`)
                   ? Number(reimagingSlideKey.split(':')[1])
@@ -475,6 +486,8 @@ function EnhanceCarouselButton({
   const { toast } = useToast()
   const enhance = useEnhanceCarouselPiece()
   const applyVariant = useApplyEnhanceVariant()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   useEffect(() => {
     if (!open) return
@@ -488,6 +501,7 @@ function EnhanceCarouselButton({
   const pending = enhance.isPending || applyVariant.isPending
 
   const run = async (target: 'hook' | 'caption' | 'all') => {
+    if (productionPaused) return
     try {
       writeCardModel(model.provider, model.model)
       setOpen(false)
@@ -533,10 +547,10 @@ function EnhanceCarouselButton({
         size="sm"
         variant="outline"
         onClick={() => setOpen(v => !v)}
-        disabled={pending}
+        disabled={pending || productionPaused}
         aria-expanded={open}
         aria-label={`Enhance carousel for ${displayName}`}
-        title="Enhance with AI"
+        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Enhance with AI'}
       >
         {pending ? (
           <Loader2 className="w-3 h-3 mr-1 animate-spin" />
@@ -573,13 +587,13 @@ function EnhanceCarouselButton({
             Target
           </div>
           <div className="flex flex-col gap-1">
-            <Button size="sm" variant="outline" onClick={() => run('hook')} disabled={pending}>
+            <Button size="sm" variant="outline" onClick={() => run('hook')} disabled={pending || productionPaused}>
               <Sparkles className="w-3 h-3 mr-1 text-indigo-300" /> Enhance hook
             </Button>
-            <Button size="sm" variant="outline" onClick={() => run('caption')} disabled={pending}>
+            <Button size="sm" variant="outline" onClick={() => run('caption')} disabled={pending || productionPaused}>
               <Sparkles className="w-3 h-3 mr-1 text-indigo-300" /> Enhance caption
             </Button>
-            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-500" onClick={() => run('all')} disabled={pending}>
+            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-500" onClick={() => run('all')} disabled={pending || productionPaused}>
               <Sparkles className="w-3 h-3 mr-1" /> Enhance all
             </Button>
           </div>

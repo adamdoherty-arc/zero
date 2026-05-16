@@ -12,8 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.infrastructure.auth import require_auth
+from app.models.company_facts import CompletionOutput
 from app.models.task import TaskCreate, TaskUpdate
+from app.services.company_completion_review_service import get_company_completion_review_service
 from app.services.company_dashboard_review_service import get_company_dashboard_review_service
+from app.services.company_progress_checkin_service import get_company_progress_checkin_service
+from app.services.company_setup_progress_service import get_company_setup_progress_service
+from app.services.company_walkthroughs import walkthrough_for
 from app.services.company_work_item_service import get_company_work_item_service
 
 
@@ -26,6 +31,22 @@ router = APIRouter(
 
 class ActorRequest(BaseModel):
     actor: str = Field(default="user", max_length=100)
+
+
+class CompletionReviewRequest(BaseModel):
+    actor: str = Field(default="dashboard", max_length=100)
+    auto_create_followups: bool = True
+
+
+class CompleteWorkItemRequest(BaseModel):
+    actor: str = Field(default="user", max_length=100)
+    completion_note: Optional[str] = None
+    outputs: list[CompletionOutput] = Field(default_factory=list)
+
+
+class TaskNoteRequest(BaseModel):
+    actor: str = Field(default="user", max_length=100)
+    note: str = Field(..., min_length=1, max_length=4000)
 
 
 @router.get("")
@@ -54,6 +75,22 @@ async def list_work_items(
 @router.get("/seed-status")
 async def seed_status():
     return await get_company_work_item_service().seed_status()
+
+
+@router.get("/setup-progress")
+async def setup_progress():
+    return await get_company_setup_progress_service().progress()
+
+
+@router.get("/progress-checkin")
+async def progress_checkin():
+    return await get_company_progress_checkin_service().run_checkin(requested_by="dashboard")
+
+
+@router.post("/progress-checkin/run")
+async def run_progress_checkin(req: ActorRequest | None = None):
+    actor = req.actor if req else "dashboard"
+    return await get_company_progress_checkin_service().run_checkin(requested_by=actor)
 
 
 @router.get("/reviews/summary")
@@ -102,8 +139,53 @@ async def review(task_id: str):
         raise HTTPException(404, f"Company work item {task_id} not found")
     item = await get_company_dashboard_review_service().get_review(task_id)
     if not item:
-        raise HTTPException(404, f"Company work item review {task_id} not found")
+        # Build a minimal review on the fly so the walkthrough is still surfaced
+        walkthrough = walkthrough_for(task.title, task.description or "")
+        if walkthrough is None:
+            raise HTTPException(404, f"Company work item review {task_id} not found")
+        return {
+            "id": f"adhoc-{task.id}",
+            "task_id": task.id,
+            "score": 0,
+            "recommendation": "keep",
+            "summary": None,
+            "missing_info": [],
+            "action_steps": [],
+            "acceptance_criteria": [],
+            "automation_plan": {},
+            "source_links": [],
+            "walkthrough": walkthrough,
+            "completion_review": None,
+            "reviewed_by": "walkthrough-only",
+            "operator_run_id": None,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "updated_at": None,
+        }
     return item
+
+
+@router.get("/{task_id}/walkthrough")
+async def get_walkthrough(task_id: str):
+    task = await get_company_work_item_service().get_work_item(task_id)
+    if not task:
+        raise HTTPException(404, f"Company work item {task_id} not found")
+    walkthrough = walkthrough_for(task.title, task.description or "")
+    if walkthrough is None:
+        raise HTTPException(404, f"No curated walkthrough for task {task_id}")
+    return walkthrough
+
+
+@router.post("/{task_id}/completion-review")
+async def run_completion_review(task_id: str, req: CompletionReviewRequest | None = None):
+    request = req or CompletionReviewRequest()
+    task = await get_company_work_item_service().get_work_item(task_id)
+    if not task:
+        raise HTTPException(404, f"Company work item {task_id} not found")
+    return await get_company_completion_review_service().review_completion(
+        task_id,
+        actor=request.actor,
+        auto_create_followups=request.auto_create_followups,
+    )
 
 
 @router.post("")
@@ -120,11 +202,46 @@ async def update_work_item(task_id: str, updates: TaskUpdate):
 
 
 @router.post("/{task_id}/complete")
-async def complete_work_item(task_id: str, req: ActorRequest | None = None):
-    task = await get_company_work_item_service().complete_work_item(task_id, actor=(req.actor if req else "user"))
+async def complete_work_item(task_id: str, req: CompleteWorkItemRequest | None = None):
+    request = req or CompleteWorkItemRequest()
+    task = await get_company_work_item_service().complete_work_item(
+        task_id,
+        actor=request.actor,
+        completion_note=request.completion_note,
+        outputs=[output.model_dump() for output in request.outputs],
+    )
     if not task:
         raise HTTPException(404, f"Company work item {task_id} not found")
     return task
+
+
+@router.delete("/{task_id}/notes/{event_id}")
+async def delete_company_note(task_id: str, event_id: str):
+    """Remove a note. Only event_type='note' rows are deletable — audit
+    history (created/updated/blocked/approval_queued/etc.) is untouchable."""
+    from app.db.models import CompanyTaskEventModel
+    from app.infrastructure.database import get_session
+    async with get_session() as session:
+        row = await session.get(CompanyTaskEventModel, event_id)
+        if not row or row.task_id != task_id or row.event_type != "note":
+            raise HTTPException(404, "Note not found (or not a note)")
+        await session.delete(row)
+        await session.flush()
+    return {"status": "deleted", "event_id": event_id}
+
+
+@router.post("/{task_id}/notes")
+async def add_note(task_id: str, req: TaskNoteRequest):
+    """Append a free-text note. Same notes panel feeds personal + company boards.
+    Stored as a company_task_events row with event_type='note'."""
+    service = get_company_work_item_service()
+    existing = await service.get_work_item(task_id)
+    if not existing:
+        raise HTTPException(404, f"Company work item {task_id} not found")
+    event = await service.record_event(
+        task_id, "note", actor=req.actor, summary=req.note.strip(),
+    )
+    return event
 
 
 @router.post("/{task_id}/reopen")

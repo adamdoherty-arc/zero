@@ -1,5 +1,5 @@
 """
-Local realtime handler — STT (faster-whisper) + LLM (vLLM) + TTS
+Local realtime handler - STT (faster-whisper) + local LLM + TTS
 (piper-tts / edge-tts) glued together to satisfy the same Handler protocol
 as ``OpenAIRealtimeHandler`` and ``GeminiLiveHandler``. No cloud calls.
 
@@ -10,8 +10,8 @@ Why composed in-house instead of a framework:
   InputTransport + OutputTransport bridge that is bigger than this glue.
 - All three components already exist as Zero services:
     * ``faster_whisper`` lives in audio_service.py
-    * vLLM is the project's local provider, served at ``host.docker.internal:18800``
-      with ``qwen3-chat`` warm on the 5090
+    * Bifrost is the project's local model gateway, serving ``qwen3-chat``
+      through the shared local model stack
     * ``TTSService`` (piper primary, edge-tts fallback) handles synthesis
 - webrtcvad adds proper barge-in detection so the experience matches the
   cloud realtime feel — short interrupt gap, no speak-over-each-other.
@@ -25,7 +25,7 @@ Pipeline:
         → SileroVAD (chunked, prob > 0.5 = speech, < 0.35 + hangover = end)
         → faster-whisper STT on the captured segment (text)
         → emit transcript.partial / transcript to client
-        → vLLM /v1/chat/completions (stream=true)
+        → local OpenAI-compatible /v1/chat/completions (stream=true)
               with system=profile instructions, tools=registry specs
         → tool calls dispatched via tools.dispatch (Reachy motion)
         → token stream split on sentence boundaries
@@ -79,6 +79,49 @@ logger = structlog.get_logger()
 ClientWriter = Callable[[dict], Awaitable[None]]
 AudioPCMCallback = Callable[[bytes, int], Awaitable[None]]
 
+
+def resolve_chat_model(
+    requested: str,
+    available: List[str],
+    preferred: Optional[List[str]] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Pick the model the live voice loop should actually use.
+
+    Returns ``(resolved, fallback_reason)`` where ``fallback_reason`` is
+    ``None`` on a direct or suffix-prefix match, and a human-readable string
+    when the caller should surface a swap.
+
+    The router serves models under both raw names (``qwen3-chat``) and
+    prefixed names (``vllm-local/qwen3-chat``). A saved selection of either
+    form must keep working; only embedding-only models are ineligible as a
+    fallback for the chat loop.
+    """
+    if not available:
+        return None, "router catalog empty"
+
+    if requested in available:
+        return requested, None
+
+    def _suffix(name: str) -> str:
+        return name.rsplit("/", 1)[-1] if "/" in name else name
+
+    requested_suffix = _suffix(requested)
+    suffix_match = next(
+        (m for m in available if _suffix(m) == requested_suffix),
+        None,
+    )
+    if suffix_match:
+        return suffix_match, None
+
+    chat_candidates = [m for m in available if "embed" not in m.lower()]
+    for name in preferred or []:
+        if name in available and "embed" not in name.lower():
+            return name, f"'{requested}' not loaded; switched to '{name}'"
+    if chat_candidates:
+        pick = chat_candidates[0]
+        return pick, f"'{requested}' not loaded; switched to '{pick}'"
+    return None, "no chat-capable model on router"
+
 INPUT_RATE = 16000
 OUTPUT_RATE = 24000
 # webrtcvad accepts only 10/20/30 ms frames at 8k/16k/32k/48k. We use
@@ -119,7 +162,7 @@ STT_MIN_PEAK_FOR_GAIN = float(os.getenv("REACHY_LOCAL_STT_MIN_PEAK_FOR_GAIN", "0
 # noisy / quiet audio noticeably better, and a 0.92 no_speech cap keeps
 # the caption_hallucination filter doing the heavy lifting against true
 # hallucinations while letting real speech through more reliably.
-STT_MIN_AVG_LOGPROB = float(os.getenv("REACHY_LOCAL_STT_MIN_AVG_LOGPROB", "-1.4"))
+STT_MIN_AVG_LOGPROB = float(os.getenv("REACHY_LOCAL_STT_MIN_AVG_LOGPROB", "-1.0"))
 STT_ACTIVE_AUDIO_MIN_AVG_LOGPROB = float(
     os.getenv("REACHY_LOCAL_STT_ACTIVE_AUDIO_MIN_AVG_LOGPROB", "-1.4")
 )
@@ -208,12 +251,12 @@ def _stt_warning_message(stats: dict[str, float]) -> str:
     """
     if _has_active_audio(stats):
         return (
-            "Reachy heard audio, but speech recognition was not confident "
+            "Zero heard audio, but speech recognition was not confident "
             "enough to use it. Try speaking closer, a little slower, or use "
             "Computer mic if the room is noisy."
         )
     return (
-        "Reachy mic is streaming, but the audio is too quiet for speech "
+        "Zero mic is streaming, but the audio is too quiet for speech "
         "recognition. Check the Windows input level/unmute for Reachy Mini "
         "Audio, then try again."
     )
@@ -781,16 +824,13 @@ class LocalRealtimeHandler:
         self.deps = deps
         self._on_assistant_audio = on_assistant_audio
         self._on_turn_end = on_turn_end
-        # The project routes all LLM traffic through the shared LiteLLM
-        # router at host.docker.internal:4444 (see CLAUDE.md / memory
-        # "Shared LiteLLM Router"). ``vllm_chat_url`` resolves to that
-        # router; ``vllm_api_key`` is the master key it expects as Bearer
-        # auth. Falling back to the direct vLLM port keeps the handler
-        # working when LiteLLM is down for maintenance.
+        # Post 2026-05-14 Bifrost migration: all LLM traffic routes
+        # through Bifrost. ``vllm_chat_url`` resolves to the Bifrost
+        # endpoint (Bifrost speaks OpenAI shape natively).
         raw_url = (
             vllm_url
             or getattr(settings, "vllm_chat_url", None)
-            or "http://host.docker.internal:18800/v1"
+            or "http://shared-bifrost:8080/v1"
         )
         if "localhost" in raw_url or "127.0.0.1" in raw_url:
             try:
@@ -802,9 +842,8 @@ class LocalRealtimeHandler:
                 pass
         self._vllm_url = raw_url.rstrip("/")
         api_key = getattr(settings, "vllm_api_key", None) or "EMPTY"
-        # vLLM accepts "EMPTY" as a no-auth sentinel; LiteLLM expects the
-        # real master key. Either way we always send a Bearer header so
-        # the same handler talks to both transparently.
+        # Older local endpoints accepted "EMPTY" as a no-auth sentinel;
+        # Bifrost receives the project virtual key here.
         self._auth_header = {"Authorization": f"Bearer {api_key}"}
 
         self.tool_manager = BackgroundToolManager()
@@ -936,54 +975,83 @@ class LocalRealtimeHandler:
             instructions = instructions.rstrip() + "\n\n/no_think"
         self._messages = [{"role": "system", "content": instructions}]
 
-        # Probe vLLM so we fail fast (and tell the client) if the GPU
-        # backend isn't actually running. ALSO validate the chosen model is
-        # in the router's catalog — silent "Invalid model name" rejections
-        # made the cockpit look live but produce no replies for users with
-        # stale model strings in their saved config.
+        # Probe the local backend's catalog to validate the chosen model is
+        # actually loadable. Silent "Invalid model name" rejections made the
+        # cockpit look live but produce no replies for users with stale
+        # model strings in their saved config.
+        #
+        # The probe is best-effort: Bifrost fans /v1/models out to every
+        # upstream provider and can hang for tens of seconds when one of
+        # those providers is slow. We never block the session start on it —
+        # if the probe fails we trust the user's chosen model and let the
+        # actual chat completion surface a real error.
         available_models: list[str] = []
         try:
             r = await self._http.get(
                 f"{self._vllm_url}/models",
                 headers=self._auth_header,
-                timeout=4.0,
+                timeout=6.0,
             )
             r.raise_for_status()
             data = (r.json() or {}).get("data") or []
             available_models = [m.get("id", "") for m in data if m.get("id")]
         except Exception as e:
-            await self._emit({
-                "type": "error",
-                "message": (
-                    f"vLLM unreachable at {self._vllm_url}: {e}. "
-                    "Start it on the host (docker compose -f docker-compose.vllm.yml up -d)."
-                ),
-            })
-            return
-
-        if available_models and self.model not in available_models:
-            # User has a stale or hand-typed model name (e.g. "qwen3-heretic-9b")
-            # that the router doesn't know. Fall back to the default and
-            # surface the swap as a transcript so the user actually sees it
-            # in the cockpit — emit-as-error gets quietly hidden during a
-            # "live" session.
-            fallback = "qwen3-chat" if "qwen3-chat" in available_models else available_models[0]
             logger.warning(
-                "local_model_unavailable_falling_back",
-                requested=self.model,
-                fallback=fallback,
-                available=available_models[:8],
+                "local_models_probe_failed",
+                error=str(e)[:120],
+                url=self._vllm_url,
             )
-            await self._emit({
-                "type": "transcript",
-                "role": "assistant",
-                "content": (
-                    f"Heads up: the model '{self.model}' isn't loaded on the "
-                    f"router. Switching to '{fallback}' for this session. "
-                    f"Pick a different one in Settings if you'd like."
-                ),
-            })
-            self.model = fallback
+            # Don't abort — the user picked a model and we'll let the chat
+            # call do the real verification. Aborting here used to lock
+            # users out of voice for the entire duration of any upstream
+            # provider slowness on the router.
+
+        if available_models:
+            resolved, fallback_reason = resolve_chat_model(
+                self.model,
+                available_models,
+                preferred=[
+                    "Qwen3.6-35B-A3B",
+                    "vllm-local/qwen3-chat",
+                    "qwen3-chat",
+                ],
+            )
+            if resolved is None:
+                await self._emit({
+                    "type": "error",
+                    "message": (
+                        f"No chat-capable model is loaded on the router at "
+                        f"{self._vllm_url}. Available: "
+                        f"{', '.join(available_models[:8])}. Start a chat "
+                        "model (e.g. vllm-local/qwen3-chat) and retry."
+                    ),
+                })
+                return
+            if resolved != self.model:
+                if fallback_reason is None:
+                    logger.info(
+                        "local_model_resolved_via_suffix",
+                        requested=self.model,
+                        resolved=resolved,
+                    )
+                else:
+                    logger.warning(
+                        "local_model_unavailable_falling_back",
+                        requested=self.model,
+                        fallback=resolved,
+                        available=available_models[:8],
+                    )
+                    await self._emit({
+                        "type": "transcript",
+                        "role": "assistant",
+                        "content": (
+                            f"Heads up: the model '{self.model}' isn't loaded "
+                            f"on the router. Switching to '{resolved}' for "
+                            "this session. Pick a different one in Settings "
+                            "if you'd like."
+                        ),
+                    })
+                self.model = resolved
 
         await self.tool_manager.start_up(callbacks=[self._on_tool_complete])
         await self._emit({
@@ -1422,7 +1490,7 @@ class LocalRealtimeHandler:
         return await loop.run_in_executor(None, _run)
 
     async def _run_llm_turn(self) -> None:
-        """Stream tokens from vLLM, dispatch tool calls, speak as we go."""
+        """Stream tokens from the local model, dispatch tool calls, speak as we go."""
         if self._http is None:
             return
         enabled = list(resolve_tools(self.profile_id))
@@ -1445,7 +1513,12 @@ class LocalRealtimeHandler:
             if self._cancel_response.is_set():
                 logger.info("local_llm_turn_cancelled", round=_round)
                 return
-            assistant_text, tool_calls, eager_tasks = await self._stream_completion(chat_tools)
+            completion = await self._stream_completion(chat_tools)
+            if len(completion) == 2:
+                assistant_text, tool_calls = completion
+                eager_tasks = {}
+            else:
+                assistant_text, tool_calls, eager_tasks = completion
             if self._last_error == "local LLM timed out":
                 await self._emit({
                     "type": "error",
@@ -1582,7 +1655,7 @@ class LocalRealtimeHandler:
             # in ``reasoning_content`` and return no spoken answer.
             "chat_template_kwargs": {"enable_thinking": False},
         }
-        # Drop None values (vLLM's OpenAI surface is strict about extras).
+        # Drop None values because local OpenAI-compatible surfaces are strict about extras.
         body = {k: v for k, v in body.items() if v is not None}
 
         text_acc = ""
@@ -1613,15 +1686,19 @@ class LocalRealtimeHandler:
                 self._last_error = "local LLM timed out"
                 return None
 
+        stream_headers = dict(self._auth_header)
+        if "chat_template_kwargs" in body:
+            stream_headers["x-bf-passthrough-extra-params"] = "true"
+
         try:
             async with self._http.stream(
-                "POST", url, json=body, headers=self._auth_header
+                "POST", url, json=body, headers=stream_headers
             ) as resp:
                 if resp.status_code != 200:
                     err = await resp.aread()
                     await self._emit({
                         "type": "error",
-                        "message": f"vLLM {resp.status_code}: {err.decode('utf-8', 'replace')[:200]}",
+                        "message": f"Local backend {resp.status_code}: {err.decode('utf-8', 'replace')[:200]}",
                     })
                     return "", []
                 line_iter = resp.aiter_lines().__aiter__()
@@ -1706,7 +1783,7 @@ class LocalRealtimeHandler:
                                     call_id=slot["id"],
                                 )
         except httpx.HTTPError as e:
-            await self._emit({"type": "error", "message": f"vLLM stream failed: {e}"})
+            await self._emit({"type": "error", "message": f"Local backend stream failed: {e}"})
             return text_acc, []
 
         # Strip any final think-block before the tail-flush + transcript.
@@ -1857,7 +1934,7 @@ class LocalRealtimeHandler:
                     await self._emit({
                         "type": "error",
                         "code": "speaker_backpressure",
-                        "message": "Reachy speaker is not accepting audio fast enough.",
+                        "message": "Zero speaker is not accepting audio fast enough.",
                     })
                     await self._emit_phase("stalled", reason="speaker_backpressure")
                     break

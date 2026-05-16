@@ -10,6 +10,11 @@ import {
 import { ReferenceVideosTab } from '@/components/character-content/ReferenceVideosTab'
 import { CarouselCard } from '@/components/character-content/CarouselCard'
 import { useCharacterMedia } from '@/hooks/useMediaContentApi'
+import { ContentProductionPausedBanner } from '@/components/content-control/ContentProductionPausedBanner'
+import {
+  CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+  useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
 import {
   useCharacter,
   useCharacterImages,
@@ -71,11 +76,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   dark_facts: 'bg-red-500/20 text-red-400',
 }
 
-function ImageGallery({ images, characterName, onSourceMore, isSourcing }: {
+function ImageGallery({ images, characterName, onSourceMore, isSourcing, productionPaused = false }: {
   images: CharacterImageType[]
   characterName: string
   onSourceMore: () => void
   isSourcing: boolean
+  productionPaused?: boolean
 }) {
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [errors, setErrors] = useState<Set<number>>(new Set())
@@ -89,7 +95,8 @@ function ImageGallery({ images, characterName, onSourceMore, isSourcing }: {
         <p className="text-sm text-gray-400 mb-4">No images sourced yet</p>
         <button
           onClick={onSourceMore}
-          disabled={isSourcing}
+          disabled={isSourcing || productionPaused}
+          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Source images'}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-sm rounded-lg disabled:opacity-50"
           aria-label="Source images for this character"
         >
@@ -156,7 +163,8 @@ function ImageGallery({ images, characterName, onSourceMore, isSourcing }: {
         ))}
         <button
           onClick={onSourceMore}
-          disabled={isSourcing}
+          disabled={isSourcing || productionPaused}
+          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Source more images'}
           className="flex-shrink-0 w-16 h-16 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center hover:border-indigo-500 transition-colors disabled:opacity-50"
           aria-label="Source more images"
         >
@@ -250,6 +258,7 @@ function CarouselsSection({
   reimagingCarouselId,
   reimagingFreshCarouselId,
   reimagingSlideKey,
+  productionPaused,
 }: {
   carousels: CharacterCarousel[]
   characterName: string
@@ -263,6 +272,7 @@ function CarouselsSection({
   reimagingCarouselId: string | null
   reimagingFreshCarouselId: string | null
   reimagingSlideKey: string | null
+  productionPaused: boolean
 }) {
   return (
     <div className="space-y-4">
@@ -273,7 +283,8 @@ function CarouselsSection({
         </h3>
         <button
           onClick={() => onGenerateCarousel('hidden_truths' as ContentAngle)}
-          disabled={isGenerating}
+          disabled={isGenerating || productionPaused}
+          title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate new carousel'}
           className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
           aria-label="Generate new carousel"
         >
@@ -295,10 +306,10 @@ function CarouselsSection({
               <>
                 <button
                   onClick={() => onReimageAll(carousel.id)}
-                  disabled={reimagingCarouselId === carousel.id}
+                  disabled={reimagingCarouselId === carousel.id || productionPaused}
                   className="px-2 py-1 bg-cyan-600/20 text-cyan-400 text-xs rounded hover:bg-cyan-600/30 disabled:opacity-50 flex items-center gap-1"
                   aria-label="Refresh images using existing character pool"
-                  title="Refresh images using existing pool"
+                  title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Refresh images using existing pool'}
                 >
                   {reimagingCarouselId === carousel.id ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -309,10 +320,10 @@ function CarouselsSection({
                 </button>
                 <button
                   onClick={() => onReimageFresh(carousel.id)}
-                  disabled={reimagingFreshCarouselId === carousel.id}
+                  disabled={reimagingFreshCarouselId === carousel.id || productionPaused}
                   className="px-2 py-1 bg-indigo-600/20 text-indigo-400 text-xs rounded hover:bg-indigo-600/30 disabled:opacity-50 flex items-center gap-1"
                   aria-label="Source new images from the web, then reimage"
-                  title="Fetch new source images, then reimage"
+                  title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Fetch new source images, then reimage'}
                 >
                   {reimagingFreshCarouselId === carousel.id ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
@@ -324,6 +335,8 @@ function CarouselsSection({
                 {(carousel.status === 'pending_review' || carousel.status === 'ai_reviewed') && (
                   <button
                     onClick={() => onApprove(carousel.id)}
+                    disabled={productionPaused}
+                    title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Approve this carousel for publishing'}
                     className="px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded hover:bg-green-600/30"
                     aria-label="Approve this carousel for publishing"
                   >
@@ -340,7 +353,7 @@ function CarouselsSection({
                 characterName={characterName}
                 extraActions={extraActions}
                 onAiReview={() => onReview(carousel.id)}
-                onReimageSlide={onReimageSlide}
+                onReimageSlide={productionPaused ? undefined : onReimageSlide}
                 reimagingSlideKey={reimagingSlideKey}
               />
             )
@@ -395,6 +408,7 @@ function IdeasSection({
   isCreatingContent,
   onDismiss,
   onDelete,
+  productionPaused,
 }: {
   ideas: ContentIdea[]
   isLoading: boolean
@@ -406,6 +420,7 @@ function IdeasSection({
   isCreatingContent: boolean
   onDismiss: (ideaId: string) => void
   onDelete: (ideaId: string) => void
+  productionPaused: boolean
 }) {
   const [statusFilter, setStatusFilter] = useState('')
 
@@ -439,7 +454,8 @@ function IdeasSection({
         <div className="flex gap-2">
           <button
             onClick={onSeed}
-            disabled={isSeeding}
+            disabled={isSeeding || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Re-seed ideas'}
             className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
             aria-label="Re-seed ideas from existing content"
           >
@@ -448,7 +464,8 @@ function IdeasSection({
           </button>
           <button
             onClick={onGenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || productionPaused}
+            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'AI generate new content ideas'}
             className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
             aria-label="AI generate new content ideas"
           >
@@ -524,7 +541,8 @@ function IdeasSection({
             {idea.status !== 'dismissed' && idea.status !== 'used' && (
               <button
                 onClick={() => onCreateContent(idea)}
-                disabled={isCreatingContent}
+                disabled={isCreatingContent || productionPaused}
+                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Create carousel from idea'}
                 className="w-full px-3 py-1.5 bg-indigo-600/80 hover:bg-indigo-500 text-xs rounded-lg disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors"
                 aria-label={`Create carousel from: ${idea.title}`}
               >
@@ -582,6 +600,8 @@ export function CharacterDetailPage() {
   const updateIdeaMut = useUpdateIdea()
   const deleteIdeaMut = useDeleteIdea()
   const seedIdeasMut = useSeedIdeas()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   if (isLoading) {
     return <LoadingSkeleton variant="page" message="Loading character..." />
@@ -632,6 +652,8 @@ export function CharacterDetailPage() {
         <ArrowLeft className="w-4 h-4" /> Back to Characters
       </button>
 
+      <ContentProductionPausedBanner />
+
       {/* Hero Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
@@ -640,6 +662,7 @@ export function CharacterDetailPage() {
             characterName={character.name}
             onSourceMore={() => sourceImagesMut.mutate(character.id)}
             isSourcing={sourceImagesMut.isPending}
+            productionPaused={productionPaused}
           />
         </div>
 
@@ -694,7 +717,8 @@ export function CharacterDetailPage() {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => researchMut.mutate(character.id)}
-              disabled={researchMut.isPending || character.research_status === 'researching'}
+              disabled={researchMut.isPending || character.research_status === 'researching' || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : undefined}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
               aria-label={character.research_status === 'completed' ? `Re-research ${character.name}` : `Research ${character.name}`}
             >
@@ -703,7 +727,8 @@ export function CharacterDetailPage() {
             </button>
             <button
               onClick={() => generateMut.mutate({ character_id: character.id })}
-              disabled={generateMut.isPending || character.research_status !== 'completed'}
+              disabled={generateMut.isPending || character.research_status !== 'completed' || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : undefined}
               className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
               aria-label={`Generate carousel for ${character.name}`}
             >
@@ -712,7 +737,8 @@ export function CharacterDetailPage() {
             </button>
             <button
               onClick={() => sourceImagesMut.mutate(character.id)}
-              disabled={sourceImagesMut.isPending}
+              disabled={sourceImagesMut.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : undefined}
               className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
               aria-label={`Source images for ${character.name}`}
             >
@@ -721,14 +747,15 @@ export function CharacterDetailPage() {
             </button>
             <button
               onClick={() => {
+                if (productionPaused) return
                 if (window.confirm(`Enhance ${character.name}?\n\nThis will:\n- Refresh research\n- Add more images\n- Regenerate weak carousels (score < 7) and archive the old ones`)) {
                   enhanceMut.mutate({ characterId: character.id })
                 }
               }}
-              disabled={enhanceMut.isPending}
+              disabled={enhanceMut.isPending || productionPaused}
               className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
               aria-label={`Deep-enhance ${character.name}`}
-              title="Refresh research, top up images, and regenerate weak carousels"
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Refresh research, top up images, and regenerate weak carousels'}
             >
               {enhanceMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
               Enhance
@@ -1014,6 +1041,7 @@ export function CharacterDetailPage() {
           isCreatingContent={generateMut.isPending}
           onDismiss={(ideaId) => updateIdeaMut.mutate({ characterId: character.id, ideaId, status: 'dismissed' })}
           onDelete={(ideaId) => deleteIdeaMut.mutate({ characterId: character.id, ideaId })}
+          productionPaused={productionPaused}
         />
       )}
 
@@ -1047,6 +1075,7 @@ export function CharacterDetailPage() {
               ? `${reimageSlideMut.variables.carouselId}:${reimageSlideMut.variables.slideIndex}`
               : null
           }
+          productionPaused={productionPaused}
         />
       )}
 
@@ -1063,7 +1092,8 @@ export function CharacterDetailPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => validateAllMut.mutate(200)}
-                disabled={validateAllMut.isPending}
+                disabled={validateAllMut.isPending || productionPaused}
+                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Validate all unvalidated images'}
                 className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
                 aria-label="Validate all unvalidated images"
               >
@@ -1072,7 +1102,8 @@ export function CharacterDetailPage() {
               </button>
               <button
                 onClick={() => sourceImagesMut.mutate(character.id)}
-                disabled={sourceImagesMut.isPending}
+                disabled={sourceImagesMut.isPending || productionPaused}
+                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Source more images'}
                 className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-sm rounded-lg disabled:opacity-50 flex items-center gap-2"
                 aria-label="Source more images for this character"
               >
@@ -1123,29 +1154,33 @@ export function CharacterDetailPage() {
                     <div className="flex gap-1">
                       <button
                         onClick={() => approveImgMut.mutate({ characterId: character.id, imageId: img.id })}
+                        disabled={productionPaused}
                         className="p-1 bg-green-600/80 hover:bg-green-500 rounded"
                         aria-label="Approve image"
-                        title="Approve"
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Approve'}
                       >
                         <ThumbsUp className="w-3 h-3 text-white" />
                       </button>
                       <button
                         onClick={() => rejectImgMut.mutate({ characterId: character.id, imageId: img.id, reason: 'Low quality' })}
+                        disabled={productionPaused}
                         className="p-1 bg-red-600/80 hover:bg-red-500 rounded"
                         aria-label="Reject image"
-                        title="Reject"
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Reject'}
                       >
                         <ThumbsDown className="w-3 h-3 text-white" />
                       </button>
                       <button
                         onClick={() => {
+                          if (productionPaused) return
                           if (window.confirm('Delete this image? It will be blocked from re-import.')) {
                             deleteImgMut.mutate({ characterId: character.id, imageId: img.id })
                           }
                         }}
+                        disabled={productionPaused}
                         className="p-1 bg-red-800/80 hover:bg-red-700 rounded"
                         aria-label="Delete and block image"
-                        title="Delete & block from re-import"
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Delete & block from re-import'}
                       >
                         <Trash2 className="w-3 h-3 text-white" />
                       </button>

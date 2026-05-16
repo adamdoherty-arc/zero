@@ -26,6 +26,11 @@ from app.infrastructure.auth import require_auth
 from app.services.loop_registry_service import get_loop_registry
 from app.services.loop_runner_service import get_loop_runner
 
+health_router = APIRouter(
+    prefix="/api/loops",
+    tags=["Loops"],
+)
+
 router = APIRouter(
     prefix="/api/loops",
     tags=["Loops"],
@@ -72,7 +77,7 @@ class RunCompleteRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/health")
+@health_router.get("/health")
 async def loops_health():
     """Lightweight liveness probe for the health-watchdog NSSM service."""
     registry = get_loop_registry()

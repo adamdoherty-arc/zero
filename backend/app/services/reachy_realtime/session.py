@@ -91,7 +91,7 @@ def _user_facing_mic_error(message: str, *, source: str = "reachy_mic") -> str:
     ):
         if source == "reachy_mic":
             return (
-                "Reachy microphone is connected, but Windows is delivering "
+                "Zero microphone is connected, but Windows is delivering "
                 "digital silence/no audio frames. Use Computer mic for this "
                 "session, then replug or repair the Reachy audio device."
             )
@@ -282,7 +282,7 @@ def build_motion_dispatcher() -> MotionDispatcher:
         return await svc.play_dance(name)
 
     async def _stop_move(**_kwargs) -> dict:
-        return await svc.stop_move()
+        return await svc.stop_all_moves()
 
     def _list_emotions() -> list[str]:
         return [c.name for c in EMOTION_CLIPS]
@@ -338,39 +338,88 @@ def _build_wobbler_apply() -> callable:
     from app.services.reachy_service import get_reachy_service
 
     svc = get_reachy_service()
+    pose_keys = ("x", "y", "z", "roll", "pitch", "yaw")
     state = {
-        "last": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        "base_pose": None,
+        "filtered": (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
         "last_sent_at": 0.0,
+        "last_sent_pose": None,
         "consecutive_failures": 0,
         "tripped_until": 0.0,
     }
-    DEG_THRESH = math.radians(0.3)
-    MM_THRESH = 0.001
-    MAX_SKIP_S = 0.25
+    DEG_THRESH = math.radians(float(os.getenv("ZERO_REACHY_BODY_MOTION_DEG_THRESHOLD", "0.6")))
+    MM_THRESH = float(os.getenv("ZERO_REACHY_BODY_MOTION_MM_THRESHOLD", "0.002"))
+    MIN_SEND_INTERVAL_S = float(os.getenv("ZERO_REACHY_BODY_MOTION_MIN_SEND_INTERVAL_S", "0.12"))
+    MAX_SKIP_S = float(os.getenv("ZERO_REACHY_BODY_MOTION_MAX_SKIP_S", "0.45"))
+    SMOOTHING_ALPHA = float(os.getenv("ZERO_REACHY_BODY_MOTION_SMOOTHING_ALPHA", "0.35"))
+    MOTION_SCALE = float(os.getenv("ZERO_REACHY_BODY_MOTION_SCALE", "0.55"))
+    SET_TARGET_TIMEOUT_S = float(os.getenv("ZERO_REACHY_BODY_MOTION_SET_TARGET_TIMEOUT_S", "0.65"))
     BREAKER_TRIP_FAILURES = 3
     BREAKER_COOLDOWN_S = 10.0
+
+    def _coerce_pose(value: Any) -> dict[str, float] | None:
+        if not isinstance(value, dict):
+            return None
+        try:
+            return {key: float(value.get(key, 0.0) or 0.0) for key in pose_keys}
+        except (TypeError, ValueError):
+            return None
+
+    async def _ensure_base_pose() -> dict[str, float]:
+        base_pose = state["base_pose"]
+        if isinstance(base_pose, dict):
+            return base_pose
+        state_payload = await svc.get_full_state(
+            with_body_yaw=False,
+            with_antenna_positions=False,
+            with_doa=False,
+            timeout=0.75,
+            quiet=True,
+        )
+        base_pose = _coerce_pose(state_payload.get("head_pose") if isinstance(state_payload, dict) else None)
+        if base_pose is None:
+            base_pose = {key: 0.0 for key in pose_keys}
+        state["base_pose"] = base_pose
+        return base_pose
+
+    def _smoothed_offsets(offsets: Offsets) -> Offsets:
+        last = state["filtered"]
+        alpha = max(0.05, min(1.0, SMOOTHING_ALPHA))
+        scaled = tuple(float(value) * MOTION_SCALE for value in offsets)
+        filtered = tuple(prev + alpha * (value - prev) for prev, value in zip(last, scaled))
+        state["filtered"] = filtered
+        return filtered  # type: ignore[return-value]
+
+    def _compose_pose(base_pose: dict[str, float], offsets: Offsets) -> dict[str, float]:
+        x, y, z, roll, pitch, yaw = offsets
+        return {
+            "x": base_pose["x"] + x,
+            "y": base_pose["y"] + y,
+            "z": base_pose["z"] + z,
+            "roll": base_pose["roll"] + roll,
+            "pitch": base_pose["pitch"] + pitch,
+            "yaw": base_pose["yaw"] + yaw,
+        }
 
     async def _apply(offsets: Offsets) -> None:
         now = time.monotonic()
         if now < state["tripped_until"]:
             return
-        last = state["last"]
+        if (now - state["last_sent_at"]) < MIN_SEND_INTERVAL_S:
+            return
+        base_pose = await _ensure_base_pose()
+        pose = _compose_pose(base_pose, _smoothed_offsets(offsets))
+        last_pose = state["last_sent_pose"]
         changed = any(
-            (abs(a - b) > (DEG_THRESH if i >= 3 else MM_THRESH))
-            for i, (a, b) in enumerate(zip(offsets, last))
-        )
+            abs(float(pose[key]) - float(last_pose.get(key, 0.0))) > (DEG_THRESH if key in {"roll", "pitch", "yaw"} else MM_THRESH)
+            for key in pose_keys
+        ) if isinstance(last_pose, dict) else True
         if not changed and (now - state["last_sent_at"]) < MAX_SKIP_S:
             return
-        state["last"] = offsets
+        state["last_sent_pose"] = dict(pose)
         state["last_sent_at"] = now
-        x, y, z, roll, pitch, yaw = offsets
         try:
-            res = await svc.set_target(
-                head_pose={
-                    "x": float(x), "y": float(y), "z": float(z),
-                    "roll": float(roll), "pitch": float(pitch), "yaw": float(yaw),
-                },
-            )
+            res = await svc.set_target(head_pose=pose, timeout=SET_TARGET_TIMEOUT_S)
         except Exception as e:
             logger.debug("head_wobbler_set_target_raised", error=str(e))
             res = {"error": str(e)}
@@ -838,7 +887,7 @@ class RealtimeSession:
                 if source == "reachy_mic":
                     self._stalled_reason = "reachy_mic_no_signal"
                     last_error = (
-                        "Reachy microphone is open but streaming digital silence; "
+                    "Zero microphone is open but streaming digital silence; "
                         "switching to the computer mic is recommended."
                     )
                     suggested_action = "switch_to_browser_mic"
@@ -1033,7 +1082,7 @@ class RealtimeSession:
                     )
                     self._output_health["queued_ms"] = 0
                 except asyncio.TimeoutError:
-                    message = "Reachy speaker write timed out; queued audio may be backing up."
+                    message = "Zero speaker write timed out; queued audio may be backing up."
                     self._output_health.update({
                         "ready": False,
                         "last_error": message,
@@ -1127,7 +1176,7 @@ class RealtimeSession:
         await self._safe_send({
             "type": "output.connecting",
             "sink": "reachy_speaker",
-            "message": "Connecting Reachy speaker.",
+            "message": "Connecting Zero speaker.",
         })
         await self._safe_send({"type": "session.health", **self.health_snapshot()})
         last_error = ""
@@ -1176,7 +1225,7 @@ class RealtimeSession:
                 await asyncio.sleep(float(attempt))
         if self.handler is handler:
             message = (
-                "Reachy speaker stream did not start"
+                "Zero speaker stream did not start"
                 + (f": {last_error}" if last_error else "")
                 + "; browser speaker is available as a manual fallback."
             )
@@ -1262,9 +1311,39 @@ class RealtimeSession:
             )
             key = key.strip()
             if not key:
+                try:
+                    from app.services.reachy_realtime.config_store import (
+                        claim_free_openai_key,
+                        load_config,
+                    )
+                    claim_result = await asyncio.to_thread(claim_free_openai_key)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("realtime_free_key_claim_errored", error=str(e))
+                    claim_result = {"ok": False, "error": str(e)}
+                if claim_result.get("ok"):
+                    try:
+                        stored_config = load_config()
+                        key = (stored_config.get("openai_api_key") or "").strip()
+                    except Exception as e:
+                        logger.warning("realtime_free_key_reload_failed", error=str(e))
+                        key = ""
+                    if key:
+                        logger.info("realtime_openai_key_auto_claimed", source="hf_space")
+                        await self._safe_send({
+                            "type": "info",
+                            "message": (
+                                "Using shared free OpenAI key from Hugging Face — "
+                                "limited quota, set ZERO_OPENAI_API_KEY for your own."
+                            ),
+                        })
+            if not key:
                 await self._safe_send({
                     "type": "error",
-                    "message": "OPENAI_API_KEY missing — set ZERO_OPENAI_API_KEY or pass api_key in start",
+                    "message": (
+                        "OPENAI_API_KEY missing and free-key auto-claim failed. "
+                        "Set ZERO_OPENAI_API_KEY, paste a key in Realtime Settings, "
+                        "or click 'Get a free key from Hugging Face'."
+                    ),
                 })
                 return None
             self._cached_openai_key = key
@@ -1362,7 +1441,7 @@ class RealtimeSession:
                         timeout=_SPEAKER_WRITE_TIMEOUT_S,
                     )
                 except asyncio.TimeoutError:
-                    message = "Reachy speaker write timed out; queued audio may be backing up."
+                    message = "Zero speaker write timed out; queued audio may be backing up."
                     self._output_health.update({
                         "ready": False,
                         "last_error": message,
@@ -1497,7 +1576,7 @@ class RealtimeSession:
                     )
                     continue
                 if etype == "error":
-                    raw_message = str(evt.get("message") or "Reachy mic stream failed")
+                    raw_message = str(evt.get("message") or "Zero mic stream failed")
                     message = _user_facing_mic_error(raw_message, source="reachy_mic")
                     self._input_health.update({
                         "source": "reachy_mic",

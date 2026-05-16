@@ -1,0 +1,100 @@
+Sending build context to Docker daemon  243.5MB
+
+Step 1/14 : FROM node:20-slim AS build
+ ---> 2cf067cfed83
+Step 2/14 : WORKDIR /app
+ ---> Running in c2845c0491d7
+ ---> Removed intermediate container c2845c0491d7
+ ---> 7dc7f2a6ac2f
+Step 3/14 : COPY package.json package-lock.json ./
+ ---> e40a357cfafc
+Step 4/14 : RUN npm ci
+ ---> Running in 04fbfa1576cd
+[91mnpm warn deprecated source-map@0.8.0-beta.0: The work that was done in this beta branch won't be included in future versions
+[0m[91mnpm warn deprecated glob@11.1.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+[0m
+added 670 packages, and audited 671 packages in 23s
+
+168 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+[91mnpm notice
+npm notice New major version of npm available! 10.8.2 -> 11.14.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.14.1
+npm notice To update run: npm install -g npm@11.14.1
+npm notice
+[0m ---> Removed intermediate container 04fbfa1576cd
+ ---> 017b3c53ca21
+Step 5/14 : COPY . .
+ ---> f1733edf4d6f
+Step 6/14 : ARG VITE_API_URL=""
+ ---> Running in 8f9d3c8bfe39
+ ---> Removed intermediate container 8f9d3c8bfe39
+ ---> 581b532b9c14
+Step 7/14 : ENV VITE_API_URL=$VITE_API_URL
+ ---> Running in f85b61ba2c72
+ ---> Removed intermediate container f85b61ba2c72
+ ---> b4ef96c28e1d
+Step 8/14 : RUN npm run build
+ ---> Running in 658af74fb7d1
+
+> zero-ui@1.0.0 build
+> tsc -b && vite build
+
+vite v6.4.1 building for production...
+transforming...
+✓ 1999 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/manifest.webmanifest                                    0.88 kB
+dist/index.html                                              1.51 kB │ gzip:   0.74 kB
+dist/assets/index-CWyTM6T9-zero-ui.css                     136.94 kB │ gzip:  23.00 kB
+dist/assets/pwa-CK_LjUU3-zero-ui.js                          1.72 kB │ gzip:   0.95 kB
+dist/assets/workbox-window.prod.es5-BIl4cyR9-zero-ui.js      5.76 kB │ gzip:   2.37 kB
+dist/assets/index-DwSLWOfl-zero-ui.js                    2,213.87 kB │ gzip: 545.91 kB
+[91m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[0m✓ built in 14.92s
+
+PWA v0.21.2
+Building src/sw.ts service worker ("es" format)...
+vite v6.4.1 building for production...
+transforming...
+✓ 78 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/sw.mjs  28.58 kB │ gzip: 8.72 kB
+✓ built in 2.14s
+
+PWA v0.21.2
+mode      injectManifest
+format:   es
+precache  15 entries (2320.63 KiB)
+files generated
+  dist/sw.js
+ ---> Removed intermediate container 658af74fb7d1
+ ---> 3cea347af19b
+Step 9/14 : FROM nginx:alpine
+ ---> 5616878291a2
+Step 10/14 : RUN rm /etc/nginx/conf.d/default.conf
+ ---> Running in e3d313502fe9
+ ---> Removed intermediate container e3d313502fe9
+ ---> 68f71f9f7db2
+Step 11/14 : COPY nginx.conf /etc/nginx/conf.d/default.conf
+ ---> 3a20bc1f4c4c
+Step 12/14 : COPY --from=build /app/dist /usr/share/nginx/html
+ ---> 18c140592235
+Step 13/14 : EXPOSE 80
+ ---> Running in 79b0d8cd23a1
+ ---> Removed intermediate container 79b0d8cd23a1
+ ---> 57a6d28ec5aa
+Step 14/14 : CMD ["nginx", "-g", "daemon off;"]
+ ---> Running in a01bd818372e
+ ---> Removed intermediate container a01bd818372e
+ ---> bd8aa4ece6ca
+Successfully built bd8aa4ece6ca
+Successfully tagged zero-zero-ui:latest

@@ -40,7 +40,7 @@ interface RealtimeCfg {
 const POLL_ACTIVITY_MS = 10_000        // check idle every 10 s
 
 const BACKEND_LABELS: Record<string, string> = {
-  local: 'Local (vLLM)',
+  local: 'Local',
   openai: 'OpenAI Realtime',
   gemini: 'Gemini Live',
 }
@@ -137,7 +137,7 @@ export function InteractiveModeBar() {
       toast({
         variant: 'destructive',
         title: 'Interactive Mode is unavailable',
-        description: 'Local realtime is failing to initialize. Check that vLLM is up at host.docker.internal:18800, then retry.',
+        description: 'Local realtime is failing to initialize. Check the Bifrost local backend, then retry.',
       })
       return
     }
@@ -215,7 +215,7 @@ export function InteractiveModeBar() {
       ? `Live via ${BACKEND_LABELS[effectiveBackend] ?? effectiveBackend}. Space or Esc to end.`
       : realtimeAvailable
         ? `Start Interactive Mode (Space or Ctrl+Shift+J) — using ${BACKEND_LABELS[effectiveBackend] ?? effectiveBackend}`
-        : 'Local realtime is initializing — check vLLM is reachable'
+        : 'Local realtime is initializing - checking the local backend'
 
   const fmtDuration = (s: number) => {
     const m = Math.floor(s / 60)

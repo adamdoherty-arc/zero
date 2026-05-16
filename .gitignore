@@ -7,6 +7,9 @@ google-oauth-credentials.json
 client_secret*.json
 **/client_secret*.json
 
+# Generated company facts mirror (may contain sensitive values)
+docs/company/company-facts.md
+
 # Runtime data & workspace
 workspace/
 
@@ -97,3 +100,6 @@ backend/app/data/vault/
 backend/app/data/integrations/
 backend/app/data/meeting_agent/
 backend/app/data/triggers/
+
+# Migration archives (bifrost migration 2026-05-14)
+.deleted-2026-05-14/

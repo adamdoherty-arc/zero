@@ -15,7 +15,7 @@ import uuid
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
-from functools import lru_cache
+from functools import lru_cache, wraps
 
 import structlog
 from PIL import Image, UnidentifiedImageError
@@ -7977,6 +7977,12 @@ Return JSON:
 
         ideas = row.content_ideas or []
         if not ideas:
+            from app.services.content_production_control_service import (
+                get_content_production_control_service,
+            )
+
+            if await get_content_production_control_service().is_paused():
+                return []
             return await self.seed_character_ideas(character_id)
 
         return [ContentIdea(**idea) for idea in ideas]
@@ -8144,6 +8150,67 @@ Return a JSON array of objects with keys: title, description, angle, priority"""
             row.content_ideas = ideas
             await session.commit()
             return True
+
+
+def _guard_content_production_method(method_name: str):
+    original = getattr(CharacterContentService, method_name, None)
+    if original is None:
+        return
+
+    @wraps(original)
+    async def guarded(self, *args, **kwargs):
+        from app.services.content_production_control_service import (
+            ensure_content_production_allowed,
+        )
+
+        await ensure_content_production_allowed(f"character_content.{method_name}")
+        return await original(self, *args, **kwargs)
+
+    setattr(CharacterContentService, method_name, guarded)
+
+
+for _method_name in (
+    "research_character",
+    "add_image",
+    "validate_all_images",
+    "purge_broken_images",
+    "generate_carousel",
+    "reimage_carousel",
+    "reimage_slide",
+    "reimage_carousel_with_fresh_sources",
+    "set_slide_image",
+    "discover_more_character_images",
+    "revalidate_existing_images",
+    "revalidate_all_images",
+    "ai_review_carousel",
+    "approve_carousel",
+    "reject_carousel",
+    "update_carousel",
+    "delete_carousel",
+    "source_images_on_demand",
+    "bulk_reimage_carousels",
+    "start_batch_research_async",
+    "retry_research_job",
+    "batch_research",
+    "generate_series",
+    "generate_multi_character_carousel",
+    "batch_generate",
+    "enhance_character",
+    "generate_carousel_series",
+    "generate_ranking_carousel",
+    "smart_batch_generate",
+    "publish_carousel",
+    "generate_caption_variants",
+    "restore_carousel_version",
+    "enhance_carousel_piece",
+    "apply_enhance_variant",
+    "run_council_on_carousel",
+    "seed_character_ideas",
+    "generate_character_ideas",
+    "update_character_idea",
+    "delete_character_idea",
+):
+    _guard_content_production_method(_method_name)
 
 
 @lru_cache()

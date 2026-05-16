@@ -484,6 +484,7 @@ class ReachyService:
         head_pose: Optional[dict] = None,
         antennas: Optional[Iterable[float]] = None,
         body_yaw: Optional[float] = None,
+        timeout: float = 10.0,
     ) -> dict:
         """POST /api/move/set_target (continuous target, no duration)."""
         payload: dict[str, Any] = {}
@@ -493,14 +494,31 @@ class ReachyService:
             payload["antennas"] = list(antennas)
         if body_yaw is not None:
             payload["body_yaw"] = body_yaw
-        return await self._request("POST", "/api/move/set_target", json=payload)
+        return await self._request("POST", "/api/move/set_target", json=payload, timeout=timeout)
 
     async def stop_move(self, move_uuid: Optional[str] = None) -> dict:
         """POST /api/move/stop."""
         move_uuid = move_uuid or self._active_move_uuid
         if not move_uuid:
-            return {"error": "no active move uuid to stop"}
+            return {"ok": True, "stopped": False, "detail": "No active daemon move uuid to stop."}
         result = await self._request("POST", "/api/move/stop", json={"uuid": move_uuid})
+        detail = f"{result.get('detail', '')} {result.get('error', '')}".lower()
+        stale_uuid = (
+            result.get("status") in {404, 500}
+            and "not found" in detail
+            and "move" in detail
+        )
+        if stale_uuid:
+            if move_uuid == self._active_move_uuid:
+                self._active_move_uuid = None
+            return {
+                "ok": True,
+                "stopped": False,
+                "stale_uuid": True,
+                "uuid": move_uuid,
+                "detail": "Daemon had already finished or forgotten that move.",
+                "daemon": result,
+            }
         if "error" not in result and move_uuid == self._active_move_uuid:
             self._active_move_uuid = None
         return result

@@ -85,10 +85,12 @@ export const navSections: NavSection[] = [
     items: [
       { label: 'Ask Zero', href: '/ask-zero', icon: MessageCircle },
       { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { label: 'My Board', href: '/personal/board', icon: ClipboardCheck },
       { label: 'Brain', href: '/brain', icon: BrainCircuit },
       { label: 'Knowledge', href: '/knowledge', icon: Brain },
       { label: 'Calendar', href: '/calendar', icon: Calendar },
       { label: 'Email', href: '/email', icon: Mail },
+      { label: 'Drafts Inbox', href: '/email/drafts', icon: Inbox },
       { label: 'Meetings', href: '/meetings', icon: Mic },
       { label: 'Meeting Search', href: '/meeting-search', icon: AudioLines },
       { label: 'Meals', href: '/meals', icon: Utensils },

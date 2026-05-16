@@ -1,12 +1,10 @@
 """
-Vision VLM service — OCR + scene description via the shared LiteLLM proxy.
+Vision VLM service — OCR + scene description via the shared Bifrost gateway.
 
 Routes OpenAI-shape vision chat-completion calls to `ZERO_VLLM_CHAT_URL`
-(defaults to `http://host.docker.internal:4444/v1`, which fronts the
-user's vLLM container). The model name is configurable via `ZERO_VLM_MODEL`
-so we don't hardcode a specific Qwen release — swapping between
-`qwen3-vl`, `qwen2.5-vl:7b`, or an external Claude/GPT later is a one-env
-flip.
+(defaults to `http://host.docker.internal:4445/v1`, which is the Bifrost
+gateway in front of vllm-local / moonshot). The model name is configurable
+via `ZERO_VLM_MODEL` (defaults to `moonshot/kimi-k2.6` post 2026-05-14).
 
 Callers:
   - reachy_vision_service.analyze_scene() — fuses MediaPipe + VLM.
@@ -46,24 +44,23 @@ class VisionVLMService:
     _instance: Optional["VisionVLMService"] = None
 
     def __init__(self) -> None:
+        # Post 2026-05-14 Bifrost migration: all LLM/VLM traffic exits via
+        # the Bifrost gateway at :4445. Bifrost speaks the OpenAI vision
+        # shape natively, but the policy permits only Kimi + local Qwen,
+        # so the default model is now Bifrost's moonshot/kimi-k2.6. Set
+        # ZERO_VLM_MODEL to "vllm-local/qwen3-chat" (text-only) or a
+        # future bifrost-prefixed local vision SKU to override.
         self._base_url = (
             os.getenv("ZERO_VLLM_CHAT_URL")
-            or os.getenv("ZERO_LITELLM_URL")
-            or "http://host.docker.internal:4444/v1"
+            or os.getenv("ZERO_BIFROST_URL")
+            or "http://host.docker.internal:4445/v1"
         ).rstrip("/")
         self._api_key = (
             os.getenv("ZERO_VLLM_API_KEY")
-            or os.getenv("LITELLM_MASTER_KEY")
+            or os.getenv("ZERO_BIFROST_API_KEY")
             or "EMPTY"
         )
-        # Route through the shared LiteLLM alias `gemini-flash-latest` so this
-        # code never pins an aging model version — when Google ships a newer
-        # flash, `shared-infra/litellm/config.yaml` re-maps the alias and
-        # every caller upgrades automatically.
-        # Override with `ZERO_VLM_MODEL` (e.g. "claude-haiku-4-5" for an
-        # Anthropic alternative, "gemini-3.1-pro" for higher quality, or a
-        # local "qwen3-vl" once it's wired into litellm).
-        self._model = os.getenv("ZERO_VLM_MODEL", "gemini-flash-latest")
+        self._model = os.getenv("ZERO_VLM_MODEL", "moonshot/kimi-k2.6")
         self._timeout = float(os.getenv("ZERO_VLM_TIMEOUT", "45"))
         self._semaphore = asyncio.Semaphore(int(os.getenv("ZERO_VLM_CONCURRENCY", "2")))
 

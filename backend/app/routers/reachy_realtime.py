@@ -190,9 +190,11 @@ async def list_models(backend: str | None = None):
             # one model — the dual-vLLM setup was retired 2026-04-28 in
             # favor of the abliterated MoE which serves both brain AND
             # voice-loop use cases at MoE-class TTFT.
+            # Post 2026-05-14 Bifrost migration: probe the Bifrost gateway
+            # which fronts the same llama.cpp container as vllm-local.
             local_endpoints = [
-                ("http://host.docker.internal:18800/v1",
-                 "llama.cpp (Qwen3.6-35B-A3B abliterated, Q4_K_M)"),
+                ("http://host.docker.internal:4445/v1",
+                 "Bifrost vllm-local (Qwen3.6-35B-A3B abliterated)"),
             ]
             seen: set[str] = set()
             models = []

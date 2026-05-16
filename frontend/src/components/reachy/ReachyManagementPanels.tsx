@@ -94,7 +94,13 @@ interface RealtimeCfg {
 const BACKEND_LABEL: Record<string, string> = {
   openai: 'OpenAI Realtime',
   gemini: 'Gemini Live',
-  local: 'Local (vLLM)',
+  local: 'Local',
+}
+
+const BACKEND_HELP: Record<Backend, string> = {
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  local: 'Bifrost local',
 }
 
 // Cycle order matters: pressing "Swap" rotates through the available
@@ -253,10 +259,15 @@ export function InteractiveModeHero() {
   }, [voice.state])
 
   const realtimeAvailable = Boolean(cfg?.realtime_available)
-  const effectiveBackend = cfg?.preferred_backend ?? cfg?.backend ?? 'local'
   const connected = voice.state === 'connected'
   const connecting = voice.state === 'connecting'
   const errored = voice.state === 'error'
+  const selectedBackend = (cfg?.backend ?? cfg?.preferred_backend ?? 'local') as Backend
+  const effectiveBackend = (
+    connected || connecting
+      ? (cfg?.preferred_backend ?? selectedBackend)
+      : selectedBackend
+  ) as Backend
   const assistantState = assistant.data?.state ?? 'offline'
   const repairRequired = assistantState === 'repair_required'
   const bodyActivity = assistant.data?.body_activity ?? 'unknown'
@@ -446,13 +457,16 @@ export function InteractiveModeHero() {
       return
     }
     const target = overrideBackend ?? (effectiveBackend as Backend)
+    const targetHasCredentials =
+      target === 'local' ||
+      (target === 'openai' ? cfg.has_openai_key : cfg.has_gemini_key)
     // Local doesn't need keys; only gate cloud backends.
-    if (target !== 'local' && !realtimeAvailable) {
+    if (!targetHasCredentials) {
       toast({
         variant: 'destructive',
         title: 'Robot Assistant needs an API key',
         description:
-          'Add OpenAI or Gemini key, or swap to Local (vLLM) which runs on-device.',
+          `Add a ${target === 'openai' ? 'OpenAI' : 'Gemini'} key, or switch back to Local.`,
       })
       return
     }
@@ -523,38 +537,41 @@ export function InteractiveModeHero() {
     await startSession()
   }
 
-  const handleSwapBackend = async () => {
+  const handleSwapBackend = async (target?: Backend) => {
     if (!cfg || swapping) return
+    const next: Backend = target ?? otherBackend
+    if (next === effectiveBackend) return
+    if (!backendAvailable(next)) {
+      toast({
+        variant: 'destructive',
+        title: `${BACKEND_LABEL[next]} needs an API key`,
+        description: 'Add a key in Voice Settings, or stay on the current brain.',
+      })
+      return
+    }
     setSwapping(true)
     try {
-      // Persist the preference so the next session picks the same backend.
-      // Fire-and-forget — we don't gate the swap on the PUT roundtrip.
       void fetch('/api/reachy/realtime/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ backend: otherBackend }),
+        body: JSON.stringify({ backend: next }),
       })
         .catch(() => {/* non-fatal */})
         .finally(() => {
           void refreshCfg()
         })
 
-      // If a session is already live, do a true hot-swap over the existing
-      // WS — keeps mic, speaker sink, head wobbler, and transcript intact.
-      // Falls back to the old "cancel + restart" path only when the WS is
-      // not in a state that can carry a swap_backend frame (e.g. mid-
-      // connect handshake).
       if (connected) {
-        const sent = voice.swapBackend({ backend: otherBackend })
+        const sent = voice.swapBackend({ backend: next })
         if (!sent) {
           await voice.cancel()
           await new Promise((r) => setTimeout(r, 50))
-          await startSession(otherBackend)
+          await startSession(next)
         }
       } else if (connecting) {
         await voice.cancel()
         await new Promise((r) => setTimeout(r, 50))
-        await startSession(otherBackend)
+        await startSession(next)
       }
     } finally {
       setSwapping(false)
@@ -671,7 +688,7 @@ export function InteractiveModeHero() {
   return (
     <div
       className={[
-        'rounded-xl border mb-4 transition-colors',
+        'rounded-xl border mb-4 transition-colors min-w-0 overflow-hidden',
         connected
           ? 'bg-emerald-950/40 border-emerald-700/50'
           : connecting
@@ -682,7 +699,7 @@ export function InteractiveModeHero() {
       ].join(' ')}
     >
       {/* ---- Row 1: status + primary toggle ---- */}
-      <div className="flex items-center gap-3 p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[auto_minmax(0,1fr)_minmax(360px,auto)] items-center gap-3 p-4 min-h-[124px]">
         <div
           className={[
             'w-10 h-10 rounded-lg flex items-center justify-center shrink-0',
@@ -707,8 +724,8 @@ export function InteractiveModeHero() {
             <MicOff className="w-5 h-5" />
           )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="min-w-0 min-h-[88px] flex flex-col justify-center">
+          <div className="flex items-center gap-2 flex-wrap min-h-[28px]">
             <span className="text-sm font-semibold text-zinc-100">
               {connected
                 ? 'Robot Assistant - listening'
@@ -806,7 +823,7 @@ export function InteractiveModeHero() {
 
         {/* Connecting state: Cancel + Try other backend */}
         {connecting && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 sm:col-start-2 xl:col-start-auto sm:justify-end">
             {otherBackendKeyed && (
               <button
                 type="button"
@@ -830,9 +847,9 @@ export function InteractiveModeHero() {
           </div>
         )}
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+        <div className={`${connecting ? 'hidden' : 'grid'} grid-cols-[minmax(126px,1fr)_96px_132px] items-stretch justify-end gap-2 shrink-0 sm:col-start-2 xl:col-start-auto w-full xl:w-[360px]`}>
           <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${bodyTint}`}
+            className={`inline-flex h-10 items-center justify-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] whitespace-nowrap ${bodyTint}`}
             title={
               activeSources.length
                 ? `Active motion sources: ${activeSources.join(', ')}`
@@ -854,7 +871,7 @@ export function InteractiveModeHero() {
             onClick={() => void handleSettle()}
             disabled={settleAssistant.isPending || repairRequired || hardwareUnavailable}
             className={[
-              'rounded-lg px-3 py-2 text-sm font-semibold transition-colors flex items-center gap-1.5',
+              'rounded-lg px-3 py-2 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 h-10',
               bodyActivity === 'shaky'
                 ? 'bg-red-600 hover:bg-red-500 text-white'
                 : 'bg-emerald-700/80 hover:bg-emerald-600 text-white',
@@ -877,7 +894,7 @@ export function InteractiveModeHero() {
             onClick={() => void toggle()}
             disabled={activateAssistant.isPending || (!realtimeAvailable && !connected && !repairRequired)}
             className={[
-              'shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors',
+              'shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors h-10 whitespace-nowrap',
               connected
                 ? 'bg-red-600 hover:bg-red-500 text-white'
                 : errored
@@ -934,45 +951,36 @@ export function InteractiveModeHero() {
       {/* session on a stale or invalid model. PUT /config persists every */}
       {/* change so the choices stick across page reloads. */}
       {!connected && !connecting && cfg && (
-        <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2">
-          {/* Backend chips — same role as the in-flight Swap pill, but */}
-          {/* visible up-front so users can pick before starting. */}
-          <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider mr-1">
+        <div className="border-t border-zinc-800 px-4 py-3 grid gap-2 md:grid-cols-[auto_minmax(170px,230px)_auto_auto_auto_auto] items-center min-h-[78px]">
+          {/* Backend dropdown is visible up-front so users can pick before starting. */}
+          <label
+            htmlFor="reachy-brain-select"
+            className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider"
+          >
             Brain
+          </label>
+          <select
+            id="reachy-brain-select"
+            value={effectiveBackend}
+            disabled={savingCfg}
+            onChange={(e) => void saveCfgPatch({ backend: e.target.value as Backend, model: null })}
+            className="rounded-md px-2.5 py-1.5 text-xs bg-zinc-900/80 border border-zinc-700 text-zinc-100 focus:outline-none focus:border-indigo-500 w-full"
+            title="Choose the live assistant brain"
+          >
+            {(['local', 'openai', 'gemini'] as Backend[]).map((b) => (
+              <option key={b} value={b}>
+                {BACKEND_LABEL[b]}{backendAvailable(b) ? '' : ' (no key)'}
+              </option>
+            ))}
+          </select>
+          <span className="hidden lg:inline text-[10px] text-zinc-500" title={BACKEND_HELP[effectiveBackend as Backend]}>
+            {BACKEND_HELP[effectiveBackend as Backend]}
           </span>
-          {(['openai', 'gemini', 'local'] as Backend[]).map((b) => {
-            const isCurrent = effectiveBackend === b
-            const ok = backendAvailable(b)
-            return (
-              <button
-                key={b}
-                type="button"
-                disabled={!ok || savingCfg}
-                onClick={() => void saveCfgPatch({ backend: b, model: null })}
-                className={[
-                  'rounded-md px-2.5 py-1.5 text-xs font-medium border flex items-center gap-1.5',
-                  isCurrent
-                    ? 'bg-indigo-900/40 border-indigo-600 text-indigo-100'
-                    : ok
-                      ? 'bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800'
-                      : 'bg-zinc-900/40 border-zinc-800 text-zinc-600 cursor-not-allowed',
-                ].join(' ')}
-                title={
-                  ok
-                    ? `Use ${BACKEND_LABEL[b]}`
-                    : `${BACKEND_LABEL[b]} needs an API key`
-                }
-              >
-                {BACKEND_LABEL[b]}
-                {!ok && b !== 'local' ? ' (no key)' : ''}
-              </button>
-            )
-          })}
 
           {/* Model picker — uses the catalog from /api/reachy/realtime/models */}
-          {/* The local backend's catalog comes from LiteLLM at request time, */}
+          {/* The local backend's catalog comes from Bifrost at request time, */}
           {/* so it always reflects what's actually loadable. */}
-          <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider ml-2 mr-1">
+          <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider">
             Mic
           </span>
           {(['reachy', 'browser'] as AssistantInputSource[]).map((source) => {
@@ -1052,7 +1060,7 @@ export function InteractiveModeHero() {
       )}
 
       {/* ---- Row 2: cockpit controls ---- */}
-      <div className="border-t border-emerald-700/30 px-4 py-3 flex flex-wrap items-center gap-2">
+      <div className="border-t border-emerald-700/30 px-4 py-3 grid grid-cols-2 md:grid-cols-4 2xl:grid-cols-8 gap-2 items-stretch auto-rows-[40px] min-h-[112px] min-w-0">
           <button
             type="button"
             onClick={() => voice.toggleMute()}
@@ -1147,22 +1155,28 @@ export function InteractiveModeHero() {
             {bodyMotionEnabled ? 'Auto motion on' : 'Auto motion off'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => void handleSwapBackend()}
-            disabled={!connected || swapping || !otherBackendKeyed}
-            className="rounded-md px-2.5 py-1.5 text-xs font-medium border bg-zinc-900/60 border-zinc-700 text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-            title={
-              !connected
-                ? 'Start a session before swapping backend'
-                : otherBackendKeyed
-                ? `Hot-swap to ${BACKEND_LABEL[otherBackend]} (mic stays live)`
-                : `No ${BACKEND_LABEL[otherBackend]} key configured`
-            }
+          <div
+            className="rounded-md border bg-zinc-900/60 border-zinc-700 text-zinc-200 flex items-center gap-1.5 px-2.5 py-1 min-w-0"
+            title={connected ? 'Hot-swap the live brain (mic + transcript stay live)' : 'Start a session before swapping brain'}
           >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-            Swap → {BACKEND_LABEL[otherBackend]}
-          </button>
+            <ArrowLeftRight className="w-3.5 h-3.5 shrink-0" />
+            <select
+              value={effectiveBackend}
+              disabled={!connected || swapping}
+              onChange={(e) => void handleSwapBackend(e.target.value as Backend)}
+              className="bg-transparent text-xs font-medium focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed w-full"
+              aria-label="Live brain"
+            >
+              {(['local', 'openai', 'gemini'] as Backend[]).map((b) => {
+                const keyed = backendAvailable(b)
+                return (
+                  <option key={b} value={b} disabled={!keyed && b !== effectiveBackend}>
+                    {BACKEND_LABEL[b]}{keyed ? '' : ' (needs key)'}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
 
           <button
             type="button"
@@ -1285,7 +1299,7 @@ export function InteractiveModeHero() {
               e.preventDefault()
               handleSendText()
             }}
-            className="flex items-center gap-1.5 ml-auto min-w-0"
+            className="flex items-center gap-1.5 min-w-0 col-span-2 md:col-span-4 xl:col-span-2"
           >
             <input
               type="text"
@@ -1399,7 +1413,7 @@ function AssistantReadinessStrip({
   }
 
   return (
-    <div className="border-t border-zinc-800 px-4 py-3">
+    <div className="border-t border-zinc-800 px-4 py-3 min-h-[68px]">
       <div className="flex items-center gap-2 flex-wrap">
         {loading && steps.length === 0 && (
           <span className="text-[11px] text-zinc-500 flex items-center gap-1.5">
@@ -1464,7 +1478,7 @@ function AssistantMotionStrip({
           : 'Checking Body'
 
   return (
-    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2">
+    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2 min-h-[68px]">
       <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider mr-1">
         Body
       </span>
@@ -1525,7 +1539,7 @@ function AssistantActivityStrip({ activity }: { activity: ReachyAssistantActivit
   if (recent.length === 0) return null
 
   return (
-    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2">
+    <div className="border-t border-zinc-800 px-4 py-3 flex flex-wrap items-center gap-2 min-h-[68px]">
       <span className="text-[11px] text-zinc-500 font-semibold uppercase tracking-wider mr-1">
         Activity
       </span>

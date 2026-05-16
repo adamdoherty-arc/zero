@@ -399,13 +399,29 @@ class CompanyWorkItemService:
                 return blocked
         return created
 
-    async def update_work_item(self, task_id: str, updates: TaskUpdate, *, actor: str = "user") -> Optional[Task]:
+    async def update_work_item(
+        self,
+        task_id: str,
+        updates: TaskUpdate,
+        *,
+        actor: str = "user",
+        bypass_completion_approval: bool = False,
+    ) -> Optional[Task]:
         existing = await self.get_work_item(task_id)
         if not existing:
             return None
         before = _task_dump(existing)
 
-        if updates.status == TaskStatus.DONE and self._requires_completion_approval(existing):
+        # When evidence has already been recorded on the task (deliverable
+        # outputs captured at a previous completion attempt), treat the gate
+        # as satisfied for status transitions too. This makes the kanban drag
+        # to "Completed" work as expected after the user has captured proof.
+        already_has_evidence = bool(
+            (existing.completion_outputs or {}).get("outputs")
+            or (existing.completion_outputs or {}).get("note")
+        )
+
+        if updates.status == TaskStatus.DONE and not (bypass_completion_approval or already_has_evidence) and self._requires_completion_approval(existing):
             approval = await self._queue_completion_approval(existing, actor=actor)
             updated = await get_task_service().update_task(
                 task_id,
@@ -432,13 +448,93 @@ class CompanyWorkItemService:
         if "risk_level" not in update_values and ("title" in update_values or "description" in update_values):
             risk = classify_risk(existing.model_copy(update=update_values))
             patch = updates.model_copy(update={"risk_level": risk})
+        # Stamp completed_at / started_at on status transitions so reports and
+        # progress widgets see the right timestamps.
+        if updates.status == TaskStatus.DONE and not existing.completed_at:
+            patch = patch.model_copy(update={"completed_at": _now()})
+        elif updates.status == TaskStatus.IN_PROGRESS and not existing.started_at:
+            patch = patch.model_copy(update={"started_at": _now()})
         updated = await get_task_service().update_task(task_id, patch)
         if updated:
             await self.record_event(task_id, "updated", actor=actor, summary=f"Updated {updated.title}", before=before, after=_task_dump(updated))
         return updated
 
-    async def complete_work_item(self, task_id: str, *, actor: str = "user") -> Optional[Task]:
-        return await self.update_work_item(task_id, TaskUpdate(status=TaskStatus.DONE), actor=actor)
+    async def complete_work_item(
+        self,
+        task_id: str,
+        *,
+        actor: str = "user",
+        completion_note: Optional[str] = None,
+        outputs: Optional[list[dict[str, Any]]] = None,
+    ) -> Optional[Task]:
+        existing = await self.get_work_item(task_id)
+        if not existing:
+            return None
+
+        outputs = outputs or []
+        recorded_at = _now().isoformat()
+        new_description = existing.description or ""
+        if completion_note:
+            stamp = recorded_at[:10]
+            new_description = (
+                f"{new_description}\n\n---\nCompletion note ({stamp}, by {actor}): {completion_note.strip()}"
+            ).strip()
+
+        completion_outputs = {
+            "recorded_at": recorded_at,
+            "recorded_by": actor,
+            "note": completion_note or "",
+            "outputs": outputs,
+        }
+
+        # Persist outputs + note onto the task BEFORE the approval-gate check.
+        # If the task hits the approval gate, the captured outputs must still be
+        # visible in the task detail drawer so Adam can see what he recorded.
+        if outputs or completion_note:
+            pre_patch: dict[str, Any] = {"completion_outputs": completion_outputs}
+            if completion_note:
+                pre_patch["description"] = new_description
+            await get_task_service().update_task(task_id, TaskUpdate(**pre_patch))
+
+        if outputs:
+            from app.models.company_facts import CompanyFactCreate
+            from app.services.company_facts_service import get_company_facts_service
+
+            facts_service = get_company_facts_service()
+            for raw in outputs:
+                try:
+                    create = CompanyFactCreate(
+                        key=str(raw.get("key", "")).strip(),
+                        label=str(raw.get("label") or raw.get("key", "")).strip(),
+                        value=str(raw.get("value", "")).strip(),
+                        domain=(raw.get("domain") or existing.domain),
+                        evidence_url=raw.get("evidence_url"),
+                        sensitive=bool(raw.get("sensitive", False)),
+                        notes=raw.get("notes"),
+                    )
+                except Exception:
+                    continue
+                if not create.key or not create.value:
+                    continue
+                await facts_service.upsert_fact(
+                    create,
+                    created_by=actor,
+                    source="task_completion",
+                    source_task_id=task_id,
+                )
+
+        # When Adam records outputs or a completion note, he is providing proof
+        # he performed the high-risk action himself (got the EIN, filed the LLC,
+        # opened the bank account). The approval gate exists to prevent agents
+        # from doing those things autonomously - it should not block a human
+        # operator recording the result. Bypass the gate when evidence is given.
+        has_evidence = bool(outputs) or bool((completion_note or "").strip())
+        return await self.update_work_item(
+            task_id,
+            TaskUpdate(status=TaskStatus.DONE),
+            actor=actor,
+            bypass_completion_approval=has_evidence,
+        )
 
     async def reopen_work_item(self, task_id: str, *, actor: str = "user") -> Optional[Task]:
         existing = await self.get_work_item(task_id)

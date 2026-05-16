@@ -17,6 +17,7 @@ use_default_settings:
       - currency convert
       - mojeek
       - qwant
+      - youtube
 
 general:
   instance_name: "Zero Research"

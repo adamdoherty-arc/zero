@@ -171,3 +171,31 @@ def test_scheduler_default_enabled_policy():
     assert get_default_job_enabled("tiktok_shop_research") is False
     assert get_default_job_enabled("gmail_check", {"enabled": True}) is True
     assert get_default_job_enabled("enhancement_scan", {"enabled": False}) is False
+
+
+@pytest.mark.asyncio
+async def test_content_production_paused_scheduler_run_is_skipped(monkeypatch):
+    service = SchedulerService()
+    called = False
+    audit_rows = []
+
+    async def handler() -> None:
+        nonlocal called
+        called = True
+
+    async def append_audit(**kwargs):
+        audit_rows.append(kwargs)
+
+    async def paused(_job_name: str) -> bool:
+        return True
+
+    monkeypatch.setattr(service, "_append_audit", append_audit)
+    monkeypatch.setattr(service, "_content_production_pauses_job", paused)
+
+    result = await service._run_with_audit("media_auto_research", handler)
+
+    assert called is False
+    assert result["status"] == "skipped"
+    assert result["error"] == "content_production_paused"
+    assert audit_rows[0]["status"] == "skipped"
+    assert audit_rows[0]["job_name"] == "media_auto_research"

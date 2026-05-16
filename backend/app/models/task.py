@@ -97,6 +97,9 @@ class TaskUpdate(BaseModel):
     sort_order: Optional[int] = None
     estimate_points: Optional[int] = Field(None, ge=0, le=100)
     parent_task_id: Optional[str] = None
+    completion_outputs: Optional[dict[str, Any]] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
 
 
 class TaskMove(BaseModel):
@@ -134,6 +137,7 @@ class Task(BaseModel):
     parent_task_id: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    completion_outputs: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
 
@@ -164,6 +168,8 @@ class CompanyWorkItemReview(BaseModel):
     acceptance_criteria: list[str] = Field(default_factory=list)
     automation_plan: dict[str, Any] = Field(default_factory=dict)
     source_links: list[dict[str, Any]] = Field(default_factory=list)
+    walkthrough: Optional[dict[str, Any]] = None
+    completion_review: Optional[dict[str, Any]] = None
     reviewed_by: str = "zero-company-operator"
     operator_run_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

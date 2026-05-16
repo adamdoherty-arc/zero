@@ -976,11 +976,79 @@ class TestSession:
         require a live daemon — it's pure adapter wrapping."""
         from app.services.reachy_realtime.session import build_motion_dispatcher
 
+        class FakeReachyService:
+            def __init__(self):
+                self.stop_all_calls = 0
+
+            async def move_head(self, **_kwargs):
+                return {"ok": True}
+
+            async def play_emotion(self, _name):
+                return {"ok": True}
+
+            async def play_dance(self, _name):
+                return {"ok": True}
+
+            async def stop_all_moves(self):
+                self.stop_all_calls += 1
+                return {"ok": True, "stops": []}
+
+            async def capture_image(self):
+                return b""
+
+        fake = FakeReachyService()
+        monkeypatch.setattr("app.services.reachy_service.get_reachy_service", lambda: fake)
+
         dispatcher = build_motion_dispatcher()
         assert callable(dispatcher.move_head)
         assert callable(dispatcher.play_emotion)
         assert callable(dispatcher.play_dance)
         assert callable(dispatcher.capture_image)
+        assert await dispatcher.stop_move() == {"ok": True, "stops": []}
+        assert fake.stop_all_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_wobbler_apply_composes_offsets_with_current_pose(self, monkeypatch):
+        from app.services.reachy_realtime import session as session_module
+
+        class FakeReachyService:
+            def __init__(self):
+                self.targets = []
+
+            async def get_full_state(self, **_kwargs):
+                return {
+                    "head_pose": {
+                        "x": 0.01,
+                        "y": -0.02,
+                        "z": 0.03,
+                        "roll": 0.1,
+                        "pitch": -0.2,
+                        "yaw": 0.3,
+                    }
+                }
+
+            async def set_target(self, **kwargs):
+                self.targets.append(kwargs)
+                return {"ok": True}
+
+        fake = FakeReachyService()
+        monkeypatch.setattr("app.services.reachy_service.get_reachy_service", lambda: fake)
+        monkeypatch.setenv("ZERO_REACHY_BODY_MOTION_MIN_SEND_INTERVAL_S", "0")
+        monkeypatch.setenv("ZERO_REACHY_BODY_MOTION_SCALE", "1")
+        monkeypatch.setenv("ZERO_REACHY_BODY_MOTION_SMOOTHING_ALPHA", "1")
+        apply_offsets = session_module._build_wobbler_apply()
+
+        await apply_offsets((0.001, 0.002, -0.003, 0.01, -0.02, 0.03))
+
+        assert fake.targets
+        pose = fake.targets[-1]["head_pose"]
+        assert pose["x"] == pytest.approx(0.011)
+        assert pose["y"] == pytest.approx(-0.018)
+        assert pose["z"] == pytest.approx(0.027)
+        assert pose["roll"] == pytest.approx(0.11)
+        assert pose["pitch"] == pytest.approx(-0.22)
+        assert pose["yaw"] == pytest.approx(0.33)
+        assert fake.targets[-1]["timeout"] < 1.0
 
     @pytest.mark.asyncio
     async def test_body_motion_defaults_off_and_can_suspend(self, monkeypatch):
@@ -2220,7 +2288,7 @@ class TestRealtimeRouter:
         assert "Kore" in body["voices"]["gemini"]
         assert body["has_local"] is True
 
-    def test_enriched_config_promotes_cloud_key_when_backend_is_legacy_local(self):
+    def test_enriched_config_keeps_legacy_local_until_cloud_is_explicit(self):
         from app.routers.reachy_realtime import _enriched_config
 
         body = _enriched_config({
@@ -2231,7 +2299,7 @@ class TestRealtimeRouter:
             "voice": "en-US-AriaNeural",
         })
 
-        assert body["preferred_backend"] == "openai"
+        assert body["preferred_backend"] == "local"
         assert body["realtime_available"] is True
 
     @pytest.mark.asyncio

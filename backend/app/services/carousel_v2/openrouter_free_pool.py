@@ -42,7 +42,17 @@ from app.infrastructure.config import get_settings
 logger = structlog.get_logger(__name__)
 
 
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+# OpenRouter is OFF policy-wide as of 2026-05-14 — the Bifrost migration
+# removed `openrouter` from `bifrost/config.json` and blanked
+# `OPENROUTER_API_KEY` in every project .env. This module is kept for
+# back-compat (tests still import `_Counter` / `OpenRouterFreePool` to
+# exercise the round-robin logic) but the live HTTP path is gated off:
+# `_fetch_free_vision_models` short-circuits to `[]` and `select_next`
+# therefore always returns `None`. Restoring OpenRouter requires
+# (a) re-enabling the provider in Bifrost AND (b) flipping
+# `_OPENROUTER_DISABLED` here to False.
+_OPENROUTER_DISABLED = True
+OPENROUTER_BASE = ""  # intentionally empty — see _OPENROUTER_DISABLED
 MODEL_LIST_TTL_SECONDS = 6 * 3600
 DEFAULT_RPM_LIMIT = 20      # OpenRouter free tier caps (no credit card)
 DEFAULT_DAILY_LIMIT = 50
@@ -283,6 +293,11 @@ class OpenRouterFreePool:
             logger.info("openrouter_free_vision_models_using_fallback", n=len(self._models))
 
     async def _fetch_free_vision_models(self) -> list[str]:
+        if _OPENROUTER_DISABLED:
+            # Bifrost migration 2026-05-14: OpenRouter is fully disabled.
+            # Returning [] makes `select_next` yield None and callers fall
+            # through to the no-VLM-soft ranking path in cheap_vlm_router.
+            return []
         if not self._keys:
             return []
         try:

@@ -36,14 +36,14 @@ import {
   type MemoryNote,
 } from '@/hooks/useReachyApi'
 import { LoadingSkeleton } from '@/components/LoadingSkeleton'
-import { DaemonPanel } from '@/components/reachy/DaemonPanel'
-import { CompanionConsole } from '@/components/reachy/CompanionConsole'
+import { AssistantHero } from '@/components/reachy/AssistantHero'
+import { AssistantDebugPanel } from '@/components/reachy/AssistantDebugPanel'
+import { DaemonStatusBar } from '@/components/reachy/DaemonStatusBar'
+import { HostAgentOfflineBanner } from '@/components/reachy/HostAgentOfflineBanner'
+import { LlmProviderBanner } from '@/components/reachy/LlmProviderBanner'
+import { ReachyCameraViewer } from '@/components/reachy/ReachyCameraViewer'
 import { SequenceBuilder } from '@/components/reachy/SequenceBuilder'
-import {
-  InteractiveModeHero,
-  HardwarePanel,
-  SubPagesNav,
-} from '@/components/reachy/ReachyManagementPanels'
+import { HardwarePanel, SubPagesNav } from '@/components/reachy/ReachyManagementPanels'
 import { useToast } from '@/hooks/use-toast'
 
 function ConnectionBadge() {
@@ -670,41 +670,11 @@ function ClipCard({
 }
 
 const FAVORITE_CLIP_PREFIX = 'favorite clip: '
-type ReachyTab = 'console' | 'body' | 'automations' | 'library' | 'diagnostics'
-
-const REACHY_TABS: { id: ReachyTab; label: string }[] = [
-  { id: 'console', label: 'Console' },
-  { id: 'body', label: 'Body Controls' },
-  { id: 'automations', label: 'Automations' },
-  { id: 'library', label: 'Motion Library' },
-  { id: 'diagnostics', label: 'Diagnostics' },
-]
 
 export function ReachyMotionLibraryPage() {
+  const [debugOpen, setDebugOpen] = useState(false)
   const [kindFilter, setKindFilter] = useState<MotionKind | 'all'>('all')
   const [q, setQ] = useState('')
-  const reachyStatusForTab = useReachyStatus()
-  // Default to the Diagnostics tab when the daemon is offline so the user
-  // lands directly on the recovery surface (DaemonPanel + Smart Re-link),
-  // not the empty Motion Library / Console.
-  const initialTab: ReachyTab =
-    reachyStatusForTab.data && reachyStatusForTab.data.daemon_connected === false
-      ? 'diagnostics'
-      : 'console'
-  const [activeTab, setActiveTab] = useState<ReachyTab>(initialTab)
-  const userPickedTabRef = React.useRef(false)
-  const setActiveTabUserPick = (tab: ReachyTab) => {
-    userPickedTabRef.current = true
-    setActiveTab(tab)
-  }
-  // If status loads after first render (initial query in flight), retarget
-  // once — but never override an explicit user pick.
-  React.useEffect(() => {
-    if (userPickedTabRef.current) return
-    if (reachyStatusForTab.data?.daemon_connected === false && activeTab !== 'diagnostics') {
-      setActiveTab('diagnostics')
-    }
-  }, [reachyStatusForTab.data?.daemon_connected, activeTab])
   const effectiveKind = kindFilter === 'all' ? undefined : kindFilter
   const { data, isLoading } = useMotionLibrary(effectiveKind)
   const play = usePlayMotion()
@@ -821,203 +791,187 @@ export function ReachyMotionLibraryPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
+      <HostAgentOfflineBanner />
+      <LlmProviderBanner />
+
       <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-indigo-500/10">
             <Bot className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Zero Assistant Console</h1>
+            <h1 className="text-2xl font-bold text-white">Zero Cockpit</h1>
             <p className="text-sm text-gray-400">
-              {data
-                ? 'Start a live assistant, keep the body calm, then open controls only when you need them.'
-                : 'Loading assistant console...'}
+              Talk to Zero, watch what it sees, and debug — all in one place.
             </p>
           </div>
           <ConnectionBadge />
         </div>
-
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 mb-4 bg-gray-950/95 backdrop-blur border-y border-gray-800/80">
-        <div className="flex gap-2 overflow-x-auto">
-          {REACHY_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTabUserPick(tab.id)}
-              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm border transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-indigo-600/30 border-indigo-500 text-white'
-                  : 'bg-gray-900/40 border-gray-800 text-gray-400 hover:text-white hover:border-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      {/* === HERO: merged console + assistant on the left, live camera on the right === */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-4 mb-4">
+        <AssistantHero />
+        <ReachyCameraViewer height={420} />
+      </div>
+
+      {/* === DAEMON STATUS BAR + DEBUG (one expander for everything Reachy is doing) === */}
+      <DaemonStatusBar isOpen={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />
+      {debugOpen && (
+        <div className="mt-4">
+          <AssistantDebugPanel />
         </div>
-      </div>
-
-      {activeTab === 'console' && (
-        <>
-      <CompanionConsole />
-
-      {/* === INTERACTIVE MODE === live-conversation control */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-1">Live Conversation</div>
-      <InteractiveModeHero />
-
-      {/* === SUB-PAGES === quick nav to Teleop / Meetings / HA / Voice / Radio */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-1">More Zero</div>
-      <SubPagesNav />
-
-      {/* === PRESENCE === daemon, persona, context */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Presence</div>
-      <PersonaPicker />
-      <ContextChips />
-
-      {/* === CONVERSATION === talk + memory */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Conversation</div>
-      <PushToTalk />
-      <MemoryCard />
-        </>
       )}
 
-      {activeTab === 'automations' && (
-        <>
-      {/* === MODES === pomodoro, meeting */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Modes</div>
-      <ModesPanel />
-        </>
-      )}
+      {/* === Collapsible: Presence & memory (default-closed; hero covers the live surface) === */}
+      <details className="mb-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 select-none">
+          Presence &amp; memory
+        </summary>
+        <PersonaPicker />
+        <ContextChips />
+        <PushToTalk />
+        <MemoryCard />
+      </details>
 
-      {activeTab === 'body' && (
-        <>
-      {/* === HARDWARE === volume, motors, wake-word, camera */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Hardware</div>
-      <div className="glass-card mb-5 p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-sm font-semibold text-white">Body Safety</div>
-            <div className="text-xs text-gray-400">
-              {bodyMotionLocked
-                ? 'Body motion is locked. Voice, camera, and memory stay available.'
-                : 'Settle is the calm default. Wake and Sleep are explicit body actions.'}
+      {/* === Collapsible: Body controls === */}
+      <details className="mb-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 select-none">
+          Body controls
+        </summary>
+        <div className="glass-card mb-5 p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-white">Body Safety</div>
+              <div className="text-xs text-gray-400">
+                {bodyMotionLocked
+                  ? 'Body motion is locked. Voice, camera, and memory stay available.'
+                  : 'Settle is the calm default. Wake and Sleep are explicit body actions.'}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => void handleSettle()}
+                disabled={settle.isPending}
+                className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 text-emerald-200 bg-emerald-700/40 border-emerald-600/50 disabled:opacity-50"
+              >
+                {settle.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
+                Settle
+              </button>
+              <button
+                onClick={() => wakeUp.mutate()}
+                disabled={bodyMotionLocked || wakeUp.isPending}
+                title={bodyMotionLocked ? 'Body motion is locked' : 'Wake Zero'}
+                className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
+              >
+                <Sun className="w-4 h-4" /> Wake
+              </button>
+              <button
+                onClick={() => sleep.mutate()}
+                disabled={bodyMotionLocked || sleep.isPending}
+                title={bodyMotionLocked ? 'Body motion is locked' : 'Sleep Zero'}
+                className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
+              >
+                <MoonStar className="w-4 h-4" /> Sleep
+              </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => void handleSettle()}
-              disabled={settle.isPending}
-              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 text-emerald-200 bg-emerald-700/40 border-emerald-600/50 disabled:opacity-50"
-            >
-              {settle.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hand className="w-4 h-4" />}
-              Settle
-            </button>
-            <button
-              onClick={() => wakeUp.mutate()}
-              disabled={bodyMotionLocked || wakeUp.isPending}
-              title={bodyMotionLocked ? 'Body motion is locked' : 'Wake Zero'}
-              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
-            >
-              <Sun className="w-4 h-4" /> Wake
-            </button>
-            <button
-              onClick={() => sleep.mutate()}
-              disabled={bodyMotionLocked || sleep.isPending}
-              title={bodyMotionLocked ? 'Body motion is locked' : 'Sleep Zero'}
-              className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5"
-            >
-              <MoonStar className="w-4 h-4" /> Sleep
-            </button>
+        </div>
+        <HardwarePanel />
+        <RecentMotionsStrip />
+      </details>
+
+      {/* === Collapsible: Automations === */}
+      <details className="mb-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 select-none">
+          Automations
+        </summary>
+        <ModesPanel />
+      </details>
+
+      {/* === Collapsible: More Zero (sub-pages) === */}
+      <details className="mb-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 select-none">
+          More Zero
+        </summary>
+        <SubPagesNav />
+      </details>
+
+      {/* === Collapsible: Motion library === */}
+      <details className="mb-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-4 mb-2 select-none">
+          Motion library
+        </summary>
+        <RecentMotionsStrip />
+        <SequenceBuilder />
+
+        {bodyMotionLocked && (
+          <div className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            Body motion is locked. Clips and sequences are saved, but playback stays disabled until the robot is physically stable.
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 mb-5 flex-wrap">
+          <div className="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">
+            {(['all', 'emotion', 'dance'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setKindFilter(k)}
+                className={`px-3 py-1 text-sm rounded flex items-center gap-1.5 ${
+                  kindFilter === k ? 'bg-indigo-500/30 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {k === 'emotion' && <Sparkles className="w-3.5 h-3.5" />}
+                {k === 'dance' && <Music className="w-3.5 h-3.5" />}
+                {k === 'all' && <Play className="w-3.5 h-3.5" />}
+                <span className="capitalize">{k}</span>
+              </button>
+            ))}
+          </div>
+          <div className="relative flex-1 min-w-0">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search clips, descriptions, or aliases…"
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:border-indigo-500"
+            />
           </div>
         </div>
-      </div>
-      <HardwarePanel />
-      <RecentMotionsStrip />
-        </>
-      )}
 
-      {activeTab === 'diagnostics' && (
-        <>
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Diagnostics</div>
-      <DaemonPanel />
-        </>
-      )}
+        {isLoading && <LoadingSkeleton />}
 
-      {activeTab === 'library' && (
-        <>
-      {/* === LIBRARY === recent activity, custom sequences, catalog */}
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2 mt-4">Library</div>
-      <RecentMotionsStrip />
-      <SequenceBuilder />
-
-      {bodyMotionLocked && (
-        <div className="mb-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          Body motion is locked. Clips and sequences are saved, but playback stays disabled until the robot is physically stable.
-        </div>
-      )}
-
-      <div className="flex items-center gap-3 mb-5 flex-wrap">
-        <div className="flex items-center gap-1 bg-gray-800/50 rounded-lg p-1">
-          {(['all', 'emotion', 'dance'] as const).map((k) => (
-            <button
-              key={k}
-              onClick={() => setKindFilter(k)}
-              className={`px-3 py-1 text-sm rounded flex items-center gap-1.5 ${
-                kindFilter === k ? 'bg-indigo-500/30 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              {k === 'emotion' && <Sparkles className="w-3.5 h-3.5" />}
-              {k === 'dance' && <Music className="w-3.5 h-3.5" />}
-              {k === 'all' && <Play className="w-3.5 h-3.5" />}
-              <span className="capitalize">{k}</span>
-            </button>
-          ))}
-        </div>
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search clips, descriptions, or aliases…"
-            className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-800/50 border border-gray-700 rounded-lg focus:outline-none focus:border-indigo-500"
-          />
-        </div>
-      </div>
-
-      {isLoading && <LoadingSkeleton />}
-
-      {data && (
-        <div className="space-y-6">
-          {Object.entries(filteredByCategory)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([category, clips]) => (
-              <section key={category}>
-                <h2 className="text-sm font-semibold text-gray-300 mb-2 uppercase tracking-wide">
-                  {category}{' '}
-                  <span className="text-gray-500 font-normal">({clips.length})</span>
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {clips.map((clip) => (
-                    <ClipCard
-                      key={`${clip.kind}-${clip.name}`}
-                      clip={clip}
-                      onPlay={() => handlePlay(clip)}
-                      busy={play.isPending || bodyMotionLocked}
-                      isFavorite={Boolean(favoriteNoteIdByClip[clip.name])}
-                      onToggleFavorite={() => toggleFavorite(clip)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          {Object.keys(filteredByCategory).length === 0 && (
-            <p className="text-center text-gray-500 py-12">No clips match {JSON.stringify(q)}.</p>
-          )}
-        </div>
-      )}
-        </>
-      )}
+        {data && (
+          <div className="space-y-6">
+            {Object.entries(filteredByCategory)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([category, clips]) => (
+                <section key={category}>
+                  <h2 className="text-sm font-semibold text-gray-300 mb-2 uppercase tracking-wide">
+                    {category}{' '}
+                    <span className="text-gray-500 font-normal">({clips.length})</span>
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {clips.map((clip) => (
+                      <ClipCard
+                        key={`${clip.kind}-${clip.name}`}
+                        clip={clip}
+                        onPlay={() => handlePlay(clip)}
+                        busy={play.isPending || bodyMotionLocked}
+                        isFavorite={Boolean(favoriteNoteIdByClip[clip.name])}
+                        onToggleFavorite={() => toggleFavorite(clip)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            {Object.keys(filteredByCategory).length === 0 && (
+              <p className="text-center text-gray-500 py-12">No clips match {JSON.stringify(q)}.</p>
+            )}
+          </div>
+        )}
+      </details>
     </div>
   )
 }

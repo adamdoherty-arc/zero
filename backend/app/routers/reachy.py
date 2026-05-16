@@ -12,7 +12,7 @@ import re
 import time
 from collections import deque
 from datetime import datetime
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -76,7 +76,17 @@ _ASSISTANT_STATUS_FAST_CACHE_S = float(os.getenv("ZERO_REACHY_ASSISTANT_STATUS_C
 _CONTEXT_DEBUG_CACHE: dict[tuple[str | None, bool], tuple[float, dict[str, Any]]] = {}
 _CONTEXT_DEBUG_CACHE_S = float(os.getenv("ZERO_REACHY_CONTEXT_DEBUG_CACHE_S", "60.0"))
 _CONTEXT_DEBUG_TIMEOUT_S = float(os.getenv("ZERO_REACHY_CONTEXT_DEBUG_TIMEOUT_S", "0.75"))
-_LOCAL_TZ = ZoneInfo("America/New_York")
+
+def _configured_local_timezone() -> ZoneInfo:
+    zone_name = os.getenv("ZERO_LOCAL_TIMEZONE", "America/Chicago")
+    try:
+        return ZoneInfo(zone_name)
+    except ZoneInfoNotFoundError:
+        logger.warning("invalid_local_timezone", zone_name=zone_name)
+        return ZoneInfo("UTC")
+
+
+_LOCAL_TZ = _configured_local_timezone()
 
 
 def _body_motion_http_guard(surface: str) -> None:
@@ -796,7 +806,7 @@ def _jitter_from_signatures(signatures: list[dict[str, float]]) -> dict[str, Any
 
 
 _MOTOR_HARDWARE_ERROR_RE = re.compile(
-    r"Motor\s+'(?P<motor>[^']+)'\s+hardware errors:\s+(?P<errors>.+)$",
+    r"Motor\s+'(?P<motor>[^']+)'\s+hardware errors:\s*(?P<errors>.*)$",
     re.IGNORECASE,
 )
 _MOTOR_NOT_FOUND_RE = re.compile(
@@ -898,6 +908,12 @@ def _extract_motor_hardware_faults(
             continue
         motor = match.group("motor").strip()
         errors = match.group("errors").strip()
+        if not errors and idx + 1 < len(lines):
+            next_text = str(lines[idx + 1] or "").strip()
+            if "error" in next_text.lower():
+                errors = next_text
+        if not errors:
+            errors = "Unknown motor hardware error"
         key = (motor, errors)
         item = by_key.setdefault(
             key,
@@ -1099,7 +1115,21 @@ async def _daemon_hardware_faults_safe(
             cached["cached"] = True
             return cached
 
-    if fast:
+    logs_tail = 80 if fast else 160
+    request_timeout = 0.75 if fast else 2.0
+    logs_task = _host_agent_get_safe(f"/daemon/logs?tail={logs_tail}", timeout=request_timeout)
+    issues_task = _host_agent_get_safe("/daemon/issues", timeout=request_timeout)
+    supervisor_task = (
+        asyncio.sleep(0, result=supervisor)
+        if supervisor is not None
+        else _host_agent_get_safe("/daemon/status", timeout=request_timeout)
+    )
+    logs, known_issues, supervisor_payload = await asyncio.gather(
+        logs_task,
+        issues_task,
+        supervisor_task,
+    )
+    if fast and not isinstance(logs, dict) and not isinstance(known_issues, dict):
         return {
             "available": False,
             "active": False,
@@ -1108,21 +1138,8 @@ async def _daemon_hardware_faults_safe(
             "power_issue": False,
             "stale": False,
             "skipped": True,
-            "detail": "Skipped on fast status path; full activation checks still inspect daemon logs.",
+            "detail": "Skipped on fast status path because daemon logs were unavailable.",
         }
-
-    logs_task = _host_agent_get_safe("/daemon/logs?tail=160", timeout=2.0)
-    issues_task = _host_agent_get_safe("/daemon/issues", timeout=2.0)
-    supervisor_task = (
-        asyncio.sleep(0, result=supervisor)
-        if supervisor is not None
-        else _host_agent_get_safe("/daemon/status", timeout=2.0)
-    )
-    logs, known_issues, supervisor_payload = await asyncio.gather(
-        logs_task,
-        issues_task,
-        supervisor_task,
-    )
     hardware_faults = _extract_motor_hardware_faults(logs)
     hardware_faults = _merge_host_known_issues(hardware_faults, known_issues)
     hardware_faults = _clear_faults_after_clean_daemon_start(hardware_faults, supervisor_payload)
@@ -1604,18 +1621,6 @@ async def _settle_assistant_body(request: AssistantSettleRequest) -> dict[str, A
         await asyncio.sleep(2.5)
         post_faults = await _daemon_hardware_faults_safe()
         if post_faults.get("active") or post_faults.get("power_issue"):
-            watchdog_result = await _host_agent_post_safe(
-                "/daemon/watchdog",
-                json={"enabled": False},
-                timeout=5.0,
-            )
-            actions.append({
-                "id": "watchdog",
-                "ok": "error" not in watchdog_result,
-                "detail": "Watchdog paused after a fresh motor hardware fault."
-                if "error" not in watchdog_result else _short_error(watchdog_result.get("error")),
-                "result": watchdog_result,
-            })
             await _record("safe_motor_pause", lambda: service.set_motor_mode("disabled"))
             stop_result = await _host_agent_post_safe("/daemon/stop", timeout=15.0)
             actions.append({
@@ -1695,20 +1700,17 @@ async def _assistant_status_payload(
     info = service.get_status_info()
 
     if fast:
-        host_health, supervisor, watchdog = await asyncio.gather(
+        host_health, supervisor = await asyncio.gather(
             _host_agent_get_safe("/health", timeout=0.25, attempts=1),
             _host_agent_get_safe("/daemon/status", timeout=0.25, attempts=1),
-            _host_agent_get_safe("/daemon/watchdog", timeout=0.25, attempts=1),
         )
     else:
-        host_health, supervisor, watchdog = await asyncio.gather(
+        host_health, supervisor = await asyncio.gather(
             _host_agent_get_safe("/health", timeout=2.0),
             _host_agent_get_safe("/daemon/status", timeout=2.0),
-            _host_agent_get_safe("/daemon/watchdog", timeout=2.0),
         )
     if not host_health:
         supervisor = None
-        watchdog = None
     daemon_running = bool((supervisor or {}).get("running"))
     supervisor_blocker = (supervisor or {}).get("probe_blocker")
     supervisor_port_owner = (supervisor or {}).get("listening_pid")
@@ -1745,7 +1747,6 @@ async def _assistant_status_payload(
         daemon_api_reachable=daemon_api_reachable,
     )
     daemon_uptime = float((supervisor or {}).get("uptime_seconds") or 0)
-    watchdog_enabled = bool((watchdog or {}).get("enabled"))
 
     realtime = _realtime_config_safe()
     preferred_backend = realtime.get("preferred_backend") or realtime.get("backend") or "local"
@@ -1937,20 +1938,6 @@ async def _assistant_status_payload(
             daemon_detail,
         ),
         _assistant_step(
-            "watchdog",
-            "Auto-restart watchdog",
-            "ready" if watchdog_enabled else ("degraded" if host_health else "offline"),
-            "Enabled." if watchdog_enabled else (
-                "Disabled for protection after a recent motor hardware fault."
-                if host_health and hardware_fault_recent
-                else "Disabled after an older motor fault; inspect the actuator before activation retries carefully."
-                if host_health and hardware_fault_stale
-                else "Disabled; activation will enable it."
-                if host_health
-                else "Cannot check until host_agent is up."
-            ),
-        ),
-        _assistant_step(
             "robot",
             "Robot connection",
             robot_step_state,
@@ -1989,7 +1976,6 @@ async def _assistant_status_payload(
             round(state_probe_age, 3) if isinstance(state_probe_age, (int, float)) else None
         ),
         "daemon": supervisor or {},
-        "watchdog": watchdog,
         "host_agent": host_health,
         "realtime": {**realtime, "session": realtime_session},
         "session_phase": realtime_session.get("session_phase", "idle"),
@@ -2157,45 +2143,6 @@ async def assistant_activate(request: AssistantActivationRequest):
     daemon_step = next((step for step in before.get("steps", []) if step.get("id") == "reachy_daemon"), {})
     daemon_step_state = daemon_step.get("state")
     start_wait: dict[str, Any] | None = None
-
-    if body_motion_blocked or stale_hardware_fault_history:
-        watchdog_result = await _host_agent_post_safe(
-            "/daemon/watchdog",
-            json={"enabled": False},
-            timeout=5.0,
-        )
-        actions.append({
-            "id": "watchdog",
-            "ok": "error" not in watchdog_result,
-            "detail": (
-                "Watchdog paused because Reachy's motor bus is not detected."
-                if motor_power_issue
-                else "Watchdog paused because Reachy reported a recent motor overload."
-                if body_motion_blocked
-                else "Watchdog paused while retrying after an older motor overload."
-            )
-            if "error" not in watchdog_result else _short_error(watchdog_result.get("error")),
-            "result": watchdog_result,
-        })
-    elif daemon.get("running") or request.start_daemon or body_motion_requested:
-        watchdog_result = await _host_agent_post_safe(
-            "/daemon/watchdog",
-            json={"enabled": True},
-            timeout=5.0,
-        )
-        actions.append({
-            "id": "watchdog",
-            "ok": "error" not in watchdog_result,
-            "detail": "Watchdog enabled." if "error" not in watchdog_result else _short_error(watchdog_result.get("error")),
-            "result": watchdog_result,
-        })
-    else:
-        actions.append({
-            "id": "watchdog",
-            "ok": True,
-            "detail": "Watchdog left unchanged; voice-only activation does not manage the hardware daemon.",
-            "result": before.get("watchdog"),
-        })
 
     if body_motion_blocked:
         if daemon.get("running"):
@@ -2367,18 +2314,8 @@ async def assistant_activate(request: AssistantActivationRequest):
                     "result": {"stop": stop_result, "hardware_issues": latest_faults},
                 })
             elif _daemon_api_reachable(latest_daemon):
-                retry_watchdog = await _host_agent_post_safe(
-                    "/daemon/watchdog",
-                    json={"enabled": True},
-                    timeout=5.0,
-                )
-                actions.append({
-                    "id": "watchdog",
-                    "ok": "error" not in retry_watchdog,
-                    "detail": "Watchdog re-enabled after a clean body retry."
-                    if "error" not in retry_watchdog else _short_error(retry_watchdog.get("error")),
-                    "result": retry_watchdog,
-                })
+                # Daemon is healthy after the retry; nothing else to do.
+                pass
     else:
         actions.append({
             "id": "settle",
@@ -2432,12 +2369,10 @@ async def get_status():
             return payload
 
     supervisor = _host_agent_cached("/daemon/status", max_age_s=_HOST_AGENT_STALE_CACHE_S)
-    watchdog = _host_agent_cached("/daemon/watchdog", max_age_s=_HOST_AGENT_STALE_CACHE_S)
     asyncio.create_task(_host_agent_get_safe("/daemon/status", timeout=0.5, attempts=1))
-    asyncio.create_task(_host_agent_get_safe("/daemon/watchdog", timeout=0.5, attempts=1))
 
     daemon_task = asyncio.create_task(_daemon_status_fast(service))
-    # Body state is the source of truth. Supervisor/watchdog metadata is useful
+    # Body state is the source of truth. Supervisor metadata is useful
     # diagnostics, but it must never sit on the UI status critical path.
     state_probe, state_probe_reachable, state_probe_stale, state_probe_age = (
         await _fast_state_probe(service, timeout=0.5)
@@ -2522,7 +2457,6 @@ async def get_status():
             round(state_probe_age, 3) if isinstance(state_probe_age, (int, float)) else None
         ),
         "supervisor": supervisor,
-        "watchdog": watchdog,
         "motion_sources": motion["sources"],
         "active_source_ids": motion["active_source_ids"],
         "body_activity": motion["body_activity"],
@@ -2555,10 +2489,6 @@ async def health_check():
 
 # --- Daemon supervisor (proxied to host_agent) ---
 
-class DaemonWatchdogRequest(BaseModel):
-    enabled: bool
-
-
 class DaemonRetryScanRequest(BaseModel):
     reason: str = Field("manual", min_length=1, max_length=80)
 
@@ -2566,6 +2496,39 @@ class DaemonRetryScanRequest(BaseModel):
 @router.get("/daemon/status")
 async def daemon_status():
     return await _host_agent_forward("GET", "/daemon/status", timeout=5.0)
+
+
+@router.get("/host-agent/status")
+async def host_agent_status():
+    """Fast probe of host_agent's /health for the UI offline banner.
+
+    Returns `{reachable, url, last_error}`. Never raises — failure mode is
+    `reachable: false` so the frontend can render the "stack offline" banner
+    instead of an error toast.
+    """
+    base = _host_agent_base()
+    if not base:
+        return {
+            "reachable": False,
+            "url": None,
+            "last_error": "host_agent_url_not_configured",
+        }
+    try:
+        async with httpx.AsyncClient(timeout=0.5) as client:
+            resp = await client.get(f"{base}/health")
+            if resp.status_code < 400:
+                return {"reachable": True, "url": base, "last_error": None}
+            return {
+                "reachable": False,
+                "url": base,
+                "last_error": f"HTTP {resp.status_code}",
+            }
+    except Exception as e:  # httpx.RequestError, ConnectError, TimeoutException
+        return {
+            "reachable": False,
+            "url": base,
+            "last_error": str(e) or type(e).__name__,
+        }
 
 
 @router.post("/daemon/start")
@@ -2684,39 +2647,12 @@ async def daemon_audio_reset():
     return await _host_agent_forward("POST", "/daemon/audio/reset", timeout=10.0)
 
 
-@router.get("/daemon/watchdog")
-async def daemon_watchdog_get():
-    return await _host_agent_forward("GET", "/daemon/watchdog", timeout=5.0)
-
-
-@router.post("/daemon/watchdog")
-async def daemon_watchdog_set(request: DaemonWatchdogRequest):
-    if request.enabled:
-        _body_motion_http_guard("daemon_watchdog_enable")
-    return await _host_agent_forward(
-        "POST", "/daemon/watchdog", json=request.model_dump(), timeout=5.0,
-    )
-
-
-@router.get("/host/docker_status")
-async def host_docker_status():
-    """Mirror of host_agent's Docker readiness probe.
-
-    Used by the Smart Re-link UI to colour the Backend (Docker) status row
-    and decide whether to render the relink button.
-    """
-    return await _host_agent_forward("GET", "/host/docker_status", timeout=3.0)
-
-
 @router.post("/daemon/relink")
 async def daemon_relink():
-    """Smart Re-link: re-probe Docker, clear watchdog churn, restart if up.
+    """Manual recovery primitive: restart the Reachy daemon.
 
-    Returns one of two shapes:
-      * ``{action: "waiting", docker, watchdog, detail}`` when Docker is
-        still starting; host_agent will keep polling and link automatically.
-      * ``{action: "restarted", docker, daemon, watchdog, detail}`` when
-        Docker is ready and the daemon was restarted.
+    Returns ``{action: "restarted", daemon, supervisor, detail}`` with the
+    new pid + log path on success.
     """
     return await _host_agent_forward("POST", "/daemon/relink", timeout=45.0)
 
@@ -3280,7 +3216,10 @@ async def goto_sleep():
 
 @router.post("/move/stop")
 async def stop_move(uuid: Optional[str] = None):
-    return await get_reachy_service().stop_move(uuid)
+    service = get_reachy_service()
+    if uuid:
+        return await service.stop_move(uuid)
+    return await service.stop_all_moves()
 
 
 @router.get("/move/running")

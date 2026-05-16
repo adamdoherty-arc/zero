@@ -60,8 +60,8 @@ class EmailAutomationService:
                     "important": "flag",
                     "normal": "none",
                     "low_priority": "archive",
-                    "newsletter": "unsubscribe",
-                    "spam": "mark_junk"
+                    "newsletter": "archive",
+                    "spam": "archive"
                 },
                 "question_triggers": {
                     "unknown_sender_threshold": 3,
@@ -342,7 +342,7 @@ class EmailAutomationService:
             ]
             
             # Create question
-            question = await qa_service.create_question(
+            question = qa_service.create_question(
                 email_id=state["email_id"],
                 email_subject=email_data.get("subject", "(No Subject)"),
                 email_from=email_data.get("from_address", {}).get("email", ""),

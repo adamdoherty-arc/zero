@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast'
  * - Red: daemon unreachable OR host_agent unreachable AND no recent cache.
  * - Grey: still loading (first poll has not landed).
  *
- * Click navigates to /zero where DaemonPanel exposes restart, watchdog,
+ * Click navigates to /zero where DaemonPanel exposes start/stop/restart,
  * audio reset, logs, and diagnostics. When the dot is amber/red, a
  * companion Smart Re-link button appears so recovery is one click away
  * without navigating into the page. Pairs with LLMStatusBadge in TopBar so

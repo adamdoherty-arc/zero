@@ -1,0 +1,401 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - list:
+                  - listitem:
+                    - link:
+                      - /url: /
+                      - generic:
+                        - img
+                      - generic:
+                        - generic: ZERO OS
+                        - generic: Personal + Company
+              - generic:
+                - generic:
+                  - generic: Personal
+                  - list:
+                    - listitem:
+                      - link:
+                        - /url: /ask-zero
+                        - img
+                        - generic: Ask Zero
+                    - listitem:
+                      - link:
+                        - /url: /
+                        - img
+                        - generic: Dashboard
+                    - listitem:
+                      - link:
+                        - /url: /personal/board
+                        - img
+                        - generic: My Board
+                    - listitem:
+                      - link:
+                        - /url: /brain
+                        - img
+                        - generic: Brain
+                    - listitem:
+                      - link:
+                        - /url: /knowledge
+                        - img
+                        - generic: Knowledge
+                    - listitem:
+                      - link:
+                        - /url: /calendar
+                        - img
+                        - generic: Calendar
+                    - listitem:
+                      - link:
+                        - /url: /email
+                        - img
+                        - generic: Email
+                    - listitem:
+                      - link:
+                        - /url: /email/drafts
+                        - img
+                        - generic: Drafts Inbox
+                    - listitem:
+                      - link:
+                        - /url: /meetings
+                        - img
+                        - generic: Meetings
+                    - listitem:
+                      - link:
+                        - /url: /meeting-search
+                        - img
+                        - generic: Meeting Search
+                    - listitem:
+                      - link:
+                        - /url: /meals
+                        - img
+                        - generic: Meals
+              - generic:
+                - list:
+                  - listitem:
+                    - button:
+                      - generic: Zero Company OS
+              - button
+        - main:
+          - generic:
+            - generic:
+              - button:
+                - img
+                - generic: Toggle Sidebar
+              - generic:
+                - generic: Zero
+                - generic: /
+                - generic: My Board
+              - button:
+                - img
+                - generic: Search...
+                - generic:
+                  - generic: Ctrl
+                  - text: K
+              - button:
+                - img
+                - generic: Talk to Reachy
+              - generic:
+                - button:
+                  - generic: Local vLLM
+              - generic:
+                - link:
+                  - /url: /reachy
+                  - img
+                  - generic: Reachy · motors disabled
+                - button:
+                  - img
+                  - generic: Re-link
+              - button:
+                - img
+                - generic: Eyes on
+              - generic:
+                - button:
+                  - img
+                  - generic: 9+
+            - navigation:
+              - link:
+                - /url: /ask-zero
+                - text: Personal
+              - link:
+                - /url: /company
+                - text: Company
+              - link:
+                - /url: /board
+                - text: Build
+              - link:
+                - /url: /operations
+                - text: Systems
+              - link:
+                - /url: /tiktok-shop
+                - text: Content
+          - main:
+            - generic:
+              - generic:
+                - generic:
+                  - generic: Topic
+                  - combobox:
+                    - generic:
+                      - text: VA Disability
+                      - generic: (21/21)
+                    - img
+                - generic:
+                  - img
+                  - textbox:
+                    - /placeholder: Search titles + descriptions...
+                - button:
+                  - img
+                  - text: New Task
+              - generic:
+                - text: Showing VA Disability only.
+                - button: Show all topics
+              - generic:
+                - generic:
+                  - generic:
+                    - heading [level=3]: Backlog
+                    - generic: "8"
+                  - generic:
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Assemble medical evidence packet (STRs + current records)
+                      - generic:
+                        - generic: high
+                        - generic: 60 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Obtain GI nexus letter from private specialist
+                      - generic:
+                        - generic: high
+                        - generic: 60 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Anxiety treatment records + nexus paragraph from prescriber
+                      - generic:
+                        - generic: medium
+                        - generic: 60 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Verify AE rating in DD-214/OMPF for tinnitus claim
+                      - generic:
+                        - generic: low
+                        - generic: 60 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Submit VA Form 21-526EZ as Fully Developed Claim (FDC)
+                      - generic:
+                        - generic: critical
+                        - generic: 90 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Prepare for three C&P exams (GI / Mental Health / Audio)
+                      - generic:
+                        - generic: high
+                        - generic: 90 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Build written symptom log for C&P exams
+                      - generic:
+                        - generic: medium
+                        - generic: 90 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: After-decision plan — supplemental claim / HLR / Board appeal
+                      - generic:
+                        - generic: medium
+                        - generic: reference
+                        - generic: VA Disability
+                - generic:
+                  - generic:
+                    - heading [level=3]: To Do
+                    - generic: "8"
+                  - generic:
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: File Intent to File (VA Form 21-0966) — TODAY
+                      - generic:
+                        - generic: critical
+                        - generic: 7 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Create digital accounts (VA.gov / MyHealtheVet / milConnect / eVetRecs)
+                      - generic:
+                        - generic: high
+                        - generic: 7 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Request OMPF + Service Treatment Records (STRs)
+                      - generic:
+                        - generic: high
+                        - generic: 7 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Apply for VA health care (PACT-era eligibility)
+                      - generic:
+                        - generic: high
+                        - generic: 7 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Appointment with Duval CVSO (or DAV) — sign VA Form 21-22 (POA)
+                      - generic:
+                        - generic: high
+                        - generic: 30 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Schedule GI consult + EGD or barium swallow — RATING LEVER
+                      - generic:
+                        - generic: high
+                        - generic: 30 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Gather buddy statements (VA Form 21-10210)
+                      - generic:
+                        - generic: medium
+                        - generic: 30 days
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Draft personal statement (VA Form 21-4138)
+                      - generic:
+                        - generic: medium
+                        - generic: 30 days
+                        - generic: VA Disability
+                - generic:
+                  - generic:
+                    - heading [level=3]: In Progress
+                    - generic: "5"
+                  - generic:
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: VA Claim Playbook — TL;DR + strategy summary
+                        - generic: 📌
+                      - generic:
+                        - generic: high
+                        - generic: reference
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)
+                        - generic: 📌
+                      - generic:
+                        - generic: high
+                        - generic: reference
+                        - generic: narrative
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Narrative — Anxiety secondary to GI chain (LIVING DOC)
+                        - generic: 📌
+                      - generic:
+                        - generic: high
+                        - generic: reference
+                        - generic: narrative
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Narrative — Tinnitus (Navy AE noise exposure) (LIVING DOC)
+                        - generic: 📌
+                      - generic:
+                        - generic: high
+                        - generic: reference
+                        - generic: narrative
+                        - generic: VA Disability
+                    - button:
+                      - generic:
+                        - generic:
+                          - generic: Rating estimate tracker — Conservative / Likely / Strong scenarios
+                        - generic: 📌
+                      - generic:
+                        - generic: medium
+                        - generic: reference
+                        - generic: VA Disability
+                - generic:
+                  - generic:
+                    - heading [level=3]: Blocked
+                    - generic: "0"
+                  - generic:
+                    - generic: empty
+                - generic:
+                  - generic:
+                    - heading [level=3]: Done
+                    - generic: "0"
+                  - generic:
+                    - generic: empty
+        - button:
+          - img
+        - button:
+          - img
+  - dialog "Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)" [ref=e405]:
+    - heading "Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)" [level=2] [ref=e407]:
+      - textbox [active] [ref=e408]: Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)
+    - generic [ref=e409]:
+      - generic [ref=e410]:
+        - combobox [ref=e411] [cursor=pointer]:
+          - generic: In Progress
+          - img [ref=e412]
+        - combobox [ref=e414] [cursor=pointer]:
+          - generic: High
+          - img [ref=e415]
+        - generic [ref=e417]: phase:reference
+        - generic [ref=e418]: narrative
+        - generic [ref=e419]: condition:gi
+        - generic [ref=e420]: pinned
+      - generic [ref=e421]:
+        - generic [ref=e422]: Living narrative — edits are timestamped in the audit trail below
+        - textbox [ref=e423]: "**This task's description IS the narrative. Edit it over time as memory and records sharpen.** Each save creates an audit-trail event so you can see how the narrative evolved. --- **Current narrative (v0 — draft):** In approximately [YEAR], while assigned to [SHIP/SQUADRON/STATION], I began experiencing severe heartburn and stomach pain. I was evaluated at [MEDICAL FACILITY — e.g., NAS Jacksonville Branch Medical Clinic], and a hiatal hernia was diagnosed/suspected. The Navy also prescribed me **isoniazid (INH)** for [tuberculosis prophylaxis / a positive PPD]. After starting INH, my stomach symptoms became significantly worse — severe heartburn, nausea, and difficulty keeping food down. I reported the worsening to [DR./CORPSMAN NAME if known]. On approximately [DATE] I underwent a **laparoscopic Nissen fundoplication** at [HOSPITAL — e.g., Naval Hospital Jacksonville]. The surgeon wrapped the top of my stomach around the bottom of my esophagus to tighten it and stop the reflux. I returned to duty after [RECOVERY PERIOD]. Since the surgery I have never been the same. I experience: - Nightly heartburn that wakes me up; I sleep with [X PILLOWS / a wedge] - Difficulty swallowing food, especially solids — food sometimes gets stuck and I have to drink water or regurgitate - Daily reflux despite [MEDICATION — e.g., omeprazole 40 mg twice daily] - Bloating, inability to belch normally, gas pain - Chest and shoulder pain after meals - I avoid [LIST TRIGGER FOODS] My condition has progressively worsened. My current provider has told me I will have to live with this for the rest of my life. --- **TODO — fill in:** - Year(s) of onset and INH prescription - Specific ship/squadron names and dates - Naming providers from STRs once received - Exact date of Nissen fundoplication - Current medications and doses - List of foods you avoid - Specific sleep accommodations - Any dilatation history (this is the rating lever)"
+      - generic [ref=e424]:
+        - generic [ref=e425]: Audit trail (2)
+        - generic [ref=e426]:
+          - generic [ref=e427]:
+            - generic [ref=e428]: 5/12/2026, 8:44:31 PM
+            - generic [ref=e429]: updated
+            - generic [ref=e430]: Updated Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)
+          - generic [ref=e431]:
+            - generic [ref=e432]: 5/12/2026, 8:44:31 PM
+            - generic [ref=e433]: created
+            - generic [ref=e434]: Created Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)
+      - generic [ref=e435]:
+        - button "No changes" [disabled] [ref=e436]
+        - button "Mark Done" [ref=e437] [cursor=pointer]
+        - button "Delete" [ref=e438] [cursor=pointer]:
+          - img [ref=e439]
+          - text: Delete
+    - button "Close" [ref=e442] [cursor=pointer]:
+      - img [ref=e443]
+      - generic [ref=e446]: Close

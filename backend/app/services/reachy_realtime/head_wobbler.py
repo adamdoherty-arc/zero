@@ -77,6 +77,7 @@ class AsyncHeadWobbler:
             except (asyncio.CancelledError, Exception):
                 pass
             self._task = None
+        await self._apply_zero()
 
     async def feed_pcm16(
         self,

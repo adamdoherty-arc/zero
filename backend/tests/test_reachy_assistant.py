@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -11,6 +11,9 @@ from app.services.reachy_service import ReachyService
 from app.services.reachy_realtime import tools as tool_registry
 from app.services.reachy_realtime.bg_tool_manager import BackgroundToolManager
 from app.services.reachy_realtime.common import MotionDispatcher, ToolDependencies
+
+
+_REAL_DAEMON_HARDWARE_FAULTS_SAFE = reachy._daemon_hardware_faults_safe
 
 
 @pytest.fixture(autouse=True)
@@ -162,6 +165,20 @@ class _FakeReachyClientService(ReachyService):
         return {"ok": True, "uuid": move_uuid}
 
 
+class _StaleStopReachyService(ReachyService):
+    def __init__(self):
+        super().__init__()
+        self._active_move_uuid = "stale-neutral"
+
+    async def _request(self, *_args, **_kwargs) -> dict:
+        return {
+            "error": "Request failed: 500",
+            "status": 500,
+            "detail": "KeyError: 'Running move with UUID stale-neutral not found'",
+            "connected": True,
+        }
+
+
 def _patch_common(
     monkeypatch,
     *,
@@ -215,6 +232,28 @@ async def test_stop_all_moves_falls_back_to_local_uuid_when_running_probe_fails(
     assert payload["ok"] is True
     assert payload["uuids"] == ["known-active"]
     assert service.stopped == ["known-active"]
+
+
+@pytest.mark.asyncio
+async def test_stop_move_treats_daemon_missing_uuid_as_idempotent_success():
+    service = _StaleStopReachyService()
+
+    payload = await service.stop_move()
+
+    assert payload["ok"] is True
+    assert payload["stale_uuid"] is True
+    assert service._active_move_uuid is None
+
+
+@pytest.mark.asyncio
+async def test_move_stop_route_without_uuid_uses_stop_all_moves(monkeypatch):
+    service = _FakeReachyService(connected=True)
+    monkeypatch.setattr(reachy, "get_reachy_service", lambda: service)
+
+    payload = await reachy.stop_move()
+
+    assert payload["ok"] is True
+    assert ("stop_all_moves", None) in service.calls
 
 
 def test_assistant_state_prioritizes_repair_required():
@@ -370,6 +409,54 @@ def test_extract_motor_hardware_faults_from_daemon_logs():
     assert faults["issues"][0]["id"] == "motors_unpowered"
 
 
+def test_extract_motor_hardware_faults_from_split_overheating_log():
+    payload = {
+        "lines": [
+            "2026-05-15 20:34:33,812 ERROR [reachy_mini.daemon.backend.robot.backend] Motor 'stewart_3' hardware errors:",
+            "['Overheating Error']",
+        ]
+    }
+
+    faults = reachy._extract_motor_hardware_faults(
+        payload,
+        now=datetime(2026, 5, 15, 20, 34, 50, tzinfo=reachy._LOCAL_TZ),
+    )
+
+    assert faults["active"] is True
+    assert faults["faults"][0]["motor"] == "stewart_3"
+    assert "Overheating Error" in faults["faults"][0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_fast_hardware_fault_check_reads_recent_daemon_logs(monkeypatch):
+    fault_at = datetime.now(reachy._LOCAL_TZ)
+    fault_stamp = fault_at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+    started_at = (fault_at - timedelta(minutes=10)).isoformat()
+
+    async def fake_host_get(path: str, *, timeout: float = 3.0, attempts: int = 2):
+        if path.startswith("/daemon/logs"):
+            return {
+                "lines": [
+                    f"{fault_stamp} ERROR [reachy_mini.daemon.backend.robot.backend] Motor 'stewart_3' hardware errors:",
+                    "['Overheating Error']",
+                ]
+            }
+        if path == "/daemon/issues":
+            return {"items": []}
+        if path == "/daemon/status":
+            return {"running": True, "started_at": started_at}
+        return None
+
+    monkeypatch.setattr(reachy, "_host_agent_get_safe", fake_host_get)
+
+    faults = await _REAL_DAEMON_HARDWARE_FAULTS_SAFE(fast=True)
+
+    assert faults["available"] is True
+    assert faults["active"] is True
+    assert faults["faults"][0]["motor"] == "stewart_3"
+    assert "Overheating Error" in faults["faults"][0]["error"]
+
+
 def test_extract_motor_hardware_faults_clears_motor_power_after_clean_start():
     payload = {
         "lines": [
@@ -429,7 +516,7 @@ def test_clean_daemon_start_clears_prior_log_fault_latch():
         faults,
         {
             "running": True,
-            "started_at": "2026-05-05T00:59:08.688689+00:00",
+            "started_at": "2026-05-05T02:00:00+00:00",
         },
     )
 
@@ -755,16 +842,16 @@ async def test_assistant_status_surfaces_recent_overload_after_daemon_stops(monk
     payload = await reachy._assistant_status_payload()
 
     daemon_step = next(step for step in payload["steps"] if step["id"] == "reachy_daemon")
-    watchdog_step = next(step for step in payload["steps"] if step["id"] == "watchdog")
     robot_step = next(step for step in payload["steps"] if step["id"] == "robot")
     assert payload["state"] == "degraded"
     assert "hardware_faults" in payload["active_source_ids"]
     assert payload["body_activity"] == "unknown"
     assert daemon_step["state"] == "degraded"
     assert "overload" in daemon_step["detail"].lower()
-    assert "protection" in watchdog_step["detail"]
     assert robot_step["state"] == "degraded"
     assert "stewart_3" in robot_step["detail"]
+    # watchdog step removed in 2026-05-15 refactor; no auto-restart exists.
+    assert not any(step["id"] == "watchdog" for step in payload["steps"])
 
 
 @pytest.mark.asyncio
@@ -954,7 +1041,8 @@ async def test_assistant_activate_voice_only_does_not_stop_running_daemon(monkey
 
     payload = await reachy.assistant_activate(reachy.AssistantActivationRequest())
 
-    assert ("/daemon/watchdog", {"enabled": True}) in calls
+    # Watchdog removed in 2026-05-15 refactor; activation no longer touches it.
+    assert not any(path == "/daemon/watchdog" for path, _body in calls)
     assert not any(path == "/daemon/stop" for path, _body in calls)
     daemon_action = next(action for action in payload["actions"] if action["id"] == "reachy_daemon")
     assert daemon_action["ok"] is True
@@ -1121,7 +1209,12 @@ async def test_assistant_activate_pauses_watchdog_when_motor_power_is_missing(mo
         reachy.AssistantActivationRequest(enable_body_motion=True)
     )
 
-    assert ("/daemon/watchdog", {"enabled": False}) in calls
+    # Watchdog removed in 2026-05-15 — activation no longer pauses any
+    # auto-restart loop. The protective behaviour now is:
+    #   * don't start/restart/stop the daemon (it's already running with
+    #     the user's diagnostics);
+    #   * surface the settle failure with a motor-power explanation.
+    assert not any(path == "/daemon/watchdog" for path, _json in calls)
     assert not any(path == "/daemon/stop" for path, _json in calls)
     assert not any(path in {"/daemon/start", "/daemon/restart"} for path, _json in calls)
     daemon_action = next(action for action in payload["actions"] if action["id"] == "reachy_daemon")
@@ -1313,7 +1406,10 @@ async def test_assistant_activate_blocks_daemon_start_after_recent_overload(monk
         reachy.AssistantActivationRequest(start_daemon=True, enable_body_motion=True)
     )
 
-    assert ("/daemon/watchdog", {"enabled": False}) in calls
+    # Watchdog removed; protection now relies on NOT starting the daemon
+    # when a body-motion-blocking overload is in history. The user surfaces
+    # the actuator hint and chooses whether to retry.
+    assert not any(path == "/daemon/watchdog" for path, _json in calls)
     assert not any(path in {"/daemon/start", "/daemon/restart"} for path, _json in calls)
     daemon_action = next(action for action in payload["actions"] if action["id"] == "reachy_daemon")
     settle_action = next(action for action in payload["actions"] if action["id"] == "settle")
@@ -1385,7 +1481,9 @@ async def test_assistant_activate_allows_start_after_stale_overload(monkeypatch)
         reachy.AssistantActivationRequest(start_daemon=True, enable_body_motion=True)
     )
 
-    assert ("/daemon/watchdog", {"enabled": False}) in calls
+    # Watchdog removed; the activation flow no longer touches it. Daemon
+    # start is the only mutation we expect after a stale overload clears.
+    assert not any(path == "/daemon/watchdog" for path, _json in calls)
     assert any(path == "/daemon/start" for path, _json in calls)
 
 
@@ -1611,7 +1709,9 @@ async def test_assistant_settle_catches_delayed_overload_after_neutral(monkeypat
 
     assert payload["ok"] is False
     assert ("set_motor_mode", {"mode": "disabled"}) in service.calls
-    assert ("/daemon/watchdog", {"enabled": False}) in host_posts
+    # Watchdog removed; settle now stops the daemon directly without
+    # toggling any auto-restart loop.
+    assert not any(path == "/daemon/watchdog" for path, _json in host_posts)
     assert any(path == "/daemon/stop" for path, _json in host_posts)
     assert next(action for action in payload["actions"] if action["id"] == "hardware_faults")["ok"] is True
 

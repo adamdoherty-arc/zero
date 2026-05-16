@@ -1,35 +1,46 @@
 import { Link } from 'react-router-dom'
-import { useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ElementType, FormEvent, ReactNode } from 'react'
 import {
   Activity,
   AlertTriangle,
+  Ban,
   Banknote,
   Bot,
   Briefcase,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   Clock3,
   Columns3,
   Copy,
   Cpu,
+  Eye,
+  EyeOff,
   ExternalLink,
   FileText,
   Filter,
   Gavel,
   HelpCircle,
   Inbox,
+  KeyRound,
+  Lightbulb,
+  ListChecks,
   Megaphone,
   MessageSquareText,
   PackageCheck,
+  Pause,
   PauseCircle,
+  Play,
   PlayCircle,
   RefreshCw,
   RotateCcw,
   Search,
   Send,
   ShieldCheck,
+  Sparkles,
   Table2,
+  Target,
   Trash2,
   X,
 } from 'lucide-react'
@@ -74,7 +85,9 @@ import {
   type CompanySubagentStatus,
 } from '@/hooks/useCompanyOperatorApi'
 import {
+  useCompanyProgressCheckin,
   useCompanySeedStatus,
+  useCompanySetupProgress,
   useCompanyReviewSummary,
   useCompanyTaskEvents,
   useCompanyTaskReview,
@@ -85,11 +98,29 @@ import {
   useDuplicateCompanyWorkItem,
   useImportCompanySeedBacklog,
   useReopenCompanyWorkItem,
+  useRunCompanyCompletionReview,
+  useRunCompanyProgressCheckin,
   useUpdateCompanyWorkItem,
+  type CompanySetupTaskSummary,
 } from '@/hooks/useCompanyWorkItemsApi'
+import {
+  useCompanyFacts,
+  useDeleteCompanyFact,
+  usePatchCompanyFact,
+  useUpsertCompanyFact,
+} from '@/hooks/useCompanyFactsApi'
 import { toast } from '@/hooks/use-toast'
+import { maskSensitive } from '@/lib/masking'
 import { cn } from '@/lib/utils'
-import type { CompanyWorkItemReview, Task as ZeroTask, TaskUpdate as ZeroTaskUpdate } from '@/types'
+import { TaskNotesPanel } from '@/components/TaskNotesPanel'
+import type {
+  CompanyFact,
+  CompanyWorkItemReview,
+  CompletionOutput,
+  Task as ZeroTask,
+  TaskUpdate as ZeroTaskUpdate,
+  WalkthroughCompletionField,
+} from '@/types'
 
 export type CompanySection =
   | 'overview'
@@ -146,7 +177,7 @@ const statusColumnLabels: Record<CompanyTaskStatus, string> = {
   'on-hold': 'On Hold',
   'in-progress': 'In Progress',
   blocked: 'Blocked',
-  done: 'Done',
+  done: 'Completed',
 }
 const statusColumnClasses: Record<CompanyTaskStatus, string> = {
   backlog: 'border-gray-700',
@@ -259,6 +290,86 @@ function useCompanyTaskCards() {
   }
 }
 
+interface TaskDrawerContextValue {
+  openTaskById: (taskId: string) => void
+  openTask: (task: CompanyTaskCard) => void
+  openTaskForCompletion: (task: CompanyTaskCard) => void
+}
+
+const TaskDrawerContext = createContext<TaskDrawerContextValue | null>(null)
+
+function useTaskDrawer() {
+  return useContext(TaskDrawerContext)
+}
+
+function ClickableTaskCard({ task, editable = false }: { task: CompanyTaskCard; editable?: boolean }) {
+  const drawer = useTaskDrawer()
+  return (
+    <div className="relative">
+      <TaskCard task={task} editable={editable} />
+      {drawer && (
+        <button
+          type="button"
+          onClick={() => drawer.openTask(task)}
+          className="mt-1 inline-flex items-center gap-1 text-[11px] text-blue-300 hover:text-blue-200"
+        >
+          <ChevronRight className="h-3 w-3" />
+          Open walkthrough
+        </button>
+      )}
+    </div>
+  )
+}
+
+function priorityBadge(priority?: string) {
+  if (!priority) return riskClasses.medium
+  if (priority === 'critical') return riskClasses.critical
+  if (priority === 'high') return riskClasses.high
+  if (priority === 'low') return riskClasses.low
+  return riskClasses.medium
+}
+
+function OperatorTodayTaskList({ tasks }: { tasks: Array<{ id: string; title: string; status: string; priority: string; risk?: string }> }) {
+  const drawer = useTaskDrawer()
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-2">
+      {tasks.map((task) => (
+        <button
+          key={task.id}
+          type="button"
+          onClick={() => drawer?.openTaskById(task.id)}
+          className="rounded-lg border border-gray-800 bg-gray-950/60 p-3 text-left hover:border-blue-500/50 hover:bg-gray-900"
+        >
+          <div className="text-sm font-medium text-gray-100">{task.title}</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge className={statusBadgeClass(task.status)}>{task.status}</Badge>
+            <Badge className="border-gray-700 text-gray-300">{task.priority}</Badge>
+            {task.risk === 'high' && <Badge className={riskClasses.high}>approval gate</Badge>}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SetupTaskRow({ task }: { task: CompanySetupTaskSummary }) {
+  const drawer = useTaskDrawer()
+  return (
+    <button
+      type="button"
+      onClick={() => drawer?.openTaskById(task.id)}
+      className="flex w-full items-center justify-between gap-3 rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-left text-sm hover:border-blue-500/50 hover:bg-gray-900"
+    >
+      <span className="min-w-0 flex-1 truncate text-gray-100">{task.title}</span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Badge className="border-gray-700 text-gray-300">{task.domain}</Badge>
+        <Badge className={priorityBadge(task.priority)}>{task.priority}</Badge>
+        <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+      </span>
+    </button>
+  )
+}
+
 function Badge({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium', className)}>
@@ -330,6 +441,7 @@ function priorityBadgeClass(priority?: string) {
 }
 
 function TaskCard({ task, editable = false }: { task: CompanyTaskCard; editable?: boolean }) {
+  const drawer = useTaskDrawer()
   const updateTask = useUpdateCompanyWorkItem()
   const completeTask = useCompleteCompanyWorkItem()
   const reopenTask = useReopenCompanyWorkItem()
@@ -363,6 +475,15 @@ function TaskCard({ task, editable = false }: { task: CompanyTaskCard; editable?
         <Badge className={riskClasses[task.risk]}>{task.risk}</Badge>
         {task.requiresApproval && <Badge className="border-red-500/30 bg-red-500/10 text-red-300">approval</Badge>}
         {task.review?.recommendation && <Badge className="border-gray-700 text-gray-400">{task.review.recommendation}</Badge>}
+        {(() => {
+          const outs = (task.zeroTask?.completion_outputs as { outputs?: unknown[] } | undefined)?.outputs ?? []
+          return outs.length > 0 ? (
+            <Badge className="border-emerald-500/40 bg-emerald-500/10 text-emerald-200">
+              <CheckCircle2 className="mr-1 inline h-3 w-3" />
+              {outs.length} deliverable{outs.length === 1 ? '' : 's'}
+            </Badge>
+          ) : null
+        })()}
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>{task.owner}</span>
@@ -409,17 +530,124 @@ function TaskCard({ task, editable = false }: { task: CompanyTaskCard; editable?
               Done is blocked until the approval gate is cleared.
             </div>
           )}
+          {zeroStatus !== 'done' && (
+            <div className="col-span-2 flex flex-wrap gap-1.5">
+              {zeroStatus === 'in_progress' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => updateTask.mutate(
+                      { id: task.id, data: { status: 'on_hold' } },
+                      {
+                        onSuccess: () => toast({ title: 'Task placed on hold' }),
+                        onError: (error) => toast({ title: 'Hold failed', description: error.message }),
+                      },
+                    )}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 text-[11px] text-amber-200 disabled:opacity-50"
+                  >
+                    <Pause className="h-3 w-3" />
+                    Hold
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const reason = task.zeroBlockedReason?.trim() || window.prompt('Why is this task blocked?', 'Waiting on external dependency') || ''
+                      updateTask.mutate(
+                        { id: task.id, data: { status: 'blocked', blocked_reason: reason || 'Manual block from board' } },
+                        {
+                          onSuccess: () => toast({ title: 'Task marked blocked' }),
+                          onError: (error) => toast({ title: 'Block failed', description: error.message }),
+                        },
+                      )
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 text-[11px] text-red-300 disabled:opacity-50"
+                  >
+                    <Ban className="h-3 w-3" />
+                    Block
+                  </button>
+                </>
+              )}
+              {zeroStatus === 'on_hold' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => updateTask.mutate(
+                      { id: task.id, data: { status: 'in_progress' } },
+                      {
+                        onSuccess: () => toast({ title: 'Task resumed' }),
+                        onError: (error) => toast({ title: 'Resume failed', description: error.message }),
+                      },
+                    )}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 text-[11px] text-blue-200 disabled:opacity-50"
+                  >
+                    <Play className="h-3 w-3" />
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const reason = task.zeroBlockedReason?.trim() || window.prompt('Why is this task blocked?', 'Waiting on external dependency') || ''
+                      updateTask.mutate(
+                        { id: task.id, data: { status: 'blocked', blocked_reason: reason || 'Manual block from board' } },
+                        {
+                          onSuccess: () => toast({ title: 'Task marked blocked' }),
+                          onError: (error) => toast({ title: 'Block failed', description: error.message }),
+                        },
+                      )
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/30 bg-red-500/10 px-2 text-[11px] text-red-300 disabled:opacity-50"
+                  >
+                    <Ban className="h-3 w-3" />
+                    Block
+                  </button>
+                </>
+              )}
+              {zeroStatus === 'blocked' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => updateTask.mutate(
+                      { id: task.id, data: { status: 'in_progress', blocked_reason: '' } },
+                      {
+                        onSuccess: () => toast({ title: 'Task unblocked - back in progress' }),
+                        onError: (error) => toast({ title: 'Unblock failed', description: error.message }),
+                      },
+                    )}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-2 text-[11px] text-blue-200 disabled:opacity-50"
+                  >
+                    <Play className="h-3 w-3" />
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => updateTask.mutate(
+                      { id: task.id, data: { status: 'on_hold', blocked_reason: '' } },
+                      {
+                        onSuccess: () => toast({ title: 'Task placed on hold' }),
+                        onError: (error) => toast({ title: 'Hold failed', description: error.message }),
+                      },
+                    )}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 text-[11px] text-amber-200 disabled:opacity-50"
+                  >
+                    <Pause className="h-3 w-3" />
+                    Hold
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <div className="col-span-2 flex flex-wrap gap-1.5">
             <button
               type="button"
               disabled={busy}
-              onClick={() => completeTask.mutate(task.id, {
-                onSuccess: (result) => toast({
-                  title: result.status === 'blocked' ? 'Approval gate queued' : 'Task completed',
-                  description: result.blocked_reason,
-                }),
-                onError: (error) => toast({ title: 'Complete failed', description: error.message }),
-              })}
+              onClick={() => drawer?.openTaskForCompletion(task)}
+              title="Open completion modal to record deliverables"
               className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 text-[11px] text-emerald-200 disabled:opacity-50"
             >
               <CheckCircle2 className="h-3 w-3" />
@@ -678,6 +906,455 @@ function DashboardReviewPanel() {
   )
 }
 
+function SetupProgressPanel() {
+  const { data: progress, isLoading } = useCompanySetupProgress()
+
+  if (isLoading && !progress) {
+    return (
+      <Panel title="Initial Company Setup" icon={Target}>
+        <div className="text-sm text-gray-400">Loading setup progress...</div>
+      </Panel>
+    )
+  }
+  if (!progress) {
+    return (
+      <Panel title="Initial Company Setup" icon={Target}>
+        <div className="text-sm text-amber-200">Setup progress unavailable.</div>
+      </Panel>
+    )
+  }
+
+  const domains = Object.entries(progress.by_domain).sort((a, b) => b[1].total - a[1].total)
+  return (
+    <Panel
+      title="Initial Company Setup"
+      icon={Target}
+      action={
+        <span className="text-xs text-gray-400">
+          {progress.done} of {progress.total} launch-critical tasks done
+        </span>
+      }
+    >
+      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+        <div className="rounded-lg border border-blue-500/40 bg-blue-500/5 p-4">
+          <div className="text-xs uppercase tracking-wider text-blue-300">Setup Complete</div>
+          <div className="mt-2 flex items-end gap-2">
+            <span className="text-5xl font-bold text-white">{progress.percent}</span>
+            <span className="pb-2 text-base text-gray-400">%</span>
+          </div>
+          <div className="mt-3 h-3 rounded-full bg-gray-800">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all"
+              style={{ width: `${Math.min(100, progress.percent)}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+            <div>
+              <div className="text-base font-semibold text-emerald-300">{progress.done}</div>
+              <div className="text-gray-500">done</div>
+            </div>
+            <div>
+              <div className="text-base font-semibold text-amber-300">{progress.in_progress}</div>
+              <div className="text-gray-500">active</div>
+            </div>
+            <div>
+              <div className="text-base font-semibold text-red-300">{progress.blocked}</div>
+              <div className="text-gray-500">blocked</div>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">By Domain</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {domains.map(([domain, entry]) => (
+                <div key={domain} className="rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-gray-200">{domain}</span>
+                    <span className="text-gray-400">{entry.done}/{entry.total}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-gray-800">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        entry.percent >= 80 ? 'bg-emerald-500' : entry.percent >= 40 ? 'bg-blue-500' : 'bg-amber-500',
+                      )}
+                      style={{ width: `${entry.percent}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {progress.next_unblocked.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+                Do This Next
+              </div>
+              <div className="space-y-1.5">
+                {progress.next_unblocked.slice(0, 5).map((task) => (
+                  <SetupTaskRow key={task.id} task={task} />
+                ))}
+              </div>
+            </div>
+          )}
+          {progress.critical_blocked.length > 0 && (
+            <div>
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-red-300">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Blocked - Needs You
+              </div>
+              <div className="space-y-1.5">
+                {progress.critical_blocked.slice(0, 4).map((task) => (
+                  <SetupTaskRow key={task.id} task={task} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+function ZeroCheckinPanel() {
+  const { data: checkin, isLoading } = useCompanyProgressCheckin()
+  const runCheckin = useRunCompanyProgressCheckin()
+
+  return (
+    <Panel
+      title="Zero Check-In"
+      icon={Bot}
+      action={
+        <button
+          type="button"
+          onClick={() =>
+            runCheckin.mutate(undefined, {
+              onSuccess: () => toast({ title: 'Zero refreshed the check-in' }),
+              onError: (error) => toast({ title: 'Check-in failed', description: error.message }),
+            })
+          }
+          disabled={runCheckin.isPending}
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 text-xs font-medium text-blue-100 disabled:opacity-60"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', runCheckin.isPending && 'animate-spin')} />
+          Refresh
+        </button>
+      }
+    >
+      {isLoading && !checkin && <div className="text-sm text-gray-400">Loading the latest check-in...</div>}
+      {checkin && (
+        <div className="space-y-3 text-sm">
+          <p className="text-gray-200">{checkin.summary}</p>
+          <div className="grid gap-2 md:grid-cols-3">
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-xs text-gray-500">Stalled (3+ days)</div>
+              <div className="mt-1 text-xl font-semibold text-amber-300">{checkin.stalled_count}</div>
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-xs text-gray-500">Overdue</div>
+              <div className="mt-1 text-xl font-semibold text-red-300">{checkin.overdue_count}</div>
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-xs text-gray-500">Moved last 24h</div>
+              <div className="mt-1 text-xl font-semibold text-emerald-300">{checkin.moved_recently_count}</div>
+            </div>
+          </div>
+          {checkin.stalled.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-amber-300">Stalled</div>
+              <div className="space-y-1.5">
+                {checkin.stalled.slice(0, 4).map((task) => (
+                  <SetupTaskRow
+                    key={task.id}
+                    task={{ id: task.id, title: task.title, domain: task.domain, status: 'stalled', priority: task.priority }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {checkin.overdue.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-red-300">Overdue</div>
+              <div className="space-y-1.5">
+                {checkin.overdue.slice(0, 4).map((task) => (
+                  <SetupTaskRow
+                    key={task.id}
+                    task={{ id: task.id, title: task.title, domain: task.domain, status: 'overdue', priority: task.priority, due_at: task.due_at }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="text-[11px] text-gray-500">Last check-in {formatDateTime(checkin.computed_at)} - {checkin.requested_by}</div>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function CompanyFactsPanel() {
+  const [search, setSearch] = useState('')
+  const [domain, setDomain] = useState<string>('all')
+  const { data: facts, isLoading } = useCompanyFacts()
+  const [revealedFactIds, setRevealedFactIds] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const upsertFact = useUpsertCompanyFact()
+  const patchFact = usePatchCompanyFact()
+  const deleteFact = useDeleteCompanyFact()
+
+  const filtered = useMemo(() => {
+    let rows = facts ?? []
+    if (domain !== 'all') rows = rows.filter((f) => (f.domain ?? 'Uncategorized') === domain)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      rows = rows.filter((f) =>
+        f.key.toLowerCase().includes(q) || f.label.toLowerCase().includes(q) || f.value.toLowerCase().includes(q),
+      )
+    }
+    return rows
+  }, [facts, domain, search])
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, CompanyFact[]>()
+    for (const fact of filtered) {
+      const key = fact.domain ?? 'Uncategorized'
+      const list = map.get(key) ?? []
+      list.push(fact)
+      map.set(key, list)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [filtered])
+
+  const domainOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const fact of facts ?? []) set.add(fact.domain ?? 'Uncategorized')
+    return Array.from(set).sort()
+  }, [facts])
+
+  const toggleReveal = (id: string) =>
+    setRevealedFactIds((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const startEdit = (fact: CompanyFact) => {
+    setEditingId(fact.id)
+    setEditValue(fact.value)
+  }
+
+  const saveEdit = (fact: CompanyFact) => {
+    if (!editValue.trim() || editValue === fact.value) {
+      setEditingId(null)
+      return
+    }
+    patchFact.mutate(
+      { id: fact.id, data: { value: editValue.trim() } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Fact updated' })
+          setEditingId(null)
+        },
+        onError: (error) => toast({ title: 'Update failed', description: error.message }),
+      },
+    )
+  }
+
+  const handleDelete = (fact: CompanyFact) => {
+    if (!window.confirm(`Delete fact "${fact.label}"?`)) return
+    deleteFact.mutate(fact.id, {
+      onSuccess: () => toast({ title: 'Fact deleted' }),
+      onError: (error) => toast({ title: 'Delete failed', description: error.message }),
+    })
+  }
+
+  return (
+    <Panel
+      title="Company Facts"
+      icon={KeyRound}
+      action={<span className="text-xs text-gray-500">{(facts ?? []).length} recorded</span>}
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search facts"
+            className="h-8 w-full rounded-md border border-gray-800 bg-gray-950 pl-7 pr-3 text-xs text-gray-200 outline-none focus:border-blue-500"
+          />
+        </div>
+        <select
+          value={domain}
+          onChange={(event) => setDomain(event.target.value)}
+          className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200"
+        >
+          <option value="all">All domains</option>
+          {domainOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <NewFactInline onCreated={() => setSearch('')} upsert={upsertFact} />
+      </div>
+      {isLoading ? (
+        <div className="text-xs text-gray-500">Loading facts...</div>
+      ) : grouped.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-800 p-4 text-xs text-gray-400">
+          No company facts yet. Complete a setup task with structured outputs to populate this registry.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {grouped.map(([groupDomain, items]) => (
+            <div key={groupDomain}>
+              <div className="mb-2 text-xs uppercase tracking-wider text-blue-300">{groupDomain}</div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {items.map((fact) => {
+                  const revealed = revealedFactIds.has(fact.id)
+                  const displayValue = fact.sensitive && !revealed ? maskSensitive(fact.value) : fact.value
+                  const isEditing = editingId === fact.id
+                  return (
+                    <div key={fact.id} className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-gray-100">{fact.label}</div>
+                          <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
+                            key: <code className="text-gray-400">{fact.key}</code>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {fact.sensitive && (
+                            <button
+                              type="button"
+                              onClick={() => toggleReveal(fact.id)}
+                              title={revealed ? 'Hide' : 'Reveal'}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-300 hover:text-white"
+                            >
+                              {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => (isEditing ? saveEdit(fact) : startEdit(fact))}
+                            title={isEditing ? 'Save' : 'Edit'}
+                            className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-700 px-2 text-[11px] text-gray-300 hover:text-white"
+                          >
+                            {isEditing ? 'Save' : 'Edit'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(fact)}
+                            title="Delete"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 hover:border-red-500/40 hover:text-red-300"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      {isEditing ? (
+                        <input
+                          autoFocus
+                          value={editValue}
+                          onChange={(event) => setEditValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') saveEdit(fact)
+                            else if (event.key === 'Escape') setEditingId(null)
+                          }}
+                          className="mt-2 h-9 w-full rounded-md border border-gray-800 bg-gray-950 px-3 text-sm text-gray-100"
+                        />
+                      ) : (
+                        <div className="mt-2 break-all text-sm text-gray-100">{displayValue}</div>
+                      )}
+                      {fact.evidence_url && (
+                        <a
+                          href={fact.evidence_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-flex items-center gap-1 text-[11px] text-blue-300 hover:text-blue-200"
+                        >
+                          <ExternalLink className="h-3 w-3" /> evidence
+                        </a>
+                      )}
+                      {fact.source_task_id && (
+                        <div className="mt-1 text-[10px] text-gray-500">from task <code>{fact.source_task_id}</code></div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function NewFactInline({ onCreated, upsert }: { onCreated: () => void; upsert: ReturnType<typeof useUpsertCompanyFact> }) {
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState('')
+  const [label, setLabel] = useState('')
+  const [value, setValue] = useState('')
+  const [factDomain, setFactDomain] = useState('')
+  const [sensitive, setSensitive] = useState(false)
+
+  const reset = () => {
+    setKey(''); setLabel(''); setValue(''); setFactDomain(''); setSensitive(false)
+  }
+
+  const submit = () => {
+    if (!key.trim() || !label.trim() || !value.trim()) {
+      toast({ title: 'Need key, label, and value' })
+      return
+    }
+    upsert.mutate(
+      {
+        key: key.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+        label: label.trim(),
+        value: value.trim(),
+        domain: factDomain.trim() || undefined,
+        sensitive,
+      },
+      {
+        onSuccess: () => {
+          toast({ title: 'Fact recorded' })
+          reset()
+          setOpen(false)
+          onCreated()
+        },
+        onError: (error) => toast({ title: 'Save failed', description: error.message }),
+      },
+    )
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex h-8 items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 text-xs text-blue-200"
+      >
+        + Add fact
+      </button>
+    )
+  }
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 rounded-md border border-gray-800 bg-gray-900/60 p-2">
+      <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="key" className="h-8 w-28 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200" />
+      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="label" className="h-8 w-36 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200" />
+      <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="value" className="h-8 w-40 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200" />
+      <input value={factDomain} onChange={(e) => setFactDomain(e.target.value)} placeholder="domain" className="h-8 w-28 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200" />
+      <label className="flex items-center gap-1 text-[11px] text-gray-300">
+        <input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} />
+        sensitive
+      </label>
+      <button type="button" onClick={submit} disabled={upsert.isPending} className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs text-white disabled:opacity-60">Save</button>
+      <button type="button" onClick={() => { reset(); setOpen(false) }} className="inline-flex h-8 items-center rounded-md border border-gray-700 px-3 text-xs text-gray-300">Cancel</button>
+    </div>
+  )
+}
+
 function OverviewSection() {
   const { tasks, isLive } = useCompanyTaskCards()
   const { data: liveApprovals, isLoading: approvalsLoading } = useAgentApprovals('pending', 4)
@@ -687,8 +1364,11 @@ function OverviewSection() {
 
   return (
     <div className="space-y-6">
+      <SetupProgressPanel />
       <OperatorStatusStrip />
+      <ZeroCheckinPanel />
       <DashboardReviewPanel />
+      <CompanyFactsPanel />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {companyKpis.map((kpi) => (
@@ -703,7 +1383,7 @@ function OverviewSection() {
       <div className="grid gap-4 xl:grid-cols-[1.35fr_0.9fr]">
         <Panel title={isLive ? 'Next Tasks - Zero DB' : 'Next Tasks - Seed'} icon={ClipboardList} action={<Link to="/company/tasks" className="text-xs text-blue-300">Open tasks</Link>}>
           <div className="grid gap-3 md:grid-cols-2">
-            {nextTasks.map((task) => <TaskCard key={task.id} task={task} />)}
+            {nextTasks.map((task) => <ClickableTaskCard key={task.id} task={task} />)}
           </div>
         </Panel>
         <Panel title="Approvals Waiting" icon={ShieldCheck} action={<Link to="/company/approvals" className="text-xs text-blue-300">Review</Link>}>
@@ -865,18 +1545,7 @@ function OperatorSection() {
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Panel title="What Adam Should Do Today" icon={ClipboardList} action={<Link to="/company/tasks" className="text-xs text-blue-300">Edit board</Link>}>
           <p className="text-sm text-gray-200">{topToday.answer}</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {topToday.next_tasks.slice(0, 4).map((task) => (
-              <div key={task.id} className="rounded-lg border border-gray-800 bg-gray-950/60 p-3">
-                <div className="text-sm font-medium text-gray-100">{task.title}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <Badge className={statusBadgeClass(task.status)}>{task.status}</Badge>
-                  <Badge className="border-gray-700 text-gray-300">{task.priority}</Badge>
-                  {task.risk === 'high' && <Badge className={riskClasses.high}>approval gate</Badge>}
-                </div>
-              </div>
-            ))}
-          </div>
+          <OperatorTodayTaskList tasks={topToday.next_tasks.slice(0, 4)} />
         </Panel>
         <Panel title="Overnight Report" icon={Clock3}>
           <div className="text-sm text-gray-200">{latestOvernight?.summary ?? 'No overnight report has run yet.'}</div>
@@ -962,17 +1631,267 @@ function OperatorSection() {
   )
 }
 
-function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onClose: () => void }) {
+type WalkthroughT = NonNullable<CompanyWorkItemReview['walkthrough']>
+
+function TaskWalkthroughSection({ walkthrough }: { walkthrough: WalkthroughT }) {
+  return (
+    <section className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-blue-300">
+            <ListChecks className="h-4 w-4" />
+            How To Complete This
+          </div>
+          <h3 className="mt-1 text-base font-semibold text-white">{walkthrough.title}</h3>
+        </div>
+        <div className="flex flex-col items-end gap-1 text-[11px] text-gray-400">
+          {walkthrough.time_required && <Badge className="border-gray-700 text-gray-300">{walkthrough.time_required}</Badge>}
+          {walkthrough.cost && <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-200">{walkthrough.cost}</Badge>}
+        </div>
+      </div>
+      {walkthrough.best_time && (
+        <div className="mt-2 text-xs text-blue-200">Best time: {walkthrough.best_time}</div>
+      )}
+      {walkthrough.prerequisites && walkthrough.prerequisites.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-amber-200">Before you start</div>
+          <ul className="space-y-1 text-sm text-gray-200">
+            {walkthrough.prerequisites.map((item) => (
+              <li key={item} className="flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="mt-4 space-y-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Step-by-step</div>
+        {walkthrough.steps.map((step, index) => (
+          <div key={`${step.title}-${index}`} className="rounded-md border border-gray-800 bg-gray-950/80 p-3 text-sm">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
+                {index + 1}
+              </span>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="text-base font-medium text-gray-100">{step.title}</div>
+                <div className="text-sm leading-relaxed text-gray-300 whitespace-pre-wrap">{step.instruction}</div>
+                {step.url && (
+                  <a
+                    href={step.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-200 hover:bg-blue-500/20"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {step.url.length > 60 ? `${step.url.slice(0, 60)}...` : step.url}
+                  </a>
+                )}
+                {step.button && (
+                  <div className="text-xs text-gray-400">
+                    Click the button labeled <span className="rounded-md bg-gray-800 px-2 py-0.5 text-gray-100">{step.button}</span>
+                  </div>
+                )}
+                {step.fields && step.fields.length > 0 && (
+                  <div className="rounded-md border border-gray-800 bg-gray-900/60 p-2.5">
+                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Fill in</div>
+                    <div className="space-y-1">
+                      {step.fields.map((field) => (
+                        <div key={field.label} className="grid grid-cols-[160px_1fr] gap-2 text-xs">
+                          <span className="text-gray-400">{field.label}</span>
+                          <span className="text-gray-100">{field.value ?? '(your value)'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {step.gotcha && (
+                  <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-100">
+                    <span className="font-semibold">Gotcha:</span> {step.gotcha}
+                  </div>
+                )}
+                {step.completion_check && (
+                  <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-emerald-200">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>{step.completion_check}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {walkthrough.evidence_to_archive && walkthrough.evidence_to_archive.length > 0 && (
+          <div className="rounded-md border border-gray-800 bg-gray-900/40 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Evidence to archive</div>
+            <ul className="mt-2 space-y-1 text-sm text-gray-300">
+              {walkthrough.evidence_to_archive.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {walkthrough.what_this_unlocks && walkthrough.what_this_unlocks.length > 0 && (
+          <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-emerald-300">What this unlocks</div>
+            <ul className="mt-2 space-y-1 text-sm text-emerald-100/90">
+              {walkthrough.what_this_unlocks.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {walkthrough.common_mistakes && walkthrough.common_mistakes.length > 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 md:col-span-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-300">Common mistakes</div>
+            <ul className="mt-2 space-y-1 text-sm text-amber-100/90">
+              {walkthrough.common_mistakes.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {walkthrough.if_something_goes_wrong && walkthrough.if_something_goes_wrong.length > 0 && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 md:col-span-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-red-300">If something goes wrong</div>
+            <ul className="mt-2 space-y-1 text-sm text-red-100/90">
+              {walkthrough.if_something_goes_wrong.map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+type CompletionVerdictT = NonNullable<CompanyWorkItemReview['completion_review']>
+
+function CompletionVerdictPanel({ verdict }: { verdict: CompletionVerdictT }) {
+  return (
+    <section className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-purple-300">
+            <Bot className="h-4 w-4" />
+            Zero's Completion Review
+          </div>
+          <p className="mt-2 text-sm text-gray-200">{verdict.summary}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <Badge className={scoreClass(verdict.quality_score)}>{verdict.quality_score}/100</Badge>
+          <Badge className={verdict.looks_complete ? riskClasses.low : riskClasses.high}>
+            {verdict.looks_complete ? 'looks complete' : 'incomplete'}
+          </Badge>
+          {verdict.fallback && <Badge className="border-gray-700 text-gray-400">fallback</Badge>}
+        </div>
+      </div>
+      {verdict.concerns.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-amber-300">Concerns</div>
+          <ul className="space-y-1 text-sm text-amber-100/90">
+            {verdict.concerns.map((item, index) => (
+              <li key={`${item}-${index}`} className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {verdict.missing_followups.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-blue-300">Follow-up tasks Zero recommends</div>
+          <div className="space-y-2">
+            {verdict.missing_followups.map((item, index) => (
+              <div key={`${item.title}-${index}`} className="rounded-md border border-gray-800 bg-gray-950/60 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium text-gray-100">{item.title}</div>
+                  <div className="flex shrink-0 gap-1">
+                    <Badge className="border-gray-700 text-gray-300">{item.domain}</Badge>
+                    <Badge className={priorityBadge(item.priority)}>{item.priority}</Badge>
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-gray-400">{item.why}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {verdict.created_followups && verdict.created_followups.length > 0 && (
+        <div className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-emerald-200">
+          Zero auto-created {verdict.created_followups.length} follow-up task(s): {verdict.created_followups.map((f) => f.title).join('; ')}
+        </div>
+      )}
+      {verdict.infrastructure_suggestions.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-purple-300">
+            <Lightbulb className="h-3.5 w-3.5" />
+            Infrastructure suggestions for the command center
+          </div>
+          <div className="space-y-2">
+            {verdict.infrastructure_suggestions.map((item, index) => (
+              <div key={`${item.name}-${index}`} className="rounded-md border border-gray-800 bg-gray-950/60 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-sm font-medium text-gray-100">{item.name}</div>
+                  <Badge className="border-purple-500/30 bg-purple-500/10 text-purple-200">{item.surface}</Badge>
+                </div>
+                <div className="mt-1 text-xs text-gray-400">{item.rationale}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {verdict.reviewed_at && (
+        <div className="mt-3 text-[11px] text-gray-500">
+          Reviewed {formatDateTime(verdict.reviewed_at)} - {verdict.reviewed_by ?? 'zero-completion-review'}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function TaskDetailDrawer({ task, autoCompleteToken, onClose }: { task: CompanyTaskCard | null; autoCompleteToken?: number; onClose: () => void }) {
   const updateTask = useUpdateCompanyWorkItem()
   const completeTask = useCompleteCompanyWorkItem()
   const reopenTask = useReopenCompanyWorkItem()
+  const runCompletionReview = useRunCompanyCompletionReview()
   const { data: events } = useCompanyTaskEvents(task?.id)
   const { data: review } = useCompanyTaskReview(task?.id)
   const { data: taskQuestions } = useCompanyAgentQuestions('open', task?.id, undefined, 10)
+  const [completionVerdict, setCompletionVerdict] = useState<CompletionVerdictT | null>(null)
+  const [completionModalOpen, setCompletionModalOpen] = useState(false)
+  const lastConsumedToken = useRef(0)
+
+  useEffect(() => {
+    if (autoCompleteToken && autoCompleteToken !== lastConsumedToken.current && task) {
+      lastConsumedToken.current = autoCompleteToken
+      setCompletionModalOpen(true)
+    }
+  }, [autoCompleteToken, task?.id])
 
   if (!task?.zeroTask) return null
   const zero = task.zeroTask
   const busy = updateTask.isPending || completeTask.isPending || reopenTask.isPending
+  const walkthrough = review?.walkthrough as WalkthroughT | undefined
+  const completionFields: WalkthroughCompletionField[] = (walkthrough as unknown as { completion_fields?: WalkthroughCompletionField[] } | undefined)?.completion_fields ?? []
+  const completionOutputsRecord = (zero.completion_outputs ?? {}) as { outputs?: CompletionOutput[]; note?: string; recorded_at?: string; recorded_by?: string }
+  const lastCompletionReview: CompletionVerdictT | null =
+    (review?.completion_review as CompletionVerdictT | null | undefined) ?? completionVerdict
   const update = (data: ZeroTaskUpdate) => {
     updateTask.mutate(
       { id: task.id, data },
@@ -983,25 +1902,60 @@ function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onC
     )
   }
 
+  const submitCompletion = (outputs: CompletionOutput[], note: string) => {
+    completeTask.mutate(
+      { id: task.id, completion_note: note || undefined, outputs, actor: 'dashboard' },
+      {
+        onSuccess: (result) => {
+          setCompletionModalOpen(false)
+          toast({
+            title: result.status === 'blocked' ? 'Approval gate queued' : 'Task completed - running Zero review',
+            description: result.blocked_reason,
+          })
+          if (result.status === 'done') {
+            runCompletionReview.mutate(
+              { id: task.id, auto_create_followups: true },
+              {
+                onSuccess: (verdict) => {
+                  setCompletionVerdict(verdict as unknown as CompletionVerdictT)
+                  toast({
+                    title: 'Zero completion review done',
+                    description: verdict.summary?.slice(0, 140),
+                  })
+                },
+                onError: (error) => toast({ title: 'Completion review failed', description: error.message }),
+              },
+            )
+          }
+        },
+        onError: (error) => toast({ title: 'Complete failed', description: error.message }),
+      },
+    )
+  }
+
+  const handleCompleteAndReview = () => setCompletionModalOpen(true)
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60">
-      <aside className="ml-auto flex h-full w-full max-w-2xl flex-col border-l border-gray-800 bg-gray-950 shadow-2xl">
+      <aside className="ml-auto flex h-full w-full max-w-3xl flex-col border-l border-gray-800 bg-gray-950 shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-gray-800 p-4">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-blue-300">Company Work Item</div>
-            <h2 className="mt-2 text-lg font-semibold text-white">{task.title}</h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">{task.title}</h2>
           </div>
           <button type="button" onClick={onClose} className="rounded-md p-2 text-gray-400 hover:bg-gray-900 hover:text-white">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {walkthrough && <TaskWalkthroughSection walkthrough={walkthrough} />}
+          <TaskCompletionOutputsSection outputs={completionOutputsRecord} />
           <label className="grid gap-1 text-xs text-gray-500">
             Title
             <input
               defaultValue={zero.title}
               onBlur={(event) => event.target.value !== zero.title && update({ title: event.target.value })}
-              className="h-9 rounded-md border border-gray-800 bg-gray-900 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+              className="h-10 rounded-md border border-gray-800 bg-gray-900 px-3 text-base text-gray-100 outline-none focus:border-blue-500"
             />
           </label>
           <label className="grid gap-1 text-xs text-gray-500">
@@ -1009,7 +1963,7 @@ function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onC
             <textarea
               defaultValue={zero.description ?? ''}
               onBlur={(event) => event.target.value !== (zero.description ?? '') && update({ description: event.target.value })}
-              className="min-h-28 rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-blue-500"
+              className="min-h-72 rounded-md border border-gray-800 bg-gray-900 px-4 py-3 text-base leading-relaxed text-gray-100 outline-none focus:border-blue-500"
             />
           </label>
           <div className="grid gap-3 md:grid-cols-2">
@@ -1158,15 +2112,30 @@ function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onC
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
-              onClick={() => completeTask.mutate(task.id, {
-                onSuccess: (result) => toast({ title: result.status === 'blocked' ? 'Approval gate queued' : 'Task completed', description: result.blocked_reason }),
-                onError: (error) => toast({ title: 'Complete failed', description: error.message }),
-              })}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white disabled:opacity-60"
+              disabled={busy || runCompletionReview.isPending}
+              onClick={handleCompleteAndReview}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white disabled:opacity-60"
             >
               <CheckCircle2 className="h-4 w-4" />
-              Complete
+              Complete + Zero Review
+            </button>
+            <button
+              type="button"
+              disabled={runCompletionReview.isPending}
+              onClick={() => runCompletionReview.mutate(
+                { id: task.id, auto_create_followups: true },
+                {
+                  onSuccess: (verdict) => {
+                    setCompletionVerdict(verdict as unknown as CompletionVerdictT)
+                    toast({ title: 'Zero completion review done' })
+                  },
+                  onError: (error) => toast({ title: 'Review failed', description: error.message }),
+                },
+              )}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 text-sm font-medium text-blue-100 disabled:opacity-60"
+            >
+              <Sparkles className={cn('h-4 w-4', runCompletionReview.isPending && 'animate-pulse')} />
+              Re-run Zero Review
             </button>
             <button
               type="button"
@@ -1175,16 +2144,18 @@ function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onC
                 onSuccess: () => toast({ title: 'Task reopened' }),
                 onError: (error) => toast({ title: 'Reopen failed', description: error.message }),
               })}
-              className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-800 bg-gray-900 px-3 text-sm font-medium text-gray-200 disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-gray-800 bg-gray-900 px-3 text-sm font-medium text-gray-200 disabled:opacity-60"
             >
               <RotateCcw className="h-4 w-4" />
               Reopen
             </button>
           </div>
+          {lastCompletionReview && <CompletionVerdictPanel verdict={lastCompletionReview} />}
+          <TaskNotesPanel taskId={task.id} scope="company" />
           <section>
             <h3 className="mb-2 text-sm font-semibold text-gray-100">Audit Trail</h3>
             <div className="space-y-2">
-              {(events ?? []).slice(0, 12).map((event) => (
+              {(events ?? []).filter((e) => e.event_type !== 'note').slice(0, 12).map((event) => (
                 <div key={event.id} className="rounded-md border border-gray-800 bg-gray-900/60 p-2 text-xs text-gray-400">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-medium text-gray-200">{event.event_type}</span>
@@ -1194,11 +2165,372 @@ function TaskDetailDrawer({ task, onClose }: { task: CompanyTaskCard | null; onC
                   <div className="mt-1 text-gray-600">{event.actor}</div>
                 </div>
               ))}
-              {!events?.length && <div className="text-xs text-gray-500">No task events recorded yet.</div>}
+              {!(events ?? []).filter((e) => e.event_type !== 'note').length && (
+                <div className="text-xs text-gray-500">No task events recorded yet.</div>
+              )}
             </div>
           </section>
         </div>
       </aside>
+      {completionModalOpen && (
+        <TaskCompletionModal
+          taskTitle={zero.title}
+          fields={completionFields}
+          existingOutputs={completionOutputsRecord.outputs ?? []}
+          existingNote={completionOutputsRecord.note ?? ''}
+          taskDomain={zero.domain ?? null}
+          submitting={completeTask.isPending}
+          onCancel={() => setCompletionModalOpen(false)}
+          onSubmit={submitCompletion}
+        />
+      )}
+    </div>
+  )
+}
+
+function TaskCompletionOutputsSection({
+  outputs,
+}: {
+  outputs: { outputs?: CompletionOutput[]; note?: string; recorded_at?: string; recorded_by?: string }
+}) {
+  const items = outputs.outputs ?? []
+  const note = outputs.note ?? ''
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set())
+  const toggle = (key: string) =>
+    setRevealedKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+
+  if (items.length === 0 && !note) return null
+
+  return (
+    <section className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-300">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Completion outputs
+        {outputs.recorded_at && (
+          <span className="ml-2 text-[10px] font-normal normal-case text-gray-500">
+            recorded {formatDateTime(outputs.recorded_at)}{outputs.recorded_by ? ` by ${outputs.recorded_by}` : ''}
+          </span>
+        )}
+      </div>
+      {items.length > 0 && (
+        <div className="grid gap-2 md:grid-cols-2">
+          {items.map((item, idx) => {
+            const revealed = revealedKeys.has(item.key)
+            const display = item.sensitive && !revealed ? maskSensitive(item.value) : item.value
+            return (
+              <div key={`${item.key}-${idx}`} className="rounded-md border border-gray-800 bg-gray-950/60 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-xs font-medium text-gray-200">{item.label}</div>
+                  {item.sensitive && (
+                    <button
+                      type="button"
+                      onClick={() => toggle(item.key)}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-700 text-gray-300 hover:text-white"
+                      title={revealed ? 'Hide' : 'Reveal'}
+                    >
+                      {revealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1 break-all text-sm text-gray-100">{display}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
+                  <code>{item.key}</code>{item.domain && ` - ${item.domain}`}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {note && (
+        <div className="mt-2 rounded-md border border-gray-800 bg-gray-900/60 p-2 text-xs text-gray-300 whitespace-pre-wrap">{note}</div>
+      )}
+    </section>
+  )
+}
+
+function TaskCompletionModal({
+  taskTitle,
+  fields,
+  existingOutputs,
+  existingNote,
+  taskDomain,
+  submitting,
+  onCancel,
+  onSubmit,
+}: {
+  taskTitle: string
+  fields: WalkthroughCompletionField[]
+  existingOutputs: CompletionOutput[]
+  existingNote: string
+  taskDomain: string | null
+  submitting: boolean
+  onCancel: () => void
+  onSubmit: (outputs: CompletionOutput[], note: string) => void
+}) {
+  const existingByKey = useMemo(() => {
+    const map = new Map<string, CompletionOutput>()
+    for (const item of existingOutputs) map.set(item.key, item)
+    return map
+  }, [existingOutputs])
+
+  type Row = {
+    key: string
+    label: string
+    placeholder?: string
+    sensitive: boolean
+    required: boolean
+    domain?: string
+    value: string
+    revealed: boolean
+    fromWalkthrough: boolean
+  }
+
+  const initial: Row[] = useMemo(() => {
+    const rows: Row[] = []
+    const seenKeys = new Set<string>()
+    for (const field of fields) {
+      const existing = existingByKey.get(field.key)
+      rows.push({
+        key: field.key,
+        label: field.label,
+        placeholder: field.placeholder,
+        sensitive: Boolean(field.sensitive),
+        required: Boolean(field.required),
+        domain: field.domain,
+        value: existing?.value ?? '',
+        revealed: !field.sensitive,
+        fromWalkthrough: true,
+      })
+      seenKeys.add(field.key)
+    }
+    for (const item of existingOutputs) {
+      if (seenKeys.has(item.key)) continue
+      rows.push({
+        key: item.key,
+        label: item.label || item.key,
+        placeholder: undefined,
+        sensitive: Boolean(item.sensitive),
+        required: false,
+        domain: item.domain ?? undefined,
+        value: item.value,
+        revealed: !item.sensitive,
+        fromWalkthrough: false,
+      })
+    }
+    return rows
+  }, [fields, existingOutputs, existingByKey])
+
+  const [rows, setRows] = useState<Row[]>(initial)
+  const [note, setNote] = useState<string>(existingNote)
+  const [customKey, setCustomKey] = useState('')
+  const [customLabel, setCustomLabel] = useState('')
+
+  useEffect(() => {
+    setRows(initial)
+  }, [initial])
+  useEffect(() => {
+    setNote(existingNote)
+  }, [existingNote])
+
+  const setRowValue = (index: number, value: string) =>
+    setRows((current) => current.map((row, idx) => (idx === index ? { ...row, value } : row)))
+
+  const toggleReveal = (index: number) =>
+    setRows((current) => current.map((row, idx) => (idx === index ? { ...row, revealed: !row.revealed } : row)))
+
+  const toggleSensitive = (index: number) =>
+    setRows((current) => current.map((row, idx) => (idx === index ? { ...row, sensitive: !row.sensitive, revealed: row.sensitive ? row.revealed : false } : row)))
+
+  const addCustomRow = () => {
+    const key = customKey.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_')
+    if (!key) return
+    if (rows.some((row) => row.key === key)) {
+      toast({ title: 'Key already used on this task', description: key })
+      return
+    }
+    setRows((current) => [
+      ...current,
+      {
+        key,
+        label: customLabel.trim() || key,
+        placeholder: undefined,
+        sensitive: false,
+        required: false,
+        domain: taskDomain ?? undefined,
+        value: '',
+        revealed: true,
+        fromWalkthrough: false,
+      },
+    ])
+    setCustomKey('')
+    setCustomLabel('')
+  }
+
+  const removeRow = (index: number) =>
+    setRows((current) => current.filter((_, idx) => idx !== index))
+
+  const handleSubmit = () => {
+    const missingRequired = rows.filter((row) => row.required && !row.value.trim())
+    if (missingRequired.length) {
+      toast({
+        title: 'Fill in the required outputs first',
+        description: missingRequired.map((row) => row.label).join(', '),
+      })
+      return
+    }
+    const outputs: CompletionOutput[] = rows
+      .filter((row) => row.value.trim())
+      .map((row) => ({
+        key: row.key,
+        label: row.label,
+        value: row.value.trim(),
+        domain: row.domain ?? taskDomain ?? undefined,
+        sensitive: row.sensitive,
+      }))
+    onSubmit(outputs, note.trim())
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg border border-gray-800 bg-gray-950 shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-800 p-4">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-emerald-300">Record outputs</div>
+            <h2 className="mt-2 text-lg font-semibold text-white">{taskTitle}</h2>
+            <p className="mt-1 text-xs text-gray-400">Capture the structured outputs this task produced. Sensitive values are masked in the dashboard.</p>
+          </div>
+          <button type="button" onClick={onCancel} className="rounded-md p-2 text-gray-400 hover:bg-gray-900 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {rows.length === 0 ? (
+            <div className="rounded-md border border-dashed border-gray-800 p-4 text-xs text-gray-400">
+              No structured outputs are required for this task. Add a free-text note below, or attach custom key/value outputs.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((row, index) => (
+                <div key={`${row.key}-${index}`} className="rounded-md border border-gray-800 bg-gray-900/60 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-xs font-medium text-gray-200">
+                      {row.label}
+                      {row.required && <span className="ml-1 text-red-400">*</span>}
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-500">
+                        key: <code className="text-gray-400">{row.key}</code>
+                        {row.domain && <span className="ml-2">domain: {row.domain}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => toggleSensitive(index)}
+                        title={row.sensitive ? 'Mark not sensitive' : 'Mark sensitive'}
+                        className={cn(
+                          'inline-flex h-7 w-7 items-center justify-center rounded-md border',
+                          row.sensitive ? 'border-amber-500/40 bg-amber-500/10 text-amber-200' : 'border-gray-700 text-gray-400 hover:text-white',
+                        )}
+                      >
+                        <KeyRound className="h-3.5 w-3.5" />
+                      </button>
+                      {!row.fromWalkthrough && (
+                        <button
+                          type="button"
+                          onClick={() => removeRow(index)}
+                          title="Remove this output"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 hover:border-red-500/40 hover:text-red-300"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type={row.sensitive && !row.revealed ? 'password' : 'text'}
+                      value={row.value}
+                      placeholder={row.placeholder}
+                      onChange={(event) => setRowValue(index, event.target.value)}
+                      className="h-9 flex-1 rounded-md border border-gray-800 bg-gray-950 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+                    />
+                    {row.sensitive && (
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(index)}
+                        title={row.revealed ? 'Hide value' : 'Reveal value'}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-700 text-gray-300 hover:text-white"
+                      >
+                        {row.revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-md border border-dashed border-gray-800 p-3">
+            <div className="mb-2 text-xs uppercase tracking-wider text-gray-500">Add custom output</div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customKey}
+                placeholder="key (e.g. cpa_email)"
+                onChange={(event) => setCustomKey(event.target.value)}
+                className="h-9 flex-1 rounded-md border border-gray-800 bg-gray-950 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+              />
+              <input
+                type="text"
+                value={customLabel}
+                placeholder="label (e.g. CPA email)"
+                onChange={(event) => setCustomLabel(event.target.value)}
+                className="h-9 flex-1 rounded-md border border-gray-800 bg-gray-950 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                onClick={addCustomRow}
+                className="inline-flex h-9 items-center gap-1 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 text-xs text-blue-200"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          <label className="grid gap-1 text-xs text-gray-500">
+            Completion note (appended to the task description)
+            <textarea
+              value={note}
+              placeholder="What did you do, anything Zero should know about how this got done"
+              onChange={(event) => setNote(event.target.value)}
+              className="min-h-24 rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm leading-relaxed text-gray-100 outline-none focus:border-blue-500"
+            />
+          </label>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-gray-800 p-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex h-9 items-center rounded-md border border-gray-700 bg-gray-900 px-4 text-sm text-gray-200"
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {submitting ? 'Recording...' : 'Complete + Run Zero Review'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1209,14 +2541,17 @@ function TasksSection() {
   const updateTask = useUpdateCompanyWorkItem()
   const importSeed = useImportCompanySeedBacklog()
   const { data: seedStatus } = useCompanySeedStatus()
+  const drawer = useTaskDrawer()
   const [title, setTitle] = useState('')
   const [domain, setDomain] = useState('Formation')
   const [priority, setPriority] = useState<ZeroTask['priority']>('high')
   const [view, setView] = useState<'kanban' | 'table'>('kanban')
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
-  const [selectedTask, setSelectedTask] = useState<CompanyTaskCard | null>(null)
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null)
+  const setSelectedTask = (task: CompanyTaskCard | null) => {
+    if (task && drawer) drawer.openTask(task)
+  }
 
   const submitTask = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1486,7 +2821,6 @@ function TasksSection() {
           {seedPreviewTasks.slice(0, 9).map((task) => <TaskCard key={task.id} task={task} />)}
         </div>
       )}
-      <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
     </Panel>
   )
 }
@@ -2115,26 +3449,52 @@ function InboxSection() {
 function FinanceSection() {
   const monthly = subscriptions.reduce((sum, item) => sum + item.monthlyCost, 0)
   const assetTotal = assets.reduce((sum, item) => sum + item.cost, 0)
+  const { tasks } = useCompanyTaskCards()
+  const drawer = useTaskDrawer()
+  const findTaskByRail = (rail: string) => {
+    const lower = rail.toLowerCase()
+    return tasks.find((task) => task.title.toLowerCase().includes(lower) || task.domain.toLowerCase() === lower)
+  }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-6">
+      <SetupProgressPanel />
+      <div className="grid gap-4 xl:grid-cols-2">
       <Panel title="Finance Setup Rails" icon={ClipboardList}>
         <div className="space-y-2">
-          {financeSetupRails.map((item) => (
-            <div key={item.rail} className="rounded-lg border border-gray-800 bg-gray-950/60 p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium text-gray-100">{item.rail}</div>
-                  <div className="mt-1 text-xs leading-relaxed text-gray-400">{item.next}</div>
+          {financeSetupRails.map((item) => {
+            const linked = findTaskByRail(item.rail)
+            return (
+              <button
+                key={item.rail}
+                type="button"
+                onClick={() => linked && drawer?.openTask(linked)}
+                disabled={!linked}
+                className={cn(
+                  'w-full rounded-lg border border-gray-800 bg-gray-950/60 p-3 text-left text-sm',
+                  linked ? 'hover:border-blue-500/50 hover:bg-gray-900 cursor-pointer' : 'opacity-80 cursor-default',
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 font-medium text-gray-100">
+                      {item.rail}
+                      {linked && <ChevronRight className="h-3.5 w-3.5 text-blue-300" />}
+                    </div>
+                    <div className="mt-1 text-xs leading-relaxed text-gray-400">{item.next}</div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge className={riskClasses[item.risk]}>{item.risk}</Badge>
+                    <Badge className={statusBadgeClass(item.status)}>{item.status}</Badge>
+                  </div>
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Badge className={riskClasses[item.risk]}>{item.risk}</Badge>
-                  <Badge className={statusBadgeClass(item.status)}>{item.status}</Badge>
-                </div>
-              </div>
-              <div className="mt-2 text-xs text-gray-500">{item.owner}</div>
-            </div>
-          ))}
+                <div className="mt-2 text-xs text-gray-500">{item.owner}</div>
+                {linked && (
+                  <div className="mt-2 text-[11px] text-blue-300">Open walkthrough: {linked.title}</div>
+                )}
+              </button>
+            )
+          })}
         </div>
       </Panel>
       <Panel title="Evidence Packets" icon={ShieldCheck}>
@@ -2177,33 +3537,60 @@ function FinanceSection() {
           ))}
         </div>
       </Panel>
+      </div>
     </div>
   )
 }
 
 function LegalSection() {
+  const { tasks } = useCompanyTaskCards()
+  const drawer = useTaskDrawer()
+  const findTask = (title: string) => {
+    const lower = title.toLowerCase()
+    return tasks.find((task) => lower.includes(task.title.toLowerCase().slice(0, 12)) || task.title.toLowerCase().includes(lower.slice(0, 12)))
+  }
+
   return (
-    <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-      <Panel title="LLC Formation Stance" icon={Gavel}>
-        <div className="space-y-3 text-sm text-gray-300">
-          <p>Recommended 2026 structure: Florida single-member LLC taxed as a disregarded entity.</p>
-          <p>S-Corp election is deferred until sustained profit justifies payroll and filing overhead.</p>
-          <p>Options trading stays outside the operating LLC unless a trader-tax CPA designs a separate structure.</p>
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
-            Attorney and CPA review are required before public fintech claims, client contracts, tax elections, or legal filings.
-          </div>
-        </div>
-      </Panel>
-      <Panel title="Tax And Legal Calendar" icon={AlertTriangle}>
-        <div className="space-y-2">
-          {taxEvents.map((event) => (
-            <div key={event.title} className="flex items-center justify-between rounded-lg bg-gray-950/60 p-3 text-sm">
-              <div><span className="text-gray-100">{event.title}</span><span className="ml-2 text-xs text-gray-500">{event.owner}</span></div>
-              <span className="text-xs text-gray-400">{event.date}</span>
+    <div className="space-y-6">
+      <SetupProgressPanel />
+      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <Panel title="LLC Formation Stance" icon={Gavel}>
+          <div className="space-y-3 text-sm text-gray-300">
+            <p>Recommended 2026 structure: Florida single-member LLC taxed as a disregarded entity.</p>
+            <p>S-Corp election is deferred until sustained profit justifies payroll and filing overhead.</p>
+            <p>Options trading stays outside the operating LLC unless a trader-tax CPA designs a separate structure.</p>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
+              Attorney and CPA review are required before public fintech claims, client contracts, tax elections, or legal filings.
             </div>
-          ))}
-        </div>
-      </Panel>
+          </div>
+        </Panel>
+        <Panel title="Tax And Legal Calendar" icon={AlertTriangle}>
+          <div className="space-y-2">
+            {taxEvents.map((event) => {
+              const linked = findTask(event.title)
+              return (
+                <button
+                  key={event.title}
+                  type="button"
+                  onClick={() => linked && drawer?.openTask(linked)}
+                  disabled={!linked}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-lg bg-gray-950/60 p-3 text-left text-sm',
+                    linked ? 'hover:bg-gray-900 cursor-pointer' : 'opacity-80 cursor-default',
+                  )}
+                >
+                  <div>
+                    <span className="text-gray-100">{event.title}</span>
+                    <span className="ml-2 text-xs text-gray-500">{event.owner}</span>
+                    {linked && <span className="ml-2 text-[11px] text-blue-300">walkthrough</span>}
+                  </div>
+                  <span className="text-xs text-gray-400">{event.date}</span>
+                </button>
+              )
+            })}
+          </div>
+        </Panel>
+      </div>
     </div>
   )
 }
@@ -2327,22 +3714,64 @@ function renderSection(section: CompanySection) {
   }
 }
 
+function GlobalTaskDrawer({ children }: { children: ReactNode }) {
+  const [selectedTask, setSelectedTask] = useState<CompanyTaskCard | null>(null)
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null)
+  const [autoCompleteToken, setAutoCompleteToken] = useState(0)
+  const { data: liveTasks } = useCompanyWorkItems({ limit: 500 })
+  const taskById = useMemo(() => new Map((liveTasks ?? []).map((task) => [task.id, task])), [liveTasks])
+
+  useEffect(() => {
+    if (!pendingTaskId) return
+    const live = taskById.get(pendingTaskId)
+    if (live) {
+      setSelectedTask(zeroTaskToCompanyTask(live))
+      setPendingTaskId(null)
+    }
+  }, [pendingTaskId, taskById])
+
+  const value: TaskDrawerContextValue = {
+    openTask: (task) => setSelectedTask(task),
+    openTaskById: (taskId: string) => {
+      const live = taskById.get(taskId)
+      if (live) {
+        setSelectedTask(zeroTaskToCompanyTask(live))
+      } else {
+        setPendingTaskId(taskId)
+      }
+    },
+    openTaskForCompletion: (task) => {
+      setSelectedTask(task)
+      setAutoCompleteToken((value) => value + 1)
+    },
+  }
+
+  return (
+    <TaskDrawerContext.Provider value={value}>
+      {children}
+      <TaskDetailDrawer task={selectedTask} autoCompleteToken={autoCompleteToken} onClose={() => setSelectedTask(null)} />
+    </TaskDrawerContext.Provider>
+  )
+}
+
 export function CompanyOsPage({ section = 'overview' }: { section?: CompanySection }) {
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <Header section={section} />
-      {renderSection(section)}
-      <div className="rounded-lg border border-gray-800 bg-gray-900/80 p-4 text-xs text-gray-500">
-        <div className="flex items-center gap-2 text-gray-300">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-          Guardrail active
+    <GlobalTaskDrawer>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <Header section={section} />
+        {renderSection(section)}
+        <div className="rounded-lg border border-gray-800 bg-gray-900/80 p-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-gray-300">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            Guardrail active
+          </div>
+          <p className="mt-2">
+            Zero may summarize, draft, classify, create internal tasks, and prepare reports. Purchases, filings,
+            tax elections, legal actions, client communications, public website changes, and account changes stay
+            behind approval gates.
+          </p>
         </div>
-        <p className="mt-2">
-          Zero may summarize, draft, classify, create internal tasks, and prepare reports. Purchases, filings,
-          tax elections, legal actions, client communications, public website changes, and account changes stay
-          behind approval gates.
-        </p>
       </div>
-    </div>
+    </GlobalTaskDrawer>
   )
 }

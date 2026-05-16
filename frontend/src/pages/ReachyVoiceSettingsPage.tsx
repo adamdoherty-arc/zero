@@ -403,7 +403,7 @@ export function ReachyVoiceSettingsPage() {
               <span className="text-xs font-semibold">Interactive (realtime)</span>
             </div>
             <div className="text-[10px] text-zinc-500 leading-tight">
-              Bidirectional streaming · OpenAI / Gemini / Local vLLM
+              Bidirectional streaming · OpenAI / Gemini / Local
             </div>
           </button>
         </div>

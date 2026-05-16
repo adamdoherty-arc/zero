@@ -1,0 +1,13 @@
+[  169003ms] [WARNING] Warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}. @ http://localhost:5173/assets/index-ZFIVSqOK-zero-ui.js:1123
+[  729932ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0
+[  729937ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items/topics:0
+[  729938ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy/status:0
+[  729938ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items/seed-va/status:0
+[  729941ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items:0
+[  729943ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy-intent/providers/status:0
+[  730939ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0
+[  730942ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items/topics:0
+[  730943ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy/status:0
+[  730945ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items/seed-va/status:0
+[  731014ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/personal/work-items:0
+[  734020ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0

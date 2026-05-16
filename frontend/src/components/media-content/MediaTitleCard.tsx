@@ -1,5 +1,6 @@
 import { Film, Tv, Search, Sparkles, Image, ChevronRight } from 'lucide-react'
 import type { MediaTitle } from '@/hooks/useMediaContentApi'
+import { CONTENT_PRODUCTION_PAUSED_TOOLTIP } from '@/hooks/useContentControlApi'
 
 interface MediaTitleCardProps {
   title: MediaTitle
@@ -8,6 +9,7 @@ interface MediaTitleCardProps {
   onClick?: (id: string) => void
   isResearching?: boolean
   isGenerating?: boolean
+  productionPaused?: boolean
 }
 
 export function MediaTitleCard({
@@ -17,6 +19,7 @@ export function MediaTitleCard({
   onClick,
   isResearching,
   isGenerating,
+  productionPaused = false,
 }: MediaTitleCardProps) {
   const isTV = title.media_type === 'tv_show'
   const TypeIcon = isTV ? Tv : Film
@@ -95,7 +98,8 @@ export function MediaTitleCard({
           {title.research_status !== 'completed' && (
             <button
               onClick={() => onResearch?.(title.id)}
-              disabled={isResearching}
+              disabled={isResearching || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Research media title'}
               className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
             >
               <Search className="w-3 h-3" />
@@ -105,7 +109,8 @@ export function MediaTitleCard({
           {title.research_status === 'completed' && (
             <button
               onClick={() => onGenerate?.(title.id)}
-              disabled={isGenerating}
+              disabled={isGenerating || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate media carousel'}
               className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors"
             >
               <Sparkles className="w-3 h-3" />

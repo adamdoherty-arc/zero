@@ -214,7 +214,7 @@ class TestListCharacters:
         assert data[0]["name"] == "Spider-Man"
         assert data[0]["universe"] == "marvel"
         mock_svc.list_characters.assert_called_once_with(
-            universe="marvel", status="active", research_status=None, limit=100,
+            universe="marvel", status="active", research_status=None, limit=500, offset=0,
         )
 
 

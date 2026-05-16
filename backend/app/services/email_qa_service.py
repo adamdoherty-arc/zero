@@ -3,6 +3,7 @@ Email Q&A service for managing interactive questions during email automation.
 """
 
 import json
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -57,7 +58,7 @@ class EmailQAService:
         """Save questions to storage."""
         self.questions_file.write_text(json.dumps({"questions": questions}, indent=2, default=str))
 
-    async def create_question(
+    def create_question(
         self,
         email_id: str,
         email_subject: str,
@@ -106,8 +107,13 @@ class EmailQAService:
             options=options
         )
 
-        # Trigger notification
-        await self._send_notification(question_obj)
+        # Trigger notification when called from an async runtime. The question
+        # itself is persisted synchronously so rule-learning paths and tests can
+        # use this service without needing an event loop.
+        try:
+            asyncio.get_running_loop().create_task(self._send_notification(question_obj))
+        except RuntimeError:
+            logger.debug("email_question_notification_deferred", question_id=question_obj.id)
 
         return question_obj
 

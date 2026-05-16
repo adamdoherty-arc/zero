@@ -1,0 +1,161 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e19]:
+      - generic [ref=e20]: Personal
+      - list [ref=e21]:
+        - listitem [ref=e22]:
+          - link "Ask Zero" [ref=e23] [cursor=pointer]:
+            - /url: /ask-zero
+            - img [ref=e24]
+            - generic [ref=e26]: Ask Zero
+        - listitem [ref=e27]:
+          - link "Dashboard" [ref=e28] [cursor=pointer]:
+            - /url: /
+            - img [ref=e29]
+            - generic [ref=e34]: Dashboard
+        - listitem [ref=e35]:
+          - link "My Board" [ref=e36] [cursor=pointer]:
+            - /url: /personal/board
+            - img [ref=e37]
+            - generic [ref=e41]: My Board
+        - listitem [ref=e42]:
+          - link "Brain" [ref=e43] [cursor=pointer]:
+            - /url: /brain
+            - img [ref=e44]
+            - generic [ref=e56]: Brain
+        - listitem [ref=e57]:
+          - link "Knowledge" [ref=e58] [cursor=pointer]:
+            - /url: /knowledge
+            - img [ref=e59]
+            - generic [ref=e69]: Knowledge
+        - listitem [ref=e70]:
+          - link "Calendar" [ref=e71] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e72]
+            - generic [ref=e74]: Calendar
+        - listitem [ref=e75]:
+          - link "Email" [ref=e76] [cursor=pointer]:
+            - /url: /email
+            - img [ref=e77]
+            - generic [ref=e80]: Email
+        - listitem [ref=e81]:
+          - link "Drafts Inbox" [ref=e82] [cursor=pointer]:
+            - /url: /email/drafts
+            - img [ref=e83]
+            - generic [ref=e86]: Drafts Inbox
+        - listitem [ref=e87]:
+          - link "Meetings" [ref=e88] [cursor=pointer]:
+            - /url: /meetings
+            - img [ref=e89]
+            - generic [ref=e92]: Meetings
+        - listitem [ref=e93]:
+          - link "Meeting Search" [ref=e94] [cursor=pointer]:
+            - /url: /meeting-search
+            - img [ref=e95]
+            - generic [ref=e96]: Meeting Search
+        - listitem [ref=e97]:
+          - link "Meals" [ref=e98] [cursor=pointer]:
+            - /url: /meals
+            - img [ref=e99]
+            - generic [ref=e102]: Meals
+    - list [ref=e104]:
+      - listitem [ref=e105]:
+        - button "Zero Company OS" [ref=e106] [cursor=pointer]:
+          - generic [ref=e108]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e109]
+  - main [ref=e110]:
+    - generic [ref=e111]:
+      - generic [ref=e112]:
+        - button "Toggle Sidebar" [ref=e113] [cursor=pointer]:
+          - img
+          - generic [ref=e114]: Toggle Sidebar
+        - generic [ref=e115]:
+          - generic [ref=e116]: Zero
+          - generic [ref=e117]: /
+          - generic [ref=e118]: My Board
+        - button "Search... Ctrl K" [ref=e119] [cursor=pointer]:
+          - img [ref=e120]
+          - generic [ref=e123]: Search...
+          - generic [ref=e124]:
+            - generic [ref=e125]: Ctrl
+            - text: K
+        - button "Talk to Reachy" [ref=e126] [cursor=pointer]:
+          - img [ref=e128]
+          - generic [ref=e131]: Talk to Reachy
+        - button "Loading…" [ref=e133] [cursor=pointer]:
+          - generic [ref=e135]: Loading…
+        - link "Reachy …" [ref=e137] [cursor=pointer]:
+          - /url: /reachy
+          - img [ref=e139]
+          - generic [ref=e142]: Reachy …
+        - button "Eyes on" [disabled] [ref=e143]:
+          - img [ref=e144]
+          - generic [ref=e146]: Eyes on
+        - button [ref=e148] [cursor=pointer]:
+          - img [ref=e149]
+      - navigation [ref=e152]:
+        - link "Personal" [ref=e153] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e154] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e155] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e156] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e157] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e158]:
+      - generic [ref=e159]:
+        - generic [ref=e160]:
+          - generic [ref=e161]:
+            - generic [ref=e162]: Topic
+            - combobox [ref=e163] [cursor=pointer]:
+              - generic: VA Disability (not seeded)
+              - img [ref=e164]
+          - generic [ref=e166]:
+            - img [ref=e167]
+            - textbox "Search titles + descriptions..." [ref=e170]
+          - button "New Task" [ref=e171] [cursor=pointer]:
+            - img [ref=e172]
+            - text: New Task
+        - generic [ref=e173]:
+          - text: Showing VA Disability only.
+          - button "Show all topics" [ref=e174] [cursor=pointer]
+        - generic [ref=e175]:
+          - generic [ref=e176]:
+            - generic [ref=e177]:
+              - heading "Backlog" [level=3] [ref=e178]
+              - generic [ref=e179]: "0"
+            - generic [ref=e181]: empty
+          - generic [ref=e182]:
+            - generic [ref=e183]:
+              - heading "To Do" [level=3] [ref=e184]
+              - generic [ref=e185]: "0"
+            - generic [ref=e187]: empty
+          - generic [ref=e188]:
+            - generic [ref=e189]:
+              - heading "In Progress" [level=3] [ref=e190]
+              - generic [ref=e191]: "0"
+            - generic [ref=e193]: empty
+          - generic [ref=e194]:
+            - generic [ref=e195]:
+              - heading "Blocked" [level=3] [ref=e196]
+              - generic [ref=e197]: "0"
+            - generic [ref=e199]: empty
+          - generic [ref=e200]:
+            - generic [ref=e201]:
+              - heading "Done" [level=3] [ref=e202]
+              - generic [ref=e203]: "0"
+            - generic [ref=e205]: empty
+  - button "Voice settings" [ref=e206] [cursor=pointer]:
+    - img [ref=e207]
+  - button "Start recording a voice command" [ref=e210] [cursor=pointer]:
+    - img [ref=e211]

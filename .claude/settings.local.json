@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python -c ' *)",
       "Edit(/.claude/skills/zero-character-content/**)",
-      "Bash(python -m py_compile backend/app/services/email_voice_session_service.py backend/app/services/voice_intent_router.py backend/app/services/meeting_auto_recorder_service.py backend/app/routers/reachy_email.py backend/app/routers/meetings.py backend/app/services/scheduler_service.py backend/app/services/gmail_service.py backend/app/services/tts_service.py backend/app/services/reachy_service.py backend/app/services/voice_loop_service.py backend/app/main.py)"
+      "Bash(python -m py_compile backend/app/services/email_voice_session_service.py backend/app/services/voice_intent_router.py backend/app/services/meeting_auto_recorder_service.py backend/app/routers/reachy_email.py backend/app/routers/meetings.py backend/app/services/scheduler_service.py backend/app/services/gmail_service.py backend/app/services/tts_service.py backend/app/services/reachy_service.py backend/app/services/voice_loop_service.py backend/app/main.py)",
+      "Bash(curl -s http://localhost:18792/openapi.json)",
+      "Bash(python -c \"import sys, json; spec = json.load\\(sys.stdin\\); paths = [p for p in spec['paths'] if 'personal' in p]; print\\('\\\\n'.join\\(sorted\\(paths\\)\\)\\)\")"
     ]
   }
 }

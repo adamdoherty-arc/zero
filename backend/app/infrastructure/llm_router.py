@@ -63,7 +63,7 @@ def _apply_local_backend_remap(provider: str, model: str) -> Tuple[str, str]:
         return provider, model
 
     if override == "vllm":
-        return "vllm", os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")
+        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-35B-A3B")
     # override == "ollama"
     return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
 
@@ -150,10 +150,15 @@ class LlmRouter:
     # fallback chain (or when the caller didn't pass a task_type at all).
     # Ensures a circuit-breaker trip on the primary provider doesn't cascade
     # into "All LLM providers failed" for every downstream job.
+    # Post 2026-05-14 Bifrost migration: only Kimi (Moonshot) + local Qwen
+    # are permitted under the new policy, both routed through Bifrost. The
+    # bare "vllm/qwen3-chat" alias is retained as the final fallback for
+    # any caller / persisted task assignment that still emits the legacy
+    # short name — the vllm provider in the registry now points at Bifrost
+    # too, so the path is identical.
     _DEFAULT_FALLBACKS: List[str] = [
-        "minimax/MiniMax-M2.7",
-        "kimi/kimi-k2.6",
-        "vllm/qwen3-chat",
+        "bifrost/moonshot/kimi-k2.6",
+        "bifrost/vllm-local/qwen3-chat",
     ]
 
     def resolve_provider_model(

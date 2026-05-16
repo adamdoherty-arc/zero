@@ -1,5 +1,5 @@
 """
-Reachy voice stack configuration — which STT / LLM / TTS the voice loop uses.
+Zero voice stack configuration — which STT / LLM / TTS the voice loop uses.
 
 Persists to ``workspace/reachy/voice_config.json`` via JsonStorage. The LLM
 choice proxies through the shared LlmRouter (task_type ``voice_reply``) so

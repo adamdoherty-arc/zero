@@ -1,13 +1,9 @@
 """
 Runtime provider selector for Reachy's voice-chat fallback intent.
 
-Lets the user toggle between local vLLM and cloud providers (Gemini / Kimi)
-without a restart. Selection is persisted to workspace/settings/reachy_chat.json
-so it survives container rebuilds and restarts.
-
-Why not use the LLM router? The router optimizes for cost + task_type routing,
-but a user picking "Gemini" wants Gemini *every time* for voice replies, not a
-model chosen by the router's budget heuristics.
+Reachy classic chat routes through the shared Bifrost gateway. Selection is
+persisted to workspace/settings/reachy_chat.json so it survives container
+rebuilds and restarts.
 """
 
 from __future__ import annotations
@@ -32,40 +28,27 @@ class ChatProvider:
     description: str
 
 
-# Hand-tuned list — each entry is a (provider, model) pair that UnifiedLLMClient
-# knows how to call. Voice replies are short so cheap flash models are fine.
+# Active Bifrost routes. OpenRouter/MiniMax/Gemini are intentionally disabled
+# in shared-infra/bifrost/disabled-providers.json, so keep the voice selector
+# aligned to the gateway's live provider set.
 AVAILABLE_PROVIDERS: list[ChatProvider] = [
     ChatProvider(
-        id="vllm",
-        label="Local vLLM",
-        provider="vllm",
-        model="qwen3-chat",
-        description="Runs on your 5090. Private, free, ~2s response, needs model warm.",
+        id="bifrost-kimi",
+        label="Bifrost Kimi K2.6",
+        provider="bifrost",
+        model="moonshot/kimi-k2.6",
+        description="Moonshot Kimi route through Bifrost for reliable spoken replies.",
     ),
     ChatProvider(
-        id="gemini-flash",
-        label="Gemini Flash Latest",
-        provider="gemini",
-        model="gemini-flash-latest",
-        description="Cheap + fast cloud model through the current Gemini Flash alias. Needs ZERO_GEMINI_API_KEY.",
-    ),
-    ChatProvider(
-        id="gemini-pro",
-        label="Gemini Latest",
-        provider="gemini",
-        model="gemini-latest",
-        description="Highest-quality Gemini alias. Slower and pricier than Flash.",
-    ),
-    ChatProvider(
-        id="kimi-heavy",
-        label="Kimi K2.6",
-        provider="kimi",
-        model="kimi-k2.6",
-        description="Top-tier Kimi (April 2026 release). Thinking-optimized, 256K context.",
+        id="bifrost-local-qwen",
+        label="Bifrost Local Qwen",
+        provider="bifrost",
+        model="vllm-local/qwen3-chat",
+        description="Local Qwen route through Bifrost; private, but slower on hidden-reasoning turns.",
     ),
 ]
 
-DEFAULT_PROVIDER_ID = "vllm"
+DEFAULT_PROVIDER_ID = "bifrost-kimi"
 
 
 def _state_path() -> Path:

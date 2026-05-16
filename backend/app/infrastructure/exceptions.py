@@ -44,6 +44,20 @@ class CircuitOpenError(ZeroException):
         )
 
 
+class ContentProductionPausedError(ZeroException):
+    """Raised when carousel/media/image production is intentionally frozen."""
+
+    def __init__(self, action: str, reason: str | None = None):
+        super().__init__(
+            message=(
+                reason
+                or "Content production is paused. Resume it from Settings > Content Production."
+            ),
+            status_code=423,
+            details={"action": action, "paused": True},
+        )
+
+
 async def _zero_exception_handler(request: Request, exc: ZeroException) -> JSONResponse:
     """Handle Zero application exceptions."""
     error_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")

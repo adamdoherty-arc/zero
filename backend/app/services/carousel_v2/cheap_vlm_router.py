@@ -145,63 +145,15 @@ async def _try_gemini(
     generation_id: Optional[str],
     timeout: float,
 ) -> Optional[dict]:
-    """Tier 0 — paid Gemini Flash, gated by daily + per-carousel budget caps.
+    """Tier 0 — disabled 2026-05-14.
 
-    The estimated cost is checked BEFORE the call so we never spend money we
-    weren't going to spend. After a successful call the actual cost is
-    recorded against both counters.
+    Standalone GeminiProvider was deleted in the Bifrost migration because
+    google-genai exposes no base_url override. No Gemini path exists today;
+    Stage-8 VLM operates failure-soft (no-VLM ranking) until a local vision
+    model lands. Kept as a no-op stub so the dispatcher chain still
+    compiles and the openrouter free pool stays as the only tier.
     """
-    settings = get_settings()
-    if not settings.gemini_api_key:
-        return None
-    try:
-        from app.infrastructure.llm_providers import get_provider
-        provider = get_provider("gemini")
-        if provider is None:
-            return None
-    except Exception:  # noqa: BLE001
-        return None
-
-    # Route through a rolling alias by default so Stage 8 inherits the shared
-    # model mapping instead of pinning an older Gemini generation in source.
-    model = os.getenv("ZERO_GEMINI_VISION_MODEL") or os.getenv("ZERO_VLM_MODEL", "gemini-flash-latest")
-    estimated = provider.estimate_cost(_AVG_INPUT_TOKENS, _AVG_OUTPUT_TOKENS, model)
-
-    budget = await get_vlm_budget()
-    if not await budget.can_spend(generation_id=generation_id, estimated_cost_usd=estimated):
-        # Budget gate fired — skip Tier 0 cleanly so the free pool catches.
-        return None
-
-    prompt = _build_prompt(character, franchise)
-    messages = [{"role": "user", "content": prompt}]
-    try:
-        text = await provider.chat(
-            messages=messages,
-            model=model,
-            temperature=0.0,
-            max_tokens=1024,
-            json_mode=True,
-            image_urls=[image_url],
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("vlm_gemini_failed", error=str(exc))
-        return None
-
-    parsed = _parse_json(text)
-    if parsed is None:
-        logger.debug("vlm_gemini_parse_failed", raw=str(text)[:120])
-        return None
-
-    # Record actual cost (using the per-call estimate as the actual; provider
-    # doesn't surface real token counts post-call).
-    await budget.record(generation_id=generation_id, cost_usd=estimated)
-
-    out = _normalise_likeness(parsed)
-    out["_model"] = f"gemini/{model}"
-    out["_tier"] = "gemini_paid"
-    out["_cost_usd"] = estimated
-    out["_available"] = True
-    return out
+    return None
 
 
 async def _try_openrouter_free(
@@ -212,64 +164,12 @@ async def _try_openrouter_free(
     generation_id: Optional[str] = None,
     timeout: float,
 ) -> Optional[dict]:
-    pool = await get_openrouter_free_pool()
+    """Tier 1 — disabled 2026-05-14.
 
-    try:
-        from app.infrastructure.llm_providers import get_provider
-        from app.infrastructure.llm_providers.openrouter_provider import RateLimitError
-        provider = get_provider("openrouter")
-        if provider is None:
-            return None
-    except Exception:  # noqa: BLE001
-        return None
-
-    prompt = _build_prompt(character, franchise)
-    messages = [{"role": "user", "content": prompt}]
-
-    # ``select_next`` triggers the lazy model-list fetch on first call, so
-    # ``slot_count`` only becomes non-zero after we've tried at least once.
-    # Use a hard upper bound (32) on rotation attempts to bound latency.
-    max_attempts = 32
-    for _ in range(max_attempts):
-        slot = await pool.select_next()
-        if slot is None:
-            return None
-        key, model = slot
-        try:
-            text = await provider.chat(
-                messages=messages,
-                model=model,
-                temperature=0.0,
-                max_tokens=512,
-                json_mode=True,
-                image_urls=[image_url],
-                api_key_override=key,
-            )
-        except RateLimitError as exc:
-            await pool.mark_429(slot, retry_after=exc.retry_after)
-            continue
-        except Exception as exc:  # noqa: BLE001
-            err = str(exc).lower()
-            if "401" in err or "403" in err or "unauthorized" in err:
-                await pool.mark_auth_failure(slot)
-            else:
-                logger.debug("vlm_openrouter_failed", model=model, error=str(exc))
-            continue
-
-        parsed = _parse_json(text)
-        if parsed is None:
-            logger.debug("vlm_openrouter_parse_failed", model=model, raw=str(text)[:120])
-            await pool.mark_success(slot)  # successful call, just bad output — quota still consumed
-            continue
-
-        await pool.mark_success(slot, tokens_used=_AVG_INPUT_TOKENS + _AVG_OUTPUT_TOKENS)
-        out = _normalise_likeness(parsed)
-        out["_model"] = f"openrouter/{model}"
-        out["_tier"] = "openrouter_free"
-        out["_cost_usd"] = 0.0
-        out["_available"] = True
-        return out
-
+    OpenRouterProvider was deleted in the Bifrost migration (new policy:
+    only Kimi + local Qwen + local embed). The free-vision pool can't
+    function without it; Stage-8 falls through to no-VLM-soft ranking.
+    """
     return None
 
 

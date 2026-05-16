@@ -42,7 +42,7 @@ const PRESET_META: Record<string, { label: string; description: string; icon: ty
   },
   everything_local: {
     label: 'Everything local',
-    description: 'All local-eligible hints route to vLLM. Heavy hints stay cloud.',
+    description: 'All local-eligible hints route to Local. Heavy hints stay cloud.',
     icon: Cpu,
   },
 }

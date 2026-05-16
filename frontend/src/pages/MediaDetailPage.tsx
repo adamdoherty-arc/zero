@@ -12,6 +12,11 @@ import {
 } from '@/hooks/useMediaContentApi'
 import { useCharacters } from '@/hooks/useCharacterContentApi'
 import type { MediaContentAngle } from '@/hooks/useMediaContentApi'
+import { ContentProductionPausedBanner } from '@/components/content-control/ContentProductionPausedBanner'
+import {
+  CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+  useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
 
 export function MediaDetailPage() {
   const { mediaId } = useParams<{ mediaId: string }>()
@@ -29,6 +34,8 @@ export function MediaDetailPage() {
   const generateMutation = useGenerateMediaCarousel()
   const linkMutation = useLinkCharacter()
   const unlinkMutation = useUnlinkCharacter()
+  const { data: contentControl } = useContentProductionStatus()
+  const productionPaused = contentControl?.paused ?? true
 
   const [activeTab, setActiveTab] = useState<'overview' | 'facts' | 'carousels' | 'characters' | 'images'>('overview')
   const [selectedAngle, setSelectedAngle] = useState<string>('hidden_details')
@@ -50,6 +57,7 @@ export function MediaDetailPage() {
   const tabs = ['overview', 'facts', 'carousels', 'characters', 'images'] as const
 
   const handleGenerate = async () => {
+    if (productionPaused) return
     await generateMutation.mutateAsync({
       media_title_id: title.id,
       angle: selectedAngle as MediaContentAngle,
@@ -67,6 +75,8 @@ export function MediaDetailPage() {
 
   return (
     <div className="space-y-6">
+      <ContentProductionPausedBanner />
+
       {/* Back button */}
       <button
         onClick={() => navigate(`/characters?tab=${title.media_type === 'tv_show' ? 'tv-shows' : 'movies'}`)}
@@ -125,7 +135,8 @@ export function MediaDetailPage() {
             )}
             <button
               onClick={() => researchMutation.mutateAsync(title.id)}
-              disabled={researchMutation.isPending}
+              disabled={researchMutation.isPending || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Research media title'}
               className="px-3 py-1 text-xs rounded bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 flex items-center gap-1 transition-colors"
             >
               <Search className="w-3 h-3" />
@@ -194,7 +205,8 @@ export function MediaDetailPage() {
             </div>
             <button
               onClick={handleGenerate}
-              disabled={generateMutation.isPending || title.research_status !== 'completed'}
+              disabled={generateMutation.isPending || title.research_status !== 'completed' || productionPaused}
+              title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate media carousel'}
               className="w-full py-2 text-sm font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
             >
               <Sparkles className="w-4 h-4" />

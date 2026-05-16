@@ -612,7 +612,7 @@ _SPECS: Dict[str, Dict[str, Any]] = {
     "start_meeting_recording": {
         "type": "function",
         "name": "start_meeting_recording",
-        "description": "Start recording a meeting from the Reachy microphone.",
+        "description": "Start recording a meeting from the Zero microphone.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -692,7 +692,7 @@ _SPECS: Dict[str, Dict[str, Any]] = {
     "zero_system_status": {
         "type": "function",
         "name": "zero_system_status",
-        "description": "Check Reachy assistant health, robot connection, voice config, and ambient state.",
+        "description": "Check Zero assistant health, robot connection, voice config, and ambient state.",
         "parameters": {
             "type": "object",
             "properties": {"dummy": {"type": "boolean", "description": "dummy boolean, set it to true"}},
@@ -1092,7 +1092,7 @@ async def _start_meeting_recording(
     args: Dict[str, Any],
     _mgr: BackgroundToolManager,
 ) -> Dict[str, Any]:
-    title = _compact_text(args.get("title") or "Reachy voice meeting", limit=120)
+    title = _compact_text(args.get("title") or "Zero voice meeting", limit=120)
     return await _host_agent_request(
         "POST",
         "/record/start",

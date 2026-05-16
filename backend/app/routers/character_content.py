@@ -811,8 +811,9 @@ async def list_slide_image_candidates(
 ):
     """Top sourced images for this carousel's character, sorted by quality.
 
-    If fewer than 5 exist, triggers a background discover_images() run so the
-    pool fills up for subsequent requests. The response does not block on it.
+    If fewer than 5 exist and content production is active, triggers a
+    background discover_images() run so the pool fills up for subsequent
+    requests. The response does not block on it.
     """
     service = get_character_content_service()
     try:
@@ -824,7 +825,17 @@ async def list_slide_image_candidates(
     except IndexError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    production_paused = False
     if result.get("needs_discover"):
+        from app.services.content_production_control_service import (
+            get_content_production_control_service,
+        )
+
+        production_paused = await (
+            get_content_production_control_service().is_paused()
+        )
+
+    if result.get("needs_discover") and not production_paused:
         background_tasks.add_task(
             service.discover_more_character_images,
             result["character_id"],

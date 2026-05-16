@@ -3,10 +3,12 @@ Reachy daemon supervisor — host_agent-side process manager for the
 ``run_reachy_daemon.py`` launcher.
 
 Owns the subprocess lifecycle (start/stop/restart), tails stdout into a ring
-buffer + rotating log file, runs an optional watchdog that restarts the daemon
-when ``/api/daemon/status`` has been unreachable for a configurable window, and
-exposes diagnostics about the Windows audio / USB / motor state so the UI can
-tell the user *why* Reachy is offline.
+buffer + rotating log file, and exposes diagnostics about the Windows audio /
+USB / motor state so the UI can tell the user *why* Reachy is offline.
+
+Daemon lifecycle (start / stop / restart) is now triggered exclusively from
+the UI — there is no auto-restart watchdog. An atexit hook reaps the daemon
+subprocess if host_agent exits unexpectedly so :8000 doesn't leak.
 
 Meant to be instantiated once at host_agent startup and reused.
 """
@@ -61,7 +63,9 @@ _REACHY_CONTROL_VENV_CANDIDATES = (
 
 _LOG_DIR = _HOST_AGENT_DIR / "logs"
 _STATE_DIR = _HOST_AGENT_DIR / "state"
-_WATCHDOG_STATE_PATH = _STATE_DIR / "watchdog.json"
+# Legacy state file from the deleted auto-restart watchdog. Cleaned up on
+# first init so it doesn't confuse future debugging.
+_LEGACY_WATCHDOG_STATE_PATH = _STATE_DIR / "watchdog.json"
 
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 _STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,18 +74,11 @@ _STATE_DIR.mkdir(parents=True, exist_ok=True)
 # --- constants ---------------------------------------------------------
 
 DAEMON_URL = os.getenv("REACHY_API_URL", "http://localhost:8000").rstrip("/")
-WATCHDOG_POLL_INTERVAL_S = 10.0
-# Keep the repo's documented self-heal contract: six consecutive failed
-# 10-second probes before daemon restart. Individual probes keep a generous
-# timeout so short motor/control-loop pauses do not count as failures.
-WATCHDOG_FAILURE_THRESHOLD = 6
-# 25 s ceiling (was 10 s) — when the daemon is mid-dance the motor control
-# thread holds locks long enough that /api/daemon/status occasionally
-# can't respond inside 10 s, which produced 6 consecutive false-failures
-# and a forced restart mid-interaction. 25 s sits comfortably below the
-# 60 s daemon cold-start window and the 6×10 s = 60 s outer restart contract,
-# so a *truly* hung daemon is still caught within ~2.5 minutes.
-WATCHDOG_PROBE_TIMEOUT_S = 25.0
+# Timeout for the daemon-up probe used by diagnostics() and the recovery
+# helpers. Keep generous: a status call that does two sequential HTTP
+# requests can exceed 3 s under motor-fault load and false-positive a
+# "host_agent isn't responding" alert in the UI.
+DAEMON_PROBE_TIMEOUT_S = 25.0
 # After CTRL_BREAK the daemon's child uvicorn worker, motor serial thread,
 # and the COM port handle take a moment to release. Spawning immediately
 # races the previous owner and the new daemon dies with exit 1 (COM3 busy).
@@ -93,12 +90,6 @@ RESTART_HISTORY_LIMIT = 20
 # unplugged and the daemon spam-logged motor failures. Rotate at 50 MB; keep
 # one prior segment as <name>.1 (older segments are dropped).
 LOG_MAX_BYTES = 50 * 1024 * 1024
-# When Windows has been up for less than this on host_agent start, treat the
-# next ten minutes as a Docker boot-grace window. Docker Desktop's WSL2
-# daemon takes 60-180 s to be reachable from a cold boot; without a grace
-# window the watchdog logs spurious failures while the backend is starting.
-BOOT_GRACE_TRIGGER_UPTIME_S = 600.0
-BOOT_GRACE_DURATION_S = 600.0
 
 
 def _utcnow_iso() -> str:
@@ -242,153 +233,23 @@ class DaemonSupervisor:
         self._restart_history: deque[dict[str, Any]] = deque(
             maxlen=RESTART_HISTORY_LIMIT
         )
-        self._watchdog_enabled: bool = False
-        self._watchdog_task: asyncio.Task | None = None
-        self._watchdog_thread: threading.Thread | None = None
-        self._watchdog_stop_event = threading.Event()
-        self._watchdog_thread_ticks = 0
-        self._watchdog_thread_exit_reason: str | None = None
-        self._watchdog_consecutive_failures: int = 0
-        self._watchdog_last_check: datetime | None = None
-        self._watchdog_last_daemon_up: datetime | None = None
-        # Boot-grace window: while Docker is still starting after a Windows
-        # cold boot, the watchdog must not count probe failures as real ones.
-        self._boot_grace_until: datetime | None = None
-        # Last time the readiness probe saw Docker green. None means we have
-        # no evidence Docker has ever been ready in this host_agent process.
-        self._last_docker_ready: datetime | None = None
-        # Optional callback returning the Docker readiness state; injected by
-        # main.py once init_docker_readiness() has run. Kept as a callable
-        # rather than an import to avoid a circular module dependency.
-        self._docker_readiness_getter: Callable[[], dict | None] | None = None
 
-        self._load_persistent_state()
-        self._initialize_boot_grace()
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
-    def _load_persistent_state(self) -> None:
-        if not _WATCHDOG_STATE_PATH.exists():
-            return
+        # One-shot cleanup of the legacy auto-restart watchdog state file.
+        # The whole watchdog was removed when daemon lifecycle moved into
+        # the UI; the stale file would only confuse future debugging.
         try:
-            data = json.loads(_WATCHDOG_STATE_PATH.read_text())
-            self._watchdog_enabled = bool(data.get("enabled", False))
-            history = data.get("history", [])
-            for item in history[-RESTART_HISTORY_LIMIT:]:
-                self._restart_history.append(item)
-            grace_iso = data.get("boot_grace_until")
-            if grace_iso:
-                try:
-                    self._boot_grace_until = datetime.fromisoformat(grace_iso)
-                except ValueError:
-                    self._boot_grace_until = None
-            ready_iso = data.get("last_docker_ready")
-            if ready_iso:
-                try:
-                    self._last_docker_ready = datetime.fromisoformat(ready_iso)
-                except ValueError:
-                    self._last_docker_ready = None
-        except Exception as e:
-            logger.warning("watchdog_state_load_failed", error=str(e))
-
-    def _save_persistent_state(self) -> None:
-        try:
-            _WATCHDOG_STATE_PATH.write_text(
-                json.dumps(
-                    {
-                        "enabled": self._watchdog_enabled,
-                        "history": list(self._restart_history),
-                        "boot_grace_until": self._boot_grace_until.isoformat()
-                        if self._boot_grace_until
-                        else None,
-                        "last_docker_ready": self._last_docker_ready.isoformat()
-                        if self._last_docker_ready
-                        else None,
-                    },
-                    indent=2,
-                )
-            )
-        except Exception as e:
-            logger.warning("watchdog_state_save_failed", error=str(e))
-
-    def _initialize_boot_grace(self) -> None:
-        """Open a Docker boot-grace window if the machine just rebooted.
-
-        Without this, host_agent's first-tick probe fires while Docker
-        Desktop is still importing the WSL2 vhdx, the watchdog counts six
-        failures, and the daemon gets restarted while the backend isn't up
-        yet. The grace window suppresses failure counting until either
-        Docker becomes ready or ``BOOT_GRACE_DURATION_S`` elapses.
-        """
-        try:
-            import psutil  # type: ignore[import-not-found]
-
-            uptime_s = time.time() - psutil.boot_time()
+            if _LEGACY_WATCHDOG_STATE_PATH.exists():
+                _LEGACY_WATCHDOG_STATE_PATH.unlink()
         except Exception:
-            uptime_s = float("inf")
-        now = datetime.now(timezone.utc)
-        existing = self._boot_grace_until
-        if uptime_s < BOOT_GRACE_TRIGGER_UPTIME_S:
-            from datetime import timedelta as _td
+            pass
 
-            self._boot_grace_until = now + _td(seconds=BOOT_GRACE_DURATION_S)
-            _safe_log(
-                logger.info,
-                "watchdog_boot_grace_opened",
-                uptime_s=round(uptime_s, 1),
-                grace_until=self._boot_grace_until.isoformat(),
-            )
-            self._save_persistent_state()
-        elif existing is not None and existing < now:
-            # Stale grace from a prior boot; don't carry it forward.
-            self._boot_grace_until = None
-            self._save_persistent_state()
-
-    def attach_docker_readiness(
-        self, getter: Callable[[], dict | None]
-    ) -> None:
-        """Install a callback the watchdog uses to read Docker readiness.
-
-        The Docker readiness probe lives in ``docker_readiness.py`` so it
-        can be exposed over HTTP independently of the supervisor; the
-        supervisor only needs to read its current state. We pass a getter
-        rather than the singleton so the supervisor remains importable
-        without main.py being initialized (e.g., in tests).
-        """
-        self._docker_readiness_getter = getter
-
-    def _docker_state(self) -> dict | None:
-        if self._docker_readiness_getter is None:
-            return None
-        try:
-            return self._docker_readiness_getter()
-        except Exception:
-            return None
-
-    def _in_boot_grace(self, now: datetime) -> bool:
-        return self._boot_grace_until is not None and now < self._boot_grace_until
-
-    def _should_pause_for_docker(self, now: datetime) -> tuple[bool, str | None]:
-        """Return (paused, reason) — should the watchdog skip this tick?"""
-        info = self._docker_state()
-        if info is None:
-            return (False, None)
-        state = info.get("state")
-        if state == "ready":
-            self._last_docker_ready = now
-            return (False, None)
-        if self._in_boot_grace(now):
-            return (True, f"docker_{state}_in_boot_grace")
-        if state in ("waiting", "unknown"):
-            # Outside the boot-grace window we still pause, but only if
-            # Docker has *never* been ready in this process. If it was
-            # ready and went away, treat that like any other failure so
-            # the watchdog can act if the daemon really did die.
-            if self._last_docker_ready is None:
-                return (True, f"docker_{state}_never_ready")
-        return (False, None)
+        # Ensure the daemon subprocess is reaped if host_agent exits without
+        # going through the normal /daemon/stop path. Without this, killing
+        # the host_agent console window leaks a Reachy daemon process that
+        # owns :8000 and motor COM port — the symptom the user reported as
+        # "pid exists but :8000 is not responding."
+        import atexit
+        atexit.register(self._atexit_stop)
 
     # ------------------------------------------------------------------
     # Process lifecycle
@@ -643,8 +504,6 @@ class DaemonSupervisor:
         self._started_at = datetime.now(timezone.utc)
         self._last_exit_code = None
         self._last_extra_args = list(extra_args)
-        self._watchdog_consecutive_failures = 0
-        self._watchdog_last_daemon_up = self._started_at
         self._ring.clear()
         self._append_line(
             f"--- daemon spawned pid={self._proc.pid} args={cmd[2:]!r} at {_utcnow_iso()} ---"
@@ -794,7 +653,6 @@ class DaemonSupervisor:
                 "args": args,
             }
             self._restart_history.append(event)
-            self._save_persistent_state()
             return {**result, "restart_event": event}
 
     # ------------------------------------------------------------------
@@ -946,238 +804,57 @@ class DaemonSupervisor:
         return self._scan_known_issues()
 
     # ------------------------------------------------------------------
-    # Watchdog
+    # Recovery + atexit reaping
     # ------------------------------------------------------------------
 
-    def watchdog_info(self) -> dict[str, Any]:
-        return {
-            "enabled": self._watchdog_enabled,
-            "consecutive_failures": self._watchdog_consecutive_failures,
-            "failure_threshold": WATCHDOG_FAILURE_THRESHOLD,
-            "poll_interval_s": WATCHDOG_POLL_INTERVAL_S,
-            "last_check": self._watchdog_last_check.isoformat()
-            if self._watchdog_last_check
-            else None,
-            "last_daemon_up": self._watchdog_last_daemon_up.isoformat()
-            if self._watchdog_last_daemon_up
-            else None,
-            "boot_grace_until": self._boot_grace_until.isoformat()
-            if self._boot_grace_until
-            else None,
-            "in_boot_grace": self._in_boot_grace(datetime.now(timezone.utc)),
-            "last_docker_ready": self._last_docker_ready.isoformat()
-            if self._last_docker_ready
-            else None,
-            "thread_alive": bool(
-                self._watchdog_thread is not None
-                and self._watchdog_thread.is_alive()
-            ),
-            "thread_ticks": self._watchdog_thread_ticks,
-            "thread_exit_reason": self._watchdog_thread_exit_reason,
-            "restart_history": list(self._restart_history),
-        }
+    def restart_history(self) -> list[dict[str, Any]]:
+        """Return the daemon's recent start/restart events (newest last)."""
+        return list(self._restart_history)
 
     async def reset_state(self, reason: str = "manual") -> dict[str, Any]:
-        """Smart Re-link primitive: clear watchdog failure state.
+        """Smart Re-link primitive: nudge the started-at clock + log the event.
 
-        Used when the user clicks Smart Re-link in the UI. This zeros the
-        consecutive-failure counter and resets the daemon-warmup clock so
-        the next tick starts fresh, preventing any churn restart the
-        watchdog might have queued from sticky failure state. Does NOT
-        spawn or kill the daemon; the caller decides whether to call
-        ``restart()`` afterwards based on Docker readiness.
+        With the auto-restart watchdog removed, "reset state" no longer
+        clears failure counters (there are none). It still bumps the
+        started_at timestamp so any UI-side "starting…" progress indicator
+        re-engages, and emits a structured log line we can grep.
         """
-        cleared = self._watchdog_consecutive_failures
-        self._watchdog_consecutive_failures = 0
         if self.is_running():
-            # Treat the running daemon as freshly started so the 60 s
-            # warmup grace re-engages and a brief probe stall doesn't
-            # immediately trigger a restart.
             self._started_at = datetime.now(timezone.utc)
         _safe_log(
             logger.info,
-            "reachy_watchdog_state_reset",
+            "reachy_supervisor_state_reset",
             reason=reason,
-            cleared_failures=cleared,
         )
         return {
             "ok": True,
             "reason": reason,
-            "cleared_failures": cleared,
-            "watchdog": self.watchdog_info(),
+            "supervisor": self.status(),
         }
 
-    async def set_watchdog(self, enabled: bool) -> dict[str, Any]:
-        self._watchdog_enabled = bool(enabled)
-        self._save_persistent_state()
-        if enabled:
-            self._ensure_watchdog_thread()
-        else:
-            self._watchdog_stop_event.set()
-            if self._watchdog_task is not None and not self._watchdog_task.done():
-                self._watchdog_task.cancel()
-        return self.watchdog_info()
+    def _atexit_stop(self) -> None:
+        """Reap the daemon subprocess on host_agent shutdown.
 
-    async def start_watchdog_if_enabled(self) -> None:
-        """Called from FastAPI lifespan to honor the persisted flag."""
-        if self._watchdog_enabled:
-            self._ensure_watchdog_thread()
-
-    def _ensure_watchdog_thread(self) -> None:
-        if self._watchdog_thread is not None and self._watchdog_thread.is_alive():
-            return
-        self._watchdog_stop_event.clear()
-        self._watchdog_thread_exit_reason = None
-        self._watchdog_thread = threading.Thread(
-            target=self._watchdog_thread_loop,
-            daemon=True,
-            name="reachy-daemon-watchdog",
-        )
-        self._watchdog_thread.start()
-
-    def _watchdog_thread_loop(self) -> None:
-        _safe_log(logger.info, "reachy_watchdog_started")
-        while True:
-            if not self._watchdog_enabled:
-                self._watchdog_thread_exit_reason = "disabled"
-                break
-            if self._watchdog_stop_event.wait(WATCHDOG_POLL_INTERVAL_S):
-                self._watchdog_thread_exit_reason = "stop_event"
-                break
+        Without this, killing the host_agent console window (or any
+        uvicorn crash) leaves the Reachy daemon child running, which
+        keeps :8000 bound and the motor COM port held. The next launch
+        then fails to spawn a fresh daemon — surfaced in the UI as
+        "pid exists but :8000 is not responding."
+        """
+        proc = self._proc
+        if proc is not None:
             try:
-                self._watchdog_thread_ticks += 1
-                self._watchdog_tick_sync()
-            except BaseException as e:
-                self._watchdog_thread_exit_reason = f"tick_failed:{type(e).__name__}"
-                _safe_log(logger.warning, "reachy_watchdog_tick_failed", error=str(e))
-        _safe_log(logger.info, "reachy_watchdog_stopped")
-
-    def _watchdog_tick_sync(self) -> None:
-        self._watchdog_last_check = datetime.now(timezone.utc)
-        paused, reason = self._should_pause_for_docker(self._watchdog_last_check)
-        if paused:
-            self._watchdog_consecutive_failures = 0
-            _safe_log(
-                logger.info,
-                "reachy_watchdog_paused_for_docker",
-                reason=reason,
-            )
-            return
-        blocker = _daemon_known_blocker_sync()
-        if blocker:
-            self._watchdog_consecutive_failures = 0
-            self._watchdog_last_daemon_up = self._watchdog_last_check
-            _safe_log(logger.warning, "reachy_watchdog_hardware_blocked", blocker=blocker)
-            return
-        if self._started_at is not None:
-            warmup = (self._watchdog_last_check - self._started_at).total_seconds()
-            if warmup < 60.0:
-                return
-        up = _probe_daemon_up_sync()
-        if up:
-            self._watchdog_consecutive_failures = 0
-            self._watchdog_last_daemon_up = self._watchdog_last_check
-            return
-
-        self._watchdog_consecutive_failures += 1
-        _safe_log(
-            logger.warning,
-            "reachy_watchdog_failure",
-            consecutive=self._watchdog_consecutive_failures,
-            threshold=WATCHDOG_FAILURE_THRESHOLD,
-        )
-        if self._watchdog_consecutive_failures >= WATCHDOG_FAILURE_THRESHOLD:
-            self._watchdog_consecutive_failures = 0
-            self._restart_daemon_via_host_agent()
-
-    def _restart_daemon_via_host_agent(self) -> None:
-        try:
-            import urllib.request
-
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{os.getenv('HOST_AGENT_PORT', '18796')}/daemon/restart",
-                data=b"",
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=15):
+                proc.terminate()
+            except Exception:
                 pass
-        except Exception as e:
-            _safe_log(logger.warning, "reachy_watchdog_restart_failed", error=str(e))
-
-    def _recover_stale_watchdog_task(self) -> None:
-        task = self._watchdog_task
-        if task is None or task.done():
-            return
-        if self._watchdog_last_check is None:
-            return
-        age_s = (datetime.now(timezone.utc) - self._watchdog_last_check).total_seconds()
-        stale_after_s = max(WATCHDOG_POLL_INTERVAL_S * 3, WATCHDOG_PROBE_TIMEOUT_S * 3)
-        if age_s > stale_after_s:
-            logger.warning("reachy_watchdog_task_stale", age_s=age_s)
-            task.cancel()
-            self._watchdog_task = None
-
-    async def _watchdog_loop(self) -> None:
-        logger.info("reachy_watchdog_started")
+        # Best-effort tree kill of anything still bound to :8000 — covers
+        # uvicorn workers and GStreamer subprocesses the daemon spawned.
         try:
-            while self._watchdog_enabled:
-                await asyncio.sleep(WATCHDOG_POLL_INTERVAL_S)
-                if not self._watchdog_enabled:
-                    break
-                await self._watchdog_tick()
-        except asyncio.CancelledError:
+            pid = _find_daemon_listen_pid()
+            if pid is not None:
+                _kill_process_tree(pid)
+        except Exception:
             pass
-        except Exception as e:
-            logger.warning("reachy_watchdog_crashed", error=str(e))
-        finally:
-            logger.info("reachy_watchdog_stopped")
-
-    async def _watchdog_tick(self) -> None:
-        self._watchdog_last_check = datetime.now(timezone.utc)
-        paused, reason = self._should_pause_for_docker(self._watchdog_last_check)
-        if paused:
-            self._watchdog_consecutive_failures = 0
-            logger.info("reachy_watchdog_paused_for_docker", reason=reason)
-            return
-        blocker = await asyncio.to_thread(_daemon_known_blocker_sync)
-        if blocker:
-            self._watchdog_consecutive_failures = 0
-            self._watchdog_last_daemon_up = self._watchdog_last_check
-            logger.warning("reachy_watchdog_hardware_blocked", blocker=blocker)
-            return
-        # Don't accumulate failures during the daemon's cold-start window.
-        # reachy_mini takes ~35s to import + initialize motors before /api/
-        # daemon/status starts answering 200 OK; counting that as failures
-        # would kill the daemon before it ever gets to serve a request.
-        if self._started_at is not None:
-            warmup = (self._watchdog_last_check - self._started_at).total_seconds()
-            if warmup < 60.0:
-                return
-        try:
-            up = await asyncio.wait_for(
-                _probe_daemon_up(),
-                timeout=WATCHDOG_PROBE_TIMEOUT_S + 2.0,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("reachy_watchdog_probe_timeout")
-            up = False
-        if up:
-            self._watchdog_consecutive_failures = 0
-            self._watchdog_last_daemon_up = self._watchdog_last_check
-            return
-
-        self._watchdog_consecutive_failures += 1
-        logger.warning(
-            "reachy_watchdog_failure",
-            consecutive=self._watchdog_consecutive_failures,
-            threshold=WATCHDOG_FAILURE_THRESHOLD,
-        )
-        if self._watchdog_consecutive_failures >= WATCHDOG_FAILURE_THRESHOLD:
-            self._watchdog_consecutive_failures = 0
-            try:
-                await self.restart(reason="watchdog")
-            except Exception as e:
-                logger.warning("reachy_watchdog_restart_failed", error=str(e))
 
     # ------------------------------------------------------------------
     # Diagnostics
@@ -1186,7 +863,7 @@ class DaemonSupervisor:
     async def diagnostics(self) -> dict[str, Any]:
         daemon_info: dict[str, Any] = {"reachable": False}
         try:
-            async with httpx.AsyncClient(timeout=WATCHDOG_PROBE_TIMEOUT_S) as client:
+            async with httpx.AsyncClient(timeout=DAEMON_PROBE_TIMEOUT_S) as client:
                 resp = await client.get(f"{DAEMON_URL}/api/daemon/status")
                 if resp.status_code < 400:
                     daemon_info = {"reachable": True, **resp.json()}
@@ -1206,7 +883,7 @@ class DaemonSupervisor:
             "usb_devices": usb,
             "host": host,
             "supervisor": self.status(),
-            "watchdog": self.watchdog_info(),
+            "restart_history": list(self._restart_history),
             "known_issues": self._scan_known_issues(),
         }
 
@@ -1399,13 +1076,12 @@ def _daemon_http_get_json_sync(
     conn = conn_cls(
         host,
         port,
-        # Use the full WATCHDOG_PROBE_TIMEOUT_S (10 s). The previous 3 s cap
-        # was too tight for a status() call that does TWO sequential HTTP
-        # requests (/api/daemon/status + /api/state/full); under daemon load
-        # (e.g. motor fault spam) a single round trip can exceed 3 s, the
-        # zero-api proxy returns 5xx, and the UI renders a false-positive
-        # "host_agent isn't responding" alert (DaemonPanel.tsx:223).
-        timeout=timeout_s or WATCHDOG_PROBE_TIMEOUT_S,
+        # Use DAEMON_PROBE_TIMEOUT_S (25 s). Status() does two sequential
+        # HTTP requests (/api/daemon/status + /api/state/full); under daemon
+        # load a single round trip can exceed 3 s, the zero-api proxy returns
+        # 5xx, and the UI renders a false-positive "host_agent isn't responding"
+        # alert in DaemonPanel.
+        timeout=timeout_s or DAEMON_PROBE_TIMEOUT_S,
     )
     try:
         conn.request("GET", path)

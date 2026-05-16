@@ -122,7 +122,7 @@ describe('useRealtimeVoice mic fallback', () => {
         type: 'input.warning',
         confidence_state: 'no_signal',
         suggested_action: 'switch_to_browser_mic',
-        message: 'Reachy microphone is open but streaming digital silence.',
+        message: 'Zero microphone is open but streaming digital silence.',
         rms: 0.000015,
         peak: 0.0000305,
       })
@@ -165,7 +165,7 @@ describe('useRealtimeVoice mic fallback', () => {
         type: 'input.warning',
         confidence_state: 'no_signal',
         suggested_action: 'switch_to_browser_mic',
-        message: 'Reachy microphone is open but streaming digital silence.',
+        message: 'Zero microphone is open but streaming digital silence.',
         rms: 0,
         peak: 0,
       })

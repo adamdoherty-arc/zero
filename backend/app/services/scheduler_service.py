@@ -109,6 +109,7 @@ JOB_CATEGORIES = {
         "company_operator_evening_report",
         "company_operator_weekly_review",
         "company_prompt_eval_bridge",
+        "company_progress_checkin",
     ],
     "Character Content": [
         "character_research_refresh",
@@ -759,6 +760,11 @@ DAILY_SCHEDULE = {
         "description": "Legion/Zero company prompt evaluation bridge",
         "enabled": True,
     },
+    "company_progress_checkin": {
+        "cron": "5 */2 * * *",
+        "description": "Zero progress check-in: stalled tasks, overdue items, setup percent",
+        "enabled": True,
+    },
     # Character Content
     "character_research_refresh": {
         "cron": "0 3 * * *",  # 3:00 AM daily
@@ -1316,6 +1322,22 @@ class SchedulerService:
             for row in rows
         }
 
+    async def _content_production_pauses_job(self, job_name: str) -> bool:
+        """Return True when the hard freeze should skip this scheduler run."""
+        try:
+            from app.services.content_production_control_service import (
+                get_content_production_control_service,
+            )
+
+            return await get_content_production_control_service().job_blocked(job_name)
+        except Exception as e:
+            logger.warning(
+                "content_production_scheduler_guard_failed",
+                job=job_name,
+                error=str(e),
+            )
+            return False
+
     async def _run_with_audit(self, job_name: str, handler: Callable):
         """Execute a handler and record the result in the audit log."""
         started = datetime.utcnow()
@@ -1324,7 +1346,12 @@ class SchedulerService:
         error_msg = None
 
         try:
-            await handler()
+            if await self._content_production_pauses_job(job_name):
+                status = "skipped"
+                error_msg = "content_production_paused"
+                logger.warning("job_skipped_content_production_paused", job=job_name)
+            else:
+                await handler()
         except Exception as e:
             status = "failed"
             error_msg = str(e)
@@ -1350,6 +1377,11 @@ class SchedulerService:
             except Exception:
                 pass
             logger.info("job_audit", job=job_name, status=status, duration=duration)
+        return {
+            "status": status,
+            "error": error_msg,
+            "duration_seconds": duration,
+        }
 
     async def _append_audit(
         self,
@@ -1535,6 +1567,7 @@ class SchedulerService:
             "company_operator_evening_report": self._run_company_operator_evening_report,
             "company_operator_weekly_review": self._run_company_operator_weekly_review,
             "company_prompt_eval_bridge": self._run_company_prompt_eval_bridge,
+            "company_progress_checkin": self._run_company_progress_checkin,
             # Character Content
             "character_research_refresh": self._run_character_research_refresh,
             "character_research_retry": self._run_character_research_retry,
@@ -4136,6 +4169,20 @@ Have a great evening!"""
         except Exception as e:
             logger.error("company_prompt_eval_bridge_failed", error=str(e))
 
+    async def _run_company_progress_checkin(self):
+        """Zero check-in on ADA AI LLC setup tasks. Reports stalled and overdue work."""
+        try:
+            from app.services.company_progress_checkin_service import get_company_progress_checkin_service
+            report = await get_company_progress_checkin_service().run_checkin(requested_by="scheduler")
+            logger.info(
+                "company_progress_checkin_done",
+                setup_percent=report.get("setup_percent"),
+                stalled=report.get("stalled_count"),
+                overdue=report.get("overdue_count"),
+            )
+        except Exception as e:
+            logger.error("company_progress_checkin_failed", error=str(e))
+
     # ============================================
     # CHARACTER CONTENT AUTOMATION
     # ============================================
@@ -5530,9 +5577,15 @@ Have a great evening!"""
 
             extracted = 0
             for usage in recent:
-                if usage.task_type and usage.response_preview:
+                # response_preview is not currently a column on LlmUsageModel —
+                # earlier code referenced it as an attribute and 500'd every
+                # cycle. Use getattr so this loop becomes a no-op until the
+                # column is added (and writes populate it), instead of an
+                # error every run.
+                preview = getattr(usage, "response_preview", None)
+                if usage.task_type and preview:
                     await svc.extract_and_store(
-                        text=f"Task: {usage.task_type}. Response: {usage.response_preview[:500]}",
+                        text=f"Task: {usage.task_type}. Response: {preview[:500]}",
                         source_type="llm_interaction",
                         source_id=usage.id,
                         namespace="general",
@@ -5770,8 +5823,8 @@ Have a great evening!"""
             return {"success": False, "error": f"Unknown job: {job_name}"}
 
         try:
-            await self._run_with_audit(job_name, handler)
-            return {"success": True, "job": job_name}
+            result = await self._run_with_audit(job_name, handler)
+            return {"success": True, "job": job_name, **result}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

@@ -143,14 +143,18 @@ class CharacterImageRelevanceService:
     _instance: Optional["CharacterImageRelevanceService"] = None
 
     def __init__(self) -> None:
+        # Post 2026-05-14 Bifrost migration: all LLM/VLM traffic exits via
+        # the Bifrost gateway at :4445. The legacy LiteLLM env var names
+        # are kept as fallback lookups so a one-off override still works,
+        # but the default is now the Bifrost endpoint.
         self._base_url = (
             os.getenv("ZERO_VLLM_CHAT_URL")
-            or os.getenv("ZERO_LITELLM_URL")
-            or "http://host.docker.internal:4444/v1"
+            or os.getenv("ZERO_BIFROST_URL")
+            or "http://host.docker.internal:4445/v1"
         ).rstrip("/")
         self._api_key = (
             os.getenv("ZERO_VLLM_API_KEY")
-            or os.getenv("LITELLM_MASTER_KEY")
+            or os.getenv("ZERO_BIFROST_API_KEY")
             or "EMPTY"
         )
         # Same alias as vision_vlm_service; LiteLLM remaps to current Gemini flash.

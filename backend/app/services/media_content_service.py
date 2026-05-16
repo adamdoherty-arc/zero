@@ -12,7 +12,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
-from functools import lru_cache
+from functools import lru_cache, wraps
 
 import structlog
 from sqlalchemy import select, update, delete, func as sql_func
@@ -983,6 +983,38 @@ Use the most surprising facts. Each slide should reveal something most viewers d
             logger.warning("tmdb_seed_error", error=str(e))
 
         return titles
+
+
+def _guard_content_production_method(method_name: str):
+    original = getattr(MediaContentService, method_name, None)
+    if original is None:
+        return
+
+    @wraps(original)
+    async def guarded(self, *args, **kwargs):
+        from app.services.content_production_control_service import (
+            ensure_content_production_allowed,
+        )
+
+        await ensure_content_production_allowed(f"media_content.{method_name}")
+        return await original(self, *args, **kwargs)
+
+    setattr(MediaContentService, method_name, guarded)
+
+
+for _method_name in (
+    "create_media_title",
+    "update_media_title",
+    "delete_media_title",
+    "research_media_title",
+    "generate_carousel",
+    "link_character",
+    "unlink_character",
+    "add_image",
+    "delete_image",
+    "seed_from_tmdb",
+):
+    _guard_content_production_method(_method_name)
 
 
 # ---------------------------------------------------------------------------

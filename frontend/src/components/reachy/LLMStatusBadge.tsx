@@ -38,7 +38,7 @@ interface Props {
 }
 
 const REALTIME_LABELS: Record<string, { label: string; model: string }> = {
-  local: { label: 'Local (vLLM)', model: 'qwen3-chat' },
+  local: { label: 'Local', model: 'qwen3-chat' },
   openai: { label: 'OpenAI Realtime', model: 'gpt-realtime' },
   gemini: { label: 'Gemini Live', model: 'gemini-3.1-flash-live-preview' },
 }
@@ -137,7 +137,7 @@ export function LLMStatusBadge({ realtimeActive = false, onRealtimeSwitch }: Pro
     async (backend: 'local' | 'openai' | 'gemini') => {
       if (!realtimeCfg) return
       // Local has no key requirement — it routes through the in-process
-      // streaming pipeline (Whisper → vLLM → Piper/edge-tts).
+      // streaming pipeline (Whisper -> local model -> Piper/edge-tts).
       if (backend !== 'local') {
         const hasKey = backend === 'openai' ? realtimeCfg.has_openai_key : realtimeCfg.has_gemini_key
         if (!hasKey) {
@@ -312,7 +312,7 @@ export function LLMStatusBadge({ realtimeActive = false, onRealtimeSwitch }: Pro
             <div className="px-3 py-2 text-[11px] text-red-300 bg-red-900/40 border-t border-red-800 flex items-start gap-1.5">
               <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
               All classic providers are down. Interactive Mode (Local realtime) still
-              works as long as the local vLLM container is up.
+              works as long as the local backend is up.
             </div>
           )}
         </div>

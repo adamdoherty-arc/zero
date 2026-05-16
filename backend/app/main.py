@@ -9,8 +9,9 @@ import asyncio
 import os
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import structlog
 
@@ -31,10 +32,12 @@ from app.routers import (
     email_drafts, routine,
     habits, journal,
     agent_company, deep_research, experiments, council,
-    autonomous_research, vault, agent_approvals, voice_bridge, company_operator, company_work_items,
+    autonomous_research, vault, agent_approvals, voice_bridge, company_operator, company_work_items, company_facts,
+    personal_work_items,
     character_content, brain,
     character_reference_videos,
     media_content,
+    content_control,
     trend_intelligence,
     employee,
     meals,
@@ -134,6 +137,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to verify company work-item schema", error=str(e))
 
+        try:
+            from app.services.personal_work_item_service import ensure_personal_project_indexes
+            await ensure_personal_project_indexes()
+            logger.info("Personal work-item indexes verified")
+        except Exception as e:
+            logger.warning("Failed to verify personal work-item indexes", error=str(e))
+
         # Seed knowledge categories and research rules
         try:
             from app.services.knowledge_service import get_knowledge_service
@@ -150,18 +160,25 @@ async def lifespan(app: FastAPI):
             # Sampling has a starting point and every instrumented LLM call
             # can be tagged with a variant_id.
             try:
-                from app.services.character_prompt_seeds import (
-                    seed_character_prompt_variants,
-                    seed_carousel_v2_rhythm_variant,
+                from app.services.content_production_control_service import (
+                    get_content_production_control_service,
                 )
-                seed_summary = await seed_character_prompt_variants()
-                if seed_summary.get("inserted"):
-                    logger.info("Seeded character prompt variants", **seed_summary)
-                # Idempotently install the rhythm-spec carousel prompt and
-                # retire any older arms for the same task type.
-                v2_summary = await seed_carousel_v2_rhythm_variant()
-                if v2_summary.get("action") == "registered":
-                    logger.info("Registered carousel_v2_rhythm variant", **v2_summary)
+
+                if await get_content_production_control_service().is_paused():
+                    logger.warning("character_prompt_seed_skipped_content_production_paused")
+                else:
+                    from app.services.character_prompt_seeds import (
+                        seed_character_prompt_variants,
+                        seed_carousel_v2_rhythm_variant,
+                    )
+                    seed_summary = await seed_character_prompt_variants()
+                    if seed_summary.get("inserted"):
+                        logger.info("Seeded character prompt variants", **seed_summary)
+                    # Idempotently install the rhythm-spec carousel prompt and
+                    # retire any older arms for the same task type.
+                    v2_summary = await seed_carousel_v2_rhythm_variant()
+                    if v2_summary.get("action") == "registered":
+                        logger.info("Registered carousel_v2_rhythm variant", **v2_summary)
             except Exception as e:
                 logger.warning("Failed to seed character prompt variants", error=str(e))
 
@@ -194,7 +211,7 @@ async def lifespan(app: FastAPI):
     from app.infrastructure.llm_router import get_llm_router
     await get_llm_router().initialize()
 
-    # Load Reachy voice-stack config (STT / TTS selections) and pre-warm the
+    # Load Zero voice-stack config (STT / TTS selections) and pre-warm the
     # Whisper + Piper models so the first voice turn doesn't pay a 9-10 s
     # cold start. Both warmups are background tasks â€” startup keeps moving if
     # either model is missing.
@@ -234,6 +251,17 @@ async def lifespan(app: FastAPI):
         try:
             from app.services.scheduler_service import start_scheduler, stop_scheduler
             await start_scheduler()
+            from app.services.content_production_control_service import (
+                get_content_production_control_service,
+            )
+            sync_result = await (
+                get_content_production_control_service().sync_scheduler_with_policy()
+            )
+            if sync_result.get("synced"):
+                logger.warning(
+                    "content_production_freeze_synced_on_startup",
+                    result=sync_result,
+                )
             logger.info("Daily automation scheduler started")
         except Exception as e:
             logger.warning("Failed to start scheduler", error=str(e))
@@ -441,7 +469,17 @@ async def lifespan(app: FastAPI):
             logger.warning("Failed to schedule weekly reflection", error=str(e))
 
     # Auto-resume character research queue from persisted state
+    class _ContentProductionStartupSkip(Exception):
+        pass
+
     try:
+        from app.services.content_production_control_service import (
+            get_content_production_control_service,
+        )
+        if await get_content_production_control_service().is_paused():
+            logger.warning("auto_resume_research_skipped_content_production_paused")
+            raise _ContentProductionStartupSkip()
+
         from app.services.character_content_service import (
             get_character_content_service, _research_queue,
         )
@@ -528,6 +566,8 @@ async def lifespan(app: FastAPI):
             if pending_count > 0:
                 logger.info("auto_start_research_queue", pending=pending_count)
                 await svc.start_batch_research_async(limit=pending_count)
+    except _ContentProductionStartupSkip:
+        pass
     except Exception as e:
         logger.warning("auto_resume_research_failed", error=str(e))
 
@@ -661,6 +701,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+CONTENT_PRODUCTION_WRITE_PREFIXES = ("/api/characters", "/api/media-content")
+CONTENT_PRODUCTION_WRITE_METHODS = {"POST", "PATCH", "DELETE"}
+CONTENT_PRODUCTION_WRITE_ALLOWLIST = {
+    "/api/characters/research-queue/cancel",
+}
+
+
+@app.middleware("http")
+async def content_production_hard_freeze_guard(request: Request, call_next):
+    path = request.url.path
+    if (
+        request.method in CONTENT_PRODUCTION_WRITE_METHODS
+        and path not in CONTENT_PRODUCTION_WRITE_ALLOWLIST
+        and any(path.startswith(prefix) for prefix in CONTENT_PRODUCTION_WRITE_PREFIXES)
+    ):
+        from app.services.content_production_control_service import (
+            get_content_production_control_service,
+        )
+
+        service = get_content_production_control_service()
+        try:
+            policy = await service.get_policy()
+        except RuntimeError as exc:
+            if "Database not initialized" not in str(exc):
+                raise
+            logger.warning(
+                "content_production_freeze_guard_skipped",
+                reason="database_not_initialized",
+                path=path,
+                method=request.method,
+            )
+            return await call_next(request)
+        if policy.paused:
+            return JSONResponse(
+                status_code=423,
+                content={
+                    "error": {
+                        "message": policy.reason,
+                        "type": "ContentProductionPausedError",
+                        "details": {
+                            "action": f"{request.method} {path}",
+                            "paused": True,
+                        },
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                },
+            )
+    return await call_next(request)
+
+
 # Include routers
 app.include_router(sprints.router, prefix="/api/sprints", tags=["Sprints"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["Tasks"])
@@ -700,7 +791,7 @@ app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags
 # Text-to-Speech & Reachy Mini Robot
 app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
 app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
-app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Reachy Voice Intents"])
+app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Zero Voice Intents"])
 app.include_router(reachy_email.router, prefix="/api/reachy/email", tags=["Reachy Email Triage"])
 app.include_router(reachy_realtime.router, prefix="/api/reachy/realtime", tags=["Reachy Realtime Voice"])
 app.include_router(reachy_memory.router, prefix="/api/reachy/memory", tags=["Reachy Memory Blocks"])
@@ -750,9 +841,12 @@ app.include_router(
     tags=["Character Reference Videos"],
 )
 app.include_router(media_content.router, prefix="/api/media-content", tags=["Media Content"])
+app.include_router(content_control.router, prefix="/api/content-control", tags=["Content Control"])
 app.include_router(agent_company.router)  # prefix in router
 app.include_router(company_operator.router)  # prefix in router
 app.include_router(company_work_items.router)  # prefix in router
+app.include_router(company_facts.router)  # prefix in router
+app.include_router(personal_work_items.router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
 app.include_router(autonomous_research.router)  # prefix in router
 app.include_router(vault.router)  # prefix in router
@@ -763,7 +857,8 @@ app.include_router(council.router)  # prefix in router
 app.include_router(brain.router)  # prefix in router
 app.include_router(trend_intelligence.router)  # prefix in router
 app.include_router(employee.router, prefix="/api/employee", tags=["Employee Check-in"])
-app.include_router(loops.router)  # prefix + tags defined in router
+app.include_router(loops.health_router)  # public watchdog liveness probe
+app.include_router(loops.router)  # authenticated loop registry/control
 app.include_router(skills_proxy.router)  # /api/skills/* and /api/teams/* proxied to Legion
 app.include_router(bookkeeper.router, prefix="/api/bookkeeper", tags=["Bookkeeper (ADA AI)"])
 app.include_router(daily_brief.router, prefix="/api/daily-brief", tags=["Daily Brief"])
@@ -842,16 +937,17 @@ async def health_ready():
     except Exception:
         checks["scheduler"] = "error"
 
-    # Check local LLM router (non-blocking, 2s timeout). Ollama was retired
-    # in favor of the shared LiteLLM/vLLM route, so keep the legacy key from
-    # reporting a false outage.
+    # Check local LLM router (non-blocking, 5s timeout). Ollama was retired
+    # in favor of the shared Bifrost route, so keep the legacy key from
+    # reporting a false outage while probing Bifrost with its virtual key.
     try:
         import httpx
         base = settings.vllm_chat_url.rstrip("/")
         headers = {}
         if settings.vllm_api_key:
             headers["Authorization"] = f"Bearer {settings.vllm_api_key}"
-        async with httpx.AsyncClient(timeout=2) as client:
+            headers["x-bf-vk"] = settings.vllm_api_key
+        async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{base}/models", headers=headers)
             checks["local_llm"] = "ok" if resp.status_code == 200 else "degraded"
     except Exception:

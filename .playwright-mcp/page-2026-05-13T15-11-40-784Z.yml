@@ -1,0 +1,413 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Company OS
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Command Center" [ref=e23] [cursor=pointer]:
+              - /url: /company
+              - img [ref=e24]
+              - generic [ref=e28]: Command Center
+          - listitem [ref=e29]:
+            - link "Operator" [ref=e30] [cursor=pointer]:
+              - /url: /company/operator
+              - img [ref=e31]
+              - generic [ref=e33]: Operator
+          - listitem [ref=e34]:
+            - link "Tasks" [ref=e35] [cursor=pointer]:
+              - /url: /company/tasks
+              - img [ref=e36]
+              - generic [ref=e40]: Tasks
+          - listitem [ref=e41]:
+            - link "Agents" [ref=e42] [cursor=pointer]:
+              - /url: /company/agents
+              - img [ref=e43]
+              - generic [ref=e46]: Agents
+          - listitem [ref=e47]:
+            - link "Agent Inbox" [ref=e48] [cursor=pointer]:
+              - /url: /company/inbox
+              - img [ref=e49]
+              - generic [ref=e52]: Agent Inbox
+          - listitem [ref=e53]:
+            - link "Approvals" [ref=e54] [cursor=pointer]:
+              - /url: /company/approvals
+              - img [ref=e55]
+              - generic [ref=e58]: Approvals
+          - listitem [ref=e59]:
+            - link "Finance" [ref=e60] [cursor=pointer]:
+              - /url: /company/finance
+              - img [ref=e61]
+              - generic [ref=e64]: Finance
+          - listitem [ref=e65]:
+            - link "Legal / LLC" [ref=e66] [cursor=pointer]:
+              - /url: /company/legal
+              - img [ref=e67]
+              - generic [ref=e73]: Legal / LLC
+          - listitem [ref=e74]:
+            - link "Consulting / CRM" [ref=e75] [cursor=pointer]:
+              - /url: /company/revenue
+              - img [ref=e76]
+              - generic [ref=e79]: Consulting / CRM
+          - listitem [ref=e80]:
+            - link "Product Studio" [ref=e81] [cursor=pointer]:
+              - /url: /company/product
+              - img [ref=e82]
+              - generic [ref=e87]: Product Studio
+          - listitem [ref=e88]:
+            - link "Robotics Lab" [ref=e89] [cursor=pointer]:
+              - /url: /company/robotics
+              - img [ref=e90]
+              - generic [ref=e93]: Robotics Lab
+          - listitem [ref=e94]:
+            - link "Marketing" [ref=e95] [cursor=pointer]:
+              - /url: /company/marketing
+              - img [ref=e96]
+              - generic [ref=e99]: Marketing
+          - listitem [ref=e100]:
+            - link "Docs / Sources" [ref=e101] [cursor=pointer]:
+              - /url: /company/docs
+              - img [ref=e102]
+              - generic [ref=e105]: Docs / Sources
+      - generic [ref=e106]:
+        - generic [ref=e107]: Company Adjacent
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "AI Company Dashboard" [ref=e110] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e111]
+              - generic [ref=e114]: AI Company Dashboard
+          - listitem [ref=e115]:
+            - link "LLC Guidance" [ref=e116] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e117]
+              - generic [ref=e123]: LLC Guidance
+          - listitem [ref=e124]:
+            - link "Deep Research" [ref=e125] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e126]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "CRM" [ref=e131] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e132]
+              - generic [ref=e135]: CRM
+          - listitem [ref=e136]:
+            - link "Reachy" [ref=e137] [cursor=pointer]:
+              - /url: /reachy
+              - img [ref=e138]
+              - generic [ref=e141]: Reachy
+          - listitem [ref=e142]:
+            - link "Reachy Memory" [ref=e143] [cursor=pointer]:
+              - /url: /reachy/memory
+              - img [ref=e144]
+              - generic [ref=e154]: Reachy Memory
+          - listitem [ref=e155]:
+            - link "Reachy Radio" [ref=e156] [cursor=pointer]:
+              - /url: /reachy/radio
+              - img [ref=e157]
+              - generic [ref=e163]: Reachy Radio
+          - listitem [ref=e164]:
+            - link "Reachy Teleop" [ref=e165] [cursor=pointer]:
+              - /url: /reachy/teleop
+              - img [ref=e166]
+              - generic [ref=e168]: Reachy Teleop
+          - listitem [ref=e169]:
+            - link "Reachy Meetings" [ref=e170] [cursor=pointer]:
+              - /url: /reachy/meetings
+              - img [ref=e171]
+              - generic [ref=e175]: Reachy Meetings
+          - listitem [ref=e176]:
+            - link "Reachy + HA" [ref=e177] [cursor=pointer]:
+              - /url: /reachy/home-assistant
+              - img [ref=e178]
+              - generic [ref=e181]: Reachy + HA
+          - listitem [ref=e182]:
+            - link "Reachy Voice Settings" [ref=e183] [cursor=pointer]:
+              - /url: /reachy/voice-settings
+              - img [ref=e184]
+              - generic [ref=e185]: Reachy Voice Settings
+    - list [ref=e187]:
+      - listitem [ref=e188]:
+        - button "Zero Company OS" [ref=e189] [cursor=pointer]:
+          - generic [ref=e191]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e192]
+  - main [ref=e193]:
+    - generic [ref=e194]:
+      - generic [ref=e195]:
+        - button "Toggle Sidebar" [ref=e196] [cursor=pointer]:
+          - img
+          - generic [ref=e197]: Toggle Sidebar
+        - generic [ref=e198]:
+          - generic [ref=e199]: Zero
+          - generic [ref=e200]: /
+          - generic [ref=e201]: Tasks
+        - button "Search... Ctrl K" [ref=e202] [cursor=pointer]:
+          - img [ref=e203]
+          - generic [ref=e206]: Search...
+          - generic [ref=e207]:
+            - generic [ref=e208]: Ctrl
+            - text: K
+        - button "Talk to Reachy" [ref=e209] [cursor=pointer]:
+          - img [ref=e211]
+          - generic [ref=e214]: Talk to Reachy
+        - button "Local vLLM" [ref=e216] [cursor=pointer]:
+          - generic [ref=e218]: Local vLLM
+        - link "Reachy …" [ref=e220] [cursor=pointer]:
+          - /url: /reachy
+          - img [ref=e222]
+          - generic [ref=e225]: Reachy …
+        - button "Eyes on" [ref=e226] [cursor=pointer]:
+          - img [ref=e227]
+          - generic [ref=e230]: Eyes on
+        - button [ref=e232] [cursor=pointer]:
+          - img [ref=e233]
+      - navigation [ref=e236]:
+        - link "Personal" [ref=e237] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e238] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e239] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e240] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e241] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e242]:
+      - generic [ref=e243]:
+        - generic [ref=e244]:
+          - generic [ref=e245]:
+            - generic [ref=e246]:
+              - paragraph [ref=e247]: ADA AI LLC Company OS
+              - heading "Tasks" [level=1] [ref=e248]
+              - paragraph [ref=e249]: Zero is now the single personal and company operating surface. It reads the migrated company docs, manages the internal task cockpit, and routes high-risk actions through approval gates.
+            - link "Ask Zero" [ref=e250] [cursor=pointer]:
+              - /url: /ask-zero
+              - img [ref=e251]
+              - text: Ask Zero
+          - generic [ref=e254]:
+            - link "Command Center" [ref=e255] [cursor=pointer]:
+              - /url: /company
+              - img [ref=e256]
+              - text: Command Center
+            - link "Operator" [ref=e260] [cursor=pointer]:
+              - /url: /company/operator
+              - img [ref=e261]
+              - text: Operator
+            - link "Tasks" [ref=e263] [cursor=pointer]:
+              - /url: /company/tasks
+              - img [ref=e264]
+              - text: Tasks
+            - link "Agents" [ref=e268] [cursor=pointer]:
+              - /url: /company/agents
+              - img [ref=e269]
+              - text: Agents
+            - link "Agent Inbox" [ref=e272] [cursor=pointer]:
+              - /url: /company/inbox
+              - img [ref=e273]
+              - text: Agent Inbox
+            - link "Approvals" [ref=e276] [cursor=pointer]:
+              - /url: /company/approvals
+              - img [ref=e277]
+              - text: Approvals
+            - link "Finance" [ref=e280] [cursor=pointer]:
+              - /url: /company/finance
+              - img [ref=e281]
+              - text: Finance
+            - link "Legal / LLC" [ref=e284] [cursor=pointer]:
+              - /url: /company/legal
+              - img [ref=e285]
+              - text: Legal / LLC
+            - link "Consulting / CRM" [ref=e291] [cursor=pointer]:
+              - /url: /company/revenue
+              - img [ref=e292]
+              - text: Consulting / CRM
+            - link "Product Studio" [ref=e295] [cursor=pointer]:
+              - /url: /company/product
+              - img [ref=e296]
+              - text: Product Studio
+            - link "Robotics Lab" [ref=e301] [cursor=pointer]:
+              - /url: /company/robotics
+              - img [ref=e302]
+              - text: Robotics Lab
+            - link "Marketing" [ref=e305] [cursor=pointer]:
+              - /url: /company/marketing
+              - img [ref=e306]
+              - text: Marketing
+            - link "Docs / Sources" [ref=e309] [cursor=pointer]:
+              - /url: /company/docs
+              - img [ref=e310]
+              - text: Docs / Sources
+        - generic [ref=e313]:
+          - generic [ref=e314]:
+            - heading "Task Suite - Import Required" [level=2] [ref=e315]:
+              - img [ref=e316]
+              - text: Task Suite - Import Required
+            - generic [ref=e319]:
+              - button "Kanban" [ref=e320] [cursor=pointer]:
+                - img [ref=e321]
+                - text: Kanban
+              - button "Table" [ref=e323] [cursor=pointer]:
+                - img [ref=e324]
+                - text: Table
+          - generic [ref=e326]:
+            - generic [ref=e327]:
+              - textbox "Add a company task..." [ref=e328]
+              - combobox [ref=e329]:
+                - option "Formation" [selected]
+                - option "Finance"
+                - option "Consulting"
+                - option "Product"
+                - option "Robotics"
+                - option "Marketing"
+                - option "Operations"
+                - option "Dashboard"
+                - option "Agents"
+                - option "Knowledge"
+              - combobox [ref=e330]:
+                - option "critical"
+                - option "high" [selected]
+                - option "medium"
+                - option "low"
+              - button "Add" [disabled] [ref=e331]:
+                - img [ref=e332]
+                - text: Add
+            - generic [ref=e335]:
+              - combobox [ref=e336]:
+                - option "All work" [selected]
+                - option "Today / next"
+                - option "Blocked"
+                - option "Approval-gated"
+                - option "Formation"
+                - option "Finance"
+                - option "Consulting"
+                - option "Product"
+                - option "Robotics"
+                - option "Marketing"
+                - option "Operations"
+                - option "Dashboard"
+                - option "Agents"
+                - option "Knowledge"
+              - generic [ref=e337]:
+                - img
+                - textbox [ref=e338]:
+                  - /placeholder: Search tasks, owners, domains...
+            - generic [ref=e339]: Loading live company tasks...
+            - generic [ref=e340]:
+              - generic [ref=e341]:
+                - generic [ref=e342]:
+                  - heading "On Hold" [level=3] [ref=e343]
+                  - generic [ref=e344]: "0"
+                - generic [ref=e346]: Drop tasks here
+              - generic [ref=e347]:
+                - generic [ref=e348]:
+                  - heading "In Progress" [level=3] [ref=e349]
+                  - generic [ref=e350]: "0"
+                - generic [ref=e352]: Drop tasks here
+              - generic [ref=e353]:
+                - generic [ref=e354]:
+                  - heading "Blocked" [level=3] [ref=e355]
+                  - generic [ref=e356]: "0"
+                - generic [ref=e358]: Drop tasks here
+              - generic [ref=e359]:
+                - generic [ref=e360]:
+                  - heading "Completed" [level=3] [ref=e361]
+                  - generic [ref=e362]: "0"
+                - generic [ref=e364]: Drop tasks here
+            - generic [ref=e365]:
+              - generic [ref=e366]:
+                - heading "Verify ADA AI LLC name on Sunbiz" [level=3] [ref=e368]
+                - generic [ref=e369]:
+                  - generic [ref=e370]: Formation
+                  - generic [ref=e371]: medium
+                  - generic [ref=e372]: approval
+                - generic [ref=e373]:
+                  - generic [ref=e374]: legal
+                  - generic [ref=e375]: 2026-05-06
+              - generic [ref=e376]:
+                - heading "File Florida LLC Articles of Organization" [level=3] [ref=e378]
+                - generic [ref=e379]:
+                  - generic [ref=e380]: Formation
+                  - generic [ref=e381]: critical
+                  - generic [ref=e382]: approval
+                - generic [ref=e383]:
+                  - generic [ref=e384]: legal
+                  - generic [ref=e385]: 2026-05-10
+              - generic [ref=e386]:
+                - generic [ref=e387]:
+                  - heading "Confirm ADA AI LLC has no existing EIN" [level=3] [ref=e388]
+                  - generic [ref=e390]: next
+                - generic [ref=e391]:
+                  - generic [ref=e392]: Finance
+                  - generic [ref=e393]: medium
+                - generic [ref=e394]:
+                  - generic [ref=e395]: finance
+                  - generic [ref=e396]: 2026-05-06
+              - generic [ref=e397]:
+                - heading "Apply for EIN and archive CP 575 confirmation" [level=3] [ref=e399]
+                - generic [ref=e400]:
+                  - generic [ref=e401]: Finance
+                  - generic [ref=e402]: high
+                  - generic [ref=e403]: approval
+                - generic [ref=e404]:
+                  - generic [ref=e405]: finance
+                  - generic [ref=e406]: 2026-05-07
+              - generic [ref=e407]:
+                - heading "Choose business email, password vault, and receipt inbox" [level=3] [ref=e409]
+                - generic [ref=e410]:
+                  - generic [ref=e411]: Admin
+                  - generic [ref=e412]: medium
+                  - generic [ref=e413]: approval
+                - generic [ref=e414]:
+                  - generic [ref=e415]: security
+                  - generic [ref=e416]: 2026-05-15
+              - generic [ref=e417]:
+                - heading "Create receipt inbox and bookkeeping categories for AI/API spend" [level=3] [ref=e419]
+                - generic [ref=e420]:
+                  - generic [ref=e421]: Finance
+                  - generic [ref=e422]: low
+                - generic [ref=e423]:
+                  - generic [ref=e424]: procurement
+                  - generic [ref=e425]: 2026-05-08
+              - generic [ref=e426]:
+                - heading "Create home-office evidence log and hardware asset register" [level=3] [ref=e428]
+                - generic [ref=e429]:
+                  - generic [ref=e430]: Finance
+                  - generic [ref=e431]: medium
+                - generic [ref=e432]:
+                  - generic [ref=e433]: finance
+                  - generic [ref=e434]: 2026-05-09
+              - generic [ref=e435]:
+                - heading "Open ADA AI LLC checking after EIN and signed operating agreement" [level=3] [ref=e437]
+                - generic [ref=e438]:
+                  - generic [ref=e439]: Finance
+                  - generic [ref=e440]: high
+                  - generic [ref=e441]: approval
+                - generic [ref=e442]:
+                  - generic [ref=e443]: finance
+                  - generic [ref=e444]: 2026-05-10
+              - generic [ref=e445]:
+                - heading "Document business credit card personal-credit policy before applying" [level=3] [ref=e447]
+                - generic [ref=e448]:
+                  - generic [ref=e449]: Finance
+                  - generic [ref=e450]: medium
+                - generic [ref=e451]:
+                  - generic [ref=e452]: finance
+                  - generic [ref=e453]: 2026-05-11
+        - generic [ref=e454]:
+          - generic [ref=e455]:
+            - img [ref=e456]
+            - text: Guardrail active
+          - paragraph [ref=e459]: Zero may summarize, draft, classify, create internal tasks, and prepare reports. Purchases, filings, tax elections, legal actions, client communications, public website changes, and account changes stay behind approval gates.
+  - button "Voice settings" [ref=e460] [cursor=pointer]:
+    - img [ref=e461]
+  - button "Start recording a voice command" [ref=e464] [cursor=pointer]:
+    - img [ref=e465]

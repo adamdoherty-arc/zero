@@ -35,12 +35,9 @@ from app.infrastructure.database import get_session
 logger = structlog.get_logger(__name__)
 
 
-_DEFAULT_LITELLM_URL = "http://host.docker.internal:4444/v1"
-# Default to reasoning-off `qwen3-chat`. The thinking variant emits its CoT
-# into `reasoning_content` and leaves `content` empty under our LiteLLM config,
-# which breaks any client that doesn't merge both fields. We get plenty of
-# discrimination from a strict rubric + low temperature; CoT is overkill here.
-_DEFAULT_JUDGE_MODEL = "qwen3-chat"
+_DEFAULT_LITELLM_URL = "http://host.docker.internal:4445/v1"  # repointed to Bifrost
+# Default to reasoning-off `qwen3-chat` via Bifrost vllm-local.
+_DEFAULT_JUDGE_MODEL = "vllm-local/qwen3-chat"
 _DEFAULT_JUDGE_TIMEOUT = 480.0  # 8 min — JSON-mode guided decoding can be slow on large inputs
 
 # llama.cpp serves with --ctx-size 16384 / --parallel 2 = 8192 per slot.

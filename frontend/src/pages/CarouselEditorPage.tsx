@@ -35,6 +35,7 @@ import type {
 } from '@/hooks/useCharacterContentApi'
 import TikTokPhonePreview from '@/components/character-content/TikTokPhonePreview'
 import MusicPickerModal from '@/components/character-content/MusicPickerModal'
+import { ContentProductionPausedBanner } from '@/components/content-control/ContentProductionPausedBanner'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -55,6 +56,10 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
+import {
+    CONTENT_PRODUCTION_PAUSED_TOOLTIP,
+    useContentProductionStatus,
+} from '@/hooks/useContentControlApi'
 
 // Local constants
 const MODEL_OPTIONS: Array<{ label: string; provider: string; model: string }> = [
@@ -140,6 +145,8 @@ export function CarouselEditorPage() {
     const council = useCarouselCouncilVote()
     const applyCouncil = useApplyCouncilWinner()
     const restoreVersion = useRestoreCarouselVersion()
+    const { data: contentControl } = useContentProductionStatus()
+    const productionPaused = contentControl?.paused ?? true
 
     const [draft, setDraft] = useState<DraftCarousel | undefined>(undefined)
     const [lastSaved, setLastSaved] = useState<DraftCarousel | undefined>(undefined)
@@ -196,7 +203,7 @@ export function CarouselEditorPage() {
     }, [])
 
     const save = useCallback(async () => {
-        if (!draft || !dirty) return
+        if (!draft || !dirty || productionPaused) return
         try {
             await updateCarousel.mutateAsync({
                 id: draft.id,
@@ -215,7 +222,7 @@ export function CarouselEditorPage() {
                 variant: 'destructive',
             })
         }
-    }, [draft, dirty, updateCarousel, toast])
+    }, [draft, dirty, productionPaused, updateCarousel, toast])
 
     // Debounced auto-save.
     useEffect(() => {
@@ -252,6 +259,7 @@ export function CarouselEditorPage() {
         slide_num: number | null,
         label: string,
     ) => {
+        if (productionPaused) return
         setEnhanceDrawer({
             target,
             slide_num,
@@ -263,7 +271,7 @@ export function CarouselEditorPage() {
     }
 
     const runEnhance = async () => {
-        if (!enhanceDrawer || !draft) return
+        if (!enhanceDrawer || !draft || productionPaused) return
         setEnhanceDrawer(s => (s ? { ...s, loading: true, variants: null } : s))
         try {
             persistModel(pickerModel.provider, pickerModel.model)
@@ -290,7 +298,7 @@ export function CarouselEditorPage() {
     }
 
     const applyEnhanceVariantToDraft = async (variant: EnhanceCarouselVariant) => {
-        if (!draft) return
+        if (!draft || productionPaused) return
         try {
             await applyEnhance.mutateAsync({
                 carouselId: draft.id,
@@ -312,11 +320,12 @@ export function CarouselEditorPage() {
     }
 
     const openCouncil = (target: CarouselEnhanceTarget, slide_num: number | null, label: string) => {
+        if (productionPaused) return
         setCouncilPanel({ target, slide_num, label, result: null, loading: false })
     }
 
     const runCouncil = async () => {
-        if (!councilPanel || !draft) return
+        if (!councilPanel || !draft || productionPaused) return
         setCouncilPanel(s => (s ? { ...s, loading: true, result: null } : s))
         try {
             const res = await council.mutateAsync({
@@ -337,7 +346,7 @@ export function CarouselEditorPage() {
     }
 
     const applyCouncilWinnerToDraft = async (decision: CouncilVoteResponse) => {
-        if (!draft) return
+        if (!draft || productionPaused) return
         try {
             await applyCouncil.mutateAsync({
                 carouselId: draft.id,
@@ -358,7 +367,7 @@ export function CarouselEditorPage() {
     }
 
     const doApprove = async () => {
-        if (!draft) return
+        if (!draft || productionPaused) return
         try {
             await approveCarousel.mutateAsync({
                 id: draft.id,
@@ -377,7 +386,7 @@ export function CarouselEditorPage() {
     }
 
     const doReject = async () => {
-        if (!draft) return
+        if (!draft || productionPaused) return
         try {
             await rejectCarousel.mutateAsync({
                 id: draft.id,
@@ -461,7 +470,8 @@ export function CarouselEditorPage() {
                             size="sm"
                             variant="outline"
                             onClick={save}
-                            disabled={!dirty || updateCarousel.isPending}
+                            disabled={!dirty || updateCarousel.isPending || productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Save'}
                         >
                             {updateCarousel.isPending ? (
                                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -474,6 +484,8 @@ export function CarouselEditorPage() {
                             size="sm"
                             className="bg-indigo-600 hover:bg-indigo-500"
                             onClick={() => openCouncil('hook', null, 'Hook')}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Run council vote'}
                         >
                             <Vote className="mr-1.5 h-3.5 w-3.5" /> Council Vote
                         </Button>
@@ -488,7 +500,8 @@ export function CarouselEditorPage() {
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-500"
                             onClick={doApprove}
-                            disabled={approveCarousel.isPending}
+                            disabled={approveCarousel.isPending || productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Approve'}
                         >
                             {approveCarousel.isPending ? (
                                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -502,6 +515,8 @@ export function CarouselEditorPage() {
                             variant="ghost"
                             className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
                             onClick={() => setRejectOpen(true)}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Reject'}
                         >
                             <X className="mr-1.5 h-3.5 w-3.5" /> Reject
                         </Button>
@@ -511,6 +526,9 @@ export function CarouselEditorPage() {
 
             {/* Editor body */}
             <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 p-6 lg:grid-cols-12">
+                <div className="lg:col-span-12">
+                    <ContentProductionPausedBanner />
+                </div>
                 {/* Left: sticky preview */}
                 <div className="lg:col-span-5">
                     <div className="sticky top-20">
@@ -549,6 +567,7 @@ export function CarouselEditorPage() {
                                 onEnhance={() => openEnhance('hook', null, 'Hook')}
                                 onCouncil={() => openCouncil('hook', null, 'Hook')}
                                 model={pickerModel}
+                                productionPaused={productionPaused}
                             />
                             {(draft.slides || []).map((slide, idx) => (
                                 <SlideAccordion
@@ -566,6 +585,7 @@ export function CarouselEditorPage() {
                                     }
                                     onEnhance={() => openEnhance('slide', idx, `Slide ${idx + 1}`)}
                                     onCouncil={() => openCouncil('slide', idx, `Slide ${idx + 1}`)}
+                                    productionPaused={productionPaused}
                                 />
                             ))}
                         </TabsContent>
@@ -579,6 +599,7 @@ export function CarouselEditorPage() {
                                 onEnhanceCaption={() => openEnhance('caption', null, 'Caption')}
                                 onEnhanceHashtags={() => openEnhance('hashtags', null, 'Hashtags')}
                                 onCouncilCaption={() => openCouncil('caption', null, 'Caption')}
+                                productionPaused={productionPaused}
                             />
                         </TabsContent>
 
@@ -596,6 +617,7 @@ export function CarouselEditorPage() {
                                         }}
                                     />
                                 }
+                                productionPaused={productionPaused}
                             />
                         </TabsContent>
                     </Tabs>
@@ -669,7 +691,8 @@ export function CarouselEditorPage() {
                         <Button
                             variant="destructive"
                             onClick={doReject}
-                            disabled={rejectCarousel.isPending}
+                            disabled={rejectCarousel.isPending || productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Reject'}
                         >
                             {rejectCarousel.isPending && (
                                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -717,7 +740,8 @@ export function CarouselEditorPage() {
                             <Button
                                 className="w-full bg-indigo-600 hover:bg-indigo-500"
                                 onClick={runEnhance}
-                                disabled={enhanceDrawer.loading}
+                                disabled={enhanceDrawer.loading || productionPaused}
+                                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Generate variants'}
                             >
                                 {enhanceDrawer.loading ? (
                                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -744,7 +768,8 @@ export function CarouselEditorPage() {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => applyEnhanceVariantToDraft(v)}
-                                                    disabled={applyEnhance.isPending}
+                                                    disabled={applyEnhance.isPending || productionPaused}
+                                                    title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Apply variant'}
                                                 >
                                                     <Check className="mr-1 h-3 w-3" /> Apply
                                                 </Button>
@@ -786,7 +811,8 @@ export function CarouselEditorPage() {
                             <Button
                                 className="w-full bg-purple-600 hover:bg-purple-500"
                                 onClick={runCouncil}
-                                disabled={councilPanel.loading}
+                                disabled={councilPanel.loading || productionPaused}
+                                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Run vote'}
                             >
                                 {councilPanel.loading ? (
                                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -808,7 +834,8 @@ export function CarouselEditorPage() {
                                                 onClick={() =>
                                                     applyCouncilWinnerToDraft(councilPanel.result!)
                                                 }
-                                                disabled={applyCouncil.isPending}
+                                                disabled={applyCouncil.isPending || productionPaused}
+                                                title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Apply winner'}
                                             >
                                                 <Check className="mr-1 h-3 w-3" /> Apply winner
                                             </Button>
@@ -891,22 +918,36 @@ function HookEditor({
     onEnhance,
     onCouncil,
     model,
+    productionPaused,
 }: {
     value: string
     onChange: (v: string) => void
     onEnhance: () => void
     onCouncil: () => void
     model: { provider: string; model: string }
+    productionPaused: boolean
 }) {
     return (
         <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
             <div className="mb-2 flex items-center justify-between gap-2">
                 <Label className="text-sm font-semibold text-white">Hook</Label>
                 <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={onEnhance} title={`Enhance with ${model.provider}`}>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onEnhance}
+                        disabled={productionPaused}
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : `Enhance with ${model.provider}`}
+                    >
                         <Sparkles className="mr-1 h-3 w-3 text-indigo-300" /> Enhance
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={onCouncil}>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={onCouncil}
+                        disabled={productionPaused}
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Council vote'}
+                    >
                         <Vote className="mr-1 h-3 w-3 text-purple-300" /> Council
                     </Button>
                 </div>
@@ -931,6 +972,7 @@ function SlideAccordion({
     onChange,
     onEnhance,
     onCouncil,
+    productionPaused,
 }: {
     slide: CarouselSlide
     idx: number
@@ -939,6 +981,7 @@ function SlideAccordion({
     onChange: (next: CarouselSlide) => void
     onEnhance: () => void
     onCouncil: () => void
+    productionPaused: boolean
 }) {
     return (
         <div className="rounded-xl border border-gray-700 bg-gray-800/50">
@@ -991,10 +1034,22 @@ function SlideAccordion({
                         />
                     </div>
                     <div className="flex items-center justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={onEnhance}>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={onEnhance}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Enhance slide'}
+                        >
                             <Sparkles className="mr-1 h-3 w-3 text-indigo-300" /> Enhance slide
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={onCouncil}>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={onCouncil}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Council vote'}
+                        >
                             <Vote className="mr-1 h-3 w-3 text-purple-300" /> Council
                         </Button>
                     </div>
@@ -1012,6 +1067,7 @@ function CaptionEditor({
     onEnhanceCaption,
     onEnhanceHashtags,
     onCouncilCaption,
+    productionPaused,
 }: {
     caption: string
     hashtags: string[]
@@ -1020,6 +1076,7 @@ function CaptionEditor({
     onEnhanceCaption: () => void
     onEnhanceHashtags: () => void
     onCouncilCaption: () => void
+    productionPaused: boolean
 }) {
     const [draftTag, setDraftTag] = useState('')
     const addTag = () => {
@@ -1036,10 +1093,22 @@ function CaptionEditor({
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <Label className="text-sm font-semibold text-white">Caption</Label>
                     <div className="flex items-center gap-2">
-                        <Button size="sm" variant="outline" onClick={onEnhanceCaption}>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={onEnhanceCaption}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Enhance caption'}
+                        >
                             <Sparkles className="mr-1 h-3 w-3 text-indigo-300" /> Enhance
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={onCouncilCaption}>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={onCouncilCaption}
+                            disabled={productionPaused}
+                            title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Council vote'}
+                        >
                             <Vote className="mr-1 h-3 w-3 text-purple-300" /> Council
                         </Button>
                     </div>
@@ -1056,7 +1125,13 @@ function CaptionEditor({
             <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <Label className="text-sm font-semibold text-white">Hashtags</Label>
-                    <Button size="sm" variant="outline" onClick={onEnhanceHashtags}>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onEnhanceHashtags}
+                        disabled={productionPaused}
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Enhance hashtags'}
+                    >
                         <Sparkles className="mr-1 h-3 w-3 text-indigo-300" /> Enhance
                     </Button>
                 </div>
@@ -1105,11 +1180,13 @@ function MetadataPanel({
     onOpenMusic,
     onNotesChange,
     modelPicker,
+    productionPaused,
 }: {
     draft: DraftCarousel
     onOpenMusic: () => void
     onNotesChange: (v: string) => void
     modelPicker: React.ReactNode
+    productionPaused: boolean
 }) {
     const meta = draft.generation_metadata || {}
     return (
@@ -1117,7 +1194,13 @@ function MetadataPanel({
             <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
                 <div className="mb-2 flex items-center justify-between gap-2">
                     <Label className="text-sm font-semibold text-white">Music</Label>
-                    <Button size="sm" variant="outline" onClick={onOpenMusic}>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={onOpenMusic}
+                        disabled={productionPaused}
+                        title={productionPaused ? CONTENT_PRODUCTION_PAUSED_TOOLTIP : 'Pick music'}
+                    >
                         <Music2 className="mr-1 h-3 w-3" />
                         {draft.music_track ? 'Change' : 'Pick'}
                     </Button>

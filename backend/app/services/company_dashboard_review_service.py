@@ -22,6 +22,7 @@ from app.infrastructure.database import get_session
 from app.models.agent_company import AgentTaskCreate, AgentTaskType
 from app.models.task import CompanyDashboardReviewSummary, CompanyWorkItemReview, Task, TaskPriority, TaskStatus, TaskUpdate
 from app.services.agent_company_service import get_agent_company_service
+from app.services.company_walkthroughs import walkthrough_for
 from app.services.company_work_item_service import COMPANY_PROJECT_ID, get_company_work_item_service
 from app.services.task_service import get_task_service
 
@@ -345,6 +346,7 @@ class CompanyDashboardReviewService:
         missing = self._missing_info(task, has_agent_task=has_agent_task, event_count=event_count)
         recommendation = "archive" if self._should_archive(task) else ("enrich" if missing else "keep")
         score = self._score(task, missing=missing, sources=sources, event_count=event_count, has_agent_task=has_agent_task, recommendation=recommendation)
+        walkthrough = walkthrough_for(task.title, task.description or "")
         return {
             "score": score,
             "recommendation": recommendation,
@@ -354,6 +356,7 @@ class CompanyDashboardReviewService:
             "acceptance_criteria": acceptance,
             "automation_plan": automation,
             "source_links": sources,
+            "walkthrough": walkthrough,
             "reviewed_by": reviewed_by,
             "operator_run_id": operator_run_id,
         }
@@ -425,6 +428,9 @@ class CompanyDashboardReviewService:
             row.acceptance_criteria = packet.get("acceptance_criteria") or []
             row.automation_plan = packet.get("automation_plan") or {}
             row.source_links = packet.get("source_links") or []
+            walkthrough = packet.get("walkthrough")
+            if walkthrough is not None:
+                row.walkthrough = walkthrough
             row.reviewed_by = packet.get("reviewed_by") or "zero-company-operator"
             row.operator_run_id = packet.get("operator_run_id")
             row.updated_at = _now()

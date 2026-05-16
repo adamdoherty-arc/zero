@@ -19,6 +19,13 @@ The only time to pause and ask: hard external blockers (no API key for a paid se
 
 **CRITICAL**: Never defer work to "a future session" or "follow-up work." When the user asks for something, the job is 100% complete — every phase done, every toggle flipped, every UI touched, every endpoint verified end-to-end. Phrases like "out of scope for today," "leave as a follow-up," or "worth queuing" are banned unless the user explicitly asks to stop. If a step is blocked by a hard external dep (vendor SDK that literally doesn't exist yet, paid API with no key), say so concretely, ship the runnable fallback, and keep going. Never leave a checklist with pending items and hand it back.
 
+Specifically banned: writing a `*_MIGRATION.md`, `*_PUNCHLIST.md`,
+`*_FOLLOWUPS.md`, or any "things-I-didn't-finish" section as a way to
+end a turn. If the user asked for the work to be done, do the work. If
+issues surface during the work — a wrong default, a stale config, a
+known-broken probe, a 401, a 5xx — fix them in-flight. The deliverable
+is a working system, not a plan to make it work.
+
 ## Always use the latest model
 
 **CRITICAL**: Before selecting any third-party LLM, vision, TTS, or embedding model, do a quick check for the current version. Providers ship faster than training data — the latest model at the time of *you writing this code* is probably not the latest when it runs. Current anchors (verify, don't cache):
@@ -54,50 +61,84 @@ The shared LiteLLM config also exposes two alias names: `gemini-latest` and `gem
 - PATCH for partial updates
 - POST for state transitions (`/start`, `/complete`, `/move`)
 
-## Reachy Self-Heal (four layers)
+## Reachy stack — user-launched (no autostart, no watchdog)
 
-The Reachy stack stays up automatically across crashes, port collisions, and reboots — and now waits patiently for Docker to be ready instead of timing out at boot:
+The Reachy stack is **manually launched** by the user. There is no Windows
+scheduled task, no auto-restart watchdog, no Docker readiness probe.
+Background self-heal was removed on 2026-05-15 because it produced silent
+flapping ("Process pid X exists but :8000 is not responding") with no user
+visibility. All daemon lifecycle now flows through the UI.
 
-1. **Reachy daemon (port 8000)** — supervised by host_agent. Enable with `POST http://localhost:18796/daemon/watchdog {"enabled":true}`. Polls every 10s; restarts the daemon process after 6 consecutive failures. State at [host_agent/supervisor.py](host_agent/supervisor.py).
-2. **Docker readiness probe (in-process)** — host_agent runs a background coroutine ([host_agent/docker_readiness.py](host_agent/docker_readiness.py)) that polls `host.docker.internal:18792/health` with 2 s → 60 s exponential backoff. The supervisor watchdog consults it and pauses failure counting while Docker is still starting (boot-grace window: 10 minutes after a Windows uptime < 600 s). Once Docker turns green the watchdog auto-links Reachy. Surfaces as the Backend (Docker) row in DaemonPanel + the **Smart Re-link** button (`POST /api/reachy/daemon/relink`).
-3. **host_agent supervisor (port 18796)** — [host_agent/auto-restart.ps1](host_agent/auto-restart.ps1) is the canonical wrapper. Logs structured `docker_probe` JSON lines for observability. `auto-restart.bat` is now a thin shim that delegates to the .ps1. Set `ZERO_WAIT_FOR_DOCKER=true` to make the wrapper itself block on `docker info` before launching uvicorn (off by default — host_agent comes up immediately so the UI works, and the in-process readiness probe handles the real wait).
-4. **Boot persistence** — Windows Scheduled Task `ZeroHostAgent` with a **90 s logon delay** (`Trigger.Delay = "PT90S"`). Registered via [host_agent/register-autostart.ps1](host_agent/register-autostart.ps1). The delay covers the Docker Desktop cold-boot window; Layer 2 handles anything still warming up after that. **NSSM service migration was attempted on 2026-05-08 and reverted** — Microsoft Account / Windows Hello sign-ins can't authenticate via the local `LogonUser` API, which NSSM requires to embed the user-context password. The scheduled task uses `LogonType=Interactive` (your existing logon session) so no password storage is needed and WASAPI audio works. NSSM scripts ([install-service.ps1](host_agent/install-service.ps1), [migrate-to-nssm.ps1](host_agent/migrate-to-nssm.ps1), [fix-service-credential.ps1](host_agent/fix-service-credential.ps1), [diagnose-account.ps1](host_agent/diagnose-account.ps1), [revert-to-scheduled-task.ps1](host_agent/revert-to-scheduled-task.ps1)) remain in the repo as a documented future option if a local-account service identity is ever set up.
+**To start the stack:**
+1. Double-click `Start Zero Robot` on the desktop (one-time setup: run
+   `host_agent\install-shortcut.ps1`).
+2. The shortcut runs [host_agent/start-zero.bat](host_agent/start-zero.bat),
+   which boots host_agent on :18796 in a visible console window. Closing
+   the console stops the stack — supervisor's atexit hook reaps the
+   Reachy daemon subprocess so :8000 is freed cleanly.
+3. Open <http://localhost:5173/zero>. The page shows an amber banner if
+   host_agent isn't reachable; otherwise the console + daemon controls
+   are live.
+4. Click **Start daemon** in the Daemon panel to bring up the Reachy
+   daemon on :8000. Use **Stop / Restart / Smart Re-link** for manual
+   recovery. There is no auto-restart — if the daemon dies, the UI
+   surfaces it and the user decides what to do.
 
-**Docker stack** (zero-api, zero-ui, zero-searxng) uses `restart: unless-stopped` — survives docker daemon restarts but not host reboots without docker autostart.
+**Files that matter:**
+- [host_agent/start-zero.bat](host_agent/start-zero.bat) — the launcher.
+  On first run, prompts to unregister the legacy `ZeroHostAgent` /
+  `ZeroHostAgentHealthCheck` scheduled tasks if they're still present.
+- [host_agent/install-shortcut.ps1](host_agent/install-shortcut.ps1) —
+  one-time shortcut installer (no admin required).
+- [host_agent/supervisor.py](host_agent/supervisor.py) — subprocess
+  lifecycle + log tailing + atexit reaping. No watchdog code.
+- [host_agent/main.py](host_agent/main.py) — FastAPI on :18796 exposing
+  `/daemon/{status,start,stop,restart,retry-scan,logs,issues,diagnostics,audio/reset,relink}`.
+  No `/daemon/watchdog`, no `/host/docker_status`.
+- [backend/app/routers/reachy.py](backend/app/routers/reachy.py) —
+  proxies daemon control to host_agent. New `/api/reachy/host-agent/status`
+  endpoint powers the offline banner.
+- [frontend/src/components/reachy/HostAgentOfflineBanner.tsx](frontend/src/components/reachy/HostAgentOfflineBanner.tsx) — amber
+  banner shown when host_agent on :18796 is unreachable.
+- [frontend/src/components/reachy/StreamingHealthCard.tsx](frontend/src/components/reachy/StreamingHealthCard.tsx) — 4-card
+  status grid (Robot / Daemon API / Video / Audio), Pollen-style.
 
-**Operate the self-heal:**
+**Operate from CLI:**
 ```powershell
-# Inspect / repair the scheduled task
-Get-ScheduledTask -TaskName ZeroHostAgent
-Get-ScheduledTask -TaskName ZeroHostAgent | ForEach-Object { $_.Triggers[0].Delay }   # should print PT1M30S
-Start-ScheduledTask -TaskName ZeroHostAgent
-# Re-register (idempotent — picks up changes to register-autostart.ps1)
-powershell.exe -ExecutionPolicy Bypass -File c:\code\zero\host_agent\register-autostart.ps1
-
-# Tail wrapper log (structured docker_probe JSON lines included)
-Get-Content c:\code\zero\host_agent\logs\auto-restart.log -Tail 20 -Wait
+# Tail launcher log
+Get-Content c:\code\zero\host_agent\logs\host-agent-foreground.log -Tail 20 -Wait
 # Tail daemon log
 Get-Content c:\code\zero\host_agent\logs\reachy-daemon-$(Get-Date -Format yyyyMMdd).log -Tail 20 -Wait
-# Probe Docker readiness directly
-curl http://localhost:18796/host/docker_status
-# Smart Re-link from CLI
-curl -X POST http://localhost:18796/daemon/relink
-
-# (Future) NSSM service migration — only viable on a local Windows account
-# (not Microsoft Account / Hello). Requires admin + local password.
-# powershell.exe -ExecutionPolicy Bypass -File c:\code\zero\host_agent\migrate-to-nssm.ps1
-# powershell.exe -ExecutionPolicy Bypass -File c:\code\zero\host_agent\revert-to-scheduled-task.ps1
+# Manual restart from CLI (UI is preferred)
+curl -X POST http://localhost:18796/daemon/restart
+# Probe host_agent health
+curl http://localhost:18796/health
 ```
 
-**If you change anything in this stack** (ports, supervisor, watchdog logic, wrapper script), re-run `register-autostart.ps1` and verify with `Get-ScheduledTask -TaskName ZeroHostAgent`. Never silently disable the watchdog — that's how Reachy went dark for 24 hours on 2026-04-24. The Docker-aware watchdog (Layer 2) only pauses failure counting; it never disables itself.
+If you find yourself reaching for a scheduled task or a watchdog loop to
+fix something, **stop**: the symptom you're trying to mask is real and
+needs to land in the UI as a clear status + recovery button instead.
+The 2026-04-24 and 2026-05-11 outages were both caused by silent
+watchdog failures; the new model trades automatic recovery for explicit
+user control.
 
-## Reachy Voice UX (do not undo)
+## Zero Voice UX (Reachy hardware; do not undo)
 
 - **Interactive Mode = primary voice surface**. `InteractiveModeBar` in the TopBar is the one-click live-conversation toggle (Local realtime by default; OpenAI Realtime / Gemini Live as explicit-only fallbacks). Space toggles, Esc ends. 5-min idle auto-off for cost safety.
 - **Local-first realtime**. The realtime path uses `reachy_realtime/local_handler.py` (streaming Whisper → vLLM qwen3-chat → Piper/edge-tts) by default. Cloud realtime backends are surfaced through the LLM badge popover but never auto-selected, even if their API keys are configured. The preferred-backend resolution lives in [`backend/app/routers/reachy_realtime.py`](backend/app/routers/reachy_realtime.py) `_enriched_config` — change there if the policy ever flips.
 - **FloatingVoiceButton is classic push-to-talk only** — do NOT re-add realtime auto-promote. Running two WebSocket instances = double billing.
 - **LLMStatusBadge** in the TopBar is how the user picks/sees the active brain. Green/amber/red dots come from `GET /api/reachy-intent/providers/status` (1-token probes, 15 s cache, 5 s per-provider timeout).
 - **Kimi K2.5/K2.6 require `temperature=1` EXACTLY**. `kimi_provider.py` clamps this for any `kimi-k2*` model. Don't pass other temps.
+
+## Zero Daily Brief & Supervisor (2026-05-09)
+
+- **Daily brief composer** runs at 07:00 server-local. Lands in the `/` dashboard tile (`DailyBrief` component) and is emailed when `ZERO_DAILY_BRIEF_TO` is set. Override hour with `ZERO_DAILY_BRIEF_HOUR/_MINUTE`; disable email-send with `ZERO_DAILY_BRIEF_EMAIL=0`.
+- **Weekly reflection** runs Sundays 22:00 — drives closed-loop learning via the existing `reflection_service`.
+- **Supervisor graph** at [`backend/app/services/supervisor_graph.py`](backend/app/services/supervisor_graph.py) classifies user intent (calendar / email / company / bookkeeper / research / direct) and dispatches to the right handler. Realtime tools `delegate_research`, `draft_email`, `bookkeeping_query`, `supervisor_dispatch` are exposed in [`reachy_realtime/tools.py`](backend/app/services/reachy_realtime/tools.py) so Reachy can spawn agents from voice.
+- **Memory facade** at [`backend/app/services/memory_facade.py`](backend/app/services/memory_facade.py) is the single retrieval contract — fan-in across mem0 / episodic / user / blocks. `local_handler.py` calls it at session start to seed the system prompt. Enable mem0 backend with `ZERO_MEMORY_USE_MEM0=1`.
+- **Realtime engine flag** `REACHY_REALTIME_ENGINE` selects `legacy` (default) or `pipecat`. `pipecat` is a no-op safety alias until the Pipecat bridge lands — flipping it does not break voice.
+- **Whisper default** bumped to `distil-large-v3` (~600MB faster-whisper). Override via `REACHY_LOCAL_WHISPER_MODEL`.
+- **Email approval pool** at `/api/email/drafts/pool/*` — Reachy drafts, you approve. Reach it from the UI at `/email/drafts`. **Don't** auto-send drafts; the pool is the trust boundary.
 
 ## Post-Change Deployment (MANDATORY)
 

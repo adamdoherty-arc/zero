@@ -1,16 +1,22 @@
 """Coverage for the tiered cheap-VLM router.
 
-Exercises:
-  - JSON parsing (with code fences, with trailing prose, malformed)
-  - Tier 0 (Kimi) success short-circuits before Tier 1
-  - Tier 1 (free pool) slot rotation on 429
-  - Tier 2 (Gemini paid) fallback when Tier 0 + Tier 1 fail
-  - All-tiers-exhausted returns failure-soft envelope
+NOTE 2026-05-14: skipped at module level after the Bifrost migration.
+GeminiProvider and OpenRouterProvider were deleted under the new
+Kimi-only-cloud policy, so the Tier 0 / Tier 1 dispatchers in
+``cheap_vlm_router`` are now no-op stubs. The tests below exercise
+that deleted machinery and would fail on the missing imports. They
+will be rewritten when a local vision model lands and Stage-8 VLM
+is re-enabled through Bifrost.
 """
 
 from __future__ import annotations
 
 import pytest
+
+pytest.skip(
+    "cheap_vlm_router tiers disabled post-Bifrost migration (2026-05-14)",
+    allow_module_level=True,
+)
 
 
 @pytest.fixture

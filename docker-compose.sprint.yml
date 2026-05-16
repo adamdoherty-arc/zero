@@ -24,9 +24,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # vLLM (chat + embed) lives in shared-infra/docker-compose.vllm.yml.
-  # One instance serves Zero, Ada, and Legion. Reach it via host.docker.internal
-  # (ports published on 8000 / 8001 on the host).
+  # Shared local chat + embed live in shared-infra and are fronted by Bifrost.
+  # Zero joins that network and reaches the gateway by Docker DNS.
 
   # FastAPI Backend
   zero-api:
@@ -39,6 +38,7 @@ services:
     networks:
       - default
       - ada-bridge
+      - shared-infra
     volumes:
       - ./workspace:/app/workspace
       - ./config:/app/config
@@ -67,25 +67,26 @@ services:
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
       - ZERO_VAULT_PATH=/vault
-      - ZERO_OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
       - ZERO_OLLAMA_TIMEOUT=900
-      # Local LLMs routed through shared LiteLLM proxy at :4444 (shared-infra).
-      # Projects never hardcode vLLM ports — when a backend moves, only
-      # shared-infra/litellm/config.yaml changes.
-      - ZERO_VLLM_CHAT_URL=http://host.docker.internal:4444/v1
-      - ZERO_VLLM_API_KEY=${LITELLM_MASTER_KEY:-sk-shared-master-change-me}
+      # Post 2026-05-14 Bifrost migration: every LLM/embed call exits via
+      # the shared Bifrost gateway. The vllm_* env vars retain their names
+      # for backwards compat with code that reads them but now point at Bifrost.
+      - ZERO_VLLM_CHAT_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
+      - ZERO_VLLM_API_KEY=${ZERO_VLLM_API_KEY:-}
+      - ZERO_BIFROST_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
+      - ZERO_BIFROST_API_KEY=${ZERO_BIFROST_API_KEY:-}
       # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
-      - ZERO_REACHY_API_URL=http://host.docker.internal:8000
-      - ZERO_HOST_AGENT_URL=http://host.docker.internal:18796
+      - ZERO_REACHY_API_URL=${ZERO_REACHY_API_URL:-http://host.docker.internal:8000}
+      - ZERO_HOST_AGENT_URL=${ZERO_HOST_AGENT_URL:-http://host.docker.internal:18796}
       - ZERO_REACHY_STATUS_CACHE_S=${ZERO_REACHY_STATUS_CACHE_S:-5.0}
       - ZERO_REACHY_ASSISTANT_STATUS_CACHE_S=${ZERO_REACHY_ASSISTANT_STATUS_CACHE_S:-5.0}
       - ZERO_REACHY_SPEAKER_SINK=${ZERO_REACHY_SPEAKER_SINK:-true}
       - ZERO_REACHY_COMPANION_BODY_MOTION=${ZERO_REACHY_COMPANION_BODY_MOTION:-true}
-      - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-qwen3-chat}
-      # Embeddings also proxy through shared LiteLLM; it maps qwen3-embed / Qwen/...
-      # aliases to vllm-embed internally.
-      - ZERO_VLLM_EMBED_URL=http://host.docker.internal:4444/v1
-      - ZERO_VLLM_EMBED_MODEL=${ZERO_VLLM_EMBED_MODEL:-qwen3-embed}
+      - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-vllm-local/qwen3-chat}
+      # Bifrost fronts both vllm-local (chat) and embed-local. Model
+      # strings are bifrost-prefixed verbatim.
+      - ZERO_VLLM_EMBED_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
+      - ZERO_VLLM_EMBED_MODEL=${ZERO_VLLM_EMBED_MODEL:-embed-local/Qwen/Qwen3-Embedding-0.6B}
       - ZERO_EMBED_PROVIDER=${ZERO_EMBED_PROVIDER:-vllm}
       - ZERO_GATEWAY_TOKEN=${ZERO_GATEWAY_TOKEN}
       # OpenClaw gateway removed — messaging via Claude Agent SDK
@@ -100,12 +101,8 @@ services:
       - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID:-}
       # Hugging Face
       - HF_TOKEN=${HF_TOKEN:-}
-      # Multi-Provider LLM API Keys
-      - ZERO_GEMINI_API_KEY=${ZERO_GEMINI_API_KEY:-}
-      - ZERO_OPENROUTER_API_KEY=${ZERO_OPENROUTER_API_KEY:-}
-      - ZERO_HUGGINGFACE_API_KEY=${ZERO_HUGGINGFACE_API_KEY:-}
-      - ZERO_KIMI_API_KEY=${ZERO_KIMI_API_KEY:-}
-      - ZERO_KIMI_BASE_URL=${ZERO_KIMI_BASE_URL:-https://api.moonshot.ai/v1}
+      # LLM API keys removed 2026-05-14: Bifrost owns all upstream creds via
+      # shared-infra/.env. The container has no business seeing them.
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
       # ADA Bridge
       - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-http://ada-backend:8003}
@@ -121,6 +118,11 @@ services:
       - ZERO_WHISPER_DEVICE=${ZERO_WHISPER_DEVICE:-cpu}
       - ZERO_WHISPER_COMPUTE_TYPE=${ZERO_WHISPER_COMPUTE_TYPE:-int8}
       - ZERO_WHISPER_LANGUAGE=${ZERO_WHISPER_LANGUAGE:-en}
+      # Realtime voice STT model — local_handler.py defaults to distil-large-v3
+      # (~600 MB) but anonymous HF Hub rate-limits the blob download, leaving
+      # users with stt_timeout. Override to the already-cached `tiny` model.
+      # Re-enable distil-large-v3 once HF_TOKEN is set + the blob is fetched.
+      - REACHY_LOCAL_WHISPER_MODEL=${REACHY_LOCAL_WHISPER_MODEL:-tiny}
       - ZERO_RECORDINGS_DIR=/app/workspace/recordings
       # Carousel V2 infrastructure plane (carosel.txt blueprint Phase 1)
       - ZERO_USE_TEMPORAL=${ZERO_USE_TEMPORAL:-false}
@@ -454,4 +456,7 @@ networks:
   default:
     name: zero-network
   ada-bridge:
+    external: true
+  shared-infra:
+    name: shared-infra_default
     external: true

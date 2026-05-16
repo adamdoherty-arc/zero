@@ -146,7 +146,7 @@ class UnifiedLLMClient:
                     model_name = _os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
                 else:
                     provider_name = "vllm"
-                    model_name = _os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")  # canonical alias resolves via shared-litellm
+                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-35B-A3B")  # canonical; legacy `qwen3-chat` still aliased
                 fallbacks = []
 
         return await self._execute_with_fallbacks(
@@ -154,6 +154,7 @@ class UnifiedLLMClient:
             msgs, task_type, temperature, max_tokens,
             json_mode=kwargs.get("json_mode", False),
             thinking_mode=kwargs.get("thinking_mode", False),
+            reasoning=kwargs.get("reasoning"),
         )
 
     async def chat_stream(
@@ -517,8 +518,12 @@ class UnifiedLLMClient:
         """Resolve provider, model, and fallbacks."""
         if model:
             provider, model_name = parse_provider_model(model)
-            # Get fallbacks from router if task_type provided
-            _, _, fallbacks = get_llm_router().resolve_provider_model(task_type)
+            fallbacks: List[Tuple[str, str]] = []
+            if task_type:
+                # Only task-routed explicit calls inherit that task's fallback
+                # chain. User/provider-selected calls, such as Reachy classic
+                # chat, must not silently fall through to unrelated providers.
+                _, _, fallbacks = get_llm_router().resolve_provider_model(task_type)
             return provider, model_name, fallbacks
 
         return get_llm_router().resolve_provider_model(task_type)
@@ -538,6 +543,7 @@ class UnifiedLLMClient:
         max_tokens: int,
         json_mode: bool = False,
         thinking_mode: bool = False,
+        reasoning: Optional[bool] = None,
     ) -> str:
         """Try primary provider, then fallback chain on failure.
 
@@ -559,6 +565,7 @@ class UnifiedLLMClient:
                         task_type, temperature, max_tokens,
                         json_mode=json_mode,
                         thinking_mode=thinking_mode,
+                        reasoning=reasoning,
                     )
                 except Exception as e:
                     last_error = e
@@ -590,7 +597,8 @@ class UnifiedLLMClient:
                     return await self._call_provider(
                         fb_provider, fb_model, messages,
                         task_type, temperature, max_tokens,
-                        json_mode=json_mode if fb_provider in ("gemini", "kimi", "vllm") else False,
+                        json_mode=json_mode if fb_provider in ("bifrost", "gemini", "kimi", "vllm") else False,
+                        reasoning=reasoning,
                     )
                 except Exception as e:
                     last_error = e
@@ -613,6 +621,7 @@ class UnifiedLLMClient:
         max_tokens: int,
         json_mode: bool = False,
         thinking_mode: bool = False,
+        reasoning: Optional[bool] = None,
     ) -> str:
         """Call a specific provider with metrics + cost tracking + Langfuse trace.
 
@@ -639,10 +648,12 @@ class UnifiedLLMClient:
                 "temperature": temperature,
                 "max_tokens": max_tokens,
             }
-            if json_mode and provider_name in ("gemini", "kimi", "vllm"):
+            if json_mode and provider_name in ("bifrost", "gemini", "kimi", "vllm"):
                 chat_kwargs["json_mode"] = True
             if thinking_mode and provider_name == "kimi":
                 chat_kwargs["thinking_mode"] = True
+            if reasoning is not None and provider_name in ("bifrost", "vllm", "ollama"):
+                chat_kwargs["reasoning"] = reasoning
 
             async with tracer.trace_generation(
                 name=task_type or "chat",
@@ -654,6 +665,7 @@ class UnifiedLLMClient:
                     "max_tokens": max_tokens,
                     "json_mode": json_mode,
                     "thinking_mode": thinking_mode,
+                    "reasoning": reasoning,
                 },
                 input_messages=messages,
             ) as generation:

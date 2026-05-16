@@ -134,6 +134,7 @@ class TaskModel(Base):
 
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completion_outputs: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
@@ -176,6 +177,8 @@ class CompanyWorkItemReviewModel(Base):
     acceptance_criteria: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
     automation_plan: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
     source_links: Mapped[Optional[list]] = mapped_column(JSONB, default=[])
+    walkthrough: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    completion_review: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     reviewed_by: Mapped[str] = mapped_column(String(100), default="zero-company-operator", index=True)
     operator_run_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -185,6 +188,25 @@ class CompanyWorkItemReviewModel(Base):
         Index("idx_company_work_item_reviews_score", "score"),
         Index("idx_company_work_item_reviews_recommendation", "recommendation"),
     )
+
+
+class CompanyFactModel(Base):
+    """Structured KV registry of ADA AI LLC facts captured at task completion."""
+    __tablename__ = "company_facts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(300), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    domain: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    source_task_id: Mapped[Optional[str]] = mapped_column(String(64), ForeignKey("tasks.id", ondelete="SET NULL"), index=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="task_completion")
+    evidence_url: Mapped[Optional[str]] = mapped_column(Text)
+    sensitive: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 
 # ---------------------------------------------------------------------------

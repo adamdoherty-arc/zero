@@ -15,7 +15,7 @@ drift_policy: preserve as research context; do not treat runtime facts as curren
 > [`LIVING_STATE.md`](LIVING_STATE.md), and policy lives in
 > [`MANDATE.md`](MANDATE.md).
 
-**Bottom line up front.** Build your second brain as an **Obsidian vault (source of truth) + Legion (single LangGraph runtime) + Postgres/pgvector (memory & retrieval) + cyanheads Obsidian MCP (write-back) + vLLM Qwen3-Coder on the 5090 + Claude Code via LiteLLM router (cloud escalation) + LiveKit-bridged Zoey voice**. The content pipeline is a separate LangGraph DAG sharing Legion's memory. Do not spin up a second "PKM agent" microservice; model PKM as a specialist subgraph inside Legion. Work in 12 phased weeks, starting with vault structure and git-backed reversibility — everything else is useless if the vault isn't trustworthy. The two highest-leverage early wins are (a) an opinionated daily-note YAML schema that lets the agent reason about energy, trades, and project health, and (b) a cyanheads MCP server plus mandatory `obsidian-git` auto-commit, which together give you free undo on every agent write. The content quality problem is almost certainly seven specific Wan 2.2 config bugs, not a model-choice problem.
+**Bottom line up front.** Build your second brain as an **Obsidian vault (source of truth) + Legion (single LangGraph runtime) + Postgres/pgvector (memory & retrieval) + cyanheads Obsidian MCP (write-back) + vLLM Qwen3-Coder on the 5090 + Claude Code via LiteLLM router (cloud escalation) + LiveKit-bridged Zero voice**. The content pipeline is a separate LangGraph DAG sharing Legion's memory. Do not spin up a second "PKM agent" microservice; model PKM as a specialist subgraph inside Legion. Work in 12 phased weeks, starting with vault structure and git-backed reversibility — everything else is useless if the vault isn't trustworthy. The two highest-leverage early wins are (a) an opinionated daily-note YAML schema that lets the agent reason about energy, trades, and project health, and (b) a cyanheads MCP server plus mandatory `obsidian-git` auto-commit, which together give you free undo on every agent write. The content quality problem is almost certainly seven specific Wan 2.2 config bugs, not a model-choice problem.
 
 The rest of this report is organized by your ten objectives plus a concrete 12-week rollout.
 
@@ -28,7 +28,7 @@ PARA is too action-only, pure Zettelkasten has no home for trade logs or tax rec
 10_Atlas/        MOCs/, Concepts/, People/, Sources/
 20_Calendar/     Daily/, Weekly/, Monthly/, Quarterly/
 30_Efforts/      31_Eightfold, 32_Legion, 33_Magnus_Trading, 34_Marvel_DC_Pipeline,
-                 35_Sought_Supply, 36_Zoey_Reachy, 37_Tax_475MTM, 38_Ascend_LLC
+                 35_Sought_Supply, 36_Zero_Reachy, 37_Tax_475MTM, 38_Ascend_LLC
 40_Resources/    SOPs, API docs, playbooks (no secrets)
 90_Archive/      >90d dormant
 _Inbox/          QuickAdd lands here first
@@ -148,7 +148,7 @@ Hard cap: ~20 community plugins. Every three months, remove one you don't use.
 
 ## 5. Legion evolved — supervisor agent architecture
 
-**Keep Legion as the single runtime. Do not spin up a separate PKM agent microservice.** Model PKM as a subgraph with its own MCP toolset inside Legion. One checkpointer keeps thread state coherent across Zoey, Claude Code, and CLI entry points; one Store keeps long-term memory coherent across domains; subgraphs let you swap prompts/tools without forking processes.
+**Keep Legion as the single runtime. Do not spin up a separate PKM agent microservice.** Model PKM as a subgraph with its own MCP toolset inside Legion. One checkpointer keeps thread state coherent across Zero, Claude Code, and CLI entry points; one Store keeps long-term memory coherent across domains; subgraphs let you swap prompts/tools without forking processes.
 
 **Write handoffs manually** using `Command(goto=..., graph=Command.PARENT)` rather than the `langgraph-supervisor` library. LangChain deprecated the library as the *recommended* path in late 2025; the manual pattern is ~40 lines, gives full control over what state transits a handoff, and matches what the library does under the hood.
 
@@ -222,7 +222,7 @@ await store.aput(NS("shared","adam","calendar"), key="dnd",
 
 ## 6. Triggers, rollups, and drift detection
 
-**Three trigger surfaces.** Scheduled via APScheduler in-process (`SQLAlchemyJobStore` on the same Postgres so jobs survive restarts). Event-driven via `watchdog` on the vault, git post-commit hooks, and Notion/Discord webhooks. Reactive via Zoey voice, Raycast hotkey, Claude Code CLI, or a Slack/Telegram MCP bot.
+**Three trigger surfaces.** Scheduled via APScheduler in-process (`SQLAlchemyJobStore` on the same Postgres so jobs survive restarts). Event-driven via `watchdog` on the vault, git post-commit hooks, and Notion/Discord webhooks. Reactive via Zero voice, Raycast hotkey, Claude Code CLI, or a Slack/Telegram MCP bot.
 
 **Attention economy is non-optional.** Borrow LangChain's ambient-agent three-tier framing — `notify | question | review`. Enforce a **DND window** (22:00–07:00 local, weekends optional) checked before any push; during DND, writes go to an inbox table. Each proposed nudge carries a **salience score** (0–1); only salience ≥ 0.6 interrupts immediately, the rest batch into the morning digest. **Hard cap at ~5 interruptions/day** — beyond that, the agent becomes another Slack and gets ignored.
 
@@ -255,7 +255,7 @@ A **Redis Streams capture bus** is the right plumbing: single binary you probabl
 
 **Calendar and Notion.** `nspady/google-calendar-mcp` (2.6.1, March 2026) is the de facto GCal MCP — use its `account` parameter to hard-filter out the Eightfold calendar. Notion API 2025-09-03 now has **native outgoing webhooks** (subscribe to `page.content_updated`, `data_source.schema_updated`, etc.); pair with polling fallback using `last_edited_time` cursor. Switch old code from `database_id` to `data_source_id`. **Sunset Notion for personal use; keep it only as a publish target** for notes tagged `#share/work` via the Notion MCP.
 
-**Voice — Zoey.** Reachy Mini Lite is USB-tethered, no onboard compute, SDK at `pollen-robotics/reachy_mini`. The reference conversation app (`reachy_mini_conversation_app`) uses fastrtc + OpenAI Realtime or Gemini Live; for full local, point it at vLLM/Kokoro. The right 2026 stack: Silero VAD → openWakeWord (`"Hey Zoey"`) → **faster-whisper distil-large-v3** (or NVIDIA Parakeet TDT 1.1B if you're English-only — RTFx >2000) → Legion via MCP → **Kokoro 82M** TTS (Apache 2.0, streaming via Kokoro-FastAPI on :8880) → Reachy speaker + head motion tool calls → barge-in via Silero-interrupt. Best production framework: **LiveKit Agents** — it shipped native one-line MCP support in early 2026, which cleanly bridges the Reachy daemon to Legion. Every Zoey turn appends to today's daily note under `## 🎙️`.
+**Voice — Zero.** Reachy Mini Lite is USB-tethered, no onboard compute, SDK at `pollen-robotics/reachy_mini`. The reference conversation app (`reachy_mini_conversation_app`) uses fastrtc + OpenAI Realtime or Gemini Live; for full local, point it at vLLM/Kokoro. The right 2026 stack: Silero VAD → openWakeWord (`"Hey Zero"`) → **faster-whisper distil-large-v3** (or NVIDIA Parakeet TDT 1.1B if you're English-only — RTFx >2000) → Legion via MCP → **Kokoro 82M** TTS (Apache 2.0, streaming via Kokoro-FastAPI on :8880) → Reachy speaker + head motion tool calls → barge-in via Silero-interrupt. Best production framework: **LiveKit Agents** — it shipped native one-line MCP support in early 2026, which cleanly bridges the Reachy daemon to Legion. Every Zero turn appends to today's daily note under `## 🎙️`.
 
 **Life-logging.** Rewind is effectively discontinued (team pivoted to Limitless). **Recommend ActivityWatch always-on + Screenpipe for high-value screen recall** (has app blacklist for Eightfold hygiene, MCP server built-in). Pensieve is a strong third if you want VLM+OCR. Readwise Reader remains the right reading aggregator; Omnivore and Pocket are both dead.
 
@@ -298,7 +298,7 @@ QAAgent runs four automated checks: CLIP similarity vs character reference (>0.7
 ## 9. Integration — how the pieces click together
 
 ```
-User surfaces: Zoey (LiveKit) │ Claude Code │ Obsidian │ Raycast/CLI
+User surfaces: Zero (LiveKit) │ Claude Code │ Obsidian │ Raycast/CLI
                         ↓  (MCP stdio/HTTP; Anthropic Messages API)
                     LiteLLM :4000  (routing, retries, budgets, audit)
                         ↓              ↓              ↓
@@ -352,7 +352,7 @@ User surfaces: Zoey (LiveKit) │ Claude Code │ Obsidian │ Raycast/CLI
 
 **Weeks 9–10 — Specialist agents.** *Goal:* domain subagents coordinate under Legion. *Deliverables:* Trading, Projects, PKM, Content subgraphs with the manual handoff pattern; Magnus moved to Tradier hosted MCP with paper-default + `interrupt()` before live orders; PKM subagent handling capture-to-inbox, atomic-note promotion proposals, MOC updates; Projects subagent running commit velocity queries and producing the drift SQL results nightly; Arize Phoenix deployed with OpenInference instrumentation on every node. *Key tools:* LangGraph subgraphs, Tradier MCP, Arize Phoenix, LiteLLM proxy (≥1.81.14). *Validation:* supervisor routes correctly on 20 evaluation prompts; drift detection surfaces one real idle project; Phoenix dashboard shows per-agent latency and cost. *Most important:* explicit `task:` argument on every handoff tool — the LangChain 2025 benchmark showed it's the single biggest lift for supervisor accuracy.
 
-**Weeks 11–12 — Proactive check-ins + Zoey voice.** *Goal:* near-full autonomy with voice interface. *Deliverables:* APScheduler cron jobs for morning digest, market-open briefing, EOD rollup, Friday weekly review, month-end retro; attention-economy middleware (DND window, salience threshold, 5-interrupt budget, notify/question/review tiering); LiveKit Agents bridge to Reachy Mini daemon with Silero VAD + openWakeWord + Parakeet TDT + Kokoro-FastAPI; every Zoey turn appending to the daily note; circuit breakers on $-spend and error rate. *Key tools:* APScheduler, LiveKit Agents (with native MCP support), Reachy Mini SDK, Parakeet, Kokoro. *Validation:* one full week with Legion proactively surfacing ≥3 useful nudges and zero false-alarms during DND; Zoey conversation → daily-note entry works without manual intervention. *Most important:* salience thresholding. An agent that interrupts too often is worse than no agent.
+**Weeks 11–12 — Proactive check-ins + Zero voice.** *Goal:* near-full autonomy with voice interface. *Deliverables:* APScheduler cron jobs for morning digest, market-open briefing, EOD rollup, Friday weekly review, month-end retro; attention-economy middleware (DND window, salience threshold, 5-interrupt budget, notify/question/review tiering); LiveKit Agents bridge to Reachy Mini daemon with Silero VAD + openWakeWord + Parakeet TDT + Kokoro-FastAPI; every Zero turn appending to the daily note; circuit breakers on $-spend and error rate. *Key tools:* APScheduler, LiveKit Agents (with native MCP support), Reachy Mini SDK, Parakeet, Kokoro. *Validation:* one full week with Legion proactively surfacing ≥3 useful nudges and zero false-alarms during DND; Zero conversation → daily-note entry works without manual intervention. *Most important:* salience thresholding. An agent that interrupts too often is worse than no agent.
 
 **Beyond week 12 — content pipeline rework.** Fix the seven Wan 2.2 config bugs first (probably 1–2 days of work). Then build the 9-agent LangGraph content DAG with reflexion loop. Train your first Flux character LoRA on an original character in a superhero style — not a Marvel/DC likeness — for a sustainable monetization path. Target: one fully-automated short per week, human review at Storyboard and Character Sheet checkpoints only.
 
@@ -372,4 +372,4 @@ User surfaces: Zoey (LiveKit) │ Claude Code │ Obsidian │ Raycast/CLI
 
 ## Bottom line
 
-You have the hardware, the frameworks, and the projects — what you're missing is the **connective tissue** (vault schema + MCP + memory namespaces + drift detection) and the **discipline layer** (approval queues + DND + partition tags + git reversibility). Legion doesn't need to become something new; it needs four specialist subgraphs, a cyanheads Obsidian write path, the Postgres Store + LangMem namespaces, and the attention-economy middleware. The content pipeline is a separate DAG sharing Legion's memory — fix the seven Wan 2.2 config bugs before rewriting anything. Move to Obsidian primary and sunset Notion to publish-only. Ship the 12 weeks in order; the first two are boring and they matter most. By week 8 you will have a daily summary you trust; by week 12 Zoey will know what you did today, flag what you didn't, and route market-hours work before you notice you forgot.
+You have the hardware, the frameworks, and the projects — what you're missing is the **connective tissue** (vault schema + MCP + memory namespaces + drift detection) and the **discipline layer** (approval queues + DND + partition tags + git reversibility). Legion doesn't need to become something new; it needs four specialist subgraphs, a cyanheads Obsidian write path, the Postgres Store + LangMem namespaces, and the attention-economy middleware. The content pipeline is a separate DAG sharing Legion's memory — fix the seven Wan 2.2 config bugs before rewriting anything. Move to Obsidian primary and sunset Notion to publish-only. Ship the 12 weeks in order; the first two are boring and they matter most. By week 8 you will have a daily summary you trust; by week 12 Zero will know what you did today, flag what you didn't, and route market-hours work before you notice you forgot.

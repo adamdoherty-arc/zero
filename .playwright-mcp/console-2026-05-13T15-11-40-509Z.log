@@ -1,0 +1,32 @@
+[  961018ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/assistant/notifications/count:0
+[  961113ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5173/api/company/work-items/seed-status:0
+[  961793ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/work-items?limit=500:0
+[  962023ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  962119ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/work-items/seed-status:0
+[  965180ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/assistant/notifications/count:0
+[  965188ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/sight/eyes-off:0
+[  965188ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items/seed-status:0
+[  965188ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items/reviews/summary:0
+[  965193ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy/status:0
+[  965193ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items?limit=500:0
+[  966298ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy/status:0
+[  966301ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/sight/eyes-off:0
+[  966302ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items/reviews/summary:0
+[  968202ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items?limit=500:0
+[  968306ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/reachy/status:0
+[  968308ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/sight/eyes-off:0
+[  968308ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:5173/api/company/work-items/reviews/summary:0
+[  969187ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/assistant/notifications/count:0
+[  969192ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/work-items/seed-status:0
+[  970645ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/operator/questions?status=open&task_id=task-18&limit=10:0
+[  971651ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/operator/questions?status=open&task_id=task-18&limit=10:0
+[  972206ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/work-items?limit=500:0
+[  972310ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/reachy/status:0
+[  972314ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/sight/eyes-off:0
+[  972315ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/work-items/reviews/summary:0
+[  973656ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/operator/questions?status=open&task_id=task-18&limit=10:0
+[  977316ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/reachy/status:0
+[  977659ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/company/operator/questions?status=open&task_id=task-18&limit=10:0
+[  978323ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/reachy/status:0
+[  980337ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/reachy/status:0
+[  982319ms] [ERROR] Failed to load resource: the server responded with a status of 502 (Bad Gateway) @ http://localhost:5173/api/sight/eyes-off:0

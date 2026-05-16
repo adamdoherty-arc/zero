@@ -19,14 +19,11 @@ import {
   useDaemonDiagnostics,
   useDaemonLogs,
   useDaemonStatus,
-  useDaemonWatchdog,
-  useDockerStatus,
   useReachyStatus,
   useRelink,
   useRetryHardwareScan,
   useRestartDaemon,
   useResetAudio,
-  useSetWatchdog,
   useStartDaemon,
   useStopDaemon,
 } from '@/hooks/useReachyApi'
@@ -93,8 +90,6 @@ export function DaemonPanel() {
   }, [daemonConnected, robotReady, userToggled])
 
   const daemon = useDaemonStatus(isOpen ? 5_000 : 15_000)
-  const watchdog = useDaemonWatchdog(isOpen ? 10_000 : 30_000)
-  const dockerStatus = useDockerStatus(isOpen ? 5_000 : 30_000)
   const logs = useDaemonLogs(200, showLogs, 3_000)
   const diagnostics = useDaemonDiagnostics(showDiagnostics)
 
@@ -103,7 +98,6 @@ export function DaemonPanel() {
   const restart = useRestartDaemon()
   const retryScan = useRetryHardwareScan()
   const resetAudio = useResetAudio()
-  const setWatchdog = useSetWatchdog()
   const relink = useRelink()
   const { toast } = useToast()
 
@@ -123,21 +117,12 @@ export function DaemonPanel() {
       (reachyStatus.data?.active_source_ids ?? []).includes('hardware_faults'),
   )
   const shouldRetryScan = motorBusMissing || hardwareFaultActive || (daemonConnected && !robotReady)
-  const watchdogEnabled = watchdog.data?.enabled ?? false
 
-  const dockerState = dockerStatus.data?.state ?? 'unknown'
-  const dockerReady = dockerState === 'ready'
-  const watchdogFailures = watchdog.data?.consecutive_failures ?? 0
-  // Surface Smart Re-link instead of Restart when there's a stuck/unhealthy
-  // condition the user would want to recover from. Specifically: the daemon
-  // is unreachable, Docker isn't ready, or the watchdog has accumulated
-  // failures (we don't want to require a hard restart in that case — the
-  // relink primitive figures out whether to wait or restart).
-  const smartRelinkApplies =
-    !daemonConnected ||
-    !dockerReady ||
-    watchdogFailures > 0 ||
-    !supervisorReachable
+  // Surface Smart Re-link instead of Restart when the daemon is unreachable
+  // (host_agent is up but supervisor.status() can't see the daemon, or
+  // supervisor itself is sluggish). Re-link does a clean stop + start with
+  // log lines the user can watch — easier to diagnose than a silent restart.
+  const smartRelinkApplies = !daemonConnected || !supervisorReachable
 
   const [lastAction, setLastAction] = useState<LastActionState>({ state: 'idle' })
 
@@ -167,8 +152,7 @@ export function DaemonPanel() {
 
   // Recovery button precedence (top wins):
   //   1. motor bus missing / hardware fault  -> Retry hardware scan
-  //   2. daemon offline OR Docker not ready  -> Smart Re-link (waits for
-  //      Docker, restarts daemon when Docker is up — replaces sticky failures)
+  //   2. daemon unreachable                  -> Smart Re-link (clean restart)
   //   3. otherwise                            -> Restart daemon (clean restart)
   const useRelinkButton = !shouldRetryScan && smartRelinkApplies
   const recoveryLabel = shouldRetryScan
@@ -184,7 +168,7 @@ export function DaemonPanel() {
   const recoveryTitle = shouldRetryScan
     ? 'Restart the daemon once and refresh hardware status without enabling motion'
     : useRelinkButton
-      ? 'Re-probe Docker, clear watchdog churn, and restart the daemon when the backend is ready'
+      ? 'Stop and restart the daemon, then surface the new pid + log lines'
       : 'Restart the Zero robot daemon'
   const describeRecovery = (r: unknown) => {
     if (shouldRetryScan) {
@@ -196,10 +180,8 @@ export function DaemonPanel() {
       )
     }
     if (useRelinkButton) {
-      const result = r as { action?: string; detail?: string }
-      return result.detail ?? (result.action === 'waiting'
-        ? 'Backend is still warming up. host_agent will keep checking and link automatically.'
-        : 'Backend is up; restarted the Zero robot daemon.')
+      const result = r as { detail?: string }
+      return result.detail ?? 'Restarted the Zero robot daemon.'
     }
     const pid = (r as { pid?: number })?.pid
     return pid ? `new pid ${pid}` : 'restarted'
@@ -254,9 +236,6 @@ export function DaemonPanel() {
                   last exit {daemon.data.last_exit_code}
                 </span>
               )}
-              {watchdog.data?.enabled && (
-                <span className="ml-2 text-indigo-400">watchdog on</span>
-              )}
             </div>
           </div>
         </div>
@@ -269,8 +248,6 @@ export function DaemonPanel() {
 
       {isOpen && (
         <div className="px-4 pb-4 space-y-4 border-t border-gray-800 pt-4">
-          <BackendStatusRow status={dockerStatus.data} loading={dockerStatus.isLoading} />
-
           {hardwareFaultActive && (
             <HardwareFaultBanner
               robotDetail={robotDetail ?? null}
@@ -286,44 +263,21 @@ export function DaemonPanel() {
             />
           )}
 
-          {!supervisorReachable && !daemon.isPending && (() => {
-            // Distinguish "host_agent is actually down" from "host_agent is up
-            // but the daemon-probe inside supervisor.status() is taking too
-            // long." If /host/docker_status responded recently, host_agent is
-            // alive on :18796 and the right action is Smart Re-link, not
-            // running start-zero.bat.
-            const dockerSucceededRecently =
-              dockerStatus.status === 'success' && dockerStatus.data != null
-            const tone = dockerSucceededRecently
-              ? 'bg-amber-500/10 border-amber-500/30 text-amber-100'
-              : 'bg-red-500/10 border-red-500/30 text-red-100'
-            const title = dockerSucceededRecently
-              ? 'Zero robot daemon probe is slow'
-              : "Host agent isn't responding"
-            const detail = dockerSucceededRecently
-              ? 'host_agent is reachable but its supervisor probe to the Zero robot daemon is taking too long. Click Smart Re-link to refresh the link.'
-              : "host_agent on :18796 is unreachable. If this persists after a restart, repair via C:\\code\\zero\\start-zero.bat."
-            return (
-              <div className={`flex items-start justify-between gap-3 p-3 rounded-md border ${tone}`}>
-                <div className="flex items-start gap-2 min-w-0">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <div className="text-xs">
-                    <div className="font-semibold">{title}</div>
-                    <div className="mt-0.5 opacity-90">{detail}</div>
+          {!supervisorReachable && !daemon.isPending && (
+            <div className="flex items-start justify-between gap-3 p-3 rounded-md border bg-red-500/10 border-red-500/30 text-red-100">
+              <div className="flex items-start gap-2 min-w-0">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="text-xs">
+                  <div className="font-semibold">Host agent isn't responding</div>
+                  <div className="mt-0.5 opacity-90">
+                    host_agent on :18796 is unreachable. Double-click <strong>Start Zero Robot</strong> on
+                    your desktop to relaunch it. If the shortcut is missing, run{' '}
+                    <code className="px-1 bg-black/40 rounded">host_agent\install-shortcut.ps1</code>.
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => call(() => relink.mutateAsync(), 'Smart Re-link', describeRecovery)}
-                  disabled={relink.isPending}
-                  className="shrink-0 rounded-md border border-current/40 bg-black/30 px-2.5 py-1.5 text-xs font-semibold hover:bg-black/50 disabled:opacity-50"
-                >
-                  <RefreshCw className={`inline w-3.5 h-3.5 mr-1 ${relink.isPending ? 'animate-spin' : ''}`} />
-                  Smart Re-link
-                </button>
               </div>
-            )
-          })()}
+            </div>
+          )}
 
           {(() => {
             const cacheAge = (daemon.data as { cache_age_seconds?: number } | undefined)?.cache_age_seconds
@@ -356,34 +310,6 @@ export function DaemonPanel() {
                   {bodyMode ? ` Current motor mode: ${bodyMode}.` : ''}
                 </div>
               </div>
-            </div>
-          )}
-
-          {motorBusMissing && watchdogEnabled && (
-            <div className="flex items-start justify-between gap-3 p-3 rounded-md bg-amber-500/10 border border-amber-500/30">
-              <div className="flex items-start gap-2 min-w-0">
-                <AlertTriangle className="w-4 h-4 text-amber-300 mt-0.5 shrink-0" />
-                <div className="text-xs text-amber-100">
-                  <div className="font-semibold">Watchdog is restarting while motor power is missing.</div>
-                  <div className="mt-0.5">
-                    Pause it to stop restart churn, check the motor power/connector, then retry the hardware scan.
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  call(
-                    () => setWatchdog.mutateAsync(false),
-                    'Pause watchdog',
-                    () => 'Watchdog paused until motor power is restored.',
-                  )
-                }
-                disabled={setWatchdog.isPending}
-                className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-500/20 disabled:opacity-50"
-              >
-                Pause watchdog
-              </button>
             </div>
           )}
 
@@ -442,26 +368,6 @@ export function DaemonPanel() {
               <Headphones className={`w-4 h-4 ${resetAudio.isPending ? 'animate-spin' : ''}`} />
               Reset audio
             </button>
-            <label className="glass-card-hover px-3 py-1.5 text-sm flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={watchdogEnabled}
-                disabled={setWatchdog.isPending || (motorBusMissing && !watchdogEnabled)}
-                onChange={(e) =>
-                  setWatchdog
-                    .mutateAsync(e.target.checked)
-                    .catch((err) =>
-                      toast({
-                        title: 'Watchdog toggle failed',
-                        description: String(err),
-                        variant: 'destructive',
-                      }),
-                    )
-                }
-                className="accent-indigo-500"
-              />
-              <span>Auto-restart watchdog</span>
-            </label>
             <button
               onClick={() => setShowLogs((v) => !v)}
               className={`glass-card-hover px-3 py-1.5 text-sm flex items-center gap-1.5 ${
@@ -487,22 +393,16 @@ export function DaemonPanel() {
             </div>
           )}
 
-          {watchdog.data && watchdog.data.restart_history.length > 0 && (
+          {diagnostics.data?.restart_history && diagnostics.data.restart_history.length > 0 && (
             <div>
               <div className="text-xs font-semibold text-gray-300 mb-1">
-                Recent restarts
+                Recent daemon events
               </div>
               <ul className="text-xs text-gray-400 space-y-0.5">
-                {watchdog.data.restart_history.slice(-5).reverse().map((e, i) => (
+                {diagnostics.data.restart_history.slice(-5).reverse().map((e, i) => (
                   <li key={`${e.at}-${i}`} className="flex items-center gap-2">
                     <span className="text-gray-500">{formatTimestamp(e.at)}</span>
-                    <span
-                      className={
-                        e.reason === 'watchdog' ? 'text-yellow-400' : 'text-indigo-300'
-                      }
-                    >
-                      {e.reason}
-                    </span>
+                    <span className="text-indigo-300">{e.reason}</span>
                     {e.new_pid != null && (
                       <span className="text-gray-500">pid {e.new_pid}</span>
                     )}
@@ -538,72 +438,6 @@ export function DaemonPanel() {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-type DockerReadinessLike =
-  | {
-      state: 'unknown' | 'waiting' | 'ready' | 'unreachable'
-      last_check: string | null
-      last_ready: string | null
-      last_error: string | null
-      consecutive_failures: number
-      consecutive_ready: number
-      probe_count: number
-      next_probe_in_s: number
-      backend_url: string
-    }
-  | undefined
-
-function BackendStatusRow({
-  status,
-  loading,
-}: {
-  status: DockerReadinessLike
-  loading: boolean
-}) {
-  if (loading && !status) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-gray-400 px-3 py-2 rounded-md bg-gray-500/5 border border-gray-700">
-        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        <span>Checking backend (Docker)…</span>
-      </div>
-    )
-  }
-  if (!status) return null
-  const tone =
-    status.state === 'ready'
-      ? { dot: 'bg-green-400', border: 'border-green-500/30', bg: 'bg-green-500/5', text: 'text-green-200' }
-      : status.state === 'unreachable'
-        ? { dot: 'bg-red-400', border: 'border-red-500/30', bg: 'bg-red-500/10', text: 'text-red-200' }
-        : { dot: 'bg-amber-400', border: 'border-amber-500/30', bg: 'bg-amber-500/10', text: 'text-amber-100' }
-  const label =
-    status.state === 'ready'
-      ? 'ready'
-      : status.state === 'unreachable'
-        ? 'unreachable'
-        : status.state === 'waiting'
-          ? 'waiting for Docker'
-          : 'unknown'
-  const subline =
-    status.state === 'ready'
-      ? `Docker backend reachable at ${status.backend_url}.`
-      : status.state === 'unreachable'
-        ? `host_agent has been unable to reach ${status.backend_url} for ${status.consecutive_failures} probes. Click Smart Re-link or check that Docker Desktop is running.`
-        : status.state === 'waiting'
-          ? `host_agent is polling ${status.backend_url} (next probe in ${Math.round(status.next_probe_in_s)}s). Zero will link automatically once Docker is up.`
-          : `Awaiting first probe of ${status.backend_url}.`
-  return (
-    <div className={`flex items-start gap-2 px-3 py-2 rounded-md border ${tone.border} ${tone.bg}`}>
-      <span className={`w-2.5 h-2.5 rounded-full mt-1.5 ${tone.dot}`} />
-      <div className={`text-xs ${tone.text}`}>
-        <div className="font-semibold">Backend (Docker) — {label}</div>
-        <div className="mt-0.5 text-[11px] opacity-80">{subline}</div>
-        {status.last_error && status.state !== 'ready' && (
-          <div className="mt-0.5 text-[11px] opacity-60 break-all">last error: {status.last_error}</div>
-        )}
-      </div>
     </div>
   )
 }

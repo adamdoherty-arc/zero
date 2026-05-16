@@ -1,0 +1,170 @@
+{
+  "owner_project": "zero",
+  "skills": [
+    {
+      "name": "zero-tiktok-pipeline",
+      "category": "feature",
+      "description": "Audit TikTok Shop pipeline \u2014 research, enrich, generate, approve, post.",
+      "cron": "0 4 * * *",
+      "tags": [
+        "zero",
+        "tiktok",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-briefing",
+      "category": "feature",
+      "description": "Audit daily briefing assembly \u2014 coverage, recency, signal-to-noise.",
+      "cron": "0 5 * * *",
+      "tags": [
+        "zero",
+        "briefing",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-scheduler",
+      "category": "feature",
+      "description": "Audit APScheduler job health, cron drift, watchdog signals across 10+ categories.",
+      "cron": "0 6 * * *",
+      "tags": [
+        "zero",
+        "scheduler",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-knowledge-vault",
+      "category": "feature",
+      "description": "Audit vault search, note ingestion, semantic recall, link integrity.",
+      "cron": "0 7 * * *",
+      "tags": [
+        "zero",
+        "vault",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-email-intelligence",
+      "category": "feature",
+      "description": "Audit Gmail digest, search, classification accuracy, action routing.",
+      "cron": "0 4 * * 1",
+      "tags": [
+        "zero",
+        "email",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-calendar-intelligence",
+      "category": "feature",
+      "description": "Audit calendar event handling, suggestion quality, prep generation.",
+      "cron": "0 5 * * 1",
+      "tags": [
+        "zero",
+        "calendar",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-research-loop",
+      "category": "feature",
+      "description": "Audit autonomous research loop \u2014 topic discovery, depth, citation integrity.",
+      "cron": "0 6 * * 1",
+      "tags": [
+        "zero",
+        "research",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-content-loop",
+      "category": "feature",
+      "description": "Audit autonomous content generation loop \u2014 quality, posting cadence, engagement.",
+      "cron": "0 7 * * 1",
+      "tags": [
+        "zero",
+        "content",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-sight-brain",
+      "category": "feature",
+      "description": "Audit VLM/camera providers \u2014 sight observations, frame quality, scene description.",
+      "cron": "0 4 * * 2",
+      "tags": [
+        "zero",
+        "vision",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-voice-loop",
+      "category": "feature",
+      "description": "Audit voice interaction loop \u2014 STT/TTS quality, intent recognition, response latency.",
+      "cron": "0 5 * * 2",
+      "tags": [
+        "zero",
+        "voice",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-meeting-agent",
+      "category": "feature",
+      "description": "Audit meeting scheduling, prep generation, follow-up extraction.",
+      "cron": "0 6 * * 2",
+      "tags": [
+        "zero",
+        "meetings",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-agent-company",
+      "category": "feature",
+      "description": "Audit multi-agent company coordination, agent-agent comms, swarm consensus.",
+      "cron": "0 7 * * 2",
+      "tags": [
+        "zero",
+        "agents",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-brain-benchmark",
+      "category": "feature",
+      "description": "Audit 12-dimension employee benchmark \u2014 calibration accuracy, dimension weights.",
+      "cron": "0 4 * * 3",
+      "tags": [
+        "zero",
+        "brain",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-money-ideas",
+      "category": "feature",
+      "description": "Audit money-idea generation, validation, ranking, conversion to projects.",
+      "cron": "0 5 * * 3",
+      "tags": [
+        "zero",
+        "ideas",
+        "audit"
+      ]
+    },
+    {
+      "name": "zero-trending-intelligence",
+      "category": "feature",
+      "description": "Audit trend signal ingestion, cross-linking, release prediction accuracy.",
+      "cron": "0 6 * * 3",
+      "tags": [
+        "zero",
+        "trends",
+        "audit"
+      ]
+    }
+  ]
+}

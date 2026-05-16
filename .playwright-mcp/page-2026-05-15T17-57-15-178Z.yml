@@ -1,0 +1,605 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e18]:
+      - generic [ref=e19]:
+        - generic [ref=e20]: Company OS
+        - list [ref=e21]:
+          - listitem [ref=e22]:
+            - link "Command Center" [ref=e23] [cursor=pointer]:
+              - /url: /company
+              - img [ref=e24]
+              - generic [ref=e28]: Command Center
+          - listitem [ref=e29]:
+            - link "Operator" [ref=e30] [cursor=pointer]:
+              - /url: /company/operator
+              - img [ref=e31]
+              - generic [ref=e33]: Operator
+          - listitem [ref=e34]:
+            - link "Tasks" [ref=e35] [cursor=pointer]:
+              - /url: /company/tasks
+              - img [ref=e36]
+              - generic [ref=e40]: Tasks
+          - listitem [ref=e41]:
+            - link "Agents" [ref=e42] [cursor=pointer]:
+              - /url: /company/agents
+              - img [ref=e43]
+              - generic [ref=e46]: Agents
+          - listitem [ref=e47]:
+            - link "Agent Inbox" [ref=e48] [cursor=pointer]:
+              - /url: /company/inbox
+              - img [ref=e49]
+              - generic [ref=e52]: Agent Inbox
+          - listitem [ref=e53]:
+            - link "Approvals" [ref=e54] [cursor=pointer]:
+              - /url: /company/approvals
+              - img [ref=e55]
+              - generic [ref=e58]: Approvals
+          - listitem [ref=e59]:
+            - link "Finance" [ref=e60] [cursor=pointer]:
+              - /url: /company/finance
+              - img [ref=e61]
+              - generic [ref=e64]: Finance
+          - listitem [ref=e65]:
+            - link "Legal / LLC" [ref=e66] [cursor=pointer]:
+              - /url: /company/legal
+              - img [ref=e67]
+              - generic [ref=e73]: Legal / LLC
+          - listitem [ref=e74]:
+            - link "Consulting / CRM" [ref=e75] [cursor=pointer]:
+              - /url: /company/revenue
+              - img [ref=e76]
+              - generic [ref=e79]: Consulting / CRM
+          - listitem [ref=e80]:
+            - link "Product Studio" [ref=e81] [cursor=pointer]:
+              - /url: /company/product
+              - img [ref=e82]
+              - generic [ref=e87]: Product Studio
+          - listitem [ref=e88]:
+            - link "Robotics Lab" [ref=e89] [cursor=pointer]:
+              - /url: /company/robotics
+              - img [ref=e90]
+              - generic [ref=e93]: Robotics Lab
+          - listitem [ref=e94]:
+            - link "Marketing" [ref=e95] [cursor=pointer]:
+              - /url: /company/marketing
+              - img [ref=e96]
+              - generic [ref=e99]: Marketing
+          - listitem [ref=e100]:
+            - link "Docs / Sources" [ref=e101] [cursor=pointer]:
+              - /url: /company/docs
+              - img [ref=e102]
+              - generic [ref=e105]: Docs / Sources
+      - generic [ref=e106]:
+        - generic [ref=e107]: Company Adjacent
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link "AI Company Dashboard" [ref=e110] [cursor=pointer]:
+              - /url: /ai-company
+              - img [ref=e111]
+              - generic [ref=e114]: AI Company Dashboard
+          - listitem [ref=e115]:
+            - link "LLC Guidance" [ref=e116] [cursor=pointer]:
+              - /url: /llc-guidance
+              - img [ref=e117]
+              - generic [ref=e123]: LLC Guidance
+          - listitem [ref=e124]:
+            - link "Deep Research" [ref=e125] [cursor=pointer]:
+              - /url: /deep-research
+              - img [ref=e126]
+              - generic [ref=e129]: Deep Research
+          - listitem [ref=e130]:
+            - link "CRM" [ref=e131] [cursor=pointer]:
+              - /url: /crm
+              - img [ref=e132]
+              - generic [ref=e135]: CRM
+          - listitem [ref=e136]:
+            - link "Zero" [ref=e137] [cursor=pointer]:
+              - /url: /zero
+              - img [ref=e138]
+              - generic [ref=e141]: Zero
+          - listitem [ref=e142]:
+            - link "Zero Memory" [ref=e143] [cursor=pointer]:
+              - /url: /zero/memory
+              - img [ref=e144]
+              - generic [ref=e154]: Zero Memory
+          - listitem [ref=e155]:
+            - link "Zero Radio" [ref=e156] [cursor=pointer]:
+              - /url: /zero/radio
+              - img [ref=e157]
+              - generic [ref=e163]: Zero Radio
+          - listitem [ref=e164]:
+            - link "Zero Teleop" [ref=e165] [cursor=pointer]:
+              - /url: /zero/teleop
+              - img [ref=e166]
+              - generic [ref=e168]: Zero Teleop
+          - listitem [ref=e169]:
+            - link "Zero Meetings" [ref=e170] [cursor=pointer]:
+              - /url: /zero/meetings
+              - img [ref=e171]
+              - generic [ref=e175]: Zero Meetings
+          - listitem [ref=e176]:
+            - link "Zero + HA" [ref=e177] [cursor=pointer]:
+              - /url: /zero/home-assistant
+              - img [ref=e178]
+              - generic [ref=e181]: Zero + HA
+          - listitem [ref=e182]:
+            - link "Zero Voice Settings" [ref=e183] [cursor=pointer]:
+              - /url: /zero/voice-settings
+              - img [ref=e184]
+              - generic [ref=e185]: Zero Voice Settings
+    - list [ref=e187]:
+      - listitem [ref=e188]:
+        - button "Zero Company OS" [ref=e189] [cursor=pointer]:
+          - generic [ref=e191]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e192]
+  - main [ref=e193]:
+    - generic [ref=e194]:
+      - generic [ref=e195]:
+        - button "Toggle Sidebar" [ref=e196] [cursor=pointer]:
+          - img
+          - generic [ref=e197]: Toggle Sidebar
+        - generic [ref=e198]:
+          - generic [ref=e199]: Zero
+          - generic [ref=e200]: /
+          - generic [ref=e201]: Zero
+        - button "Search... Ctrl K" [ref=e202] [cursor=pointer]:
+          - img [ref=e203]
+          - generic [ref=e206]: Search...
+          - generic [ref=e207]:
+            - generic [ref=e208]: Ctrl
+            - text: K
+        - button "Live 0:00" [pressed] [ref=e817] [cursor=pointer]:
+          - img [ref=e818]
+          - generic [ref=e217]: Live
+          - generic [ref=e824]: 0:00
+        - button "Bifrost Kimi K2.6" [ref=e579] [cursor=pointer]:
+          - generic [ref=e221]: Bifrost Kimi K2.6
+        - link "Zero ready" [ref=e580] [cursor=pointer]:
+          - /url: /zero
+          - img [ref=e225]
+          - generic [ref=e228]: Zero ready
+        - button "Eyes on" [ref=e229] [cursor=pointer]:
+          - img [ref=e581]
+          - generic [ref=e232]: Eyes on
+        - button "9+" [ref=e584] [cursor=pointer]:
+          - img [ref=e235]
+          - generic [ref=e585]: 9+
+      - navigation [ref=e238]:
+        - link "Personal" [ref=e239] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e240] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e241] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e242] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e243] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e244]:
+      - generic [ref=e245]:
+        - generic [ref=e247]:
+          - img [ref=e249]
+          - generic [ref=e252]:
+            - heading "Zero Cockpit" [level=1] [ref=e253]
+            - paragraph [ref=e254]: Talk to Zero, watch what it sees, and debug — all in one place.
+          - generic "No recent motor hardware faults in daemon logs." [ref=e586]: Zero ready
+        - generic [ref=e256]:
+          - generic [ref=e257]:
+            - generic [ref=e258]:
+              - generic [ref=e259]:
+                - img [ref=e825]
+                - generic:
+                  - generic:
+                    - generic [ref=e267]: Robot Assistant - listening
+                    - generic [ref=e831]: 0:00
+                    - generic [ref=e832]: via Local
+                    - generic "Computer microphone opening" [ref=e833]: mic opening
+                    - generic "connecting" [ref=e834]: listening
+                  - generic: connecting
+                - generic [ref=e269]:
+                  - 'generic "Active motion sources: realtime_body_motion" [ref=e835]':
+                    - img [ref=e271]
+                    - text: Body moving
+                  - button "Settle" [ref=e274] [cursor=pointer]:
+                    - img [ref=e275]
+                    - text: Settle
+                  - button "End session" [ref=e836] [cursor=pointer]
+              - generic [ref=e282]:
+                - generic "API is responding." [ref=e592]:
+                  - img [ref=e593]
+                  - text: Zero API
+                - generic "Listening on the host-agent port." [ref=e596]:
+                  - img [ref=e597]
+                  - text: Windows host agent
+                - generic "API reachable; state running." [ref=e600]:
+                  - img [ref=e601]
+                  - text: Zero robot daemon
+                - generic "Robot body is reachable; motor control is enabled." [ref=e604]:
+                  - img [ref=e605]
+                  - text: Robot connection
+                - generic "Using local." [ref=e608]:
+                  - img [ref=e609]
+                  - text: Live voice backend
+                - 'generic "Active persona: assistant." [ref=e837]':
+                  - img [ref=e613]
+                  - text: Persona
+              - generic [ref=e286]:
+                - generic [ref=e287]: Body
+                - generic [ref=e288]:
+                  - img [ref=e616]
+                  - text: Motion Active
+                - generic "1 realtime session(s) moving the body." [ref=e838]:
+                  - img [ref=e839]
+                  - text: Live voice body motion
+              - generic [ref=e845]:
+                - generic [ref=e846]: Activity
+                - generic "Started Assistant Mode in Still Ready posture." [ref=e847]:
+                  - img [ref=e848]
+                  - text: activate - still
+                  - generic [ref=e851]: 12:57 PM
+              - generic [ref=e291]:
+                - button "mic opening" [ref=e852] [cursor=pointer]:
+                  - img [ref=e293]
+                  - text: mic opening
+                - button "Interrupt" [ref=e296] [cursor=pointer]:
+                  - img
+                  - text: Interrupt
+                - button "Recover Voice" [ref=e302] [cursor=pointer]:
+                  - img [ref=e303]
+                  - text: Recover Voice
+                - button "Zero mic" [ref=e305] [cursor=pointer]:
+                  - img [ref=e306]
+                  - text: Zero mic
+                - button "Quiet Mode" [ref=e309] [cursor=pointer]:
+                  - img [ref=e310]
+                  - text: Quiet Mode
+                - link "Personality" [ref=e313] [cursor=pointer]:
+                  - /url: /zero/voice-settings
+                  - img
+                  - text: Personality
+                - button "Auto motion on" [ref=e853] [cursor=pointer]:
+                  - img [ref=e317]
+                  - text: Auto motion on
+                - button "Swap -> Local" [ref=e323] [cursor=pointer]:
+                  - img [ref=e324]
+                  - text: Swap -> Local
+                - button "Reset" [ref=e327] [cursor=pointer]:
+                  - img [ref=e328]
+                  - text: Reset
+                - button "End" [ref=e331] [cursor=pointer]:
+                  - img [ref=e332]
+                  - text: End
+                - link "Settings" [ref=e334] [cursor=pointer]:
+                  - /url: /zero/voice-settings
+                  - img [ref=e335]
+                  - text: Settings
+                - generic "Waiting for Zero speaker status" [ref=e338]:
+                  - img
+                  - text: Robot speaker...
+                - button "Computer on" [ref=e342] [cursor=pointer]:
+                  - img
+                  - text: Computer on
+                - generic [ref=e345]:
+                  - img
+                  - slider "Zero speaker volume" [ref=e349]: "100"
+                  - generic [ref=e350]: 100%
+                - button "Look at me" [ref=e351] [cursor=pointer]:
+                  - img [ref=e352]
+                  - text: Look at me
+                - button "Ahead" [ref=e355] [cursor=pointer]:
+                  - img [ref=e356]
+                  - text: Ahead
+                - generic [ref=e359]:
+                  - textbox "Type a message…" [ref=e360]
+                  - button "Send text turn" [disabled] [ref=e361]:
+                    - img [ref=e362]
+              - group [ref=e854]:
+                - generic "Transcript (0 recent · 0 tool calls)" [ref=e855] [cursor=pointer]
+            - generic [ref=e365]:
+              - generic [ref=e366]:
+                - generic [ref=e367]:
+                  - generic [ref=e368]:
+                    - generic [ref=e369]:
+                      - generic [ref=e370]:
+                        - img [ref=e371]
+                        - text: Robot Assistant Console
+                      - heading "Zero is in focus mode" [level=2] [ref=e642]
+                      - paragraph [ref=e375]: No action needed
+                    - generic [ref=e376]: focus
+                  - generic [ref=e377]:
+                    - button "Ambient" [ref=e378] [cursor=pointer]:
+                      - img
+                      - text: Ambient
+                    - button "Focus" [ref=e381] [cursor=pointer]:
+                      - img
+                      - text: Focus
+                    - button "Meeting" [ref=e384] [cursor=pointer]:
+                      - img
+                      - text: Meeting
+                    - button "Privacy" [ref=e388] [cursor=pointer]:
+                      - img
+                      - text: Privacy
+                    - button "Sleep" [ref=e391] [cursor=pointer]:
+                      - img
+                      - text: Sleep
+                  - generic [ref=e393]:
+                    - generic [ref=e394]:
+                      - generic [ref=e395]:
+                        - img
+                        - text: Live conversation
+                      - generic "listening" [ref=e856]
+                    - generic [ref=e399]:
+                      - generic [ref=e400]:
+                        - img [ref=e401]
+                        - text: Wake loop
+                      - generic "Hands-free ready" [ref=e649]
+                    - generic [ref=e408]:
+                      - generic [ref=e409]:
+                        - img
+                        - text: Body safety
+                      - generic "Robot body is reachable; motor control is enabled." [ref=e650]
+                    - generic [ref=e414]:
+                      - generic [ref=e415]:
+                        - img
+                        - text: Current senses
+                      - generic "mic / camera" [ref=e652]
+                  - generic [ref=e419]:
+                    - generic [ref=e420]:
+                      - generic [ref=e421]: listening
+                      - generic [ref=e422]: transcribing
+                      - generic [ref=e423]: thinking
+                      - generic [ref=e424]: speaking
+                      - generic [ref=e425]: moving
+                      - generic [ref=e426]: recovering
+                      - generic [ref=e427]: stalled
+                    - generic [ref=e428]:
+                      - generic [ref=e429]:
+                        - text: Input
+                        - generic [ref=e430]: browser_mic · waiting_for_signal
+                        - generic [ref=e653]: rms 0.000
+                      - generic [ref=e431]:
+                        - text: Output
+                        - generic [ref=e432]: reachy_speaker · not ready
+                        - generic [ref=e654]: 0 ms
+                    - generic [ref=e857]: connecting
+                  - generic [ref=e433]:
+                    - button "Recover Voice" [ref=e434] [cursor=pointer]:
+                      - img [ref=e435]
+                      - text: Recover Voice
+                    - button "Switch Mic" [ref=e437] [cursor=pointer]:
+                      - img [ref=e438]
+                      - text: Switch Mic
+                    - button "Quiet Mode" [ref=e442] [cursor=pointer]:
+                      - img [ref=e443]
+                      - text: Quiet Mode
+                    - button "Body On" [ref=e655] [cursor=pointer]:
+                      - img [ref=e447]
+                      - text: Body On
+                    - link "Personality" [ref=e449] [cursor=pointer]:
+                      - /url: /zero/voice-settings
+                      - img [ref=e450]
+                      - text: Personality
+                    - button "Settle" [ref=e460] [cursor=pointer]:
+                      - img [ref=e461]
+                      - text: Settle
+                    - button "Preview Persona" [ref=e466] [cursor=pointer]:
+                      - img [ref=e467]
+                      - text: Preview Persona
+                    - button "What Did Zero Notice?" [ref=e471] [cursor=pointer]:
+                      - img [ref=e472]
+                      - text: What Did Zero Notice?
+                - generic [ref=e474]:
+                  - generic [ref=e475]:
+                    - generic [ref=e476]:
+                      - generic [ref=e477]: Persona
+                      - heading "Assistant" [level=3] [ref=e858]
+                    - img [ref=e479]
+                  - paragraph [ref=e489]: Competent personal assistant. Calendar and task aware.
+                  - generic [ref=e490]:
+                    - generic [ref=e491]:
+                      - generic [ref=e492]: Voice
+                      - generic [ref=e493]: en-US-AndrewNeural
+                    - generic [ref=e494]:
+                      - generic [ref=e495]: Motion
+                      - generic [ref=e496]: understanding1
+                  - generic [ref=e497]:
+                    - generic [ref=e498]: Allowed tools
+                    - generic [ref=e656]:
+                      - generic [ref=e657]: dance
+                      - generic [ref=e658]: stop_dance
+                      - generic [ref=e659]: play_emotion
+                      - generic [ref=e660]: stop_emotion
+                      - generic [ref=e661]: camera
+                      - generic [ref=e662]: head_tracking
+                      - generic [ref=e663]: move_head
+                      - generic [ref=e664]: do_nothing
+              - generic [ref=e499]:
+                - generic [ref=e500]:
+                  - heading "Repair Cards" [level=3] [ref=e502]
+                  - generic [ref=e665]:
+                    - generic [ref=e666]:
+                      - generic [ref=e667]:
+                        - generic [ref=e668]:
+                          - img [ref=e669]
+                          - generic [ref=e672]: Robot body
+                        - generic [ref=e673]: ready
+                      - paragraph [ref=e674]: Robot body is reachable; motor control is enabled.
+                    - generic [ref=e675]:
+                      - generic [ref=e676]:
+                        - generic [ref=e677]:
+                          - img [ref=e678]
+                          - generic [ref=e681]: Wake word
+                        - generic [ref=e682]: ready
+                      - paragraph [ref=e683]: Running openwakeword.
+                    - generic [ref=e684]:
+                      - generic [ref=e685]:
+                        - generic [ref=e686]:
+                          - img [ref=e687]
+                          - generic [ref=e690]: Camera
+                        - generic [ref=e691]: ready
+                      - paragraph [ref=e692]: Camera worker is streaming.
+                    - generic [ref=e693]:
+                      - generic [ref=e694]:
+                        - generic [ref=e695]:
+                          - img [ref=e696]
+                          - generic [ref=e699]: Provider
+                        - generic [ref=e700]: ready
+                      - paragraph [ref=e701]: Using local.
+                    - generic [ref=e702]:
+                      - generic [ref=e703]:
+                        - generic [ref=e704]:
+                          - img [ref=e705]
+                          - generic [ref=e708]: Privacy
+                        - generic [ref=e709]: ready
+                      - paragraph [ref=e710]: Local-first companion policy is active.
+                    - generic [ref=e711]:
+                      - generic [ref=e712]:
+                        - generic [ref=e713]:
+                          - img [ref=e714]
+                          - generic [ref=e717]: Host agent
+                        - generic [ref=e718]: ready
+                      - paragraph [ref=e719]: Host agent is reachable.
+                - generic [ref=e505]:
+                  - generic [ref=e506]:
+                    - heading "Companion Skills" [level=3] [ref=e507]
+                    - generic [ref=e508]: policy gated
+                  - generic [ref=e720]:
+                    - button "Morning Briefing Context, calendar, inbox pressure, and one useful next step." [disabled] [ref=e721]:
+                      - generic [ref=e722]:
+                        - img [ref=e723]
+                        - generic [ref=e726]: Morning Briefing
+                      - paragraph [ref=e727]: Context, calendar, inbox pressure, and one useful next step.
+                    - button "Focus Guardian Quiet focus mode with sparse nudges and optional pomodoro motion." [ref=e728] [cursor=pointer]:
+                      - generic [ref=e729]:
+                        - img [ref=e730]
+                        - generic [ref=e733]: Focus Guardian
+                      - paragraph [ref=e734]: Quiet focus mode with sparse nudges and optional pomodoro motion.
+                    - button "Meeting Copilot Meeting posture, speaker attention, and short interruptions only." [disabled] [ref=e735]:
+                      - generic [ref=e736]:
+                        - img [ref=e737]
+                        - generic [ref=e741]: Meeting Copilot
+                      - paragraph [ref=e742]: Meeting posture, speaker attention, and short interruptions only.
+                    - button "Home Presence React to Home Assistant changes with tiny motion feedback." [disabled] [ref=e743]:
+                      - generic [ref=e744]:
+                        - img [ref=e745]
+                        - generic [ref=e748]: Home Presence
+                      - paragraph [ref=e749]: React to Home Assistant changes with tiny motion feedback.
+                    - button "Phone Detox Playful phone-awareness nudges during focus blocks." [ref=e750] [cursor=pointer]:
+                      - generic [ref=e751]:
+                        - img [ref=e752]
+                        - generic [ref=e754]: Phone Detox
+                      - paragraph [ref=e755]: Playful phone-awareness nudges during focus blocks.
+                    - button "Story/Teach Mode A more expressive teaching companion with memory and motion." [ref=e756] [cursor=pointer]:
+                      - generic [ref=e757]:
+                        - img [ref=e758]
+                        - generic [ref=e768]: Story/Teach Mode
+                      - paragraph [ref=e769]: A more expressive teaching companion with memory and motion.
+                    - button "Wind-down Evening quiet mode, softer persona, and less motion." [ref=e770] [cursor=pointer]:
+                      - generic [ref=e771]:
+                        - img [ref=e772]
+                        - generic [ref=e774]: Wind-down
+                      - paragraph [ref=e775]: Evening quiet mode, softer persona, and less motion.
+                    - button "Reachy Noticed A deterministic nudge when a typed event is important enough." [ref=e776] [cursor=pointer]:
+                      - generic [ref=e777]:
+                        - img [ref=e778]
+                        - generic [ref=e781]: Reachy Noticed
+                      - paragraph [ref=e782]: A deterministic nudge when a typed event is important enough.
+              - generic [ref=e509]:
+                - generic [ref=e510]:
+                  - heading "Recent Actions" [level=3] [ref=e511]
+                  - generic [ref=e512]: typed companion events
+                - generic [ref=e783]:
+                  - generic [ref=e784]:
+                    - generic [ref=e785]:
+                      - generic [ref=e786]: "Voice command: chat"
+                      - generic [ref=e787]: voice_heard from smoke
+                    - generic [ref=e788]: 12:46 PM
+                  - generic [ref=e789]:
+                    - generic [ref=e790]:
+                      - generic [ref=e791]: "Voice command: chat"
+                      - generic [ref=e792]: voice_heard from codex_post_rebuild_bifrost_test
+                    - generic [ref=e793]: 7:09 AM
+                  - generic [ref=e794]:
+                    - generic [ref=e795]:
+                      - generic [ref=e796]: "Voice command: chat"
+                      - generic [ref=e797]: voice_heard from codex_final_bifrost_test_kimi
+                    - generic [ref=e798]: 6:41 AM
+                  - generic [ref=e799]:
+                    - generic [ref=e800]:
+                      - generic [ref=e801]: "Voice command: chat"
+                      - generic [ref=e802]: voice_heard from codex_final_bifrost_test_single
+                    - generic [ref=e803]: 6:36 AM
+                  - generic [ref=e804]:
+                    - generic [ref=e805]:
+                      - generic [ref=e806]: "Voice command: chat"
+                      - generic [ref=e807]: voice_heard from codex_final_bifrost_test
+                    - generic [ref=e808]: 6:30 AM
+                  - generic [ref=e809]:
+                    - generic [ref=e810]:
+                      - generic [ref=e811]: "Voice command: chat"
+                      - generic [ref=e812]: voice_heard from codex_final_bifrost_test
+                    - generic [ref=e813]: 6:28 AM
+          - generic [ref=e514]:
+            - generic [ref=e515]:
+              - heading "Zero sees" [level=2] [ref=e516]:
+                - img [ref=e517]
+                - text: Zero sees
+              - generic [ref=e520]:
+                - generic [ref=e521]: 48.9 fps · 1920×1080
+                - generic [ref=e523]: · dshow
+            - img "Zero live camera" [ref=e814]
+            - generic [ref=e528]:
+              - button "Freeze" [ref=e529] [cursor=pointer]:
+                - img [ref=e530]
+                - text: Freeze
+              - button "Snapshot & analyze" [ref=e533] [cursor=pointer]:
+                - img [ref=e534]
+                - text: Snapshot & analyze
+        - button "Daemon · running uptime 1h 5m Debug" [ref=e815] [cursor=pointer]:
+          - generic [ref=e540]:
+            - img [ref=e541]
+            - generic [ref=e544]: Daemon · running
+            - generic [ref=e816]: uptime 1h 5m
+          - generic [ref=e545]:
+            - img [ref=e546]
+            - text: Debug
+            - img [ref=e555]
+        - group [ref=e557]:
+          - generic "Presence & memory" [ref=e558] [cursor=pointer]
+          - option "Companion"
+          - option "Assistant" [selected]
+          - option "Deep Work Partner"
+          - option "Thinking Partner"
+          - option "Check-in"
+          - option "Narrator"
+          - option "Curious Explorer"
+          - option "Sally"
+          - option "preference" [selected]
+          - option "correction"
+          - option "fact"
+          - option "topic"
+        - group [ref=e559]:
+          - generic "Body controls" [ref=e560] [cursor=pointer]
+        - group [ref=e561]:
+          - generic "Automations" [ref=e562] [cursor=pointer]
+        - group [ref=e563]:
+          - generic "More Zero" [ref=e564] [cursor=pointer]
+        - group [ref=e565]:
+          - generic "Motion library" [ref=e566] [cursor=pointer]
+  - button "Voice settings" [ref=e567] [cursor=pointer]:
+    - img [ref=e568]
+  - button "Start recording a voice command" [ref=e571] [cursor=pointer]:
+    - img [ref=e572]
+  - generic [ref=e859]:
+    - img "mascot listening" [ref=e861]
+    - link "Pop out mascot" [ref=e882] [cursor=pointer]:
+      - /url: /m/mascot
+      - img [ref=e883]

@@ -105,11 +105,15 @@ class TestGraphCompilation:
 
     def test_state_schema(self):
         """Verify OrchestratorState has expected fields."""
-        expected_keys = {"messages", "route", "context", "result"}
+        expected_keys = {"messages", "route", "context", "result", "memories"}
         assert set(OrchestratorState.__annotations__.keys()) == expected_keys
 
     def test_valid_routes_set(self):
         """Verify all expected routes are defined."""
         expected = {"sprint", "email", "calendar", "enhancement", "briefing",
-                    "research", "notion", "money_maker", "general"}
+                    "research", "notion", "money_maker", "general",
+                    "knowledge", "task", "workflow", "system", "tiktok",
+                    "content", "prediction_market", "planner", "ai_company",
+                    "deep_research", "experiment", "council",
+                    "character_content", "pkm", "legion_ops", "brain"}
         assert VALID_ROUTES == expected

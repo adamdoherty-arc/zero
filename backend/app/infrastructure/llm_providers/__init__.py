@@ -3,6 +3,18 @@ LLM Provider Registry.
 
 Manages all provider instances as singletons. Only providers with
 configured API keys are returned as available.
+
+Post 2026-05-14 Bifrost migration: all cloud LLM traffic (Kimi/Moonshot)
+flows through the Bifrost gateway at :4445. The standalone Gemini,
+OpenRouter, HuggingFace, Kimi, MiniMax, and Ollama providers were deleted
+because the new policy only permits Kimi + local Qwen + local Qwen-Embed,
+all of which Bifrost speaks natively. The ``ollama``, ``kimi``, ``gemini``,
+``openrouter``, ``huggingface``, and ``minimax`` keys remain as
+backwards-compat aliases so callers that hardcoded those names still
+resolve — they all return the same Bifrost-backed handler. The router's
+default fallback chain (see ``llm_router._DEFAULT_FALLBACKS``) and the
+persisted ``router_config.json`` were rewritten to use bifrost-prefixed
+model names ("bifrost/moonshot/kimi-k2.6", "bifrost/vllm-local/qwen3-chat").
 """
 
 from functools import lru_cache
@@ -11,11 +23,7 @@ from typing import Dict
 import structlog
 
 from app.infrastructure.llm_providers.base import BaseLLMProvider
-from app.infrastructure.llm_providers.gemini_provider import GeminiProvider
-from app.infrastructure.llm_providers.huggingface_provider import HuggingFaceProvider
-from app.infrastructure.llm_providers.kimi_provider import KimiProvider
-from app.infrastructure.llm_providers.minimax_provider import MinimaxProvider
-from app.infrastructure.llm_providers.openrouter_provider import OpenRouterProvider
+from app.infrastructure.llm_providers.bifrost_provider import BifrostProvider
 from app.infrastructure.llm_providers.vllm_provider import VllmProvider
 
 logger = structlog.get_logger(__name__)
@@ -25,22 +33,29 @@ logger = structlog.get_logger(__name__)
 def get_provider_registry() -> Dict[str, BaseLLMProvider]:
     """Singleton registry of all LLM providers.
 
-    Returns all providers (configured or not). Check provider.is_configured
-    before using cloud providers.
+    Only two real providers exist post-migration:
+      - "bifrost" — shared gateway at :4445 (Kimi + local Qwen + local Embed)
+      - "vllm"    — local vLLM/Bifrost endpoint via ZERO_VLLM_CHAT_URL
 
-    Note 2026-04-27: OllamaProvider retired. The legacy "ollama" key resolves
-    to VllmProvider as a backwards-compat alias for any caller that still
-    asks for it by name.
+    Legacy provider keys (gemini/openrouter/huggingface/kimi/minimax/ollama)
+    are aliased to Bifrost so existing callers don't crash; the upstream
+    model name they pass through is what determines actual routing. Any
+    such call that names a model Bifrost doesn't expose will fail-fast
+    with a Bifrost 400, which is the intended behaviour under the new
+    Kimi-only-cloud policy.
     """
+    bifrost_provider = BifrostProvider()
     vllm_provider = VllmProvider()
     providers = {
+        "bifrost": bifrost_provider,
         "vllm": vllm_provider,
-        "ollama": vllm_provider,  # legacy alias — Ollama retired 2026-04-27
-        "gemini": GeminiProvider(),
-        "openrouter": OpenRouterProvider(),
-        "huggingface": HuggingFaceProvider(),
-        "kimi": KimiProvider(),
-        "minimax": MinimaxProvider(),
+        # Backwards-compat aliases — all route through Bifrost now.
+        "ollama": vllm_provider,
+        "gemini": bifrost_provider,
+        "openrouter": bifrost_provider,
+        "huggingface": bifrost_provider,
+        "kimi": bifrost_provider,
+        "minimax": bifrost_provider,
     }
     configured = [name for name, p in providers.items() if p.is_configured]
     logger.info("llm_provider_registry_initialized", configured=configured)

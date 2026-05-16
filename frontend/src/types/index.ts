@@ -52,8 +52,70 @@ export interface Task {
   parent_task_id?: string
   started_at?: string
   completed_at?: string
+  completion_outputs?: TaskCompletionOutputs
   created_at: string
   updated_at?: string
+}
+
+export interface CompletionOutput {
+  key: string
+  label: string
+  value: string
+  domain?: string | null
+  evidence_url?: string | null
+  sensitive?: boolean
+  notes?: string | null
+}
+
+export interface TaskCompletionOutputs {
+  recorded_at?: string
+  recorded_by?: string
+  note?: string
+  outputs?: CompletionOutput[]
+}
+
+export interface WalkthroughCompletionField {
+  key: string
+  label: string
+  placeholder?: string
+  required?: boolean
+  sensitive?: boolean
+  domain?: string
+}
+
+export interface CompanyFact {
+  id: string
+  key: string
+  label: string
+  value: string
+  domain?: string | null
+  source_task_id?: string | null
+  source: string
+  evidence_url?: string | null
+  sensitive: boolean
+  notes?: string | null
+  created_by?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface CompanyFactCreate {
+  key: string
+  label: string
+  value: string
+  domain?: string | null
+  evidence_url?: string | null
+  sensitive?: boolean
+  notes?: string | null
+}
+
+export interface CompanyFactUpdate {
+  label?: string
+  value?: string
+  domain?: string | null
+  evidence_url?: string | null
+  sensitive?: boolean
+  notes?: string | null
 }
 
 export interface TaskCreate {
@@ -127,6 +189,38 @@ export interface CompanyWorkItemReview {
   acceptance_criteria: string[]
   automation_plan: Record<string, unknown>
   source_links: Array<Record<string, unknown>>
+  walkthrough?: {
+    title: string
+    time_required?: string
+    cost?: string
+    best_time?: string
+    prerequisites?: string[]
+    steps: Array<{
+      title: string
+      instruction: string
+      url?: string
+      button?: string
+      fields?: Array<{ label: string; value?: string }>
+      gotcha?: string
+      completion_check?: string
+    }>
+    evidence_to_archive?: string[]
+    what_this_unlocks?: string[]
+    common_mistakes?: string[]
+    if_something_goes_wrong?: string[]
+  } | null
+  completion_review?: {
+    quality_score: number
+    summary: string
+    looks_complete: boolean
+    concerns: string[]
+    missing_followups: Array<{ title: string; why: string; domain: string; priority: string }>
+    infrastructure_suggestions: Array<{ surface: string; name: string; rationale: string }>
+    created_followups?: Array<{ id: string; title: string; domain: string }>
+    reviewed_at?: string
+    reviewed_by?: string
+    fallback?: boolean
+  } | null
   reviewed_by: string
   operator_run_id?: string
   created_at: string
@@ -1072,7 +1166,7 @@ export interface SchedulerAuditEntry {
   job_name: string
   started_at: string
   completed_at: string
-  status: 'completed' | 'failed'
+  status: 'completed' | 'failed' | 'skipped'
   duration_seconds: number
   error: string | null
 }

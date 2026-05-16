@@ -199,7 +199,7 @@ class QAVerificationService:
                 "zero-searxng": "http://zero-searxng:8080",
                 "legion": f"{settings.legion_api_url}/health",
                 "vllm-chat": settings.vllm_chat_base_url.rstrip("/") + "/models",
-                "shared-litellm": "http://host.docker.internal:4444/health/liveliness",
+                "shared-bifrost": "http://host.docker.internal:4445/health",
             }
         else:
             services = {

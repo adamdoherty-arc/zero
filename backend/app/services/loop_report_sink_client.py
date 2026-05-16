@@ -64,6 +64,15 @@ class LoopReportSinkClient:
             half_open_max_calls=1,
         )
 
+    def _headers(self) -> dict[str, str]:
+        """Headers for the Legion sink callback."""
+        token = (
+            os.environ.get("ZERO_LEGION_SINK_TOKEN")
+            or os.environ.get("ZERO_GATEWAY_TOKEN")
+            or ""
+        ).strip()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -188,7 +197,7 @@ class LoopReportSinkClient:
 
         url = f"{self._base}/api/loops/runs"
         async with httpx.AsyncClient(timeout=httpx.Timeout(self._timeout_s)) as client:
-            resp = await client.post(url, json=envelope)
+            resp = await client.post(url, json=envelope, headers=self._headers())
             resp.raise_for_status()
             data = resp.json()
         return {

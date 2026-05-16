@@ -1,12 +1,15 @@
 """
-Kimi LLM MCP Server — exposes Kimi/Moonshot AI as LLM tools.
+Kimi LLM MCP Server — exposes Kimi/Moonshot AI as LLM tools via Bifrost.
 
 Claude can delegate classification, summarization, chat, and analysis
-tasks to Kimi K2.6 ($0.95/$4.00 per 1M tokens).
+tasks to Kimi K2.6. Routes through the shared-bifrost gateway so the
+Moonshot API key is owned by `shared-infra/.env` (not duplicated here),
+and so cost/latency/error metrics flow into ada/legion Prometheus.
 
 Environment variables:
-  KIMI_API_KEY  - Moonshot AI API key
-  KIMI_BASE_URL - API base URL (default: https://api.moonshot.ai/v1)
+  BIFROST_URL          - Bifrost gateway (default: http://host.docker.internal:4445/v1)
+  ZERO_BIFROST_API_KEY - Virtual key minted via Bifrost governance API
+                         (alias: VLLM_API_KEY, KIMI_API_KEY for back-compat)
 """
 
 import json
@@ -40,8 +43,33 @@ _load_dotenv()
 
 server = Server("kimi-llm")
 
-API_KEY = os.getenv("KIMI_API_KEY", "") or os.getenv("ZERO_KIMI_API_KEY", "")
-BASE_URL = os.getenv("KIMI_BASE_URL", "") or os.getenv("ZERO_KIMI_BASE_URL", "https://api.moonshot.ai/v1")
+# Bifrost routes Kimi requests under the `moonshot/` provider prefix;
+# the model name supplied by callers gets normalized below. The MCP
+# server can use Zero's virtual key (ZERO_BIFROST_API_KEY) or fall
+# back to VLLM_API_KEY / KIMI_API_KEY which all carry the same value.
+API_KEY = (
+    os.getenv("ZERO_BIFROST_API_KEY", "")
+    or os.getenv("VLLM_API_KEY", "")
+    or os.getenv("KIMI_API_KEY", "")
+    or "EMPTY"
+)
+BASE_URL = (
+    os.getenv("BIFROST_URL")
+    or os.getenv("ZERO_BIFROST_URL")
+    or "http://host.docker.internal:4445/v1"
+).rstrip("/")
+# Bifrost requires `<provider>/<model>` in the model field; older callers
+# pass bare `kimi-k2.6`. This helper makes both forms work.
+def _bifrost_model(model: str) -> str:
+    return model if "/" in model else f"moonshot/{model}"
+
+# Moonshot's K2-family models reject any temperature != 1.0 with a 400.
+_FIXED_TEMP_MODELS = {
+    "kimi-k2.5",
+    "kimi-k2.6",
+    "kimi-k2-thinking",
+    "kimi-k2.6-thinking",
+}
 
 
 async def _kimi_chat(
@@ -51,11 +79,13 @@ async def _kimi_chat(
     max_tokens: int = 2048,
     json_mode: bool = False,
 ) -> str:
-    """Call Kimi API and return response text."""
+    """Call Kimi via Bifrost and return response text."""
+    bare = model.split("/", 1)[-1]
+    effective_temperature = 1.0 if bare in _FIXED_TEMP_MODELS else temperature
     payload: dict[str, Any] = {
-        "model": model,
+        "model": _bifrost_model(model),
         "messages": messages,
-        "temperature": temperature,
+        "temperature": effective_temperature,
         "max_tokens": max_tokens,
     }
 
@@ -74,11 +104,13 @@ async def _kimi_chat(
         resp.raise_for_status()
         data = resp.json()
 
-    content = data["choices"][0]["message"].get("content", "")
-    if not content:
-        content = data["choices"][0]["message"].get("reasoning_content", "")
-
-    return content
+    msg = data["choices"][0]["message"]
+    return (
+        msg.get("content")
+        or msg.get("reasoning_content")
+        or msg.get("reasoning")
+        or ""
+    )
 
 
 TOOLS = [

@@ -120,4 +120,4 @@ async def docs_index():
 async def operating_context():
     """Return retrieval-friendly context for Zero company reports."""
     svc = get_company_context_service()
-    return svc.operating_context()
+    return await svc.operating_context()

@@ -61,7 +61,6 @@ from audio_capture import (
     preferred_mic_indices,
 )
 from camera_worker import get_camera_worker
-from docker_readiness import get_docker_readiness, init_docker_readiness
 from live_transcription import get_live_transcription
 from speaker_process import SpeakerProcessSink
 from speaker_stream import list_output_devices
@@ -323,17 +322,6 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_db_startup_background(), name="db_pool_startup")
 
-    # Start Docker readiness probe and let the supervisor consult it. This
-    # never blocks lifespan: the probe stays in "waiting" until Docker comes
-    # up, while host_agent's /health responds immediately so the UI works.
-    try:
-        readiness = init_docker_readiness(ZERO_API_URL)
-        readiness.start()
-        get_supervisor().attach_docker_readiness(readiness.get_status)
-        logger.info("docker_readiness_attached", backend_url=ZERO_API_URL)
-    except Exception as e:
-        logger.warning("docker_readiness_init_failed", error=str(e))
-
     # Decide which wake loop (if any) to start. Wake initialization touches
     # Windows audio APIs, so keep it off the startup path; host_agent should
     # become reachable even if a microphone driver stalls.
@@ -348,18 +336,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("wake_loop_disabled", mode=chosen_mode)
         _wake_mode_actual = "off"
-
-    # Resume watchdog if it was enabled before host_agent was restarted.
-    # Keep this off the lifespan critical path; the Windows daemon/COM probe
-    # can stall during unplug/replug recovery and /health must still come up.
-    async def _watchdog_resume_background() -> None:
-        await asyncio.sleep(2.0)
-        try:
-            await get_supervisor().start_watchdog_if_enabled()
-        except Exception as e:
-            logger.warning("watchdog_resume_failed", error=str(e))
-
-    asyncio.create_task(_watchdog_resume_background(), name="watchdog_resume")
 
     # Pre-warm the push-to-talk Whisper model so the first voice turn doesn't
     # pay a 9-10 s cold start. Runs in background so lifespan keeps moving.
@@ -399,12 +375,6 @@ async def lifespan(app: FastAPI):
         _wake_start_task.cancel()
     if _wake_loop is not None:
         _wake_loop.stop()
-    try:
-        readiness = get_docker_readiness()
-        if readiness is not None:
-            await readiness.stop()
-    except Exception:
-        pass
     try:
         sup = get_supervisor()
         if sup.is_running():
@@ -2077,10 +2047,6 @@ async def _tts_synthesize(text: str) -> bytes:
 # Reachy daemon supervisor
 # ---------------------------------------------------------------------------
 
-class WatchdogRequest(BaseModel):
-    enabled: bool
-
-
 @app.get("/daemon/status")
 async def daemon_status():
     return await asyncio.to_thread(get_supervisor().status)
@@ -2127,75 +2093,25 @@ async def daemon_audio_reset():
     return await get_supervisor().reset_audio()
 
 
-@app.get("/daemon/watchdog")
-async def daemon_watchdog_status():
-    return get_supervisor().watchdog_info()
-
-
-@app.post("/daemon/watchdog")
-async def daemon_watchdog_set(request: WatchdogRequest):
-    return await get_supervisor().set_watchdog(request.enabled)
-
-
-# ---------------------------------------------------------------------------
-# Docker readiness — exposed for the Smart Re-link UI
-# ---------------------------------------------------------------------------
-
-@app.get("/host/docker_status")
-async def host_docker_status():
-    readiness = get_docker_readiness()
-    if readiness is None:
-        return {
-            "state": "unknown",
-            "last_check": None,
-            "last_ready": None,
-            "last_error": "readiness_probe_not_initialized",
-            "consecutive_failures": 0,
-            "consecutive_ready": 0,
-            "probe_count": 0,
-            "next_probe_in_s": 0.0,
-            "backend_url": ZERO_API_URL,
-        }
-    return readiness.get_status()
-
-
 @app.post("/daemon/relink")
 async def daemon_relink():
-    """Smart Re-link: re-probe Docker, clear watchdog churn, restart if Docker is up.
+    """Manual recovery primitive: bump supervisor's started_at and restart.
 
-    This is the single recovery primitive the UI calls when the user wants
-    the system to "try again." Behaviour:
-      * If Docker is not yet ready -> trigger an immediate readiness probe,
-        clear sticky watchdog failure state, return ``action: "waiting"``.
-      * If Docker is ready -> reset watchdog state and restart the daemon
-        with reason ``relink``, return ``action: "restarted"``.
+    With the auto-restart watchdog removed, "relink" simplifies to: clear
+    any UI-visible "stalled" state, then restart the daemon. Returns the
+    full restart result so the UI can render the new pid + log path.
     """
-    readiness = get_docker_readiness()
-    if readiness is None:
-        raise HTTPException(503, "Docker readiness probe is not initialized")
-    docker_state = await readiness.probe_now()
     sup = get_supervisor()
-    reset_result = await sup.reset_state(reason="relink")
-    if docker_state.get("state") != "ready":
-        return {
-            "action": "waiting",
-            "docker": docker_state,
-            "watchdog": reset_result.get("watchdog"),
-            "detail": (
-                "Backend (Docker) is still warming up. host_agent will keep "
-                "checking and link Reachy automatically once it is ready."
-            ),
-        }
+    await sup.reset_state(reason="relink")
     try:
         restart_result = await sup.restart(reason="relink")
     except Exception as e:
         raise HTTPException(500, f"daemon restart failed: {e}")
     return {
         "action": "restarted",
-        "docker": docker_state,
         "daemon": restart_result,
-        "watchdog": sup.watchdog_info(),
-        "detail": "Backend is up; restarted the Reachy daemon.",
+        "supervisor": sup.status(),
+        "detail": "Restarted the Reachy daemon.",
     }
 
 

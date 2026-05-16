@@ -1,0 +1,298 @@
+- generic [ref=e4]:
+  - generic [ref=e7]:
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "ZERO OS Personal + Company" [ref=e11] [cursor=pointer]:
+          - /url: /
+          - img [ref=e13]
+          - generic [ref=e15]:
+            - generic [ref=e16]: ZERO OS
+            - generic [ref=e17]: Personal + Company
+    - generic [ref=e19]:
+      - generic [ref=e20]: Personal
+      - list [ref=e21]:
+        - listitem [ref=e22]:
+          - link "Ask Zero" [ref=e23] [cursor=pointer]:
+            - /url: /ask-zero
+            - img [ref=e24]
+            - generic [ref=e26]: Ask Zero
+        - listitem [ref=e27]:
+          - link "Dashboard" [ref=e28] [cursor=pointer]:
+            - /url: /
+            - img [ref=e29]
+            - generic [ref=e34]: Dashboard
+        - listitem [ref=e35]:
+          - link "My Board" [ref=e36] [cursor=pointer]:
+            - /url: /personal/board
+            - img [ref=e37]
+            - generic [ref=e41]: My Board
+        - listitem [ref=e42]:
+          - link "Brain" [ref=e43] [cursor=pointer]:
+            - /url: /brain
+            - img [ref=e44]
+            - generic [ref=e56]: Brain
+        - listitem [ref=e57]:
+          - link "Knowledge" [ref=e58] [cursor=pointer]:
+            - /url: /knowledge
+            - img [ref=e59]
+            - generic [ref=e69]: Knowledge
+        - listitem [ref=e70]:
+          - link "Calendar" [ref=e71] [cursor=pointer]:
+            - /url: /calendar
+            - img [ref=e72]
+            - generic [ref=e74]: Calendar
+        - listitem [ref=e75]:
+          - link "Email" [ref=e76] [cursor=pointer]:
+            - /url: /email
+            - img [ref=e77]
+            - generic [ref=e80]: Email
+        - listitem [ref=e81]:
+          - link "Drafts Inbox" [ref=e82] [cursor=pointer]:
+            - /url: /email/drafts
+            - img [ref=e83]
+            - generic [ref=e86]: Drafts Inbox
+        - listitem [ref=e87]:
+          - link "Meetings" [ref=e88] [cursor=pointer]:
+            - /url: /meetings
+            - img [ref=e89]
+            - generic [ref=e92]: Meetings
+        - listitem [ref=e93]:
+          - link "Meeting Search" [ref=e94] [cursor=pointer]:
+            - /url: /meeting-search
+            - img [ref=e95]
+            - generic [ref=e96]: Meeting Search
+        - listitem [ref=e97]:
+          - link "Meals" [ref=e98] [cursor=pointer]:
+            - /url: /meals
+            - img [ref=e99]
+            - generic [ref=e102]: Meals
+    - list [ref=e104]:
+      - listitem [ref=e105]:
+        - button "Zero Company OS" [ref=e106] [cursor=pointer]:
+          - generic [ref=e108]: Zero Company OS
+    - button "Toggle Sidebar" [ref=e109]
+  - main [ref=e110]:
+    - generic [ref=e111]:
+      - generic [ref=e112]:
+        - button "Toggle Sidebar" [ref=e113] [cursor=pointer]:
+          - img
+          - generic [ref=e114]: Toggle Sidebar
+        - generic [ref=e115]:
+          - generic [ref=e116]: Zero
+          - generic [ref=e117]: /
+          - generic [ref=e118]: My Board
+        - button "Search... Ctrl K" [ref=e119] [cursor=pointer]:
+          - img [ref=e120]
+          - generic [ref=e123]: Search...
+          - generic [ref=e124]:
+            - generic [ref=e125]: Ctrl
+            - text: K
+        - button "Talk to Reachy" [ref=e126] [cursor=pointer]:
+          - img [ref=e128]
+          - generic [ref=e131]: Talk to Reachy
+        - button "Local vLLM" [ref=e133] [cursor=pointer]:
+          - generic [ref=e135]: Local vLLM
+        - link "Reachy …" [ref=e137] [cursor=pointer]:
+          - /url: /reachy
+          - img [ref=e139]
+          - generic [ref=e142]: Reachy …
+        - button "Eyes on" [ref=e143] [cursor=pointer]:
+          - img [ref=e144]
+          - generic [ref=e147]: Eyes on
+        - button "9+" [ref=e149] [cursor=pointer]:
+          - img [ref=e150]
+          - generic [ref=e153]: 9+
+      - navigation [ref=e154]:
+        - link "Personal" [ref=e155] [cursor=pointer]:
+          - /url: /ask-zero
+        - link "Company" [ref=e156] [cursor=pointer]:
+          - /url: /company
+        - link "Build" [ref=e157] [cursor=pointer]:
+          - /url: /board
+        - link "Systems" [ref=e158] [cursor=pointer]:
+          - /url: /operations
+        - link "Content" [ref=e159] [cursor=pointer]:
+          - /url: /tiktok-shop
+    - main [ref=e160]:
+      - generic [ref=e161]:
+        - generic [ref=e162]:
+          - generic [ref=e163]:
+            - generic [ref=e164]: Topic
+            - combobox [ref=e165] [cursor=pointer]:
+              - generic: All topics
+              - img [ref=e166]
+          - generic [ref=e168]:
+            - img [ref=e169]
+            - textbox "Search titles + descriptions..." [ref=e172]
+          - button "New Task" [ref=e173] [cursor=pointer]:
+            - img [ref=e174]
+            - text: New Task
+        - generic [ref=e175]:
+          - generic [ref=e176]:
+            - generic [ref=e177]:
+              - heading "Backlog" [level=3] [ref=e178]
+              - generic [ref=e179]: "8"
+            - generic [ref=e180]:
+              - button "Assemble medical evidence packet (STRs + current records) high 60 days VA Disability" [ref=e181] [cursor=pointer]:
+                - generic [ref=e184]: Assemble medical evidence packet (STRs + current records)
+                - generic [ref=e185]:
+                  - generic [ref=e186]: high
+                  - generic [ref=e187]: 60 days
+                  - generic [ref=e188]: VA Disability
+              - button "Obtain GI nexus letter from private specialist high 60 days VA Disability" [ref=e189] [cursor=pointer]:
+                - generic [ref=e192]: Obtain GI nexus letter from private specialist
+                - generic [ref=e193]:
+                  - generic [ref=e194]: high
+                  - generic [ref=e195]: 60 days
+                  - generic [ref=e196]: VA Disability
+              - button "Anxiety treatment records + nexus paragraph from prescriber medium 60 days VA Disability" [ref=e197] [cursor=pointer]:
+                - generic [ref=e200]: Anxiety treatment records + nexus paragraph from prescriber
+                - generic [ref=e201]:
+                  - generic [ref=e202]: medium
+                  - generic [ref=e203]: 60 days
+                  - generic [ref=e204]: VA Disability
+              - button "Verify AE rating in DD-214/OMPF for tinnitus claim low 60 days VA Disability" [ref=e205] [cursor=pointer]:
+                - generic [ref=e208]: Verify AE rating in DD-214/OMPF for tinnitus claim
+                - generic [ref=e209]:
+                  - generic [ref=e210]: low
+                  - generic [ref=e211]: 60 days
+                  - generic [ref=e212]: VA Disability
+              - button "Submit VA Form 21-526EZ as Fully Developed Claim (FDC) critical 90 days VA Disability" [ref=e213] [cursor=pointer]:
+                - generic [ref=e216]: Submit VA Form 21-526EZ as Fully Developed Claim (FDC)
+                - generic [ref=e217]:
+                  - generic [ref=e218]: critical
+                  - generic [ref=e219]: 90 days
+                  - generic [ref=e220]: VA Disability
+              - button "Prepare for three C&P exams (GI / Mental Health / Audio) high 90 days VA Disability" [ref=e221] [cursor=pointer]:
+                - generic [ref=e224]: Prepare for three C&P exams (GI / Mental Health / Audio)
+                - generic [ref=e225]:
+                  - generic [ref=e226]: high
+                  - generic [ref=e227]: 90 days
+                  - generic [ref=e228]: VA Disability
+              - button "Build written symptom log for C&P exams medium 90 days VA Disability" [ref=e229] [cursor=pointer]:
+                - generic [ref=e232]: Build written symptom log for C&P exams
+                - generic [ref=e233]:
+                  - generic [ref=e234]: medium
+                  - generic [ref=e235]: 90 days
+                  - generic [ref=e236]: VA Disability
+              - button "After-decision plan — supplemental claim / HLR / Board appeal medium reference VA Disability" [ref=e237] [cursor=pointer]:
+                - generic [ref=e240]: After-decision plan — supplemental claim / HLR / Board appeal
+                - generic [ref=e241]:
+                  - generic [ref=e242]: medium
+                  - generic [ref=e243]: reference
+                  - generic [ref=e244]: VA Disability
+          - generic [ref=e245]:
+            - generic [ref=e246]:
+              - heading "To Do" [level=3] [ref=e247]
+              - generic [ref=e248]: "8"
+            - generic [ref=e249]:
+              - button "File Intent to File (VA Form 21-0966) — TODAY critical 7 days VA Disability" [ref=e250] [cursor=pointer]:
+                - generic [ref=e253]: File Intent to File (VA Form 21-0966) — TODAY
+                - generic [ref=e254]:
+                  - generic [ref=e255]: critical
+                  - generic [ref=e256]: 7 days
+                  - generic [ref=e257]: VA Disability
+              - button "Create digital accounts (VA.gov / MyHealtheVet / milConnect / eVetRecs) high 7 days VA Disability" [ref=e258] [cursor=pointer]:
+                - generic [ref=e261]: Create digital accounts (VA.gov / MyHealtheVet / milConnect / eVetRecs)
+                - generic [ref=e262]:
+                  - generic [ref=e263]: high
+                  - generic [ref=e264]: 7 days
+                  - generic [ref=e265]: VA Disability
+              - button "Request OMPF + Service Treatment Records (STRs) high 7 days VA Disability" [ref=e266] [cursor=pointer]:
+                - generic [ref=e269]: Request OMPF + Service Treatment Records (STRs)
+                - generic [ref=e270]:
+                  - generic [ref=e271]: high
+                  - generic [ref=e272]: 7 days
+                  - generic [ref=e273]: VA Disability
+              - button "Apply for VA health care (PACT-era eligibility) high 7 days VA Disability" [ref=e274] [cursor=pointer]:
+                - generic [ref=e277]: Apply for VA health care (PACT-era eligibility)
+                - generic [ref=e278]:
+                  - generic [ref=e279]: high
+                  - generic [ref=e280]: 7 days
+                  - generic [ref=e281]: VA Disability
+              - button "Appointment with Duval CVSO (or DAV) — sign VA Form 21-22 (POA) high 30 days VA Disability" [ref=e282] [cursor=pointer]:
+                - generic [ref=e285]: Appointment with Duval CVSO (or DAV) — sign VA Form 21-22 (POA)
+                - generic [ref=e286]:
+                  - generic [ref=e287]: high
+                  - generic [ref=e288]: 30 days
+                  - generic [ref=e289]: VA Disability
+              - button "Schedule GI consult + EGD or barium swallow — RATING LEVER high 30 days VA Disability" [ref=e290] [cursor=pointer]:
+                - generic [ref=e293]: Schedule GI consult + EGD or barium swallow — RATING LEVER
+                - generic [ref=e294]:
+                  - generic [ref=e295]: high
+                  - generic [ref=e296]: 30 days
+                  - generic [ref=e297]: VA Disability
+              - button "Gather buddy statements (VA Form 21-10210) medium 30 days VA Disability" [ref=e298] [cursor=pointer]:
+                - generic [ref=e301]: Gather buddy statements (VA Form 21-10210)
+                - generic [ref=e302]:
+                  - generic [ref=e303]: medium
+                  - generic [ref=e304]: 30 days
+                  - generic [ref=e305]: VA Disability
+              - button "Draft personal statement (VA Form 21-4138) medium 30 days VA Disability" [ref=e306] [cursor=pointer]:
+                - generic [ref=e309]: Draft personal statement (VA Form 21-4138)
+                - generic [ref=e310]:
+                  - generic [ref=e311]: medium
+                  - generic [ref=e312]: 30 days
+                  - generic [ref=e313]: VA Disability
+          - generic [ref=e314]:
+            - generic [ref=e315]:
+              - heading "In Progress" [level=3] [ref=e316]
+              - generic [ref=e317]: "5"
+            - generic [ref=e318]:
+              - button "VA Claim Playbook — TL;DR + strategy summary 📌 high reference VA Disability" [ref=e319] [cursor=pointer]:
+                - generic [ref=e320]:
+                  - generic [ref=e322]: VA Claim Playbook — TL;DR + strategy summary
+                  - generic [ref=e323]: 📌
+                - generic [ref=e324]:
+                  - generic [ref=e325]: high
+                  - generic [ref=e326]: reference
+                  - generic [ref=e327]: VA Disability
+              - button "Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC) 📌 high reference narrative VA Disability" [ref=e328] [cursor=pointer]:
+                - generic [ref=e329]:
+                  - generic [ref=e331]: Narrative — GERD / Hiatal Hernia / Post-Nissen (LIVING DOC)
+                  - generic [ref=e332]: 📌
+                - generic [ref=e333]:
+                  - generic [ref=e334]: high
+                  - generic [ref=e335]: reference
+                  - generic [ref=e336]: narrative
+                  - generic [ref=e337]: VA Disability
+              - button "Narrative — Anxiety secondary to GI chain (LIVING DOC) 📌 high reference narrative VA Disability" [ref=e338] [cursor=pointer]:
+                - generic [ref=e339]:
+                  - generic [ref=e341]: Narrative — Anxiety secondary to GI chain (LIVING DOC)
+                  - generic [ref=e342]: 📌
+                - generic [ref=e343]:
+                  - generic [ref=e344]: high
+                  - generic [ref=e345]: reference
+                  - generic [ref=e346]: narrative
+                  - generic [ref=e347]: VA Disability
+              - button "Narrative — Tinnitus (Navy AE noise exposure) (LIVING DOC) 📌 high reference narrative VA Disability" [ref=e348] [cursor=pointer]:
+                - generic [ref=e349]:
+                  - generic [ref=e351]: Narrative — Tinnitus (Navy AE noise exposure) (LIVING DOC)
+                  - generic [ref=e352]: 📌
+                - generic [ref=e353]:
+                  - generic [ref=e354]: high
+                  - generic [ref=e355]: reference
+                  - generic [ref=e356]: narrative
+                  - generic [ref=e357]: VA Disability
+              - button "Rating estimate tracker — Conservative / Likely / Strong scenarios 📌 medium reference VA Disability" [ref=e358] [cursor=pointer]:
+                - generic [ref=e359]:
+                  - generic [ref=e361]: Rating estimate tracker — Conservative / Likely / Strong scenarios
+                  - generic [ref=e362]: 📌
+                - generic [ref=e363]:
+                  - generic [ref=e364]: medium
+                  - generic [ref=e365]: reference
+                  - generic [ref=e366]: VA Disability
+          - generic [ref=e367]:
+            - generic [ref=e368]:
+              - heading "Blocked" [level=3] [ref=e369]
+              - generic [ref=e370]: "0"
+            - generic [ref=e372]: empty
+          - generic [ref=e373]:
+            - generic [ref=e374]:
+              - heading "Done" [level=3] [ref=e375]
+              - generic [ref=e376]: "0"
+            - generic [ref=e378]: empty
+  - button "Voice settings" [ref=e379] [cursor=pointer]:
+    - img [ref=e380]
+  - button "Start recording a voice command" [ref=e383] [cursor=pointer]:
+    - img [ref=e384]

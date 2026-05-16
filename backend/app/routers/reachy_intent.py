@@ -1,5 +1,5 @@
 """
-Reachy voice-intent router.
+Zero voice-intent router.
 
 Takes a transcribed voice command (from the host_agent wake loop), classifies
 it against a small set of built-in intents, and either handles it directly
@@ -36,11 +36,11 @@ HOST_AGENT_URL = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:1
 # httpx client allows up to 180 s). Voice has to feel alive — 8 s per provider
 # means even a full 3-provider fallback chain fits under the 30 s backend
 # proxy ceiling, while still giving each healthy provider enough time for a
-# short spoken reply (typical: 1-3 s).
-_VOICE_CHAT_PROVIDER_TIMEOUT = 8.0
+# short spoken reply (typical: 2-15 s through Bifrost Kimi).
+_VOICE_CHAT_PROVIDER_TIMEOUT = 18.0
 # Overall wall-clock deadline for the entire fallback walk. Once exceeded we
 # stop trying new providers and return the canned "models unreachable" line.
-_VOICE_CHAT_TOTAL_DEADLINE = 22.0
+_VOICE_CHAT_TOTAL_DEADLINE = 26.0
 
 
 # ---------------------------------------------------------------------------
@@ -613,26 +613,46 @@ async def _handle_chat(text: str) -> IntentResponse:
             last_error = f"voice deadline exceeded after {monotonic() - started:.0f}s"
             break
         try:
+            # Voice turns have a tiny latency budget. Qwen thinking mode can
+            # spend that entire budget on hidden reasoning, so keep this path
+            # explicitly short and spoken-answer-first.
+            is_bifrost = p.provider == "bifrost"
+            voice_system = (
+                "You are Zero speaking through a Reachy Mini speaker. "
+                "Do not reason. Answer only with the final spoken reply: "
+                "one concise natural sentence under 160 characters, no markdown."
+                if is_bifrost
+                else REACHY_CHAT_SYSTEM
+                + "\n\nReply in one concise spoken sentence. /no_think"
+            )
+            provider_timeout = min(
+                _VOICE_CHAT_PROVIDER_TIMEOUT,
+                max(0.1, _VOICE_CHAT_TOTAL_DEADLINE - (monotonic() - started)),
+            )
             reply = await asyncio.wait_for(
                 client.chat(
                     prompt=text,
-                    system=REACHY_CHAT_SYSTEM,
-                    temperature=0.5,
-                    max_tokens=200,
+                    system=voice_system,
+                    temperature=1.0 if p.model.startswith("moonshot/kimi-k2") else 0.3,
+                    max_tokens=768 if is_bifrost else 96,
                     model=f"{p.provider}/{p.model}",
+                    reasoning=False,
                 ),
-                timeout=_VOICE_CHAT_PROVIDER_TIMEOUT,
+                timeout=provider_timeout,
             )
         except asyncio.TimeoutError:
-            last_error = f"{p.id}: timed out after {_VOICE_CHAT_PROVIDER_TIMEOUT:.0f}s"
+            elapsed = monotonic() - started
+            last_error = f"{p.id}: timed out after {provider_timeout:.0f}s"
             logger.warning(
                 "reachy_intent_chat_provider_timeout",
                 provider_id=p.id,
-                seconds=_VOICE_CHAT_PROVIDER_TIMEOUT,
+                elapsed_s=round(elapsed, 1),
+                provider_timeout_s=round(provider_timeout, 1),
+                total_deadline_s=_VOICE_CHAT_TOTAL_DEADLINE,
             )
             tried_providers.append({
                 "id": p.id, "status": "timeout",
-                "error": f"no response in {int(_VOICE_CHAT_PROVIDER_TIMEOUT)}s",
+                "error": f"no response in {int(provider_timeout)}s",
             })
             continue
         except Exception as e:
@@ -901,6 +921,8 @@ async def set_provider_endpoint(request: ProviderSetRequest):
         provider = set_active_provider_id(request.provider_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    global _providers_status_cache
+    _providers_status_cache = None
     return {
         "active_id": provider.id,
         "provider": provider.provider,
@@ -922,8 +944,11 @@ _PROVIDERS_STATUS_CACHE_TTL = 15.0
 # parallel and contend for HTTP clients / DNS. 8 s gives every reasonable
 # provider room to answer cold while still catching truly-down providers.
 _PROVIDERS_STATUS_PROBE_TIMEOUT = 8.0
-# 1-token max so probes cost ~nothing even on paid providers.
+# 1-token max so probes cost ~nothing even on paid providers. Bifrost routes
+# can spend the first few tokens on hidden reasoning, so status probes raise
+# their cap locally when probing Bifrost.
 _PROVIDERS_STATUS_PROBE_TOKENS = 1
+_BIFROST_STATUS_PROBE_TOKENS = 512
 # Stale-while-revalidate window. If a fresh probe shows ALL providers down
 # AND we have a cache snapshot from within this many seconds where some were
 # healthy, prefer the cached snapshot — this rides over transient cold-start
@@ -944,15 +969,19 @@ async def _probe_single_provider(provider) -> "ProviderStatus":
             from app.infrastructure.config import get_settings
 
             settings = get_settings()
+            # Post 2026-05-14 Bifrost migration: probe the Bifrost gateway.
             candidate_urls = [
                 getattr(settings, "vllm_chat_url", None),
                 getattr(settings, "vllm_chat_base_url", None),
-                "http://host.docker.internal:18800/v1",
+                getattr(settings, "bifrost_url", None),
+                "http://host.docker.internal:4445/v1",
             ]
             api_key = getattr(settings, "vllm_api_key", None) or "EMPTY"
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
             last_error = ""
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(_PROVIDERS_STATUS_PROBE_TIMEOUT, connect=3.0)
+            ) as client:
                 for raw_url in dict.fromkeys(str(u).rstrip("/") for u in candidate_urls if u):
                     try:
                         resp = await client.get(f"{raw_url}/models", headers=headers)
@@ -973,6 +1002,38 @@ async def _probe_single_provider(provider) -> "ProviderStatus":
                         or any(model_id.endswith(f"/{provider.model}") for model_id in model_ids)
                     )
                     if ok:
+                        try:
+                            probe = await client.post(
+                                f"{raw_url}/chat/completions",
+                                headers={
+                                    **headers,
+                                    "x-bf-passthrough-extra-params": "true",
+                                },
+                                json={
+                                    "model": provider.model,
+                                    "messages": [
+                                        {
+                                            "role": "system",
+                                            "content": "Reply with OK only. /no_think",
+                                        },
+                                        {"role": "user", "content": "ok"},
+                                    ],
+                                    "temperature": 0.0,
+                                    "max_tokens": _PROVIDERS_STATUS_PROBE_TOKENS,
+                                    "chat_template_kwargs": {"enable_thinking": False},
+                                },
+                            )
+                            probe.raise_for_status()
+                        except httpx.TimeoutException:
+                            last_error = (
+                                "completion probe timed out after "
+                                f"{int(_PROVIDERS_STATUS_PROBE_TIMEOUT)}s"
+                            )
+                            continue
+                        except Exception as e:
+                            err = str(e).strip() or e.__class__.__name__
+                            last_error = f"completion probe failed: {err[:120]}"
+                            continue
                         elapsed_ms = int((_time.monotonic() - started) * 1000)
                         return ProviderStatus(
                             id=provider.id,
@@ -1007,14 +1068,20 @@ async def _probe_single_provider(provider) -> "ProviderStatus":
     from app.infrastructure.unified_llm_client import get_unified_llm_client
 
     client = get_unified_llm_client()
+    probe_tokens = (
+        _BIFROST_STATUS_PROBE_TOKENS
+        if provider.provider == "bifrost"
+        else _PROVIDERS_STATUS_PROBE_TOKENS
+    )
     try:
         await asyncio.wait_for(
             client.chat(
                 prompt="ok",
-                system="Reply with one word.",
-                temperature=0.0,
-                max_tokens=_PROVIDERS_STATUS_PROBE_TOKENS,
+                system="Reply with OK only. /no_think",
+                temperature=1.0 if provider.model.startswith("moonshot/kimi-k2") else 0.0,
+                max_tokens=probe_tokens,
                 model=f"{provider.provider}/{provider.model}",
+                reasoning=False,
             ),
             timeout=_PROVIDERS_STATUS_PROBE_TIMEOUT,
         )
@@ -1074,9 +1141,24 @@ async def providers_status():
 
         active_id = get_active_provider_id()
         providers_by_id = {p.id: p for p in AVAILABLE_PROVIDERS}
+        # Probe: (a) the active provider, (b) any provider whose backend is
+        # locally hosted and effectively free to probe — that includes raw
+        # vllm/ollama AND any bifrost provider routing to vllm-local /
+        # embed-local upstreams. Probing local-bifrost providers keeps the
+        # UI honest ("Bifrost Local Qwen" should show green when llama-cpp
+        # is healthy, not "not probed until selected").
+        def _is_local_probe(p) -> bool:
+            if p.provider in {"vllm", "ollama"}:
+                return True
+            if p.provider == "bifrost" and (
+                p.model.startswith("vllm-local/") or p.model.startswith("embed-local/")
+            ):
+                return True
+            return False
+
         providers_to_probe = [
             p for p in AVAILABLE_PROVIDERS
-            if p.id == active_id or p.provider in {"vllm", "ollama"}
+            if p.id == active_id or _is_local_probe(p)
         ]
         probed = await asyncio.gather(
             *[_probe_single_provider(p) for p in providers_to_probe],

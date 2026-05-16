@@ -69,7 +69,7 @@ interface RealtimeConfig {
 
 // Local-backend brain picker. Only one model is currently loaded on the
 // llama.cpp server (Qwen3.6-35B-A3B abliterated served as `qwen3-chat`),
-// so that's all we offer. The dual-vLLM / Heretic stack was retired
+// so that's all we offer. The retired dual-local / Heretic stack was replaced
 // 2026-04-28 — the abliterated MoE handles both brain and voice-loop
 // at MoE-class TTFT.
 const LOCAL_MODELS: { id: string; label: string; tagline: string; uncensored?: boolean }[] = [

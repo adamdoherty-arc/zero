@@ -80,7 +80,7 @@ powershell.exe -ExecutionPolicy Bypass -File c:\code\zero\host_agent\register-au
 
 **If you change anything in this stack** (ports, supervisor, watchdog logic, wrapper script), re-run `register-autostart.ps1` and verify with `Get-ScheduledTask`. Never silently disable the watchdog — that's how Reachy went dark for 24 hours on 2026-04-24.
 
-## Reachy Voice UX (do not undo)
+## Zero Voice UX (Reachy hardware; do not undo)
 
 - **Interactive Mode = primary voice surface**. `InteractiveModeBar` in the TopBar is the one-click live-conversation toggle (OpenAI Realtime / Gemini Live WebSocket). Space toggles, Esc ends. 5-min idle auto-off for cost safety.
 - **FloatingVoiceButton is classic push-to-talk only** — do NOT re-add realtime auto-promote. Running two WebSocket instances = double billing.

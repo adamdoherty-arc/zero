@@ -20,7 +20,7 @@ def _backend_reachable() -> bool:
         url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
         probe = f"{url}/models"
     elif backend == "ollama":
-        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:4445/v1").rstrip("/")
         probe = f"{url}/models"
     else:
         return False
@@ -40,7 +40,7 @@ def test_live_models_endpoint():
     if backend == "vllm":
         url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
     else:
-        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+        url = os.getenv("OLLAMA_BASE_URL", "http://localhost:4445/v1").rstrip("/")
     resp = httpx.get(f"{url}/models", timeout=5.0)
     assert resp.status_code == 200
     data = resp.json()

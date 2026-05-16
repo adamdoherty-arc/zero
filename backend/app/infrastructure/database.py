@@ -157,6 +157,11 @@ async def create_tables() -> None:
             ("character_carousels", "audit_report", "JSONB"),
             # Reachy Mini voice + meeting pipeline: per-recording mic selection
             ("meeting_recordings", "mic_device_name", "VARCHAR(255)"),
+            # Company OS walkthroughs + post-completion LLM review
+            ("company_work_item_reviews", "walkthrough", "JSONB"),
+            ("company_work_item_reviews", "completion_review", "JSONB"),
+            # Migration 050: structured outputs captured at task completion
+            ("tasks", "completion_outputs", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
         ]
 
         # Phase 028: Make character_id nullable for media-only carousels

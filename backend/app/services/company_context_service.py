@@ -86,8 +86,9 @@ class CompanyContextService:
             )
         return docs
 
-    def operating_context(self) -> dict[str, Any]:
+    async def operating_context(self) -> dict[str, Any]:
         docs = self.list_docs()
+        facts = await self._facts_snapshot()
         return {
             "company": "ADA AI LLC",
             "active_app": "Zero",
@@ -115,7 +116,25 @@ class CompanyContextService:
             ],
             "doc_count": len(docs),
             "docs": docs,
+            "fact_count": len(facts),
+            "facts": facts,
         }
+
+    async def _facts_snapshot(self) -> list[dict[str, Any]]:
+        try:
+            from app.services.company_facts_service import get_company_facts_service
+
+            facts = await get_company_facts_service().list_facts()
+        except Exception:
+            return []
+
+        snapshot: list[dict[str, Any]] = []
+        for fact in facts:
+            entry = fact.model_dump()
+            if entry.get("sensitive"):
+                entry["value"] = "[REDACTED]"
+            snapshot.append(entry)
+        return snapshot
 
 
 @lru_cache()

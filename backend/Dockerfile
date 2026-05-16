@@ -26,12 +26,22 @@ COPY requirements.txt .
 ENV PIP_DEFAULT_TIMEOUT=300 \
     PIP_RETRIES=10 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
-RUN pip install --no-cache-dir --timeout=300 --retries=10 --upgrade pip setuptools wheel \
+RUN retry_pip() { \
+        n=1; \
+        until [ "$n" -gt 3 ]; do \
+            pip install --no-cache-dir --timeout=1000 --retries=20 --progress-bar off "$@" && return 0; \
+            echo "pip install failed, retry ${n}/3" >&2; \
+            n=$((n + 1)); \
+            sleep 15; \
+        done; \
+        return 1; \
+    }; \
+    retry_pip --upgrade pip setuptools wheel \
     && (sed -n '1,144p' requirements.txt > /tmp/legacy.txt) \
     && (sed -n '145,$p' requirements.txt > /tmp/carousel_v2.txt) \
-    && pip install --no-cache-dir --timeout=300 --retries=10 -r /tmp/legacy.txt \
-    && pip install --no-cache-dir --timeout=300 --retries=10 -r /tmp/carousel_v2.txt \
-    && pip install --no-cache-dir --timeout=300 --retries=10 --no-deps "protobuf>=4.25.3,<5"
+    && retry_pip -r /tmp/legacy.txt \
+    && retry_pip -r /tmp/carousel_v2.txt \
+    && retry_pip --no-deps "protobuf>=4.25.3,<5"
 
 # Pre-download openWakeWord ONNX models so the wake-word service can lazy-load
 # without a network call on first request. Idempotent — no-op if files exist.

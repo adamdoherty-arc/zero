@@ -143,6 +143,7 @@ export interface ReachyStatus {
   recommended_action?: { id: string; label: string; detail: string }
   state_probe?: Record<string, unknown>
   daemon: Record<string, unknown>
+  supervisor?: Record<string, unknown> | null
   base_url: string
 }
 
@@ -236,7 +237,7 @@ export interface ReachyAssistantActivity {
 }
 
 export interface ReachyAssistantStep {
-  id: 'zero_api' | 'host_agent' | 'reachy_daemon' | 'watchdog' | 'robot' | 'voice_backend' | 'persona'
+  id: 'zero_api' | 'host_agent' | 'reachy_daemon' | 'robot' | 'voice_backend' | 'persona'
   label: string
   state: ReachyAssistantState
   detail: string
@@ -256,7 +257,6 @@ export interface ReachyAssistantStatus {
   state_probe?: Record<string, unknown>
   daemon_api?: Record<string, unknown>
   daemon: Record<string, unknown>
-  watchdog: Record<string, unknown> | null
   host_agent: Record<string, unknown> | null
   realtime: Record<string, unknown>
   persona: string | null
@@ -305,7 +305,7 @@ const reachyKeys = {
   daemonStatus: () => [...reachyKeys.all, 'daemon', 'status'] as const,
   daemonLogs: (tail: number) => [...reachyKeys.all, 'daemon', 'logs', tail] as const,
   daemonDiagnostics: () => [...reachyKeys.all, 'daemon', 'diagnostics'] as const,
-  daemonWatchdog: () => [...reachyKeys.all, 'daemon', 'watchdog'] as const,
+  hostAgentStatus: () => [...reachyKeys.all, 'host-agent', 'status'] as const,
   companionStatus: () => [...reachyKeys.all, 'companion', 'status'] as const,
   companionEvents: (limit: number) => [...reachyKeys.all, 'companion', 'events', limit] as const,
   companionPolicy: () => [...reachyKeys.all, 'companion', 'policy'] as const,
@@ -558,7 +558,6 @@ export function useActivateReachyAssistant() {
       qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })
       qc.invalidateQueries({ queryKey: reachyKeys.status() })
       qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
       qc.invalidateQueries({ queryKey: reachyKeys.motionSources() })
       qc.invalidateQueries({ queryKey: ['reachy', 'personas'] })
     },
@@ -1417,16 +1416,6 @@ export interface DaemonRestartEvent {
   new_pid: number | null
 }
 
-export interface DaemonWatchdog {
-  enabled: boolean
-  consecutive_failures: number
-  failure_threshold: number
-  poll_interval_s: number
-  last_check: string | null
-  last_daemon_up: string | null
-  restart_history: DaemonRestartEvent[]
-}
-
 export interface DaemonKnownIssue {
   id: string
   severity: 'error' | 'warning' | 'info'
@@ -1466,7 +1455,7 @@ export interface DaemonDiagnostics {
     psutil_error?: string
   }
   supervisor: DaemonStatus
-  watchdog: DaemonWatchdog
+  restart_history?: DaemonRestartEvent[]
   known_issues?: {
     count: number
     items: DaemonKnownIssue[]
@@ -1492,6 +1481,22 @@ export function useDaemonStatus(pollMs = 5_000) {
   })
 }
 
+export interface HostAgentStatus {
+  reachable: boolean
+  url: string | null
+  last_error: string | null
+}
+
+export function useHostAgentStatus(pollMs = 4_000) {
+  return useQuery<HostAgentStatus>({
+    queryKey: reachyKeys.hostAgentStatus(),
+    queryFn: () => fetchApi<HostAgentStatus>('/reachy/host-agent/status'),
+    refetchInterval: pollMs,
+    retry: false,
+    staleTime: 1_000,
+  })
+}
+
 export function useDaemonLogs(tail = 100, enabled = false, pollMs = 3_000) {
   return useQuery<DaemonLogs>({
     queryKey: reachyKeys.daemonLogs(tail),
@@ -1512,15 +1517,6 @@ export function useDaemonDiagnostics(enabled = false) {
   })
 }
 
-export function useDaemonWatchdog(pollMs = 10_000) {
-  return useQuery<DaemonWatchdog>({
-    queryKey: reachyKeys.daemonWatchdog(),
-    queryFn: () => fetchApi('/reachy/daemon/watchdog'),
-    refetchInterval: pollMs,
-    retry: false,
-  })
-}
-
 function useDaemonMutation(path: string, body?: unknown) {
   const qc = useQueryClient()
   return useMutation({
@@ -1531,7 +1527,6 @@ function useDaemonMutation(path: string, body?: unknown) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
       qc.invalidateQueries({ queryKey: reachyKeys.daemonDiagnostics() })
       qc.invalidateQueries({ queryKey: reachyKeys.status() })
       qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })
@@ -1561,7 +1556,6 @@ export function useRetryHardwareScan() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
       qc.invalidateQueries({ queryKey: reachyKeys.daemonDiagnostics() })
       qc.invalidateQueries({ queryKey: reachyKeys.status() })
       qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })
@@ -1574,68 +1568,23 @@ export function useResetAudio() {
   return useDaemonMutation('/reachy/daemon/audio/reset')
 }
 
-export function useSetWatchdog() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (enabled: boolean) =>
-      fetchApi('/reachy/daemon/watchdog', {
-        method: 'POST',
-        body: JSON.stringify({ enabled }),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
-      qc.invalidateQueries({ queryKey: reachyKeys.daemonDiagnostics() })
-      qc.invalidateQueries({ queryKey: reachyKeys.status() })
-      qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })
-    },
-  })
-}
-
-// ---- Docker readiness + Smart Re-link ----
-
-export type DockerReadinessState = 'unknown' | 'waiting' | 'ready' | 'unreachable'
-
-export interface DockerReadinessStatus {
-  state: DockerReadinessState
-  last_check: string | null
-  last_ready: string | null
-  last_error: string | null
-  consecutive_failures: number
-  consecutive_ready: number
-  probe_count: number
-  next_probe_in_s: number
-  backend_url: string
-}
+// ---- Manual recovery (Smart Re-link) ----
 
 export interface RelinkResult {
-  action: 'waiting' | 'restarted'
+  action: 'restarted'
   detail: string
-  docker: DockerReadinessStatus
-  watchdog?: DaemonWatchdog
   daemon?: Record<string, unknown>
-}
-
-export function useDockerStatus(pollMs = 5_000) {
-  return useQuery<DockerReadinessStatus>({
-    queryKey: [...reachyKeys.all, 'host', 'docker_status'] as const,
-    queryFn: () => fetchApi('/reachy/host/docker_status'),
-    refetchInterval: pollMs,
-    retry: false,
-  })
+  supervisor?: Record<string, unknown>
 }
 
 export function useRelink() {
   const qc = useQueryClient()
-  const dockerKey = [...reachyKeys.all, 'host', 'docker_status'] as const
   return useMutation<RelinkResult>({
     mutationFn: () =>
       fetchApi<RelinkResult>('/reachy/daemon/relink', { method: 'POST' }),
     onSuccess: () => {
       const invalidate = () => {
-        qc.invalidateQueries({ queryKey: dockerKey })
         qc.invalidateQueries({ queryKey: reachyKeys.daemonStatus() })
-        qc.invalidateQueries({ queryKey: reachyKeys.daemonWatchdog() })
         qc.invalidateQueries({ queryKey: reachyKeys.daemonDiagnostics() })
         qc.invalidateQueries({ queryKey: reachyKeys.status() })
         qc.invalidateQueries({ queryKey: reachyKeys.assistantStatus() })

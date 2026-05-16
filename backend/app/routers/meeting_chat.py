@@ -5,6 +5,7 @@ import structlog
 
 from app.infrastructure.database import get_session
 from app.models.meeting import MeetingChatRequest, MeetingChatResponse, MeetingChatSource
+from app.services.meeting_rag_service import get_meeting_rag_service
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -12,7 +13,6 @@ logger = structlog.get_logger(__name__)
 
 @router.post("/")
 async def meeting_chat(request: MeetingChatRequest):
-    from app.services.meeting_rag_service import get_meeting_rag_service
     rag = get_meeting_rag_service()
     async with get_session() as db:
         result = await rag.query(request.message, db, meeting_id=request.meeting_id)

@@ -70,8 +70,13 @@ class VllmProvider(BaseLLMProvider):
     def _resolve_model(self, model: Optional[str]) -> str:
         if not model:
             return self._default_model
-        # Accept config entries like "vllm/qwen3-chat" or bare name
-        if "/" in model and not model.startswith("Qwen/"):
+        # Accept config entries like "vllm/qwen3-chat" or bare name. Preserve
+        # gateway-style "<provider>/<model>" prefixes that the upstream
+        # gateway needs to route the request — Bifrost requires
+        # "vllm-local/qwen3-chat" verbatim, and Qwen HF IDs ("Qwen/...")
+        # are also already-qualified names.
+        _PASSTHROUGH_PREFIXES = ("Qwen/", "vllm-local/", "embed-local/")
+        if "/" in model and not model.startswith(_PASSTHROUGH_PREFIXES):
             return model.split("/", 1)[1]
         return model
 
@@ -120,7 +125,17 @@ class VllmProvider(BaseLLMProvider):
             )
             response.raise_for_status()
             data = response.json()
-            content = data["choices"][0]["message"].get("content", "") or ""
+            # Defensive fallback: if a gateway (Bifrost v1.5.0) strips
+            # chat_template_kwargs, Qwen3.6 emits the answer into
+            # reasoning_content / reasoning while leaving content empty.
+            # _strip_think still removes any leaked <think> tags inline.
+            msg = data["choices"][0]["message"]
+            content = (
+                msg.get("content")
+                or msg.get("reasoning_content")
+                or msg.get("reasoning")
+                or ""
+            )
             return _strip_think(content)
 
         return await self._breaker.call(_call)
@@ -155,7 +170,16 @@ class VllmProvider(BaseLLMProvider):
                 try:
                     data = json.loads(data_str)
                     delta = data.get("choices", [{}])[0].get("delta", {})
-                    content = delta.get("content", "")
+                    # Defensive fallback (matches chat() above): if the
+                    # gateway strips chat_template_kwargs, the model
+                    # streams its answer into reasoning_content / reasoning
+                    # instead of content.
+                    content = (
+                        delta.get("content")
+                        or delta.get("reasoning_content")
+                        or delta.get("reasoning")
+                        or ""
+                    )
                     if content:
                         yield content
                 except json.JSONDecodeError:

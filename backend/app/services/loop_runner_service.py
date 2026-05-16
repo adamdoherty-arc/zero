@@ -44,9 +44,9 @@ LEARNING_BLOCK_RE = re.compile(
 )
 LEARNING_ATTR_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
 
-# Default LLM endpoint — shared LiteLLM at host.docker.internal:4444
-_DEFAULT_LITELLM_URL = "http://host.docker.internal:4444/v1"
-_DEFAULT_RUNNER_MODEL = "qwen3-chat"  # reasoning-off, fast TTFT
+# Default LLM endpoint — shared Bifrost at host.docker.internal:4445 (post 2026-05-14)
+_DEFAULT_LITELLM_URL = "http://host.docker.internal:4445/v1"
+_DEFAULT_RUNNER_MODEL = "vllm-local/qwen3-chat"  # reasoning-off via Bifrost
 _DEFAULT_RUNNER_TIMEOUT = 600.0  # 10 min hard ceiling
 
 # llama.cpp serves Qwen3.6-35B with --ctx-size 16384 and --parallel 2, giving

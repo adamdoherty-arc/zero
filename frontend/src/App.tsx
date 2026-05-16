@@ -26,6 +26,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import IntegrationsPage from '@/pages/IntegrationsPage'
 import MemoryVaultPage from '@/pages/MemoryVaultPage'
 import MeetingAgentPage from '@/pages/MeetingAgentPage'
+import MeshPage from '@/pages/MeshPage'
 import OpenHandsTasksPage from '@/pages/OpenHandsTasksPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
 import { ArchitecturePage } from '@/pages/ArchitecturePage'
@@ -49,6 +50,7 @@ import { MeetingSearchPage } from '@/pages/MeetingSearchPage'
 import { AiCompanyPage } from '@/pages/AiCompanyPage'
 import { DeepResearchPage } from '@/pages/DeepResearchPage'
 import { CompanyOsPage } from '@/pages/CompanyOsPage'
+import { PersonalBoardPage } from '@/pages/PersonalBoardPage'
 import { ExperimentLabPage } from '@/pages/ExperimentLabPage'
 import { LoopsPage } from '@/pages/LoopsPage'
 import { SkillsPage } from '@/pages/SkillsPage'
@@ -66,6 +68,7 @@ import BrainDashboardPage from '@/pages/BrainDashboardPage'
 import EmployeeDashboardPage from '@/pages/EmployeeDashboardPage'
 import BrainEmployeePage from '@/pages/BrainEmployeePage'
 import { ReachyMotionLibraryPage } from '@/pages/ReachyMotionLibraryPage'
+import { ReachyLegacyConsolePage } from '@/pages/ReachyLegacyConsolePage'
 import { ReachyTeleopPage } from '@/pages/ReachyTeleopPage'
 import { ReachyHomeAssistantPage } from '@/pages/ReachyHomeAssistantPage'
 import { ReachyMeetingsPage } from '@/pages/ReachyMeetingsPage'
@@ -73,6 +76,7 @@ import { ReachyVoiceSettingsPage } from '@/pages/ReachyVoiceSettingsPage'
 import { ReachyRadioPage } from '@/pages/ReachyRadioPage'
 import { ReachyMemoryPage } from '@/pages/ReachyMemoryPage'
 import { MealsPage } from '@/pages/MealsPage'
+import { DraftsInbox } from '@/components/email/DraftsInbox'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 /**
@@ -121,6 +125,7 @@ function App() {
             <Route path="/workflows" element={<WorkflowsPage />} />
             <Route path="/orchestrator" element={<OrchestratorPage />} />
             <Route path="/email" element={<EmailPage />} />
+            <Route path="/email/drafts" element={<DraftsInbox />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/crm" element={<CrmPage />} />
@@ -131,6 +136,7 @@ function App() {
             <Route path="/integrations" element={<IntegrationsPage />} />
             <Route path="/memory-vault" element={<MemoryVaultPage />} />
             <Route path="/meeting-agent" element={<MeetingAgentPage />} />
+            <Route path="/mesh" element={<MeshPage />} />
             <Route path="/openhands" element={<OpenHandsTasksPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
             <Route path="/qa" element={<QAPage />} />
@@ -151,6 +157,7 @@ function App() {
             <Route path="/meeting-search" element={<MeetingSearchPage />} />
             <Route path="/ai-company" element={<AiCompanyPage />} />
             <Route path="/deep-research" element={<DeepResearchPage />} />
+            <Route path="/personal/board" element={<PersonalBoardPage />} />
             <Route path="/company" element={<CompanyOsPage section="overview" />} />
             <Route path="/company/operator" element={<CompanyOsPage section="operator" />} />
             <Route path="/company/tasks" element={<CompanyOsPage section="tasks" />} />
@@ -176,6 +183,7 @@ function App() {
             <Route path="/brain/employee" element={<BrainEmployeePage />} />
             <Route path="/employee" element={<EmployeeDashboardPage />} />
             <Route path="/zero" element={<ReachyMotionLibraryPage />} />
+            <Route path="/zero/legacy" element={<ReachyLegacyConsolePage />} />
             <Route path="/zero/teleop" element={<ReachyTeleopPage />} />
             <Route path="/zero/meetings" element={<ReachyMeetingsPage />} />
             <Route path="/zero/home-assistant" element={<ReachyHomeAssistantPage />} />

@@ -1,109 +1,49 @@
 import pytest
-from unittest.mock import AsyncMock, patch
-from zero.services import (
-    CalendarService,
-    EmailService,
-    TaskService,
-    NotificationService,
-)
-from zero.models import CalendarEvent, Email, Task, Notification
+from unittest.mock import AsyncMock, MagicMock
+from services.user_service import UserService
+from services.task_service import TaskService
+from models.user import User
+from models.task import Task
 
 @pytest.fixture
-def calendar_service():
-    return CalendarService()
+def mock_db():
+    return MagicMock()
 
 @pytest.fixture
-def email_service():
-    return EmailService()
+def user_service(mock_db):
+    return UserService(db=mock_db)
 
 @pytest.fixture
-def task_service():
-    return TaskService()
+def task_service(mock_db):
+    return TaskService(db=mock_db)
 
-@pytest.fixture
-def notification_service():
-    return NotificationService()
+@pytest.mark.asyncio
+async def test_create_user(user_service, mock_db):
+    mock_db.users.insert_one = AsyncMock(return_value={"inserted_id": "123"})
+    user_data = {"name": "Alice", "email": "alice@example.com"}
+    result = await user_service.create_user(user_data)
+    assert result["inserted_id"] == "123"
+    mock_db.users.insert_one.assert_called_once()
 
-class TestCalendarService:
-    @pytest.mark.asyncio
-    async def test_get_events(self, calendar_service):
-        calendar_service.client = AsyncMock()
-        calendar_service.client.get_events = AsyncMock(
-            return_value=[
-                CalendarEvent(title="Meeting", start="2023-10-01T10:00:00"),
-            ]
-        )
-        events = await calendar_service.get_events()
-        assert len(events) == 1
-        assert events[0].title == "Meeting"
+@pytest.mark.asyncio
+async def test_get_user(user_service, mock_db):
+    mock_db.users.find_one = AsyncMock(return_value={"_id": "123", "name": "Alice", "email": "alice@example.com"})
+    result = await user_service.get_user("123")
+    assert result["name"] == "Alice"
+    mock_db.users.find_one.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_create_event(self, calendar_service):
-        calendar_service.client = AsyncMock()
-        calendar_service.client.create_event = AsyncMock(
-            return_value=CalendarEvent(title="New Event", start="2023-10-02T11:00:00")
-        )
-        event = await calendar_service.create_event(title="New Event", start="2023-10-02T11:00:00")
-        assert event.title == "New Event"
+@pytest.mark.asyncio
+async def test_create_task(task_service, mock_db):
+    mock_db.tasks.insert_one = AsyncMock(return_value={"inserted_id": "456"})
+    task_data = {"title": "Test Task", "user_id": "123"}
+    result = await task_service.create_task(task_data)
+    assert result["inserted_id"] == "456"
+    mock_db.tasks.insert_one.assert_called_once()
 
-class TestEmailService:
-    @pytest.mark.asyncio
-    async def test_get_emails(self, email_service):
-        email_service.client = AsyncMock()
-        email_service.client.get_emails = AsyncMock(
-            return_value=[
-                Email(subject="Hello", sender="user@example.com"),
-            ]
-        )
-        emails = await email_service.get_emails()
-        assert len(emails) == 1
-        assert emails[0].subject == "Hello"
-
-    @pytest.mark.asyncio
-    async def test_send_email(self, email_service):
-        email_service.client = AsyncMock()
-        email_service.client.send_email = AsyncMock(return_value=True)
-        result = await email_service.send_email(to="recipient@example.com", subject="Test", body="Body")
-        assert result is True
-
-class TestTaskService:
-    @pytest.mark.asyncio
-    async def test_get_tasks(self, task_service):
-        task_service.client = AsyncMock()
-        task_service.client.get_tasks = AsyncMock(
-            return_value=[
-                Task(title="Task 1", status="pending"),
-            ]
-        )
-        tasks = await task_service.get_tasks()
-        assert len(tasks) == 1
-        assert tasks[0].title == "Task 1"
-
-    @pytest.mark.asyncio
-    async def test_create_task(self, task_service):
-        task_service.client = AsyncMock()
-        task_service.client.create_task = AsyncMock(
-            return_value=Task(title="New Task", status="pending")
-        )
-        task = await task_service.create_task(title="New Task")
-        assert task.title == "New Task"
-
-class TestNotificationService:
-    @pytest.mark.asyncio
-    async def test_get_notifications(self, notification_service):
-        notification_service.client = AsyncMock()
-        notification_service.client.get_notifications = AsyncMock(
-            return_value=[
-                Notification(message="Alert 1", type="info"),
-            ]
-        )
-        notifications = await notification_service.get_notifications()
-        assert len(notifications) == 1
-        assert notifications[0].message == "Alert 1"
-
-    @pytest.mark.asyncio
-    async def test_send_notification(self, notification_service):
-        notification_service.client = AsyncMock()
-        notification_service.client.send_notification = AsyncMock(return_value=True)
-        result = await notification_service.send_notification(message="Test", type="info")
-        assert result is True
+@pytest.mark.asyncio
+async def test_get_tasks(task_service, mock_db):
+    mock_db.tasks.find = AsyncMock(return_value=[{"_id": "456", "title": "Test Task", "user_id": "123"}])
+    result = await task_service.get_tasks(user_id="123")
+    assert len(result) == 1
+    assert result[0]["title"] == "Test Task"
+    mock_db.tasks.find.assert_called_once()

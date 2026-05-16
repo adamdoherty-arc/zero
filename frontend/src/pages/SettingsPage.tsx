@@ -1,16 +1,18 @@
 import { useState } from 'react'
-import { Cpu, Clock, Activity, Monitor, Route, Smartphone } from 'lucide-react'
+import { Cpu, Clock, Activity, Monitor, Route, Smartphone, ShieldAlert } from 'lucide-react'
 import { AgentSettingsTab } from '@/components/settings/AgentSettingsTab'
 import { SchedulerTab } from '@/components/settings/SchedulerTab'
 import { HealthTab } from '@/components/settings/HealthTab'
 import { GpuTab } from '@/components/settings/GpuTab'
 import { LlmTab } from '@/components/settings/LlmTab'
 import { MobileAccessCard } from '@/components/settings/MobileAccessCard'
+import { ContentProductionTab } from '@/components/settings/ContentProductionTab'
 
 const tabs = [
   { id: 'agent', label: 'Agent', icon: Cpu },
   { id: 'llm', label: 'LLM Router', icon: Route },
   { id: 'gpu', label: 'GPU / Ollama', icon: Monitor },
+  { id: 'content', label: 'Content Production', icon: ShieldAlert },
   { id: 'scheduler', label: 'Scheduler', icon: Clock },
   { id: 'health', label: 'Health', icon: Activity },
   { id: 'mobile', label: 'Mobile', icon: Smartphone },
@@ -45,6 +47,7 @@ export function SettingsPage() {
       {activeTab === 'agent' && <AgentSettingsTab />}
       {activeTab === 'llm' && <LlmTab />}
       {activeTab === 'gpu' && <GpuTab />}
+      {activeTab === 'content' && <ContentProductionTab />}
       {activeTab === 'scheduler' && <SchedulerTab />}
       {activeTab === 'health' && <HealthTab />}
       {activeTab === 'mobile' && <MobileAccessCard />}
