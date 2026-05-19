@@ -28,7 +28,7 @@ BACKEND_LOCAL = "local"
 DEFAULT_MODEL_BY_BACKEND: dict[str, str] = {
     BACKEND_OPENAI: "gpt-realtime",
     BACKEND_GEMINI: "gemini-3.1-flash-live-preview",
-    BACKEND_LOCAL: "qwen3-chat",
+    BACKEND_LOCAL: "Qwen3-32B-AWQ",
 }
 
 OPENAI_AVAILABLE_VOICES: tuple[str, ...] = (

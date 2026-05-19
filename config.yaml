@@ -1,0 +1,8 @@
+system:
+  max_retries: 3
+  timeout: 30
+  debug_mode: true
+
+resources:
+  memory_limit: 2048
+  cpu_cores: 4

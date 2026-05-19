@@ -52,7 +52,7 @@ by the ecosystem audit or, later, Legion's company operations subgraph.
 
 | Canonical name | Backend | Current state |
 |---|---|---|
-| `qwen3-chat` | `http://host.docker.internal:18800/v1` | Active local chat model served by llama.cpp from `Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf` |
+| `qwen3-chat` | `http://host.docker.internal:18801/v1` | Active local chat model served by **vLLM** from `Qwen/Qwen3-32B-AWQ` (re-swapped 2026-05-18 from the llama.cpp Q5_K_M path). Flags: `--quantization awq_marlin --max-model-len 8192 --gpu-memory-utilization 0.92 --enforce-eager --enable-prefix-caching`. |
 | `qwen3-chat-thinking` | Same endpoint | Reasoning-enabled variant in LiteLLM config |
 | `Qwen/Qwen3.6-35B-A3B-abliterated` | Same endpoint | Explicit model-id alias |
 | `qwen3-embed` | `http://vllm-embed:8001/v1` | Active local embedding model |

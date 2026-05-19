@@ -48,12 +48,12 @@ def test_explicit_model_without_task_type_has_no_router_fallbacks(monkeypatch):
 
     client = UnifiedLLMClient()
     provider, model, fallbacks = client._resolve(
-        "bifrost/vllm-local/qwen3-chat",
+        "bifrost/vllm-local/Qwen3-32B-AWQ",
         None,
     )
 
     assert provider == "bifrost"
-    assert model == "vllm-local/qwen3-chat"
+    assert model == "vllm-local/Qwen3-32B-AWQ"
     assert fallbacks == []
 
 
@@ -79,7 +79,7 @@ def test_bifrost_provider_disables_local_qwen_thinking_at_payload_root():
 
     payload = provider._payload(
         [{"role": "user", "content": "hi"}],
-        "vllm-local/qwen3-chat",
+        "vllm-local/Qwen3-32B-AWQ",
         temperature=0.3,
         max_tokens=128,
         reasoning=False,
@@ -111,7 +111,7 @@ async def test_call_provider_passes_reasoning_false_to_vllm(monkeypatch):
 
     result = await client._call_provider(
         "vllm",
-        "Qwen3.6-35B-A3B",
+        "Qwen3-32B-AWQ",
         [{"role": "user", "content": "hi"}],
         None,
         0.3,

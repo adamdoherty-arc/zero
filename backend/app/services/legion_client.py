@@ -335,6 +335,15 @@ class LegionClient:
         """Create a new sprint."""
         return await self._post("/sprints", sprint_data)
 
+    async def create_sprint_with_tasks(self, payload: Dict) -> Dict:
+        """S52 (2026-05-19): atomic sprint + tasks creation against Legion's
+        ``/api/sprints/with-tasks``. ``payload`` must be ``{"sprint": {...},
+        "tasks": [{...}, ...]}``. Legion will refuse a zero-task list at
+        the endpoint, so callers should only invoke this when they have
+        tasks to ship together with the sprint shell.
+        """
+        return await self._post("/sprints/with-tasks", payload)
+
     async def update_sprint(self, sprint_id: int, update_data: Dict) -> Dict:
         """Update a sprint."""
         return await self._patch(f"/sprints/{sprint_id}", update_data)

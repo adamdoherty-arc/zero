@@ -92,7 +92,7 @@ def resolve_chat_model(
     when the caller should surface a swap.
 
     The router serves models under both raw names (``qwen3-chat``) and
-    prefixed names (``vllm-local/qwen3-chat``). A saved selection of either
+    prefixed names (``vllm-local/Qwen3-32B-AWQ``). A saved selection of either
     form must keep working; only embedding-only models are ineligible as a
     fallback for the chat loop.
     """
@@ -189,18 +189,23 @@ SPEAKER_CALLBACK_TIMEOUT_S = float(
 )
 TTS_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_TTS_TIMEOUT_S", "12"))
 STT_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_STT_TIMEOUT_S", "8"))
-LLM_TURN_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_TURN_TIMEOUT_S", "20"))
+LLM_TURN_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_TURN_TIMEOUT_S", "30"))
 LLM_FIRST_TOKEN_TIMEOUT_S = float(
     os.getenv("REACHY_LOCAL_LLM_FIRST_TOKEN_TIMEOUT_S", str(LLM_TURN_TIMEOUT_S))
 )
-LLM_STREAM_IDLE_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_STREAM_IDLE_TIMEOUT_S", "12"))
-LLM_STREAM_HARD_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_STREAM_HARD_TIMEOUT_S", "75"))
+LLM_STREAM_IDLE_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_STREAM_IDLE_TIMEOUT_S", "20"))
+LLM_STREAM_HARD_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_STREAM_HARD_TIMEOUT_S", "120"))
 TOOL_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_TOOL_TIMEOUT_S", "12"))
 # Split assistant tokens into chunks at sentence-ish boundaries so TTS can
 # start speaking before the model has finished generating.
 SENTENCE_SPLIT = re.compile(r"(?<=[\.!\?])\s+|(?<=[,;:])\s+(?=\S{4,})")
 EARLY_TTS_CHARS = int(os.getenv("REACHY_LOCAL_EARLY_TTS_CHARS", "36"))
-LLM_MAX_TOKENS = int(os.getenv("REACHY_LOCAL_LLM_MAX_TOKENS", "100"))
+# Bumped 2026-05-17 from 100 → 1024 after the Q5_K_M swap. Qwen3.6-A3B is a
+# reasoning model — with thinking enabled the budget must fit both the
+# internal ``reasoning_content`` (~200-600 tokens) AND the spoken reply.
+# Even with thinking OFF, 1024 gives room for multi-sentence replies before
+# truncation. Override per-deployment with REACHY_LOCAL_LLM_MAX_TOKENS.
+LLM_MAX_TOKENS = int(os.getenv("REACHY_LOCAL_LLM_MAX_TOKENS", "1024"))
 LLM_TEMPERATURE = float(os.getenv("REACHY_LOCAL_LLM_TEMPERATURE", "0.25"))
 
 # Qwen3 in thinking mode emits ``<think>...</think>`` blocks in front of the
@@ -816,6 +821,7 @@ class LocalRealtimeHandler:
         on_assistant_audio: Optional[AudioPCMCallback] = None,
         on_turn_end: Optional[Callable[[], Awaitable[None]]] = None,
         vllm_url: Optional[str] = None,
+        thinking_enabled: bool = False,
     ) -> None:
         settings = get_settings()
         self.model = resolve_model(BACKEND_LOCAL, model)
@@ -824,6 +830,13 @@ class LocalRealtimeHandler:
         self.deps = deps
         self._on_assistant_audio = on_assistant_audio
         self._on_turn_end = on_turn_end
+        # Whether Qwen3's reasoning-block emission is allowed. When False
+        # (default, voice-loop friendly) the handler appends ``/no_think``
+        # to the system prompt AND passes ``enable_thinking: False`` so the
+        # model returns spoken-style replies straight away. When True the
+        # model emits ``reasoning_content`` first — used when the user has
+        # explicitly opted into deeper reasoning via the console toggle.
+        self._thinking_enabled = bool(thinking_enabled)
         # Post 2026-05-14 Bifrost migration: all LLM traffic routes
         # through Bifrost. ``vllm_chat_url`` resolves to the Bifrost
         # endpoint (Bifrost speaks OpenAI shape natively).
@@ -967,12 +980,16 @@ class LocalRealtimeHandler:
         except Exception as e:
             logger.debug("memory_facade_seed_skipped", error=str(e))
 
-        # Disable Qwen3's reasoning-block emission for the voice loop. We
-        # want short conversational replies, not chain-of-thought spoken
-        # out loud. Harmless for non-Qwen models.
+        # Disable Qwen3's reasoning-block emission for the voice loop unless
+        # the user opted into thinking mode via the console toggle. With
+        # thinking OFF the assistant replies in a single stream (no
+        # ``<think>...</think>`` prefix), suitable for low-latency TTS.
+        # With thinking ON the model reasons first; we let it through and
+        # rely on THINK_BLOCK stripping below to keep reasoning silent.
         instructions = _with_live_voice_rules(instructions)
-        if "/no_think" not in instructions:
-            instructions = instructions.rstrip() + "\n\n/no_think"
+        if not self._thinking_enabled:
+            if "/no_think" not in instructions:
+                instructions = instructions.rstrip() + "\n\n/no_think"
         self._messages = [{"role": "system", "content": instructions}]
 
         # Probe the local backend's catalog to validate the chosen model is
@@ -1011,9 +1028,9 @@ class LocalRealtimeHandler:
                 self.model,
                 available_models,
                 preferred=[
-                    "Qwen3.6-35B-A3B",
-                    "vllm-local/qwen3-chat",
-                    "qwen3-chat",
+                    "Qwen3-32B-AWQ",
+                    "vllm-local/Qwen3-32B-AWQ",
+                    "Qwen3-32B-AWQ",
                 ],
             )
             if resolved is None:
@@ -1023,7 +1040,7 @@ class LocalRealtimeHandler:
                         f"No chat-capable model is loaded on the router at "
                         f"{self._vllm_url}. Available: "
                         f"{', '.join(available_models[:8])}. Start a chat "
-                        "model (e.g. vllm-local/qwen3-chat) and retry."
+                        "model (e.g. vllm-local/Qwen3-32B-AWQ) and retry."
                     ),
                 })
                 return
@@ -1652,8 +1669,9 @@ class LocalRealtimeHandler:
             "temperature": LLM_TEMPERATURE,
             "max_tokens": LLM_MAX_TOKENS,
             # llama.cpp/Qwen3 otherwise may spend the whole voice-turn budget
-            # in ``reasoning_content`` and return no spoken answer.
-            "chat_template_kwargs": {"enable_thinking": False},
+            # in ``reasoning_content`` and return no spoken answer. Toggled
+            # per-session by the Reachy console "Thinking mode" switch.
+            "chat_template_kwargs": {"enable_thinking": self._thinking_enabled},
         }
         # Drop None values because local OpenAI-compatible surfaces are strict about extras.
         body = {k: v for k, v in body.items() if v is not None}

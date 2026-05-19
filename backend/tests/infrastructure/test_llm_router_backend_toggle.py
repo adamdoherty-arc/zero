@@ -41,17 +41,17 @@ class TestRemap:
 
     def test_vllm_override_rewrites_ollama(self, monkeypatch):
         monkeypatch.setenv("LOCAL_LLM_BACKEND", "vllm")
-        monkeypatch.setenv("VLLM_CHAT_MODEL", "qwen3-chat")
+        monkeypatch.setenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
         from app.infrastructure.llm_router import _apply_local_backend_remap
         provider, model = _apply_local_backend_remap("ollama", "qwen3.6:35b-a3b-q8_0")
         assert provider == "vllm"
-        assert model == "qwen3-chat"
+        assert model == "Qwen3-32B-AWQ"
 
     def test_ollama_override_rewrites_vllm(self, monkeypatch):
         monkeypatch.setenv("LOCAL_LLM_BACKEND", "ollama")
         monkeypatch.setenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
         from app.infrastructure.llm_router import _apply_local_backend_remap
-        provider, model = _apply_local_backend_remap("vllm", "qwen3-chat")
+        provider, model = _apply_local_backend_remap("vllm", "Qwen3-32B-AWQ")
         assert provider == "ollama"
         assert model == "qwen3.6:35b-a3b-q8_0"
 
@@ -65,14 +65,14 @@ class TestRemap:
         monkeypatch.setenv("LOCAL_LLM_BACKEND", "vllm")
         from app.infrastructure.llm_router import _apply_local_backend_remap
         # Already vllm → should not touch model name.
-        assert _apply_local_backend_remap("vllm", "qwen3-chat") == ("vllm", "qwen3-chat")
+        assert _apply_local_backend_remap("vllm", "Qwen3-32B-AWQ") == ("vllm", "Qwen3-32B-AWQ")
 
 
 class TestResolveProviderModel:
     @pytest.mark.asyncio
     async def test_resolve_respects_override(self, monkeypatch):
         monkeypatch.setenv("LOCAL_LLM_BACKEND", "vllm")
-        monkeypatch.setenv("VLLM_CHAT_MODEL", "qwen3-chat")
+        monkeypatch.setenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
 
         from app.infrastructure.llm_router import LlmRouter
         from app.models.llm import LlmRouterConfig, ModelAssignment
@@ -91,7 +91,7 @@ class TestResolveProviderModel:
 
         provider, model, fallbacks = router.resolve_provider_model("chat")
         assert provider == "vllm"
-        assert model == "qwen3-chat"
+        assert model == "Qwen3-32B-AWQ"
         # First fallback was ollama → remapped to vllm; gemini stays.
         fb_providers = [p for p, _ in fallbacks]
         assert "vllm" in fb_providers or "gemini" in fb_providers

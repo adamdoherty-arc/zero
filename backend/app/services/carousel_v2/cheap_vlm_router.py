@@ -145,15 +145,46 @@ async def _try_gemini(
     generation_id: Optional[str],
     timeout: float,
 ) -> Optional[dict]:
-    """Tier 0 — disabled 2026-05-14.
+    """Tier 0 — Moonshot vision via Bifrost (restored 2026-05-19).
 
-    Standalone GeminiProvider was deleted in the Bifrost migration because
-    google-genai exposes no base_url override. No Gemini path exists today;
-    Stage-8 VLM operates failure-soft (no-VLM ranking) until a local vision
-    model lands. Kept as a no-op stub so the dispatcher chain still
-    compiles and the openrouter free pool stays as the only tier.
+    Originally Gemini Flash; deleted in the Bifrost migration because
+    google-genai has no base_url override. Now wired to the same
+    Moonshot vision SKU the rest of Zero uses (vision_vlm_service)
+    so Stage-8 carousel verification gets a real VLM signal again
+    instead of failure-soft no-info ranking.
     """
-    return None
+    try:
+        import httpx
+        from app.services.vision_vlm_service import VisionVLMService
+
+        # Fetch image bytes (url may be remote or a data URI).
+        if image_url.startswith("data:"):
+            import base64
+            _, b64 = image_url.split(",", 1)
+            jpeg_bytes = base64.b64decode(b64)
+        else:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(image_url)
+                resp.raise_for_status()
+                jpeg_bytes = resp.content
+
+        svc = VisionVLMService.get_instance()
+        prompt = _build_prompt(character, franchise)
+        # `answer_about_scene` returns the raw VLM text (no actionable
+        # splitting) which is what we want for JSON-shaped responses.
+        text = await svc.answer_about_scene(jpeg_bytes, prompt)
+        parsed = _parse_json(text or "")
+        if not parsed:
+            return None
+        out = _normalise_likeness(parsed)
+        out["_tier"] = "moonshot_vision"
+        out["_model"] = svc._model  # type: ignore[attr-defined]
+        out["_cost_usd"] = 0.0  # accounted at the Bifrost layer
+        out["_available"] = True
+        return out
+    except Exception as e:
+        logger.warning("vlm_tier0_moonshot_failed", error=str(e)[:200])
+        return None
 
 
 async def _try_openrouter_free(

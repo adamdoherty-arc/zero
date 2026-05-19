@@ -131,8 +131,8 @@ join/audio/transcript driver is enabled.
 
 | Canonical name | Backend | Used by |
 |---|---|---|
-| `qwen3-chat` | llama.cpp `llama-cpp-chat:8000` inside docker net, **host `:18800`** outside (`Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf`) | **Single shared local chat model** — Zero, Ada, and Legion route through LiteLLM `:4444`; backend changes are made in `shared-infra/litellm/config.yaml`, not per project |
-| `qwen3-chat-thinking` | Same llama.cpp endpoint | Reasoning-enabled variant for callers that intentionally want Qwen3.6 thinking mode |
+| `qwen3-chat` | **vLLM** `vllm-chat:8000` inside docker net, **host `:18801`** outside (`Qwen/Qwen3-32B-AWQ`, AWQ Marlin Int4) | **Single shared local chat model** — Zero, Ada, and Legion route through Bifrost `:4445`; backend changes are made in `shared-infra/docker-compose.vllm.yml`, not per project. Re-swapped 2026-05-18 from llama.cpp Q5_K_M GGUF — see [models-baseline.md](.agents/skills/ecosystem-audit/lib/models-baseline.md) swap log. |
+| `qwen3-chat-thinking` | Same vLLM endpoint as `qwen3-chat` | Reasoning-enabled route — same model, callers add `/no_think` in the system prompt to skip thinking-block emission. The `enable_thinking` chat-template kwarg is a no-op on AWQ-Marlin in vLLM 0.19. |
 | `qwen3-embed`, `Qwen/Qwen3-Embedding-0.6B` | vLLM `vllm-embed:8001` | All vault chunking, Ada RAG |
 | `qwen3-coder` | Legacy name; not active in the current shared LiteLLM config | Audit any remaining callers and route them to `qwen3-chat` unless Legion reintroduces a dedicated coder model through `llm_ops` |
 | `claude-sonnet-4-6` | Anthropic | Supervisor, long-context synthesis, complex code |
@@ -180,3 +180,26 @@ The vault constitution at `C:\code\vault\ObsidianZero\00_Meta\CLAUDE.md` enforce
 - Color scheme: Zero blue, Ada green, Legion purple, robot hardware red, infra amber.
 
 
+
+## Bifrost virtual-key invariants (added 2026-05-19)
+
+Bifrost virtual keys (VKs) gate which models each project can call. They live at `http://localhost:4445/api/governance/virtual-keys` and use a two-layer binding:
+
+1. **Provider keys** (per-provider): live at `/api/providers/{provider}/keys` and define the upstream auth secret + the models that key is allowed to reach.
+2. **VK provider_configs** (per-VK + per-provider): a mapping from a virtual key to a subset of provider keys it is allowed to use, plus an `allowed_models` whitelist that filters within that provider.
+
+**Invariant: `key_ids` must be populated on every provider_config.**
+
+The Bifrost governance API has a sharp edge: `PUT /api/governance/virtual-keys/{id}` strips the `keys` binding from every `provider_config` if the request body does not include an explicit `key_ids` field. After such a partial update, every chat call returns `no keys found for provider X` and the model silently disappears from `/v1/models`. The `/health` endpoint stays green and there is no error in the Bifrost logs.
+
+**Recovery:** run `python scripts/bifrost_vk_rebind.py` in this repo. The script re-binds every VK's provider_configs to the full set of currently-registered provider keys. Idempotent. Supports `--vk <name>` to target one VK and `--add-model <provider/model>` to extend an allowed list.
+
+The three current VKs map to one project each. Their `value` field (the `sk-bf-…` bearer token) is regenerated whenever a VK is deleted and recreated, so rotating a VK requires updating the `.env` file in the consuming project:
+
+| VK name | Consumer | .env var that holds the token |
+|---|---|---|
+| `zero-prod` | Zero (`zero-api`) | `ZERO_VLLM_API_KEY` / `ZERO_BIFROST_API_KEY` |
+| `legion-prod` | Legion (`legion-backend`) | `BIFROST_API_KEY` / `VLLM_API_KEY` |
+| `ada-prod` | ADA (`ada-backend`) | `BIFROST_GATEWAY_KEY` / `VLLM_API_KEY` |
+
+If you see authentication-shaped errors in only one project after a Bifrost change, the rotation step was missed. Compare the `.env` token to the value of the matching VK in `/api/governance/virtual-keys`.

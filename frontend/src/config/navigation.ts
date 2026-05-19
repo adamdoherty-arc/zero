@@ -49,7 +49,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-export type NavModeKey = 'personal' | 'company' | 'build' | 'systems' | 'content'
+export type NavModeKey = 'personal' | 'company' | 'build' | 'systems' | 'robot' | 'content'
 
 export interface NavMode {
   key: NavModeKey
@@ -75,6 +75,7 @@ export const navModes: NavMode[] = [
   { key: 'company', label: 'Company', href: '/company' },
   { key: 'build', label: 'Build', href: '/board' },
   { key: 'systems', label: 'Systems', href: '/operations' },
+  { key: 'robot', label: 'Robot', href: '/zero' },
   { key: 'content', label: 'Content', href: '/tiktok-shop' },
 ]
 
@@ -127,13 +128,19 @@ export const navSections: NavSection[] = [
       { label: 'LLC Guidance', href: '/llc-guidance', icon: Gavel },
       { label: 'Deep Research', href: '/deep-research', icon: Search },
       { label: 'CRM', href: '/crm', icon: Briefcase },
-      { label: 'Zero', href: '/zero', icon: Bot, aliases: ['reachy'] },
-      { label: 'Zero Memory', href: '/zero/memory', icon: Brain, aliases: ['reachy memory'] },
-      { label: 'Zero Radio', href: '/zero/radio', icon: Radio, aliases: ['reachy radio'] },
-      { label: 'Zero Teleop', href: '/zero/teleop', icon: Gamepad2, aliases: ['reachy teleop'] },
-      { label: 'Zero Meetings', href: '/zero/meetings', icon: CalendarClock, aliases: ['reachy meetings'] },
-      { label: 'Zero + HA', href: '/zero/home-assistant', icon: Home, aliases: ['reachy home assistant'] },
-      { label: 'Zero Voice Settings', href: '/zero/voice-settings', icon: AudioLines, aliases: ['reachy voice settings'] },
+    ],
+  },
+  {
+    label: 'Robot',
+    mode: 'robot',
+    items: [
+      { label: 'Cockpit', href: '/zero', icon: Bot, aliases: ['reachy'] },
+      { label: 'Memory', href: '/zero/memory', icon: Brain, aliases: ['reachy memory'] },
+      { label: 'Radio', href: '/zero/radio', icon: Radio, aliases: ['reachy radio'] },
+      { label: 'Teleop', href: '/zero/teleop', icon: Gamepad2, aliases: ['reachy teleop'] },
+      { label: 'Meetings', href: '/zero/meetings', icon: CalendarClock, aliases: ['reachy meetings'] },
+      { label: 'Home Assistant', href: '/zero/home-assistant', icon: Home, aliases: ['reachy home assistant'] },
+      { label: 'Voice Settings', href: '/zero/voice-settings', icon: AudioLines, aliases: ['reachy voice settings'] },
     ],
   },
   {

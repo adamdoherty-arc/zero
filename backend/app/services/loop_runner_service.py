@@ -46,7 +46,9 @@ LEARNING_ATTR_RE = re.compile(r'(\w+)\s*=\s*"([^"]*)"')
 
 # Default LLM endpoint — shared Bifrost at host.docker.internal:4445 (post 2026-05-14)
 _DEFAULT_LITELLM_URL = "http://host.docker.internal:4445/v1"
-_DEFAULT_RUNNER_MODEL = "vllm-local/qwen3-chat"  # reasoning-off via Bifrost
+# Model name resolves through the central registry; future renames touch
+# `app/constants/models.py` only.
+from app.constants.models import LOCAL_CHAT as _DEFAULT_RUNNER_MODEL  # noqa: E402
 _DEFAULT_RUNNER_TIMEOUT = 600.0  # 10 min hard ceiling
 
 # llama.cpp serves Qwen3.6-35B with --ctx-size 16384 and --parallel 2, giving

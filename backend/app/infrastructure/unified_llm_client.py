@@ -139,14 +139,30 @@ class UnifiedLLMClient:
                     remaining=get_llm_router().get_remaining_budget(),
                 )
                 # Fall back to whichever local backend LOCAL_LLM_BACKEND picks.
+                # Production routes through Bifrost (alias `vllm-local/Qwen3-32B-AWQ`).
+                # Ollama path is retained for emergency rollback only; not running
+                # in any shared-infra deploy since 2026-04-28.
                 import os as _os
                 _backend = _os.getenv("LOCAL_LLM_BACKEND", "vllm").strip().lower()
                 if _backend == "ollama":
                     provider_name = "ollama"
-                    model_name = _os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
+                    # No live default — set OLLAMA_CHAT_MODEL explicitly if you
+                    # actually revive Ollama. Keeping a stale default here used
+                    # to point callers at a model name that didn't exist.
+                    model_name = _os.getenv("OLLAMA_CHAT_MODEL", "")
+                    if not model_name:
+                        raise RuntimeError(
+                            "LOCAL_LLM_BACKEND=ollama but OLLAMA_CHAT_MODEL is unset; "
+                            "Ollama is not running in shared-infra (last alive 2026-04-28)."
+                        )
                 else:
                     provider_name = "vllm"
-                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-35B-A3B")  # canonical; legacy `qwen3-chat` still aliased
+                    # Default matches the current vllm-chat container served-model name
+                    # (2026-05-18: Qwen3-32B-AWQ replaced the llama.cpp Q5_K_M path).
+                    # ZERO_VLLM_CHAT_MODEL=vllm-local/Qwen3-32B-AWQ in production routes
+                    # through Bifrost which rewrites to whichever upstream model is
+                    # currently bound to the `qwen3-chat` alias.
+                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
                 fallbacks = []
 
         return await self._execute_with_fallbacks(

@@ -3,7 +3,7 @@ Bifrost provider - shared OpenAI-compatible gateway.
 
 Bifrost is the current shared gateway for Reachy classic chat. Its model names
 must include the upstream provider prefix, for example
-``vllm-local/qwen3-chat``.
+``vllm-local/Qwen3-32B-AWQ``.
 """
 
 from typing import AsyncIterator, Dict, List
@@ -21,9 +21,10 @@ class BifrostProvider(BaseLLMProvider):
     """OpenAI-compatible client for the shared Bifrost gateway."""
 
     def __init__(self):
+        from app.constants.models import LOCAL_CHAT
         settings = get_settings()
         self._base_url = settings.bifrost_url.rstrip("/")
-        self._default_model = "vllm-local/qwen3-chat"
+        self._default_model = LOCAL_CHAT
         self._headers: dict[str, str] = {}
         if settings.bifrost_api_key:
             self._headers["Authorization"] = f"Bearer {settings.bifrost_api_key}"

@@ -213,8 +213,8 @@ class TestTools:
             resolve_model,
         )
 
-        assert resolve_model(BACKEND_OPENAI, "qwen3-chat") == "gpt-realtime"
-        assert resolve_model(BACKEND_LOCAL, "gpt-realtime") == "qwen3-chat"
+        assert resolve_model(BACKEND_OPENAI, "Qwen3-32B-AWQ") == "gpt-realtime"
+        assert resolve_model(BACKEND_LOCAL, "gpt-realtime") == "Qwen3-32B-AWQ"
 
     def test_specs_include_all_names(self):
         names = {s["name"] for s in tool_registry.get_tool_specs()}
@@ -642,7 +642,7 @@ class TestConfigStore:
         path.write_text(json.dumps({
             "backend": "local",
             "openai_api_key": "sk-test-1234567890",
-            "model": "qwen3-chat",
+            "model": "Qwen3-32B-AWQ",
             "voice": "en-US-AriaNeural",
         }))
 
@@ -933,7 +933,7 @@ class TestSession:
                 openai_api_key="sk-test",
                 workspace_dir=".",
                 reachy_realtime_backend="openai",
-                reachy_realtime_model="qwen3-chat",
+                reachy_realtime_model="Qwen3-32B-AWQ",
                 reachy_realtime_voice="en-US-JennyNeural",
             )
 
@@ -961,7 +961,7 @@ class TestSession:
         await session._handle_start({
             "type": "start",
             "backend": "openai",
-            "model": "qwen3-chat",
+            "model": "Qwen3-32B-AWQ",
             "voice": "en-US-JennyNeural",
             "input_source": "browser",
         })
@@ -1093,7 +1093,7 @@ class TestSession:
             return Settings(
                 workspace_dir=".",
                 reachy_realtime_backend="local",
-                reachy_realtime_model="qwen3-chat",
+                reachy_realtime_model="Qwen3-32B-AWQ",
                 reachy_realtime_voice="en-US-JennyNeural",
                 reachy_realtime_profile="assistant",
             )
@@ -1146,7 +1146,7 @@ class TestSession:
                 workspace_dir=".",
                 host_agent_url="http://host-agent:18794",
                 reachy_realtime_backend="local",
-                reachy_realtime_model="qwen3-chat",
+                reachy_realtime_model="Qwen3-32B-AWQ",
                 reachy_realtime_voice="en-US-JennyNeural",
                 reachy_realtime_profile="assistant",
             )
@@ -1215,7 +1215,7 @@ class TestSession:
                 workspace_dir=".",
                 host_agent_url="http://host-agent:18794",
                 reachy_realtime_backend="local",
-                reachy_realtime_model="qwen3-chat",
+                reachy_realtime_model="Qwen3-32B-AWQ",
                 reachy_realtime_voice="en-US-JennyNeural",
                 reachy_realtime_profile="assistant",
             )
@@ -1271,7 +1271,7 @@ class TestSession:
                 workspace_dir=".",
                 host_agent_url="http://host-agent:18794",
                 reachy_realtime_backend="local",
-                reachy_realtime_model="qwen3-chat",
+                reachy_realtime_model="Qwen3-32B-AWQ",
                 reachy_realtime_voice="en-US-JennyNeural",
                 reachy_realtime_profile="assistant",
             )
@@ -1815,7 +1815,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -1849,7 +1849,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -1884,7 +1884,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -1924,7 +1924,7 @@ class TestLocalRealtimeHandler:
                 return None
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -1961,7 +1961,7 @@ class TestLocalRealtimeHandler:
                 return None
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -1999,7 +1999,7 @@ class TestLocalRealtimeHandler:
                 return None
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2038,7 +2038,7 @@ class TestLocalRealtimeHandler:
                 return None
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2065,7 +2065,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2103,7 +2103,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2147,7 +2147,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2183,7 +2183,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2230,7 +2230,7 @@ class TestLocalRealtimeHandler:
         from app.services.reachy_realtime.local_handler import LocalRealtimeHandler
 
         handler = LocalRealtimeHandler(
-            model="qwen3-chat",
+            model="Qwen3-32B-AWQ",
             voice="en-US-JennyNeural",
             profile_id="assistant",
             deps=deps,
@@ -2295,7 +2295,7 @@ class TestRealtimeRouter:
             "backend": "local",
             "has_openai_key": True,
             "has_gemini_key": True,
-            "model": "qwen3-chat",
+            "model": "Qwen3-32B-AWQ",
             "voice": "en-US-AriaNeural",
         })
 

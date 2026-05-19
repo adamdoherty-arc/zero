@@ -46,7 +46,7 @@ def test_providers_status_payload_shape(client: TestClient, monkeypatch):
 
     fake_providers = [
         _make_provider('bifrost-kimi', 'Bifrost Kimi K2.6', 'bifrost', 'moonshot/kimi-k2.6'),
-        _make_provider('bifrost-local-qwen', 'Bifrost Local Qwen', 'bifrost', 'vllm-local/qwen3-chat'),
+        _make_provider('bifrost-local-qwen', 'Bifrost Local Qwen', 'bifrost', 'vllm-local/Qwen3-32B-AWQ'),
     ]
     monkeypatch.setattr(chat_provider, 'AVAILABLE_PROVIDERS', fake_providers)
     monkeypatch.setattr(chat_provider, 'get_active_provider_id', lambda: 'bifrost-kimi')
@@ -89,7 +89,7 @@ def test_providers_status_surfaces_all_down(client: TestClient, monkeypatch):
 
     fake_providers = [
         _make_provider('bifrost-kimi', 'Bifrost Kimi K2.6', 'bifrost', 'moonshot/kimi-k2.6'),
-        _make_provider('bifrost-local-qwen', 'Bifrost Local Qwen', 'bifrost', 'vllm-local/qwen3-chat'),
+        _make_provider('bifrost-local-qwen', 'Bifrost Local Qwen', 'bifrost', 'vllm-local/Qwen3-32B-AWQ'),
     ]
     monkeypatch.setattr(chat_provider, 'AVAILABLE_PROVIDERS', fake_providers)
     monkeypatch.setattr(chat_provider, 'get_active_provider_id', lambda: 'bifrost-kimi')

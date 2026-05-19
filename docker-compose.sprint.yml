@@ -8,7 +8,7 @@ services:
   zero-postgres:
     image: pgvector/pgvector:pg17
     container_name: zero-postgres
-    restart: unless-stopped
+    restart: "no"
     environment:
       POSTGRES_DB: ${ZERO_DB_NAME:-zero}
       POSTGRES_USER: ${ZERO_DB_USER:-zero}
@@ -67,7 +67,8 @@ services:
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
       - ZERO_VAULT_PATH=/vault
-      - ZERO_OLLAMA_TIMEOUT=900
+      # ZERO_OLLAMA_TIMEOUT removed 2026-05-18 — Ollama retired 2026-04-28,
+      # the timeout value was no longer read by any live code path.
       # Post 2026-05-14 Bifrost migration: every LLM/embed call exits via
       # the shared Bifrost gateway. The vllm_* env vars retain their names
       # for backwards compat with code that reads them but now point at Bifrost.
@@ -82,7 +83,7 @@ services:
       - ZERO_REACHY_ASSISTANT_STATUS_CACHE_S=${ZERO_REACHY_ASSISTANT_STATUS_CACHE_S:-5.0}
       - ZERO_REACHY_SPEAKER_SINK=${ZERO_REACHY_SPEAKER_SINK:-true}
       - ZERO_REACHY_COMPANION_BODY_MOTION=${ZERO_REACHY_COMPANION_BODY_MOTION:-true}
-      - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-vllm-local/qwen3-chat}
+      - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-vllm-local/Qwen3-32B-AWQ}
       # Bifrost fronts both vllm-local (chat) and embed-local. Model
       # strings are bifrost-prefixed verbatim.
       - ZERO_VLLM_EMBED_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
@@ -119,10 +120,27 @@ services:
       - ZERO_WHISPER_COMPUTE_TYPE=${ZERO_WHISPER_COMPUTE_TYPE:-int8}
       - ZERO_WHISPER_LANGUAGE=${ZERO_WHISPER_LANGUAGE:-en}
       # Realtime voice STT model — local_handler.py defaults to distil-large-v3
-      # (~600 MB) but anonymous HF Hub rate-limits the blob download, leaving
-      # users with stt_timeout. Override to the already-cached `tiny` model.
-      # Re-enable distil-large-v3 once HF_TOKEN is set + the blob is fetched.
-      - REACHY_LOCAL_WHISPER_MODEL=${REACHY_LOCAL_WHISPER_MODEL:-tiny}
+      # (~600 MB). Earlier override to `tiny` was a workaround for anonymous HF
+      # Hub rate-limiting on the blob download. Resolved 2026-05-18 by pre-caching
+      # the model in workspace/.hf-cache (bind-mounted below as HF_HOME), so
+      # faster-whisper loads from local disk on container start and never hits HF.
+      - REACHY_LOCAL_WHISPER_MODEL=${REACHY_LOCAL_WHISPER_MODEL:-distil-large-v3}
+      # Voice loop is latency-bound — uses distil-small.en (~250 MB, ~700 ms
+      # STT) instead of distil-large-v3 (~600 MB, 9-15 s STT). Meeting
+      # transcription path stays on the large model via REACHY_LOCAL_WHISPER_MODEL.
+      - REACHY_VOICE_LOOP_WHISPER_MODEL=${REACHY_VOICE_LOOP_WHISPER_MODEL:-distil-small.en}
+      # Local VLM: shared-infra `vllm-vlm` container serves Qwen2-VL-2B
+      # AWQ through Bifrost. Override only when a specific test needs a
+      # different model.
+      # VLM (vision-language) provider. Local Qwen2-VL-2B was wired but
+      # doesn't fit alongside Qwen3-32B-AWQ on a 32 GB card (KV cache races
+      # during init). Falling back to Moonshot's vision-capable model until
+      # a bigger GPU or a weight-pruned brain frees up ~3 GB of VRAM.
+      - ZERO_VLM_MODEL=${ZERO_VLM_MODEL:-moonshot/moonshot-v1-32k-vision-preview}
+      # Point HF Hub at the pre-cached workspace dir; avoids re-downloading
+      # models on every rebuild and sidesteps the anonymous rate-limit issue.
+      - HF_HOME=/app/workspace/.hf-cache
+      - HUGGINGFACE_HUB_CACHE=/app/workspace/.hf-cache
       - ZERO_RECORDINGS_DIR=/app/workspace/recordings
       # Carousel V2 infrastructure plane (carosel.txt blueprint Phase 1)
       - ZERO_USE_TEMPORAL=${ZERO_USE_TEMPORAL:-false}
@@ -152,7 +170,7 @@ services:
       - ZERO_R2_SECRET_KEY=${ZERO_R2_SECRET_KEY:-}
       - ZERO_R2_BUCKET=${ZERO_R2_BUCKET:-}
       - ZERO_R2_PUBLIC_DOMAIN=${ZERO_R2_PUBLIC_DOMAIN:-}
-    restart: unless-stopped
+    restart: "no"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18792/health/ready')"]
       interval: 30s
@@ -180,7 +198,7 @@ services:
       - "5173:80"
     depends_on:
       - zero-api
-    restart: unless-stopped
+    restart: "no"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
@@ -216,7 +234,7 @@ services:
       - VITE_API_URL=http://zero-api:18792
     depends_on:
       - zero-api
-    restart: unless-stopped
+    restart: "no"
     profiles:
       - dev
     deploy:
@@ -237,7 +255,7 @@ services:
   zero-redis:
     image: redis:7.4-alpine
     container_name: zero-redis
-    restart: unless-stopped
+    restart: "no"
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "${ZERO_REDIS_PORT:-6379}:6379"
@@ -259,7 +277,7 @@ services:
   zero-minio:
     image: minio/minio:RELEASE.2025-01-20T14-49-07Z
     container_name: zero-minio
-    restart: unless-stopped
+    restart: "no"
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${ZERO_MINIO_ACCESS_KEY:-zero-minio}
@@ -288,7 +306,7 @@ services:
   zero-qdrant:
     image: qdrant/qdrant:v1.13.0
     container_name: zero-qdrant
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "${ZERO_QDRANT_HTTP_PORT:-6333}:6333"
       - "${ZERO_QDRANT_GRPC_PORT:-6334}:6334"
@@ -311,7 +329,7 @@ services:
   zero-temporal-postgres:
     image: postgres:16-alpine
     container_name: zero-temporal-postgres
-    restart: unless-stopped
+    restart: "no"
     environment:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
@@ -332,7 +350,7 @@ services:
   zero-temporal:
     image: temporalio/auto-setup:1.27
     container_name: zero-temporal
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       zero-temporal-postgres:
         condition: service_healthy
@@ -353,7 +371,7 @@ services:
   zero-temporal-ui:
     image: temporalio/ui:2.31.2
     container_name: zero-temporal-ui
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       - zero-temporal
     environment:
@@ -373,13 +391,19 @@ services:
   zero-langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.12-alpine
     container_name: zero-langfuse-clickhouse
-    restart: unless-stopped
+    restart: "no"
     environment:
       CLICKHOUSE_DB: langfuse
       CLICKHOUSE_USER: langfuse
       CLICKHOUSE_PASSWORD: ${ZERO_LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse-change-me}
     volumes:
       - zero-langfuse-clickhouse-data:/var/lib/clickhouse
+      # Phase 1 hardening (2026-05-18): silence Debug text_log + tame flush
+      # intervals on system tables. Without this the image defaults churn
+      # 17 GB/month inside the 2 GB container, driving CPU > 400 % and
+      # OOM-ing mutations. ClickHouse only auto-loads XML files placed
+      # directly in config.d/ (not in subdirectories), so mount the file.
+      - ./langfuse/clickhouse-config/zero-system-logs.xml:/etc/clickhouse-server/config.d/zero-system-logs.xml:ro
     ulimits:
       nofile:
         soft: 262144
@@ -392,12 +416,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G
 
   zero-langfuse-web:
     image: langfuse/langfuse:3
     container_name: zero-langfuse-web
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       zero-temporal-postgres:
         condition: service_healthy

@@ -1094,99 +1094,17 @@ async def content_node(state: OrchestratorState) -> dict:
 
 
 async def prediction_market_node(state: OrchestratorState) -> dict:
-    """Handle prediction market queries — markets, bettors, quality, Legion progress."""
-    messages = state.get("messages", [])
-    content = messages[-1].content if messages else ""
-    msg_lower = content.lower()
+    """Stub — prediction-market routing removed 2026-05-18 (S2.5).
 
-    try:
-        from app.services.prediction_market_service import get_prediction_market_service
-        from app.services.prediction_legion_manager import get_prediction_legion_manager
-        svc = get_prediction_market_service()
-        legion_mgr = get_prediction_legion_manager()
-
-        if any(kw in msg_lower for kw in ["legion", "sprint progress", "ada sprint", "how is legion"]):
-            report = await legion_mgr.report_legion_quality()
-            lines = [f"**Prediction Market Legion Status**"]
-            lines.append(f"Completion: {report.get('completion_pct', 0):.0f}%")
-            lines.append(f"Quality score: {report.get('quality_score', 0):.0f}/100")
-            for rec in report.get("recommendations", []):
-                lines.append(f"- {rec}")
-            result = "\n".join(lines)
-
-        elif any(kw in msg_lower for kw in ["quality", "health", "issue", "problem"]):
-            report = await svc.get_quality_report()
-            result = (
-                f"**Prediction Market Quality Report**\n"
-                f"Markets tracked: {report.get('total_markets', 0)}\n"
-                f"Bettors tracked: {report.get('total_bettors', 0)}\n"
-                f"Kalshi sync: {report.get('kalshi_status', 'unknown')}\n"
-                f"Polymarket sync: {report.get('polymarket_status', 'unknown')}\n"
-                f"Push to ADA: {report.get('push_status', 'unknown')}"
-            )
-
-        elif any(kw in msg_lower for kw in ["bettor", "leaderboard", "winner", "top"]):
-            bettors = await svc.list_bettors(limit=10)
-            if bettors:
-                lines = ["**Top Prediction Market Bettors:**"]
-                for b in bettors:
-                    name = b.get("display_name") or b.get("bettor_address", "?")[:12]
-                    lines.append(
-                        f"- [{b.get('composite_score', 0):.0f}] {name} "
-                        f"({b.get('platform', '?')}) — "
-                        f"WR: {b.get('win_rate', 0):.0f}%, "
-                        f"PnL: ${b.get('pnl_total', 0):,.0f}"
-                    )
-                result = "\n".join(lines)
-            else:
-                result = "No bettors tracked yet. Run bettor discovery first!"
-
-        elif any(kw in msg_lower for kw in ["mover", "moving", "price change"]):
-            markets = await svc.list_markets(limit=20)
-            # Sort by volume (proxy for activity)
-            markets.sort(key=lambda m: m.get("volume", 0), reverse=True)
-            if markets:
-                lines = ["**Active Markets (by volume):**"]
-                for m in markets[:10]:
-                    lines.append(
-                        f"- {m.get('title', '?')[:60]} "
-                        f"(Yes: {m.get('yes_price', 0):.0%}) "
-                        f"Vol: ${m.get('volume', 0):,.0f}"
-                    )
-                result = "\n".join(lines)
-            else:
-                result = "No markets tracked yet. Trigger a sync first!"
-
-        elif any(kw in msg_lower for kw in ["stat", "overview", "how many"]):
-            stats = await svc.get_stats()
-            result = (
-                f"**Prediction Market Stats:**\n"
-                f"Total markets: {stats.get('total_markets', 0)} "
-                f"(Kalshi: {stats.get('kalshi_markets', 0)}, Polymarket: {stats.get('polymarket_markets', 0)})\n"
-                f"Open markets: {stats.get('open_markets', 0)}\n"
-                f"Bettors tracked: {stats.get('total_bettors', 0)}\n"
-                f"Total volume: ${stats.get('total_volume', 0):,.0f}"
-            )
-
-        else:
-            # Default: show recent markets
-            markets = await svc.list_markets(limit=10)
-            if markets:
-                lines = ["**Prediction Markets:**"]
-                for m in markets[:10]:
-                    lines.append(
-                        f"- [{m.get('platform', '?')}] {m.get('title', '?')[:50]} "
-                        f"(Yes: {m.get('yes_price', 0):.0%})"
-                    )
-                result = "\n".join(lines)
-            else:
-                result = "No prediction markets tracked yet. Ask me to sync Kalshi or Polymarket!"
-
-        return {"result": result, "messages": [AIMessage(content=result)]}
-    except Exception as e:
-        error_msg = f"Prediction market query failed: {e}"
-        logger.error("prediction_market_node_error", error=str(e))
-        return {"result": error_msg, "messages": [AIMessage(content=error_msg)]}
+    ADA's Unusual Whales pipeline is the canonical source for whale and
+    prediction-market data. Routing now returns a friendly redirect.
+    """
+    result = (
+        "Prediction-market queries moved to ADA on 2026-05-18 — ADA's Unusual "
+        "Whales pipeline is the canonical source. Ask ADA directly for whale "
+        "flows, options-flow signals, or prediction-market data."
+    )
+    return {"result": result, "messages": [AIMessage(content=result)]}
 
 
 # =============================================================================
@@ -1506,10 +1424,10 @@ async def legion_ops_node(state: OrchestratorState) -> dict:
         client = get_legion_client()
         try:
             metrics = await client.get_project_metrics(
-                project_id=int(getattr(client, "_project_id", 8))
+                project_id=int(getattr(client, "_project_id", 7))
             )
             summary = (
-                f"Legion project 8 metrics: "
+                f"Legion project 7 metrics: "
                 f"tasks_open={metrics.get('tasks_open', '?')}, "
                 f"sprints_active={metrics.get('sprints_active', '?')}"
             )

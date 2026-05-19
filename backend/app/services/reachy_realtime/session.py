@@ -1389,6 +1389,7 @@ class RealtimeSession:
                 deps=_build_tool_deps(body_motion_enabled=self._body_motion_enabled, profile_id=profile),
                 on_assistant_audio=on_audio,
                 on_turn_end=on_turn_end,
+                thinking_enabled=bool(stored_config.get("thinking_enabled", False)),
             )
         await self._safe_send({"type": "error", "message": f"unknown backend: {backend}"})
         return None

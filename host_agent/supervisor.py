@@ -97,9 +97,14 @@ def _utcnow_iso() -> str:
 
 
 def _daemon_env_args() -> list[str]:
+    # Default to --no-preload only. `--no-media` was the historical default
+    # but it silently breaks `/say` and `/sounds/play` — the daemon happily
+    # 200-OKs uploads then emits to nowhere. Media-on is the right default
+    # for the assistant. Override with ZERO_REACHY_DAEMON_ARGS for testing
+    # (e.g. headless CI: "--no-preload --no-media").
     raw = os.getenv("ZERO_REACHY_DAEMON_ARGS")
     if raw is None or not raw.strip():
-        return ["--no-preload", "--no-media"]
+        return ["--no-preload"]
     return raw.split()
 
 
@@ -136,6 +141,15 @@ def _isolated_python_env() -> dict[str, str]:
         "__PYVENV_LAUNCHER__",
     ):
         env.pop(key, None)
+    # The bundled gstreamer_libs/.pth processing prepends to GST_*/GI_*/PYGI_*/etc.
+    # env vars on every Python startup. host_agent already populated them when it
+    # started, so the child inherits them — and the child's .pth then *re-prepends*,
+    # producing "path;path" entries. sys.path.append(env['GST_PYTHONPATH_1_0'])
+    # then adds a single broken sys.path entry containing a ';', and `import gi`
+    # fails with ModuleNotFoundError. Strip them so the child computes a clean set.
+    for key in list(env):
+        if key.startswith(("GST_", "GI_", "GIO_", "PYGI_", "GSTREAMER_")):
+            env.pop(key, None)
     return env
 
 

@@ -3,8 +3,14 @@ Vision VLM service — OCR + scene description via the shared Bifrost gateway.
 
 Routes OpenAI-shape vision chat-completion calls to `ZERO_VLLM_CHAT_URL`
 (defaults to `http://host.docker.internal:4445/v1`, which is the Bifrost
-gateway in front of vllm-local / moonshot). The model name is configurable
-via `ZERO_VLM_MODEL` (defaults to `moonshot/kimi-k2.6` post 2026-05-14).
+gateway). The model is configurable via `ZERO_VLM_MODEL` and defaults to
+`moonshot/moonshot-v1-32k` — Moonshot's vision-capable model.
+
+A local Qwen2-VL-2B path is wired in `shared-infra/docker-compose.vllm.yml`
+under the `vllm-vlm` service + `vllm-vlm` Bifrost provider, but it can't
+co-exist with `Qwen3-32B-AWQ` on a 32 GB GPU without weight pruning. Bring
+up vllm-vlm + set ZERO_VLM_MODEL=vllm-vlm/Qwen2-VL-2B-Instruct-AWQ once a
+bigger GPU or smaller brain frees ~3 GB of VRAM.
 
 Callers:
   - reachy_vision_service.analyze_scene() — fuses MediaPipe + VLM.
@@ -44,12 +50,10 @@ class VisionVLMService:
     _instance: Optional["VisionVLMService"] = None
 
     def __init__(self) -> None:
-        # Post 2026-05-14 Bifrost migration: all LLM/VLM traffic exits via
-        # the Bifrost gateway at :4445. Bifrost speaks the OpenAI vision
-        # shape natively, but the policy permits only Kimi + local Qwen,
-        # so the default model is now Bifrost's moonshot/kimi-k2.6. Set
-        # ZERO_VLM_MODEL to "vllm-local/qwen3-chat" (text-only) or a
-        # future bifrost-prefixed local vision SKU to override.
+        # All vision traffic exits through the Bifrost gateway at :4445.
+        # Default: `moonshot/moonshot-v1-32k` (vision-capable cloud SKU).
+        # Local fallback: `vllm-vlm/Qwen2-VL-2B-Instruct-AWQ` (wired but
+        # currently parked — see module docstring for the headroom note).
         self._base_url = (
             os.getenv("ZERO_VLLM_CHAT_URL")
             or os.getenv("ZERO_BIFROST_URL")
@@ -60,7 +64,8 @@ class VisionVLMService:
             or os.getenv("ZERO_BIFROST_API_KEY")
             or "EMPTY"
         )
-        self._model = os.getenv("ZERO_VLM_MODEL", "moonshot/kimi-k2.6")
+        from app.constants.models import VLM_CLOUD
+        self._model = os.getenv("ZERO_VLM_MODEL", VLM_CLOUD)
         self._timeout = float(os.getenv("ZERO_VLM_TIMEOUT", "45"))
         self._semaphore = asyncio.Semaphore(int(os.getenv("ZERO_VLM_CONCURRENCY", "2")))
 

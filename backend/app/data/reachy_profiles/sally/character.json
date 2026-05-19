@@ -12,7 +12,7 @@
   "character_version": "1.0",
   "extensions": {
     "voice": "en-US-JennyNeural",
-    "model": "qwen3-chat",
+    "model": "Qwen3-32B-AWQ",
     "tools": [
       "dance",
       "stop_dance",

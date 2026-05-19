@@ -3895,11 +3895,13 @@ async def list_voice_models():
         logger.debug("llm_available_models_unavailable", error=str(e))
 
     if not llm_choices:
+        # Ollama gemma4:e4b option removed 2026-05-18 — Ollama isn't running in
+        # shared-infra and the picker option made users wonder why "Reachy went
+        # to gemma" never connected. vLLM Qwen3 is the local default.
         llm_choices = [
             {"provider": "kimi", "model": "kimi-k2.6", "spec": "kimi/kimi-k2.6"},
             {"provider": "gemini", "model": "gemini-3.1-flash", "spec": "gemini/gemini-3.1-flash"},
-            {"provider": "vllm", "model": "qwen3-chat", "spec": "vllm/qwen3-chat"},
-            {"provider": "ollama", "model": "gemma4:e4b", "spec": "ollama/gemma4:e4b"},
+            {"provider": "vllm", "model": "Qwen3-32B-AWQ", "spec": "vllm/qwen3-chat"},
         ]
 
     tts_choices = [

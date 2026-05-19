@@ -1,35 +1,16 @@
 @echo off
-REM Start Zero Robot — user-launched bootstrap for the Reachy host_agent.
+REM host_agent foreground launcher - user-launched only.
 REM
-REM Replaces the old ZeroHostAgent / ZeroHostAgentHealthCheck scheduled tasks.
-REM Console window stays open; closing it stops the stack.
+REM Launched by scripts\start-zero.ps1 as part of the Zero bootstrap, or
+REM directly when the user only wants the Reachy supervisor without the
+REM Docker stack. Closing this console stops host_agent; supervisor's
+REM atexit hook reaps the Reachy daemon subprocess.
 REM
-REM First run will offer to unregister the legacy scheduled tasks.
+REM Robot is OFF until the user clicks 'Start daemon' in the UI's DaemonPanel.
 
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
-title Zero Robot - host_agent
-
-REM ---------------------------------------------------------------------------
-REM Migration: unregister the old autostart tasks if they still exist.
-REM ---------------------------------------------------------------------------
-for %%T in (ZeroHostAgent ZeroHostAgentHealthCheck) do (
-    schtasks /Query /TN %%T >nul 2>&1
-    if !ERRORLEVEL! EQU 0 (
-        echo.
-        echo [migration] Legacy scheduled task "%%T" is still registered.
-        echo            Autostart has moved into this launcher; the task is no longer needed.
-        choice /C YN /N /M "  Unregister %%T now? [Y/N]: "
-        if !ERRORLEVEL! EQU 1 (
-            schtasks /Delete /TN %%T /F >nul 2>&1
-            if !ERRORLEVEL! EQU 0 (
-                echo [migration] Unregistered %%T
-            ) else (
-                echo [migration] Could not unregister %%T  ^(may need elevation^).
-            )
-        )
-    )
-)
+title Zero - host_agent
 
 REM ---------------------------------------------------------------------------
 REM Pre-check: is port 18796 already bound?
@@ -78,7 +59,7 @@ if not exist "logs" mkdir "logs"
 
 echo.
 echo ================================================================
-echo  Zero Robot host_agent — listening on %HOST_AGENT_HOST%:%HOST_AGENT_PORT%
+echo  Zero Robot host_agent - listening on %HOST_AGENT_HOST%:%HOST_AGENT_PORT%
 echo  Open http://localhost:5173/zero in your browser.
 echo  Close this window to stop the Reachy stack.
 echo ================================================================

@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<!--
+  Zero / Langfuse ClickHouse overrides.
+  Mounted at /etc/clickhouse-server/config.d/zero-overrides/zero-system-logs.xml.
+
+  Why: stock Langfuse image ships text_log at debug level. Default flush rate
+  was producing ~350 rows/sec (~17 GB / month) inside this 2 GB container,
+  driving CPU > 400 % and OOM-ing TTL mutations. See Phase 1 of
+  C:\Users\hadam\.claude\plans\review-my-entire-docker-cozy-treehouse.md.
+
+  Effect on next ClickHouse restart:
+  - text_log: warning+ only (silences Debug flood — primary fix)
+  - flush_interval_milliseconds: 10s for text_log, 30s for async metric
+  - asynchronous_metrics_update_period_s: 60 s (down from 1 s default)
+
+  TTL is applied separately via ALTER TABLE ... MODIFY TTL after restart
+  (now that the container has 4 GB headroom the mutation no longer OOMs).
+-->
+<clickhouse>
+  <text_log>
+    <level>warning</level>
+    <flush_interval_milliseconds>10000</flush_interval_milliseconds>
+  </text_log>
+
+  <metric_log>
+    <flush_interval_milliseconds>10000</flush_interval_milliseconds>
+  </metric_log>
+
+  <asynchronous_metric_log>
+    <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+  </asynchronous_metric_log>
+
+  <trace_log>
+    <flush_interval_milliseconds>10000</flush_interval_milliseconds>
+  </trace_log>
+
+  <asynchronous_metrics_update_period_s>60</asynchronous_metrics_update_period_s>
+</clickhouse>

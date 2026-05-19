@@ -1,0 +1,15 @@
+# Base dependencies
+Django==3.2.19
+gunicorn==20.1.0
+psycopg2-binary==2.9.3
+whitenoise==6.3.0
+
+# Security dependencies
+django-crispy-forms==1.14.0
+django-sslserver==1.2.8
+
+# Monitoring dependencies
+django-prometheus==2.1.0
+
+# Remove any explicit dependency_review_service references
+# that might have been in previous versions

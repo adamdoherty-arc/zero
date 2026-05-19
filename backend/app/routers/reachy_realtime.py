@@ -66,6 +66,7 @@ class ConfigUpdate(BaseModel):
     idle_timeout_min: int | None = None
     hotkey_enabled: bool | None = None
     cost_cap_usd: float | None = None
+    thinking_enabled: bool | None = None
 
 
 def _enriched_config(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -227,7 +228,7 @@ async def list_models(backend: str | None = None):
                             error=str(e),
                         )
             out[b] = models or [
-                {"id": "qwen3-chat", "label": "qwen3-chat",
+                {"id": "Qwen3-32B-AWQ", "label": "Qwen3-32B-AWQ",
                  "description": "default (local backend unreachable)"}
             ]
     return {"backends": out}

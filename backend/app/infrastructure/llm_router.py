@@ -63,9 +63,11 @@ def _apply_local_backend_remap(provider: str, model: str) -> Tuple[str, str]:
         return provider, model
 
     if override == "vllm":
-        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-35B-A3B")
-    # override == "ollama"
-    return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "qwen3.6:35b-a3b-q8_0")
+        # Default matches the current vllm-chat served-model (2026-05-18: Qwen3-32B-AWQ).
+        # Production env sets ZERO_VLLM_CHAT_MODEL=vllm-local/Qwen3-32B-AWQ (Bifrost alias).
+        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
+    # override == "ollama" — not running in shared-infra since 2026-04-28; rollback only.
+    return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "")
 
 
 class LlmRouter:
@@ -158,7 +160,7 @@ class LlmRouter:
     # too, so the path is identical.
     _DEFAULT_FALLBACKS: List[str] = [
         "bifrost/moonshot/kimi-k2.6",
-        "bifrost/vllm-local/qwen3-chat",
+        "bifrost/vllm-local/Qwen3-32B-AWQ",
     ]
 
     def resolve_provider_model(

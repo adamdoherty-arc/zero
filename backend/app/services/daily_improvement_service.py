@@ -506,9 +506,10 @@ Rules:
             if not await legion.health_check():
                 return {"created": False, "reason": "Legion unavailable"}
 
-            # Get project's active sprint
-            project_map = {"zero": 8, "ada": 6, "fortressos": 7, "legion": 3}
-            project_id = project_map.get(item.get("project", "zero"), 8)
+            # Get project's active sprint. Project IDs per Legion's `projects` table
+            # (verified 2026-05-17 — earlier hard-coded values were stale).
+            project_map = {"zero": 7, "ada": 5, "fortressos": 6, "legion": 1}
+            project_id = project_map.get(item.get("project", "zero"), 7)
 
             current = await legion.get_current_sprint(project_id)
             if not current:

@@ -36,8 +36,9 @@ logger = structlog.get_logger(__name__)
 
 
 _DEFAULT_LITELLM_URL = "http://host.docker.internal:4445/v1"  # repointed to Bifrost
-# Default to reasoning-off `qwen3-chat` via Bifrost vllm-local.
-_DEFAULT_JUDGE_MODEL = "vllm-local/qwen3-chat"
+# Model resolves through the registry; future renames touch
+# `app/constants/models.py` only.
+from app.constants.models import LOCAL_CHAT as _DEFAULT_JUDGE_MODEL  # noqa: E402
 _DEFAULT_JUDGE_TIMEOUT = 480.0  # 8 min — JSON-mode guided decoding can be slow on large inputs
 
 # llama.cpp serves with --ctx-size 16384 / --parallel 2 = 8192 per slot.

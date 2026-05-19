@@ -55,7 +55,13 @@ import structlog
 # purpose — clears on process restart.
 _RECENT_MOTION_CAP = 20
 _recent_motions: Deque[dict] = deque(maxlen=_RECENT_MOTION_CAP)
-_DAEMON_REQUEST_CONCURRENCY = max(1, int(os.getenv("ZERO_REACHY_DAEMON_REQUEST_CONCURRENCY", "8")))
+# Daemon request concurrency: previously 8, which let head-tracking +
+# voice-gesture wobbler + look_at + dance fire-and-forget all 4 hit the
+# daemon's motion queue simultaneously and back it up — visible as jitter,
+# and on weak actuators (stewart_3) as overload. Serialize at the Zero
+# boundary so the daemon's motor controller smoothly blends one move at a
+# time. Bump back up via env var only if you measure a real latency gap.
+_DAEMON_REQUEST_CONCURRENCY = max(1, int(os.getenv("ZERO_REACHY_DAEMON_REQUEST_CONCURRENCY", "1")))
 _DAEMON_MAX_CONNECTIONS = max(
     _DAEMON_REQUEST_CONCURRENCY + 4,
     int(os.getenv("ZERO_REACHY_DAEMON_MAX_CONNECTIONS", "16")),

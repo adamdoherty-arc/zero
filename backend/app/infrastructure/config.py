@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 import os
 
+from app.constants.models import LOCAL_CHAT, LOCAL_EMBED
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
@@ -32,10 +34,10 @@ class Settings(BaseSettings):
     # requires provider-prefixed model names (vllm-local/..., embed-local/...).
     vllm_chat_url: str = "http://host.docker.internal:4445/v1"
     vllm_chat_base_url: str = "http://host.docker.internal:4445/v1"
-    vllm_chat_model: str = "vllm-local/qwen3-chat"
+    vllm_chat_model: str = LOCAL_CHAT
     vllm_embed_url: str = "http://host.docker.internal:4445/v1"
     vllm_embed_base_url: str = "http://host.docker.internal:4445/v1"
-    vllm_embed_model: str = "embed-local/Qwen/Qwen3-Embedding-0.6B"
+    vllm_embed_model: str = LOCAL_EMBED
     vllm_api_key: str = "EMPTY"
     vllm_timeout: int = 600
     embed_provider: str = "vllm"  # routes through Bifrost embed-local
@@ -50,7 +52,7 @@ class Settings(BaseSettings):
     legion_api_url: str = "http://host.docker.internal:8005"
     legion_api_prefix: str = "/api"
     legion_timeout: int = 30
-    zero_legion_project_id: int = 8  # Zero's project ID in Legion
+    zero_legion_project_id: int = 7  # Zero's project ID in Legion (per `SELECT id FROM projects WHERE name='Zero Personal Assistant'`)
 
     # Cross-project codebase access
     projects_root: str = "/projects"  # Root dir for mounted project codebases
@@ -256,7 +258,7 @@ class Settings(BaseSettings):
     # bifrost-prefixed form. ollama_client.py is now a thin shim over the
     # multi-provider UnifiedLLMClient and never opens a raw :11434 socket.
     ollama_base_url: str = "http://host.docker.internal:4445/v1"
-    ollama_model: str = "vllm-local/qwen3-chat"
+    ollama_model: str = LOCAL_CHAT
     ollama_timeout: int = 900
 
     # Autonomous content loop (migration 035 / orchestration hardening W2)

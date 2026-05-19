@@ -106,7 +106,7 @@ Observability
 
 | Canonical name | Backend | Used by |
 |---|---|---|
-| `qwen3-chat` | llama.cpp `llama-cpp-chat:8000` inside docker net, **host `:18800`** outside (`Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf`) | **Single shared local chat model** — Zero, Ada, and Legion route through LiteLLM `:4444`; backend changes are made in `shared-infra/litellm/config.yaml`, not per project |
+| `qwen3-chat` | **vLLM** `vllm-chat:8000` inside docker net, **host `:18801`** outside (`Qwen/Qwen3-32B-AWQ`, AWQ Marlin Int4) | **Single shared local chat model** — Zero, Ada, and Legion route through Bifrost `:4445`; backend changes are made in `shared-infra/docker-compose.vllm.yml`. Re-swapped 2026-05-18 from llama.cpp Q5_K_M GGUF. |
 | `qwen3-chat-thinking` | Same llama.cpp endpoint | Reasoning-enabled variant for callers that intentionally want Qwen3.6 thinking mode |
 | `qwen3-embed`, `Qwen/Qwen3-Embedding-0.6B` | vLLM `vllm-embed:8001` | All vault chunking, Ada RAG |
 | `qwen3-coder` | Legacy name; not active in the current shared LiteLLM config | Audit any remaining callers and route them to `qwen3-chat` unless Legion reintroduces a dedicated coder model through `llm_ops` |

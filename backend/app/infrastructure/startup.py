@@ -35,6 +35,7 @@ class StartupChecker:
             ("ollama_reachable", self._check_ollama, False),  # non-critical
             ("legion_reachable", self._check_legion, False),  # non-critical
             ("gpu_manager", self._check_gpu_manager, False),  # non-critical
+            ("whisper_warmup", self._check_whisper_warmup, False),  # non-critical, fire-and-forget
         ]
 
         all_critical_passed = True
@@ -142,6 +143,31 @@ class StartupChecker:
             asyncio.create_task(client.warmup())
 
         return healthy
+
+    async def _check_whisper_warmup(self) -> bool:
+        """Pre-load the voice-loop Whisper model so the first voice turn
+        doesn't eat the 15-25 s cold-start. Fire-and-forget; we return True
+        immediately so startup isn't blocked, and let the model load in the
+        background while the API comes online.
+
+        Uses REACHY_VOICE_LOOP_WHISPER_MODEL (default distil-small.en) since
+        the voice loop is the user-facing path; meeting transcription uses
+        the larger model lazily on first use."""
+        try:
+            import asyncio
+            from app.services.audio_service import get_audio_service
+            model = (
+                os.getenv("REACHY_VOICE_LOOP_WHISPER_MODEL", "").strip()
+                or os.getenv("REACHY_LOCAL_WHISPER_MODEL", "").strip()
+                or "distil-small.en"
+            )
+            audio = get_audio_service()
+            asyncio.create_task(audio.warmup(model))
+            logger.info("whisper_warmup_kicked", model=model)
+            return True
+        except Exception as e:
+            logger.warning("whisper_warmup_failed", error=str(e))
+            return False
 
     async def _check_gpu_manager(self) -> bool:
         """Initialize the GPU manager service."""

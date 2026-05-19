@@ -14,7 +14,7 @@ backwards-compat aliases so callers that hardcoded those names still
 resolve — they all return the same Bifrost-backed handler. The router's
 default fallback chain (see ``llm_router._DEFAULT_FALLBACKS``) and the
 persisted ``router_config.json`` were rewritten to use bifrost-prefixed
-model names ("bifrost/moonshot/kimi-k2.6", "bifrost/vllm-local/qwen3-chat").
+model names ("bifrost/moonshot/kimi-k2.6", "bifrost/vllm-local/Qwen3-32B-AWQ").
 """
 
 from functools import lru_cache

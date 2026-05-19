@@ -92,9 +92,9 @@ describe('ReachyMotionLibraryPage', () => {
           has_local: true,
           profile: 'assistant',
           voice: 'en-US-JennyNeural',
-          model: 'qwen3-chat',
+          model: 'Qwen3-32B-AWQ',
           voices: { local: ['en-US-JennyNeural'] },
-          default_models: { local: 'qwen3-chat' },
+          default_models: { local: 'Qwen3-32B-AWQ' },
           default_voices: { local: 'en-US-JennyNeural' },
         })
       }

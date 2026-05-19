@@ -30,20 +30,23 @@ class ChatProvider:
 
 # Active Bifrost routes. OpenRouter/MiniMax/Gemini are intentionally disabled
 # in shared-infra/bifrost/disabled-providers.json, so keep the voice selector
-# aligned to the gateway's live provider set.
+# aligned to the gateway's live provider set. Model ids resolve through the
+# central registry so future renames touch one file.
+from app.constants.models import KIMI_K2, LOCAL_CHAT  # noqa: E402
+
 AVAILABLE_PROVIDERS: list[ChatProvider] = [
     ChatProvider(
         id="bifrost-kimi",
         label="Bifrost Kimi K2.6",
         provider="bifrost",
-        model="moonshot/kimi-k2.6",
+        model=KIMI_K2,
         description="Moonshot Kimi route through Bifrost for reliable spoken replies.",
     ),
     ChatProvider(
         id="bifrost-local-qwen",
         label="Bifrost Local Qwen",
         provider="bifrost",
-        model="vllm-local/qwen3-chat",
+        model=LOCAL_CHAT,
         description="Local Qwen route through Bifrost; private, but slower on hidden-reasoning turns.",
     ),
 ]

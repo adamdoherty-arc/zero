@@ -73,7 +73,7 @@ class VllmProvider(BaseLLMProvider):
         # Accept config entries like "vllm/qwen3-chat" or bare name. Preserve
         # gateway-style "<provider>/<model>" prefixes that the upstream
         # gateway needs to route the request — Bifrost requires
-        # "vllm-local/qwen3-chat" verbatim, and Qwen HF IDs ("Qwen/...")
+        # "vllm-local/Qwen3-32B-AWQ" verbatim, and Qwen HF IDs ("Qwen/...")
         # are also already-qualified names.
         _PASSTHROUGH_PREFIXES = ("Qwen/", "vllm-local/", "embed-local/")
         if "/" in model and not model.startswith(_PASSTHROUGH_PREFIXES):

@@ -150,8 +150,11 @@ export function InteractiveModeHero() {
   const [textInput, setTextInput] = useState('')
   const [showTranscript, setShowTranscript] = useState(false)
   const [swapping, setSwapping] = useState(false)
-  const [inputSource, setInputSource] = useState<AssistantInputSource>('browser')
-  const inputSourceChoiceRef = useRef<AssistantInputSource>('browser')
+  // Reachy mic is the default — this IS a robot assistant. Computer mic is
+  // a fallback for when the user is across the room or the Reachy mic is
+  // unhealthy.
+  const [inputSource, setInputSource] = useState<AssistantInputSource>('reachy')
+  const inputSourceChoiceRef = useRef<AssistantInputSource>('reachy')
   const [models, setModels] = useState<Record<string, { id: string; label: string; description?: string }[]>>({})
   const [profiles, setProfiles] = useState<{ id: string; label: string }[]>([])
   const [savingCfg, setSavingCfg] = useState(false)
@@ -470,7 +473,17 @@ export function InteractiveModeHero() {
       })
       return
     }
-    const shouldEnableBodyMotion = companionBodyMotionEnabled && !quietMode && !hardwareUnavailable
+    const shouldEnableBodyMotion = !quietMode && !hardwareUnavailable
+    if (shouldEnableBodyMotion && companionPolicy && !companionBodyMotionEnabled) {
+      try {
+        await patchPolicy.mutateAsync({
+          body_motion_enabled: true,
+          allowed_actions: Array.from(new Set([...companionActions, 'body_motion'])),
+        })
+      } catch {
+        /* policy patch is best-effort; backend still respects wake_robot per-call */
+      }
+    }
     const activation = await activateAssistant.mutateAsync({
       persona: cfg.profile || 'companion',
       voice_mode: 'live',
@@ -494,8 +507,10 @@ export function InteractiveModeHero() {
       return
     }
     const selectedInputSource = inputSourceChoiceRef.current
+    // Default to Reachy mic — this is a robot assistant; the laptop mic
+    // is a fallback for when the user is far from the robot.
     const sessionInputSource: AssistantInputSource =
-      selectedInputSource === 'reachy' ? 'reachy' : 'browser'
+      selectedInputSource === 'browser' ? 'browser' : 'reachy'
     void refreshCfg()
     await voice.start({
       backend: target,

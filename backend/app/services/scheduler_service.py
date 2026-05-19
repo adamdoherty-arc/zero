@@ -64,14 +64,7 @@ JOB_CATEGORIES = {
         "meal_signup_sweep",
         "meal_vision_sweep",
     ],
-    "Predictions": [
-        "prediction_market_sync",
-        "prediction_price_snapshot",
-        "prediction_bettor_discovery",
-        "prediction_research",
-        "prediction_push_to_ada",
-        "prediction_quality_check",
-    ],
+    # "Predictions" category REMOVED 2026-05-18 (S2.5). ADA's Unusual Whales pipeline is the SoT.
     "Autonomous": [
         "autonomous_daily_orchestration",
         "autonomous_continuous_monitor",
@@ -613,37 +606,11 @@ DAILY_SCHEDULE = {
         "description": "Research trending content for active topics",
         "enabled": True
     },
-    # Prediction Market Intelligence
-    "prediction_market_sync": {
-        "cron": "*/30 * * * *",  # Every 30 minutes
-        "description": "Sync Kalshi + Polymarket markets",
-        "enabled": True
-    },
-    "prediction_price_snapshot": {
-        "cron": "*/30 * * * *",  # Every 30 minutes (was 15min â€” reduced API load)
-        "description": "Capture prediction market price snapshots",
-        "enabled": True
-    },
-    "prediction_bettor_discovery": {
-        "cron": "0 10 * * *",  # 10:00 AM daily
-        "description": "Discover and update top prediction market bettors",
-        "enabled": True
-    },
-    "prediction_research": {
-        "cron": "30 11 * * *",  # 11:30 AM daily
-        "description": "SearXNG prediction market research",
-        "enabled": True
-    },
-    "prediction_push_to_ada": {
-        "cron": "*/30 * * * *",  # Every 30 minutes
-        "description": "Push prediction market data to ADA",
-        "enabled": True
-    },
-    "prediction_quality_check": {
-        "cron": "0 9 * * *",  # 9:00 AM daily
-        "description": "Prediction market quality + Legion progress report + Discord alert",
-        "enabled": True
-    },
+    # Prediction Market Intelligence REMOVED 2026-05-18 (S2.5).
+    # The 6 prediction_* cron entries are gone; ADA's Unusual Whales is the
+    # canonical source for whale / options-flow data. Restore from
+    # C:\code\Zero\.archive\2026-05-18-prediction-market-removal\scheduler-entries.txt
+    # if rolling back is ever needed.
     # LLM Budget Reset
     "llm_budget_reset": {
         "cron": "0 0 * * *",  # Midnight daily
@@ -1533,13 +1500,8 @@ class SchedulerService:
             "content_performance_sync": self._run_content_performance_sync,
             "content_improvement_cycle": self._run_content_improvement_cycle,
             "content_trend_research": self._run_content_trend_research,
-            # Prediction Market Intelligence
-            "prediction_market_sync": self._run_prediction_market_sync,
-            "prediction_price_snapshot": self._run_prediction_price_snapshot,
-            "prediction_bettor_discovery": self._run_prediction_bettor_discovery,
-            "prediction_research": self._run_prediction_research,
-            "prediction_push_to_ada": self._run_prediction_push_to_ada,
-            "prediction_quality_check": self._run_prediction_quality_check,
+            # Prediction Market Intelligence REMOVED 2026-05-18 (S2.5).
+            # ADA's Unusual Whales pipeline is the canonical source.
             # LLM Budget Reset
             "llm_budget_reset": self._run_llm_budget_reset,
             # Daily Autonomous Report

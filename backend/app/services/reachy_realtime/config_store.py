@@ -179,6 +179,13 @@ def load_config() -> dict[str, Any]:
         "idle_timeout_min": int(stored.get("idle_timeout_min") or 5),
         "hotkey_enabled": bool(stored.get("hotkey_enabled", True)),
         "cost_cap_usd": float(stored.get("cost_cap_usd") or 0),
+        # Reasoning mode for the local Qwen3 brain. Default OFF for the
+        # voice loop (lowest latency, no <think> blocks). When ON the
+        # handler skips ``/no_think`` and passes ``enable_thinking: True``
+        # so the model produces ``reasoning_content`` before the spoken
+        # reply — better answers, higher latency. Surfaced as a toggle in
+        # the Reachy console settings modal.
+        "thinking_enabled": bool(stored.get("thinking_enabled", False)),
         # Realtime engine selector — persisted via update_config, surfaced
         # so the frontend and the local handler can branch off it without
         # re-reading the raw JSON.
@@ -201,6 +208,10 @@ def load_config_masked() -> dict[str, Any]:
 ALLOWED_FIELDS = {
     "openai_api_key", "gemini_api_key", "backend", "model", "voice", "profile",
     "idle_timeout_min", "hotkey_enabled", "cost_cap_usd", _BACKEND_USER_SELECTED_FIELD,
+    # Thinking-mode toggle for the local Qwen3 brain (False = voice-loop
+    # default, True = reasoning enabled). Read by LocalRealtimeHandler at
+    # session start; takes effect on next session, not mid-session.
+    "thinking_enabled",
     # Realtime engine selector: "legacy" (current hand-rolled pipeline) or
     # "pipecat" (future Pipecat-backed bridge). The local handler honors this
     # flag at session start; until the Pipecat bridge lands, "pipecat" is a

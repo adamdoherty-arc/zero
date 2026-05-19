@@ -249,14 +249,11 @@ class OperationsDashboardService:
         except Exception:
             checks["scheduler"] = "error"
 
-        # Ollama
-        try:
-            base = settings.ollama_base_url.replace("/v1", "")
-            async with httpx.AsyncClient(timeout=2) as client:
-                resp = await client.get(f"{base}/api/tags")
-                checks["ollama"] = "ok" if resp.status_code == 200 else "degraded"
-        except Exception:
-            checks["ollama"] = "error"
+        # Ollama — retired 2026-04-28 in favor of vLLM through Bifrost.
+        # Mark "retired" instead of probing a dead service (was returning
+        # "error" on every dashboard load and racking up 2s timeout latency).
+        # The "ollama" key remains so dashboard widgets that read it still render.
+        checks["ollama"] = "retired"
 
         # SearXNG
         try:

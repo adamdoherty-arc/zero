@@ -7,7 +7,10 @@ there is one source of truth for model assignments; this service only owns
 the STT model and TTS voice.
 
 Defaults:
-    stt_model  = "tiny"     (Whisper size; fastest cold-start; drop-in later)
+    stt_model  = env REACHY_LOCAL_WHISPER_MODEL or "distil-large-v3"
+                 (single source of truth shared with the realtime handler;
+                 distil-large-v3 ~600MB faster-whisper, much better accuracy
+                 than tiny)
     tts_voice  = env TTS_MODEL or "en_US-lessac-medium"
 """
 
@@ -25,7 +28,16 @@ from app.infrastructure.storage import JsonStorage
 logger = structlog.get_logger(__name__)
 
 _CONFIG_FILE = "voice_config.json"
-_DEFAULT_STT_MODEL = "tiny"
+# Voice loop is latency-bound — distil-small-v3 (~250 MB, ~700 ms STT) wins
+# over distil-large-v3 (~600 MB, 9-15 s STT) for short conversational turns.
+# Meeting transcription uses a separate path with the large model. Override
+# voice-loop specifically via REACHY_VOICE_LOOP_WHISPER_MODEL, or fall back
+# to REACHY_LOCAL_WHISPER_MODEL for parity with the realtime handler.
+_DEFAULT_STT_MODEL = (
+    os.getenv("REACHY_VOICE_LOOP_WHISPER_MODEL", "").strip()
+    or os.getenv("REACHY_LOCAL_WHISPER_MODEL", "").strip()
+    or "distil-small.en"
+)
 
 
 def _default_tts_voice() -> str:

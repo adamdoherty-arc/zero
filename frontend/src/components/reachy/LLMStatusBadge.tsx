@@ -38,7 +38,7 @@ interface Props {
 }
 
 const REALTIME_LABELS: Record<string, { label: string; model: string }> = {
-  local: { label: 'Local', model: 'qwen3-chat' },
+  local: { label: 'Local', model: 'Qwen3-32B-AWQ' },
   openai: { label: 'OpenAI Realtime', model: 'gpt-realtime' },
   gemini: { label: 'Gemini Live', model: 'gemini-3.1-flash-live-preview' },
 }

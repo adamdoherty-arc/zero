@@ -10,28 +10,35 @@ Audit Phase E reads `c:\code\shared-infra\docker-compose.vllm.yml` plus
 
 | Canonical name | Container | Image / source | Quant | VRAM (approx) | Notes |
 |---|---|---|---|---|---|
-| `qwen3-chat` | `llama-cpp-chat` :18800 | **Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf** | GGUF Q4_K_M | ~22 GB | Primary local chat/reasoning model. Served by llama.cpp through an OpenAI-compatible endpoint. |
-| `qwen3-chat-thinking` | `llama-cpp-chat` :18800 | same | same | shared | Reasoning-enabled LiteLLM route for callers that intentionally want thinking mode. |
+| `qwen3-chat` | `vllm-chat` :18801 | **`Qwen/Qwen3-32B-AWQ`** | AWQ Marlin Int4 | ~20 GB | Primary local chat/reasoning model. Re-swapped 2026-05-17→18 from `llama-cpp-chat` (Q5_K_M GGUF) to real vLLM on the dense 32B-AWQ because Q5_K_M GGUF doesn't use Blackwell FP8 tensor cores; AWQ Marlin on vLLM does. Plus llama.cpp issues #20178 + #19894 (Qwen3.6-A3B JSON bugs + 35% CUDA regression). Result: 0.27s warm inference vs the previous 0.5-2s + occasional timeouts. |
+| `qwen3-chat-thinking` | `vllm-chat` :18801 | same | same | shared | Reasoning-enabled route — same model, callers pass `/no_think` to skip thinking-block emission (Qwen3-32B's `enable_thinking` chat-template kwarg is a no-op on AWQ-Marlin in vLLM 0.19; the prompt-suffix is load-bearing). |
 | `qwen3-embed` | `vllm-embed` :8001 | Qwen3-Embedding-0.6B | BF16 | ~1.5 GB | Vault embeddings; Matryoshka-truncate to 512 dims |
 | `qwen3-rerank` | (planned) | Qwen3-Reranker-0.6B | BF16 | ~1.5 GB | Rerank stage of vault retrieval |
 | `qwen3-coder` | (legacy / not active) | n/a | n/a | n/a | Removed from current shared LiteLLM config. Audit callers and route to `qwen3-chat` unless a dedicated coder model is reintroduced. |
 
 Total pinned VRAM target: **~24 GB**. Headroom: **~8 GB** on the 32 GB 5090.
 
-llama.cpp serve flags (current `command:` block):
+vLLM serve flags (current `vllm-chat` `command:` block — replaced llama.cpp 2026-05-17→18):
 ```
---model /models/Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf
---alias qwen3-chat
+serve --model Qwen/Qwen3-32B-AWQ
+--served-model-name Qwen3-32B-AWQ
 --port 8000
 --host 0.0.0.0
---ctx-size 16384
---n-gpu-layers 999
---threads 8
---parallel 4
---batch-size 512
---jinja
---metrics
+--quantization awq_marlin
+--max-model-len 8192
+--gpu-memory-utilization 0.92
+--enforce-eager
+--enable-prefix-caching
 ```
+
+Flag rationale (2026-05-18 vLLM swap):
+- `awq_marlin`: uses Blackwell FP8 tensor cores on the RTX 5090 — GGUF Q5_K_M does not.
+- `--max-model-len 8192`: dense 32B has ~2× the KV footprint per token vs 35B-A3B MoE; 8K fits comfortably with `gpu_memory_utilization 0.92`. Plenty for voice turns.
+- `--enforce-eager`: skips cudagraph capture that previously OOM'd on Blackwell with the QuantTrio AWQ port (see Failed swap log below).
+- `--enable-prefix-caching`: vLLM-native prefix cache (works cleanly with dense attention; was the SWA limitation with Qwen3-A3B Gated Delta Net under llama.cpp).
+
+Retired flags (2026-05-17 llama.cpp era, kept here for emergency rollback):
+`--model …Q5_K_M.gguf --no-mmap --ctx-size 32768 --parallel 1 --cache-reuse 256 --flash-attn auto --cache-type-k q8_0 --cache-type-v q8_0 --jinja`. The Q5_K_M GGUF is on disk at `c:/code/zero/workspace/llm-models/` for 30 days.
 
 ## Failed swap log (do not re-attempt without addressing)
 
@@ -80,6 +87,8 @@ Per [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md):
 | Model | Promoted | Why |
 |---|---|---|
 | `Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf` | 2026-04-28 | Replaced Qwen3-32B-AWQ with a GGUF MoE served by llama.cpp; keeps host `:18800`, improves voice-loop latency, and avoids the vLLM AWQ multimodal-config failure path. |
+| `Huihui-Qwen3.6-35B-A3B-abliterated.Q5_K_M.gguf` | 2026-05-17 | Quant bump from Q4_K_M (~21 GB) to Q5_K_M (~25 GB) — strict quality lift with no other infra change. Same compose slot, same alias. Compose tuned at the same time: `--parallel 1`, `--ctx-size 32768`, `--cache-reuse 256`, `--no-mmap` to mitigate Qwen3-A3B's Gated Delta Net prefix-cache miss pattern. **SUPERSEDED 2026-05-18 by Qwen3-32B-AWQ on vLLM** — kept on disk 30 days for emergency rollback. |
+| `Qwen/Qwen3-32B-AWQ` on vLLM | 2026-05-18 | Re-swapped from llama.cpp Q5_K_M to real vLLM on the dense 32B-AWQ. Drivers: (1) llama.cpp #20178/#19894 — Qwen3.6-A3B JSON tool-call bugs + 35% CUDA regression on the 35B-A3B vs 30B-A3B path; (2) AWQ Marlin uses Blackwell FP8 tensor cores; Q5_K_M GGUF does not. Result: 0.27s warm inference, 124ms `bifrost-local-qwen` probe (vs 689ms on llama.cpp). The provider name `vllm-local` in Bifrost config is now ACCURATE for the first time since the 2026-04-28 swap. |
 
 ## Active candidates (filed 2026-04-27)
 

@@ -1,1 +1,1 @@
-en-US-AriaNeural
+en_US-lessac-medium

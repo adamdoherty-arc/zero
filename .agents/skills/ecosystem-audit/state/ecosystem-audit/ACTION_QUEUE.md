@@ -148,7 +148,7 @@ Format:
 
 - **Source run**: 2026-05-02
 - **Where**: Zero, Legion, Ada, vault docs, and project configs that still mention `qwen3-coder` or `Qwen3-32B-AWQ` as current
-- **Suggested fix**: Update current-fact docs and route defaults to the active shared infra state: LiteLLM `:4444` -> `qwen3-chat` -> llama.cpp `:18800` serving `Huihui-Qwen3.6-35B-A3B-abliterated-Q4_K_M.gguf`. Keep historical mentions only when explicitly labeled as history, legacy, or failed-swap context.
+- **Suggested fix**: Update current-fact docs and route defaults to the active shared infra state: Bifrost `:4445` -> `qwen3-chat` -> llama.cpp `:18800` serving `Huihui-Qwen3.6-35B-A3B-abliterated.Q5_K_M.gguf` (upgraded from Q4_K_M 2026-05-17). Keep historical mentions only when explicitly labeled as history, legacy, or failed-swap context.
 - **Status**: open
 
 ### Q14 - Implement Legion company operations interfaces [write_external] [high]

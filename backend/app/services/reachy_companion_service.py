@@ -215,16 +215,41 @@ class ReachyCompanionService:
             0.0,
             float(os.getenv("ZERO_REACHY_COMPANION_STATUS_CACHE_S", "5.0")),
         )
+        # Policy is read from disk in body_motion_allowed() on every voice
+        # loop turn; cache it briefly. Invalidated on update_policy +
+        # _save_policy_locked. TTL is intentionally SHORT (5s) — a longer
+        # cache turns out to remove enough latency from motion-gate calls
+        # that the daemon's motor queue can't smoothly blend the resulting
+        # rapid `goto` requests, producing audible/visible jitter that can
+        # stress weak actuators (e.g. stewart_3). 5s is plenty to avoid the
+        # disk-read hot path while keeping motion fire-rate bounded.
+        self._policy_cache: CompanionPolicy | None = None
+        self._policy_cache_at = 0.0
+        self._policy_cache_ttl_s = max(
+            0.0,
+            float(os.getenv("ZERO_REACHY_COMPANION_POLICY_CACHE_S", "5.0")),
+        )
+
+    def _invalidate_policy_cache(self) -> None:
+        self._policy_cache = None
+        self._policy_cache_at = 0.0
 
     def get_policy(self) -> CompanionPolicy:
         with self._lock:
+            if self._policy_cache and self._policy_cache_ttl_s > 0:
+                age = time.monotonic() - self._policy_cache_at
+                if age <= self._policy_cache_ttl_s:
+                    return self._policy_cache
             if not self._policy_path.exists():
                 policy = self._default_policy()
                 self._save_policy_locked(policy)
                 return policy
             try:
                 data = json.loads(self._policy_path.read_text(encoding="utf-8"))
-                return self._normalize_policy(CompanionPolicy.model_validate(data))
+                policy = self._normalize_policy(CompanionPolicy.model_validate(data))
+                self._policy_cache = policy
+                self._policy_cache_at = time.monotonic()
+                return policy
             except Exception as exc:
                 logger.warning("reachy_companion_policy_load_failed", error=str(exc))
                 policy = self._default_policy()
@@ -525,6 +550,9 @@ class ReachyCompanionService:
         tmp = self._policy_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(policy.model_dump(mode="json"), indent=2), encoding="utf-8")
         tmp.replace(self._policy_path)
+        # Bust the cache so subsequent get_policy() returns the new state.
+        self._policy_cache = policy
+        self._policy_cache_at = time.monotonic()
 
     async def _apply_mode_actions(self, mode: CompanionMode) -> None:
         try:

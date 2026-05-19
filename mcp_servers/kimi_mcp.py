@@ -215,7 +215,9 @@ async def call_tool(name: str, arguments: dict[str, Any] | None) -> list[types.T
                 {"role": "system", "content": system},
                 {"role": "user", "content": args["text"]},
             ]
-            result = await _kimi_chat(messages, temperature=0.0, max_tokens=50)
+            # Kimi K2.5/K2.6 require temperature=1 exactly; clamp would catch
+            # this anyway but be explicit so intent is clear.
+            result = await _kimi_chat(messages, temperature=1.0, max_tokens=50)
 
         elif name == "kimi_summarize":
             max_length = args.get("max_length", "medium")

@@ -21,7 +21,9 @@ from app.routers import (
     audio, email, calendar, assistant, money_maker, workflows,
     system, research, ecosystem, google_oauth, qa, notion, agent, engine,
     gpu, llm, chat, research_rules, tiktok_shop, tiktok_content, content_agent,
-    prediction_markets, llc_guidance, approvals, visual_workflows,
+    # prediction_markets — REMOVED 2026-05-18 (S2.5). ADA's Unusual Whales
+    # pipeline is the sole SoT for whale / options-flow / prediction data.
+    llc_guidance, approvals, visual_workflows,
     meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
     meeting_chat, meeting_search, meeting_speakers, meeting_ws, voiceprints,
     meeting_preferences,
@@ -602,6 +604,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("discord_bot_import_failed", error=str(e))
 
+    # S5 + S23 (2026-05-18): Zero → Legion heartbeat emitter. Posts cpu/mem/
+    # active-agents to /api/projects/{id}/heartbeat every 30s so Legion's
+    # S9 dashboard + S20 health score have a fresh signal. Fire-and-forget:
+    # any failure is logged but never raised into Zero's main loop.
+    try:
+        from app.services.legion_heartbeat_emitter import start_heartbeat_loop
+        asyncio.create_task(start_heartbeat_loop(), name="legion_heartbeat")
+        logger.info("legion_heartbeat_emitter_started")
+    except Exception as _hb_exc:
+        logger.warning("legion_heartbeat_emitter_failed", error=str(_hb_exc)[:200])
+
     # Register graceful shutdown
     import signal
     _shutting_down = False
@@ -783,7 +796,8 @@ app.include_router(tiktok_shop.router, prefix="/api/tiktok-shop", tags=["TikTok 
 app.include_router(meals.router, prefix="/api/meals", tags=["Meal Manager"])
 app.include_router(tiktok_content.router, prefix="/api/tiktok-content", tags=["TikTok Content"])
 app.include_router(content_agent.router, prefix="/api/content-agent", tags=["Content Agent"])
-app.include_router(prediction_markets.router, prefix="/api/prediction-markets", tags=["Prediction Markets"])
+# prediction_markets router REMOVED 2026-05-18 (S2.5). ADA's Unusual Whales is the SoT.
+# Restore from C:\code\Zero\.archive\2026-05-18-prediction-market-removal\ if needed.
 app.include_router(llc_guidance.router, prefix="/api/llc-guidance", tags=["LLC Guidance"])
 app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"])
 app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags=["Visual Workflows"])

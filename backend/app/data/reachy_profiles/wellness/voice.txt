@@ -1,1 +1,1 @@
-en-GB-SoniaNeural
+en_GB-cori-medium

@@ -27,6 +27,7 @@ import {
   DollarSign,
   Play,
   Square,
+  Brain,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
@@ -65,18 +66,19 @@ interface RealtimeConfig {
   idle_timeout_min?: number
   hotkey_enabled?: boolean
   cost_cap_usd?: number
+  thinking_enabled?: boolean
 }
 
 // Local-backend brain picker. Only one model is currently loaded on the
-// llama.cpp server (Qwen3.6-35B-A3B abliterated served as `qwen3-chat`),
+// llama.cpp server (Qwen3-32B-AWQ served via Bifrost vllm-local),
 // so that's all we offer. The retired dual-local / Heretic stack was replaced
 // 2026-04-28 — the abliterated MoE handles both brain and voice-loop
 // at MoE-class TTFT.
 const LOCAL_MODELS: { id: string; label: string; tagline: string; uncensored?: boolean }[] = [
   {
-    id: 'qwen3-chat',
+    id: 'Qwen3-32B-AWQ',
     label: 'Qwen3 Chat',
-    tagline: 'Qwen3.6-35B-A3B abliterated MoE. Only model loaded.',
+    tagline: 'Qwen3-32B-AWQ (32B dense via vLLM Marlin)',
     uncensored: true,
   },
 ]
@@ -106,7 +108,7 @@ const BACKEND_META: Record<string, { label: string; model: string; tagline: stri
   },
   local: {
     label: 'Local fallback',
-    model: 'qwen3-chat',
+    model: 'Qwen3-32B-AWQ',
     tagline: 'Offline STT -> LLM -> TTS path. Useful fallback, not realtime.',
     cost: 'Free',
   },
@@ -153,6 +155,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
   const [idleTimeoutMin, setIdleTimeoutMin] = useState(5)
   const [hotkeyEnabled, setHotkeyEnabled] = useState(true)
   const [costCapUsd, setCostCapUsd] = useState<string>('')
+  const [thinkingEnabled, setThinkingEnabled] = useState(false)
   const [saving, setSaving] = useState(false)
   const [claiming, setClaiming] = useState(false)
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null)
@@ -175,6 +178,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
       setIdleTimeoutMin(c.idle_timeout_min ?? 5)
       setHotkeyEnabled(c.hotkey_enabled ?? true)
       setCostCapUsd(c.cost_cap_usd ? String(c.cost_cap_usd) : '')
+      setThinkingEnabled(c.thinking_enabled ?? false)
       setOpenaiKey('')
       setGeminiKey('')
     } catch (e) {
@@ -269,6 +273,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
         idle_timeout_min: Math.max(1, Math.min(60, idleTimeoutMin)),
         hotkey_enabled: hotkeyEnabled,
         cost_cap_usd: costCapUsd.trim() ? Number(costCapUsd) : 0,
+        thinking_enabled: thinkingEnabled,
       }
       if (model.trim()) patch.model = model.trim()
       if (openaiKey.trim()) patch.openai_api_key = openaiKey.trim()
@@ -295,7 +300,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
     }
   }, [
     backend, cfg, costCapUsd, geminiKey, hotkeyEnabled, idleTimeoutMin, model,
-    onOpenChange, onSaved, openaiKey, profile, voice,
+    onOpenChange, onSaved, openaiKey, profile, thinkingEnabled, voice,
   ])
 
   const claimFreeKey = useCallback(async () => {
@@ -525,8 +530,8 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                         setBackend(b)
                         setVoice(cfg.default_voices?.[b] ?? '')
                         if (b === 'local') {
-                          // Default Local to qwen3-chat unless persona pinned a brain.
-                          setModel(cfg.default_models?.[b] ?? 'qwen3-chat')
+                          // Default Local to Qwen3-32B-AWQ unless persona pinned a brain.
+                          setModel(cfg.default_models?.[b] ?? 'Qwen3-32B-AWQ')
                         } else {
                           setModel(cfg.default_models?.[b] ?? '')
                         }
@@ -564,7 +569,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                     <Label className="text-xs text-zinc-300">Brain (local model)</Label>
                     {selectedProfile?.id === 'companion_girlfriend' && (
                       <span className="ml-auto text-[10px] text-indigo-300">
-                        persona uses qwen3-chat
+                        persona uses Qwen3-32B-AWQ
                       </span>
                     )}
                   </div>
@@ -598,7 +603,7 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                     })}
                   </div>
                   <div className="text-[10px] text-zinc-500 mt-2 leading-tight">
-                    Local fallback chains speech recognition, qwen3-chat, and
+                    Local fallback chains speech recognition, Qwen3-32B-AWQ, and
                     TTS, so it is slower than provider-native realtime audio.
                   </div>
                 </div>
@@ -790,6 +795,43 @@ export function ReachyRealtimeSettings({ open, onOpenChange, onSaved, inline = f
                       className={[
                         'absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-all',
                         hotkeyEnabled ? 'left-[18px]' : 'left-0.5',
+                      ].join(' ')}
+                    />
+                  </span>
+                </button>
+
+                {/* Thinking-mode toggle (local Qwen3 brain only) */}
+                <button
+                  type="button"
+                  onClick={() => setThinkingEnabled((v) => !v)}
+                  disabled={backend !== 'local'}
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 p-3 flex items-center gap-3 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={backend !== 'local' ? 'Local backend only' : ''}
+                >
+                  <Brain className="w-3.5 h-3.5 text-zinc-500" />
+                  <div className="flex-1">
+                    <div className="text-xs text-zinc-200 font-medium">
+                      Thinking mode {backend !== 'local' && (
+                        <span className="text-[10px] text-zinc-500">(local brain only)</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-zinc-500">
+                      Let Qwen3 reason before replying. Better answers, ~1-3 s extra latency. Off = snappy voice loop.
+                    </div>
+                  </div>
+                  <span
+                    className={[
+                      'shrink-0 w-9 h-5 rounded-full border transition-colors relative',
+                      thinkingEnabled
+                        ? 'bg-indigo-500 border-indigo-400'
+                        : 'bg-zinc-800 border-zinc-700',
+                    ].join(' ')}
+                    aria-pressed={thinkingEnabled}
+                  >
+                    <span
+                      className={[
+                        'absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-all',
+                        thinkingEnabled ? 'left-[18px]' : 'left-0.5',
                       ].join(' ')}
                     />
                   </span>

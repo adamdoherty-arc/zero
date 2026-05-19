@@ -322,7 +322,7 @@ function PersonaPanel() {
               <input
                 value={modelDraft}
                 onChange={(e) => setModelDraft(e.target.value)}
-                placeholder="qwen3-chat"
+                placeholder="Qwen3-32B-AWQ"
                 className="flex-1 rounded-md bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs font-mono text-zinc-100 focus:outline-none focus:border-indigo-500"
               />
               <Button
@@ -335,7 +335,7 @@ function PersonaPanel() {
               </Button>
             </div>
             <div className="text-[10px] text-zinc-500 mt-1">
-              qwen3-chat is the only loaded local brain (Qwen3.6-35B-A3B abliterated MoE).
+              Qwen3-32B-AWQ is the only loaded local brain.
               Refusal vectors removed; the persona prompt is the only guardrail.
             </div>
           </div>

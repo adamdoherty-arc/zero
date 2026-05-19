@@ -941,9 +941,13 @@ _PROVIDERS_STATUS_CACHE_TTL = 15.0
 # Per-provider hard ceiling. The probe sends a 1-token "say ok" prompt; most
 # healthy cloud providers respond in 500 ms - 2 s once warm, but cold-start
 # (first probe after container boot) can hit 5–7 s when 5 providers fire in
-# parallel and contend for HTTP clients / DNS. 8 s gives every reasonable
+# parallel and contend for HTTP clients / DNS. 20 s gives every reasonable
 # provider room to answer cold while still catching truly-down providers.
-_PROVIDERS_STATUS_PROBE_TIMEOUT = 8.0
+# Bumped 2026-05-17: Qwen3-A3B in llama.cpp forces full-prompt re-processing
+# every turn (Gated Delta Net hybrid attention; llama.cpp PR #13194), so a
+# warm-but-not-cached probe regularly takes 6-12 s. 8 s was marking the
+# local-qwen provider permanently red.
+_PROVIDERS_STATUS_PROBE_TIMEOUT = 20.0
 # 1-token max so probes cost ~nothing even on paid providers. Bifrost routes
 # can spend the first few tokens on hidden reasoning, so status probes raise
 # their cap locally when probing Bifrost.
