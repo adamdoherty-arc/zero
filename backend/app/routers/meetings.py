@@ -244,6 +244,75 @@ async def list_auto_record():
     return {"entries": await get_meeting_auto_recorder_service().list_marked()}
 
 
+@router.post("/{meeting_id}/send-zero", status_code=200)
+async def send_zero_to_meeting(meeting_id: str):
+    """Opt this calendar event into Superhuman v2 — Zero joins the meeting
+    URL as a virtual attendee via meeting_agent_service instead of doing
+    passive loopback capture. Requires ZERO_MEETING_AGENT_REAL_DRIVER=true.
+    See docs/superhuman-setup.md for one-time host setup."""
+    from app.services.meeting_superhuman_service import (
+        get_meeting_superhuman_service,
+    )
+
+    async with get_session() as db:
+        result = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+        meeting = result.scalar_one_or_none()
+        if not meeting:
+            raise HTTPException(404, "Meeting not found")
+        join_url = None
+        if meeting.description:
+            for token in meeting.description.split():
+                if any(host in token for host in ("zoom.us", "meet.google.com", "teams.microsoft.com")):
+                    join_url = token.strip(".,)>\"'<")
+                    break
+    if not join_url:
+        raise HTTPException(
+            400,
+            "Meeting description does not contain a recognized Zoom/Meet/Teams URL.",
+        )
+    svc = get_meeting_superhuman_service()
+    await svc.opt_in(meeting_id=meeting_id, join_url=join_url, title=meeting.title)
+    return {
+        "meeting_id": meeting_id,
+        "send_zero": True,
+        "join_url": join_url,
+        "driver_real": svc.real_driver_enabled(),
+    }
+
+
+@router.get("/{meeting_id}/send-zero", status_code=200)
+async def send_zero_status(meeting_id: str):
+    from app.services.meeting_superhuman_service import (
+        get_meeting_superhuman_service,
+    )
+    return await get_meeting_superhuman_service().status(meeting_id)
+
+
+@router.delete("/{meeting_id}/send-zero", status_code=200)
+async def send_zero_revoke(meeting_id: str):
+    from app.services.meeting_superhuman_service import (
+        get_meeting_superhuman_service,
+    )
+    await get_meeting_superhuman_service().opt_out(meeting_id)
+    return {"meeting_id": meeting_id, "send_zero": False}
+
+
+@router.post("/{meeting_id}/prep-brief", status_code=200)
+async def meeting_prep_brief(meeting_id: str):
+    """Compose a pre-meeting prep brief from calendar event + prior
+    meetings + attendee memory. Returns Markdown for the UI tile and a
+    structured payload for the daily brief composer."""
+    from app.services.meeting_prep_service import build_prep_brief
+
+    async with get_session() as db:
+        result = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+        meeting = result.scalar_one_or_none()
+        if not meeting:
+            raise HTTPException(404, "Meeting not found")
+    brief = await build_prep_brief(meeting_id=meeting_id, calendar_event=meeting)
+    return brief
+
+
 def _event_dt_to_datetime(event_dt) -> datetime | None:
     """Pull a tz-aware UTC datetime out of an EventDateTime payload."""
     if event_dt is None:

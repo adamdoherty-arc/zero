@@ -368,6 +368,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("live_transcription_warmup_skipped")
 
+    # BurntToast subscriber relays /api/notifications/ws → Windows tray.
+    # Skipped silently when BurntToast PS module is missing.
+    try:
+        from notifications_subscriber import start_subscriber as _ns_start
+
+        _ns_start(_main_loop)
+    except Exception as exc:
+        logger.debug("notifications_subscriber_skip", error=str(exc))
+
     logger.info("host_agent_lifespan_ready")
     yield
 

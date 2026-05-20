@@ -364,9 +364,28 @@ export function CompanionConsole() {
                 {data?.next_suggested_action?.label ?? 'Loading companion state...'}
               </p>
             </div>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${modeTone(mode)}`}>
-              {mode}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold capitalize ${modeTone(mode)}`}>
+                {mode}
+              </span>
+              {policy?.meeting_active && (
+                <span
+                  className="rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-200 px-3 py-1 text-xs font-semibold"
+                  title="Meeting auto-record is live. Reachy is capturing audio."
+                >
+                  Recording meeting
+                </span>
+              )}
+              {policy?.transcribe_only && (
+                <span
+                  className="rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-200 px-3 py-1 text-xs font-semibold inline-flex items-center gap-1"
+                  title={`Reachy is in silent-listen mode and will only speak when you say "Hey Zero". Response window: ${policy?.wake_response_window_s ?? 30}s.`}
+                >
+                  <MicOff className="w-3 h-3" />
+                  Silent · "Hey Zero" to speak
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2">

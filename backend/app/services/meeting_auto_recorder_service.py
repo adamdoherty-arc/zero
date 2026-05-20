@@ -130,6 +130,20 @@ class MeetingAutoRecorderService:
                 entry["stopped_at"] = datetime.now(timezone.utc).isoformat()
                 self._save()
 
+    async def mark_skipped(self, calendar_event_id: str, *, reason: str = "") -> None:
+        """Mark an auto-record entry skipped (consent denied, Superhuman
+        handoff, etc.) so the scheduler doesn't re-attempt the same
+        meeting on every tick."""
+        async with self._lock:
+            entry = self._state.get(calendar_event_id)
+            if entry:
+                entry["started"] = True  # disables re-attempt
+                entry["skipped"] = True
+                entry["skipped_at"] = datetime.now(timezone.utc).isoformat()
+                if reason:
+                    entry["skipped_reason"] = reason
+                self._save()
+
     @staticmethod
     def _parse_dt(value: Optional[str]) -> Optional[datetime]:
         if not value:

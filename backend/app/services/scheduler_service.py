@@ -2013,7 +2013,15 @@ Have a great evening!"""
             # of the speech gate so silent meetings still get the popup.
             try:
                 from app.services.notification_bus import get_notification_bus
+                from app.services.meeting_kind import detect_kind
 
+                desc = (
+                    getattr(ev, "description", None)
+                    or getattr(ev, "details", None)
+                    or ""
+                )
+                loc = getattr(ev, "location", None)
+                kind, join_url = detect_kind(description=desc, location=loc)
                 await get_notification_bus().publish({
                     "type": "meeting.nudge",
                     "event_id": event_id,
@@ -2021,6 +2029,8 @@ Have a great evening!"""
                     "bucket_min": bucket,
                     "starts_at": start_dt.isoformat(),
                     "text": text,
+                    "meeting_kind": kind,
+                    "join_url": join_url,
                 })
             except Exception as exc:
                 logger.debug("notification_publish_skip", error=str(exc))
@@ -2136,6 +2146,78 @@ Have a great evening!"""
             for entry in due:
                 meeting_id = entry["meeting_id"]
                 event_id = entry["calendar_event_id"]
+                # Consent guard — never_record_titles and external-attendee
+                # gating live in workspace/meetings/consent_policy.json.
+                try:
+                    from app.services.meeting_consent_service import (
+                        get_meeting_consent_service,
+                    )
+
+                    consent = get_meeting_consent_service().evaluate(
+                        title=entry.get("title"),
+                        attendees=entry.get("attendees"),
+                    )
+                    if consent.decision == "deny":
+                        logger.info(
+                            "reachy_meeting_auto_record_denied",
+                            meeting_id=meeting_id,
+                            reason=consent.reason,
+                        )
+                        await svc.mark_skipped(event_id, reason=consent.reason)
+                        continue
+                    if consent.decision == "ask":
+                        # v1: surface a confirm-toast via the bus and skip
+                        # the recording. The user must explicitly hit
+                        # record-now if they want to capture this one.
+                        try:
+                            from app.services.notification_bus import (
+                                get_notification_bus,
+                            )
+
+                            await get_notification_bus().publish({
+                                "type": "meeting.consent_needed",
+                                "meeting_id": meeting_id,
+                                "event_id": event_id,
+                                "title": entry.get("title"),
+                                "reason": consent.reason,
+                                "confirm_window_seconds": consent.confirm_window_seconds,
+                            })
+                        except Exception:
+                            pass
+                        await svc.mark_skipped(
+                            event_id, reason=f"consent: {consent.reason}"
+                        )
+                        continue
+                except AttributeError:
+                    # meeting_auto_recorder_service may not implement
+                    # mark_skipped yet — fall through to record.
+                    pass
+                except Exception as exc:
+                    logger.debug("consent_guard_skip", error=str(exc))
+                # Superhuman opt-in: if the user clicked "Send Zero" for
+                # this event, skip passive loopback and let the meeting
+                # agent handle it (when REAL_DRIVER is on).
+                try:
+                    from app.services.meeting_superhuman_service import (
+                        get_meeting_superhuman_service,
+                    )
+
+                    sh_svc = get_meeting_superhuman_service()
+                    if await sh_svc.is_opted_in(meeting_id):
+                        if sh_svc.real_driver_enabled():
+                            logger.info(
+                                "reachy_meeting_auto_record_handoff_to_superhuman",
+                                meeting_id=meeting_id,
+                            )
+                            await svc.mark_started(event_id)
+                            continue
+                        logger.info(
+                            "superhuman_optin_but_driver_disabled_falling_back",
+                            meeting_id=meeting_id,
+                        )
+                except Exception as exc:
+                    logger.debug("superhuman_handoff_skip", error=str(exc))
+
                 try:
                     if use_host_agent:
                         await start_recording_via_host_agent(

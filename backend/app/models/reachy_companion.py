@@ -64,7 +64,7 @@ class CompanionPolicy(BaseModel):
     meeting_active: bool = False
     meeting_active_id: Optional[str] = None
     last_wake_at: Optional[datetime] = None
-    wake_response_window_s: int = Field(20, ge=2, le=600)
+    wake_response_window_s: int = Field(30, ge=2, le=600)
     updated_at: datetime = Field(default_factory=utc_now)
 
 

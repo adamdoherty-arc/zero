@@ -1852,12 +1852,15 @@ class LocalRealtimeHandler:
         # (meeting mode default) Reachy stays mute until "Hey Zero" stamps
         # the wake-response window. Transcript text still streams to the
         # UI so the user sees what would have been said.
+        # On successful pass, we refresh last_wake_at so a long multi-chunk
+        # answer keeps speaking instead of getting cut off mid-sentence.
         try:
             from app.services.reachy_companion_service import (
                 get_reachy_companion_service,
             )
 
-            decision = get_reachy_companion_service().action_allowed("speak")
+            companion = get_reachy_companion_service()
+            decision = companion.action_allowed("speak")
             if not decision.get("allowed"):
                 await self._emit({
                     "type": "response.audio.suppressed",
@@ -1865,6 +1868,14 @@ class LocalRealtimeHandler:
                     "text": text,
                 })
                 return
+            # Inside an active wake-triggered turn: keep the window alive
+            # so the next chunk doesn't trip the gate. Lightweight extend
+            # (no event log spam) — only fires while in transcribe_only.
+            if decision.get("reason") == "wake_response_window":
+                try:
+                    companion.extend_wake_window()
+                except Exception:
+                    pass
         except Exception:
             # Never let companion lookup break the speech path.
             pass

@@ -368,6 +368,11 @@ export interface CompanionPolicy {
   per_persona_tool_grants: Record<string, string[]>
   quiet_hours_start: number
   quiet_hours_end: number
+  transcribe_only: boolean
+  meeting_active: boolean
+  meeting_active_id: string | null
+  last_wake_at: string | null
+  wake_response_window_s: number
   updated_at: string
 }
 

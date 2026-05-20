@@ -373,7 +373,11 @@ class ReachyCompanionService:
         return policy
 
     def mark_wake_fired(self, *, source: str = "wake_word") -> CompanionPolicy:
-        """Stamp last_wake_at to open the speak-during-silence window once."""
+        """Stamp last_wake_at to open the speak-during-silence window once.
+
+        Records a voice_heard event for the timeline. Use ``extend_wake_window``
+        from hot paths (per-chunk TTS gate) to avoid spamming the event log.
+        """
         with self._lock:
             data = self.get_policy().model_dump()
             data["last_wake_at"] = utc_now()
@@ -389,6 +393,21 @@ class ReachyCompanionService:
                 importance=0.6,
             )
         )
+        return policy
+
+    def extend_wake_window(self) -> CompanionPolicy:
+        """Refresh last_wake_at without recording an event.
+
+        Called from the TTS hot path so a long multi-chunk answer doesn't
+        get cut off when the original 30s window expires mid-sentence.
+        Pure cache+file write, no timeline pollution.
+        """
+        with self._lock:
+            data = self.get_policy().model_dump()
+            data["last_wake_at"] = utc_now()
+            data["updated_at"] = utc_now()
+            policy = self._normalize_policy(CompanionPolicy.model_validate(data))
+            self._save_policy_locked(policy)
         return policy
 
     def set_meeting_active(self, *, active: bool, meeting_id: str | None = None) -> CompanionPolicy:
