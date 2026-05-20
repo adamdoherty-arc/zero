@@ -66,6 +66,7 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
         "cloud_realtime_allowed": False,
         "memory_write_allowed": True,
         "max_proactive_events_per_hour": 4,
+        "transcribe_only": False,
         "allowed_actions": [action for action in CORE_ACTIONS if action != "body_motion"],
     },
     "focus": {
@@ -76,6 +77,7 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
         "cloud_realtime_allowed": False,
         "memory_write_allowed": True,
         "max_proactive_events_per_hour": 2,
+        "transcribe_only": False,
         "allowed_actions": [
             "speak",
             "gesture",
@@ -84,7 +86,6 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
             "camera_read",
             "memory_read",
             "calendar_read",
-            "home_assistant_read",
             "proactive_nudge",
             "alert",
         ],
@@ -93,10 +94,11 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
         "mic_enabled": True,
         "camera_enabled": False,
         "body_motion_enabled": False,
-        "proactive_enabled": True,
+        "proactive_enabled": False,
         "cloud_realtime_allowed": False,
         "memory_write_allowed": True,
-        "max_proactive_events_per_hour": 2,
+        "max_proactive_events_per_hour": 1,
+        "transcribe_only": True,
         "allowed_actions": [
             "speak",
             "gesture",
@@ -105,7 +107,6 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
             "memory_read",
             "memory_write",
             "calendar_read",
-            "proactive_nudge",
             "alert",
         ],
     },
@@ -117,6 +118,7 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
         "cloud_realtime_allowed": False,
         "memory_write_allowed": False,
         "max_proactive_events_per_hour": 0,
+        "transcribe_only": False,
         "allowed_actions": ["speak", "gesture", "memory_read", "calendar_read", "alert"],
     },
     "sleep": {
@@ -127,6 +129,7 @@ MODE_DEFAULTS: dict[CompanionMode, dict[str, Any]] = {
         "cloud_realtime_allowed": False,
         "memory_write_allowed": False,
         "max_proactive_events_per_hour": 0,
+        "transcribe_only": False,
         "allowed_actions": ["memory_read", "calendar_read", "alert"],
     },
 }
@@ -369,6 +372,69 @@ class ReachyCompanionService:
             await self._apply_mode_actions(mode)
         return policy
 
+    def mark_wake_fired(self, *, source: str = "wake_word") -> CompanionPolicy:
+        """Stamp last_wake_at to open the speak-during-silence window once."""
+        with self._lock:
+            data = self.get_policy().model_dump()
+            data["last_wake_at"] = utc_now()
+            data["updated_at"] = utc_now()
+            policy = self._normalize_policy(CompanionPolicy.model_validate(data))
+            self._save_policy_locked(policy)
+        self.record_event(
+            CompanionEventCreate(
+                type="voice_heard",
+                source=source,
+                summary="Wake word fired; speak window open.",
+                payload={"window_s": policy.wake_response_window_s},
+                importance=0.6,
+            )
+        )
+        return policy
+
+    def set_meeting_active(self, *, active: bool, meeting_id: str | None = None) -> CompanionPolicy:
+        """Toggle meeting_active. Called by the auto-record scheduler at start/stop.
+
+        Active meetings force transcribe_only on regardless of mode so Reachy
+        always stays silent until the wake word fires, then revert to whatever
+        the mode default was once the meeting ends.
+        """
+        with self._lock:
+            existing = self.get_policy()
+            data = existing.model_dump()
+            data["meeting_active"] = bool(active)
+            data["meeting_active_id"] = meeting_id if active else None
+            if active:
+                # Remember the prior transcribe_only flag so we restore on stop.
+                data["_pre_meeting_transcribe_only"] = existing.transcribe_only
+                data["transcribe_only"] = True
+            else:
+                # Restore prior transcribe_only or fall back to mode default.
+                prior = existing.model_dump().get("_pre_meeting_transcribe_only")
+                mode_default = MODE_DEFAULTS.get(existing.mode, {}).get(
+                    "transcribe_only", False
+                )
+                data["transcribe_only"] = bool(
+                    prior if prior is not None else mode_default
+                )
+            data.pop("_pre_meeting_transcribe_only", None)
+            data["updated_at"] = utc_now()
+            policy = self._normalize_policy(CompanionPolicy.model_validate(data))
+            self._save_policy_locked(policy)
+        self.record_event(
+            CompanionEventCreate(
+                type="meeting_started" if active else "notice",
+                source="auto_recorder",
+                summary=(
+                    f"Meeting capture started ({meeting_id})."
+                    if active
+                    else "Meeting capture stopped."
+                ),
+                payload={"meeting_id": meeting_id, "active": bool(active)},
+                importance=0.55,
+            )
+        )
+        return policy
+
     def update_policy(self, patch: CompanionPolicyPatch) -> CompanionPolicy:
         with self._lock:
             data = self.get_policy().model_dump()
@@ -454,6 +520,23 @@ class ReachyCompanionService:
             return {"allowed": False, "reason": "memory_write_disabled"}
         if action == "proactive_nudge" and not policy.proactive_enabled:
             return {"allowed": False, "reason": "proactive_disabled"}
+        # Silent-listen gate: in transcribe_only mode (default during meetings)
+        # Reachy stays mute unless the user just said "Hey Zero" within the
+        # response window. Wake-word path stamps policy.last_wake_at to open
+        # the gate for a single Q&A turn.
+        if action == "speak" and policy.transcribe_only:
+            from datetime import timezone as _tz
+
+            now = utc_now()
+            last = policy.last_wake_at
+            if last is None:
+                return {"allowed": False, "reason": "transcribe_only_no_wake"}
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=_tz.utc)
+            window = max(2, int(policy.wake_response_window_s or 20))
+            if (now - last).total_seconds() > window:
+                return {"allowed": False, "reason": "transcribe_only_wake_window_expired"}
+            return {"allowed": True, "reason": "wake_response_window"}
         if action.startswith("tool:"):
             tool = action.split(":", 1)[1]
             grants = self._tool_grants(policy, persona_id)

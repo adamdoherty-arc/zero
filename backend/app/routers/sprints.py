@@ -263,7 +263,7 @@ async def move_task(task_id: int, data: TaskMoveRequest):
     """Move a Zero task to a new status."""
     client = get_legion_client()
     try:
-        legion_task = await client.move_task(task_id, status=data.status, notes=data.notes)
+        legion_task = await client.move_task(task_id, new_status=data.status, reason=data.notes)
     except Exception as exc:  # noqa: BLE001
         logger.error("zero_task_move_failed", error=str(exc), task_id=task_id)
         raise HTTPException(status_code=502, detail=f"Legion unreachable: {exc}")

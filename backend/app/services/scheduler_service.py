@@ -1915,12 +1915,27 @@ Have a great evening!"""
         """
         Every minute, look at the next hour of events. When an event is 10, 5, or
         1 minute away (and we haven't already announced that bucket), speak it
-        through the Reachy speaker.
+        through the Reachy speaker. Also publishes a toast/Windows notification
+        regardless of whether speech is gated by companion policy.
         """
         import time as _time
         if self._reachy_realtime_session_active():
             logger.debug("reachy_calendar_nudge_skipped", reason="realtime_session_active")
             return
+        # Respect silent-listen gate. If proactive speech is off (e.g. user
+        # is in a meeting already), still publish the notification but skip
+        # the Reachy voice line.
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            _can_speak = bool(
+                get_reachy_companion_service()
+                .action_allowed("proactive_nudge")
+                .get("allowed")
+            )
+        except Exception:
+            _can_speak = True
         try:
             from app.services.reachy_service import get_reachy_service
             reachy = get_reachy_service()
@@ -1984,12 +1999,31 @@ Have a great evening!"""
                 text = f"Reminder â€” {title} starts in five minutes."
             else:
                 text = f"Coming up â€” {title} starts in ten minutes."
+            if _can_speak:
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.create_task(reachy.say(text))
+                    logger.info("reachy_calendar_nudge_spoken", event=title, bucket_min=bucket)
+                except Exception as e:
+                    logger.debug("reachy_calendar_nudge_say_failed", error=str(e))
+            else:
+                logger.info("reachy_calendar_nudge_speech_gated", event=title, bucket_min=bucket)
+            # Fan out a toast/Windows-notification too so the user sees the
+            # nudge even when they aren't near the robot. Fires regardless
+            # of the speech gate so silent meetings still get the popup.
             try:
-                import asyncio as _asyncio
-                _asyncio.create_task(reachy.say(text))
-                logger.info("reachy_calendar_nudge_spoken", event=title, bucket_min=bucket)
-            except Exception as e:
-                logger.debug("reachy_calendar_nudge_say_failed", error=str(e))
+                from app.services.notification_bus import get_notification_bus
+
+                await get_notification_bus().publish({
+                    "type": "meeting.nudge",
+                    "event_id": event_id,
+                    "title": title,
+                    "bucket_min": bucket,
+                    "starts_at": start_dt.isoformat(),
+                    "text": text,
+                })
+            except Exception as exc:
+                logger.debug("notification_publish_skip", error=str(exc))
 
     async def _run_reachy_email_nudge(self):
         """Per-email voice triage across ALL connected accounts.
@@ -2117,6 +2151,34 @@ Have a great evening!"""
                         event_id=event_id,
                         via="host_agent" if use_host_agent else "local",
                     )
+                    # Flip companion policy into "meeting active" so the
+                    # silent-listen gate kicks in. Reachy stays mute until
+                    # the wake word fires.
+                    try:
+                        from app.services.reachy_companion_service import (
+                            get_reachy_companion_service,
+                        )
+                        get_reachy_companion_service().set_meeting_active(
+                            active=True, meeting_id=str(meeting_id)
+                        )
+                    except Exception as exc:
+                        logger.debug("companion_meeting_active_skip", error=str(exc))
+                    # Fan out a meeting.starting notification (browser toast,
+                    # Windows tray via host_agent, Reachy speech).
+                    try:
+                        from app.services.notification_bus import (
+                            get_notification_bus,
+                        )
+                        await get_notification_bus().publish({
+                            "type": "meeting.starting",
+                            "meeting_id": meeting_id,
+                            "event_id": event_id,
+                            "title": entry.get("title"),
+                            "join_url": entry.get("join_url"),
+                            "via": "host_agent" if use_host_agent else "local",
+                        })
+                    except Exception as exc:
+                        logger.debug("notification_publish_skip", error=str(exc))
                     if reachy_up:
                         import asyncio as _asyncio
                         _asyncio.create_task(
@@ -2194,6 +2256,28 @@ Have a great evening!"""
                             event_id=event_id,
                             via="host_agent" if use_host_agent else "local",
                         )
+                        # Clear companion meeting_active and publish stop event.
+                        try:
+                            from app.services.reachy_companion_service import (
+                                get_reachy_companion_service,
+                            )
+                            get_reachy_companion_service().set_meeting_active(
+                                active=False, meeting_id=None
+                            )
+                        except Exception as exc:
+                            logger.debug("companion_meeting_inactive_skip", error=str(exc))
+                        try:
+                            from app.services.notification_bus import (
+                                get_notification_bus,
+                            )
+                            await get_notification_bus().publish({
+                                "type": "meeting.stopped",
+                                "meeting_id": entry["meeting_id"],
+                                "event_id": event_id,
+                                "title": entry.get("title"),
+                            })
+                        except Exception as exc:
+                            logger.debug("notification_publish_skip", error=str(exc))
                 except Exception as e:
                     logger.warning(
                         "reachy_meeting_auto_stop_failed",

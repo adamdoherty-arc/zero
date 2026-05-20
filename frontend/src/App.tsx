@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Toaster } from '@/components/ui/toaster'
+import { NotificationListener } from '@/components/NotificationListener'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { MobileLayout } from '@/layouts/MobileLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -103,6 +105,8 @@ function App() {
     <ErrorBoundary pageName="root">
     <BrowserRouter>
       <div className="dark">
+        <NotificationListener />
+        <Toaster />
         <Routes>
           {/* Mobile / PWA routes */}
           <Route path="/m" element={<MobileLayout />}>

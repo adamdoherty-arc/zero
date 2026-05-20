@@ -14,7 +14,7 @@ from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Body, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional
@@ -3654,12 +3654,46 @@ async def wake_word_predict(audio: UploadFile = File(...)):
     Accept a 16 kHz mono int16 PCM chunk (raw bytes, NOT a WAV) and return
     the wake-word score. Use this from the browser's MediaRecorder pipeline
     to hands-free-trigger the voice loop.
+
+    When the model fires, also stamps the companion policy's wake-response
+    window so Reachy is allowed to speak through the silent-listen gate for
+    one Q&A turn.
     """
     from app.services.reachy_wake_word_service import get_reachy_wake_word_service
     svc = get_reachy_wake_word_service()
     body = await audio.read()
     fired, score = svc.predict_bytes(body)
+    if fired:
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            get_reachy_companion_service().mark_wake_fired(source="wake_word.predict")
+        except Exception:
+            pass
     return {"fired": fired, "score": score, "backend": svc.backend_status()}
+
+
+@router.post("/wake-word/fired")
+async def wake_word_fired(payload: dict[str, Any] = Body(default={})):
+    """
+    Out-of-band wake notification from host_agent (its local openwakeword
+    loop detected the phrase). Opens the speak window via the companion
+    policy so Reachy is allowed to answer once.
+    """
+    source = str(payload.get("source") or "host_agent.wake_loop")
+    try:
+        from app.services.reachy_companion_service import (
+            get_reachy_companion_service,
+        )
+        policy = get_reachy_companion_service().mark_wake_fired(source=source)
+        return {
+            "ok": True,
+            "wake_response_window_s": policy.wake_response_window_s,
+            "last_wake_at": policy.last_wake_at.isoformat() if policy.last_wake_at else None,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @router.post("/vision/detect")

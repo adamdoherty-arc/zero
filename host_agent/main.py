@@ -1344,12 +1344,27 @@ async def mic_stream_ws(ws: WebSocket):
 def _on_wake_command(text: str) -> None:
     """
     Wake-loop callback (runs on the wake thread — not the asyncio loop).
-    Schedules the async intent dispatch on the main event loop.
+    Schedules the async intent dispatch on the main event loop. Also fires
+    a fire-and-forget wake notification so the backend can open the
+    silent-listen speak window for this Q&A turn.
     """
     if _main_loop is None:
         logger.warning("wake_command_no_loop", text=text)
         return
+    asyncio.run_coroutine_threadsafe(_notify_wake_fired(text), _main_loop)
     asyncio.run_coroutine_threadsafe(_dispatch_wake_command(text), _main_loop)
+
+
+async def _notify_wake_fired(text: str) -> None:
+    """POST to zero-api so policy.last_wake_at gets stamped before TTS
+    decides whether to speak. Fire-and-forget, swallow all errors so the
+    wake loop is unaffected if the backend is down."""
+    url = f"{ZERO_API_URL}/api/reachy/wake-word/fired"
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as c:
+            await c.post(url, json={"source": "host_agent.wake_loop", "preview": text[:160]})
+    except Exception as exc:
+        logger.debug("wake_fired_notify_failed", error=str(exc))
 
 
 async def _dispatch_wake_command(text: str) -> None:

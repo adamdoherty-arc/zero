@@ -60,6 +60,11 @@ class CompanionPolicy(BaseModel):
     per_persona_tool_grants: dict[str, list[str]] = Field(default_factory=dict)
     quiet_hours_start: int = Field(22, ge=0, le=23)
     quiet_hours_end: int = Field(7, ge=0, le=23)
+    transcribe_only: bool = False
+    meeting_active: bool = False
+    meeting_active_id: Optional[str] = None
+    last_wake_at: Optional[datetime] = None
+    wake_response_window_s: int = Field(20, ge=2, le=600)
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -76,6 +81,11 @@ class CompanionPolicyPatch(BaseModel):
     per_persona_tool_grants: Optional[dict[str, list[str]]] = None
     quiet_hours_start: Optional[int] = Field(None, ge=0, le=23)
     quiet_hours_end: Optional[int] = Field(None, ge=0, le=23)
+    transcribe_only: Optional[bool] = None
+    meeting_active: Optional[bool] = None
+    meeting_active_id: Optional[str] = None
+    last_wake_at: Optional[datetime] = None
+    wake_response_window_s: Optional[int] = Field(None, ge=2, le=600)
 
 
 class CompanionModeRequest(BaseModel):

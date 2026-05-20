@@ -1848,6 +1848,26 @@ class LocalRealtimeHandler:
         text = self._tone_guard.clean(text.strip())
         if not text or self._cancel_response.is_set():
             return
+        # Silent-listen gate. When companion policy.transcribe_only is on
+        # (meeting mode default) Reachy stays mute until "Hey Zero" stamps
+        # the wake-response window. Transcript text still streams to the
+        # UI so the user sees what would have been said.
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+
+            decision = get_reachy_companion_service().action_allowed("speak")
+            if not decision.get("allowed"):
+                await self._emit({
+                    "type": "response.audio.suppressed",
+                    "reason": decision.get("reason"),
+                    "text": text,
+                })
+                return
+        except Exception:
+            # Never let companion lookup break the speech path.
+            pass
         await self._emit_phase("speaking")
         wav_bytes: bytes = b""
         try:

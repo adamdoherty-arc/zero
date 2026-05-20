@@ -1,0 +1,33 @@
+# DailyMeetings - Standalone Meeting Intelligence App
+# Runs on Windows host (not Docker) for audio capture
+
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+structlog>=24.4.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+pgvector>=0.3.6
+
+# HTTP client (for Ollama API)
+httpx>=0.28.0
+
+# Audio capture (Windows WASAPI loopback + microphone)
+pyaudiowpatch>=0.2.13
+sounddevice>=0.5.0
+numpy>=1.26.0
+soundfile>=0.12.0
+
+# Transcription (faster-whisper, GPU-accelerated)
+faster-whisper>=1.1.0
+
+# Speaker diarization (optional - requires HF token)
+# pyannote.audio>=3.3.0
+# torch>=2.0.0
+
+# CORS
+python-multipart>=0.0.20

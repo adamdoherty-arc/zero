@@ -425,17 +425,37 @@ class LegionClient:
         """Update a task."""
         return await self._patch(f"/sprints/tasks/{task_id}", update_data)
 
+    # Zero's external sprint contract uses lower-snake_case statuses but
+    # Legion's PostgreSQL enum is UPPER (PENDING/QUEUED/RUNNING/COMPLETED/
+    # FAILED/SKIPPED/RATE_LIMITED). Map at the boundary so callers don't
+    # need to know.
+    _TASK_STATUS_MAP: Dict[str, str] = {
+        "pending": "PENDING",
+        "queued": "QUEUED",
+        "in_progress": "RUNNING",
+        "running": "RUNNING",
+        "done": "COMPLETED",
+        "completed": "COMPLETED",
+        "failed": "FAILED",
+        "blocked": "FAILED",
+        "skipped": "SKIPPED",
+        "rate_limited": "RATE_LIMITED",
+    }
+
     async def move_task(
         self,
         task_id: int,
         new_status: str,
         reason: Optional[str] = None
     ) -> Dict:
-        """Move a task to a new status."""
-        return await self._post(
-            f"/sprints/tasks/{task_id}/move",
-            {"status": new_status, "reason": reason}
-        )
+        """Move a task to a new status via PATCH /sprints/tasks/{id}.
+        Maps Zero's lowercase status names to Legion's enum values. The
+        ``reason`` argument is currently informational — Legion's task
+        schema does not have a generic notes column."""
+        mapped = self._TASK_STATUS_MAP.get((new_status or "").strip().lower())
+        if not mapped:
+            raise ValueError(f"unknown task status for Legion: {new_status!r}")
+        return await self._patch(f"/sprints/tasks/{task_id}", {"status": mapped})
 
     async def get_blocked_tasks(self, project_id: Optional[int] = None) -> List[Dict]:
         """Get all blocked/failed tasks, optionally filtered by project.
