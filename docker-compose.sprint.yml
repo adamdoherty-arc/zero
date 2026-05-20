@@ -146,8 +146,12 @@ services:
       - ZERO_USE_TEMPORAL=${ZERO_USE_TEMPORAL:-false}
       - ZERO_TEMPORAL_HOST=zero-temporal:7233
       - ZERO_TEMPORAL_NAMESPACE=${ZERO_TEMPORAL_NAMESPACE:-default}
-      - ZERO_REDIS_URL=redis://zero-redis:6379/0
-      - ZERO_QDRANT_URL=http://zero-qdrant:6333
+      # Quality-31 (2026-05-19): point Zero at shared legion-redis db=2.
+      # Was: redis://zero-redis:6379/0 (local instance, retired).
+      - ZERO_REDIS_URL=redis://:${LEGION_REDIS_PASSWORD:-legion_redis_secret}@legion-redis:6379/2
+      # Quality-32 (2026-05-19): point Zero at shared legion-qdrant.
+      # Was: http://zero-qdrant:6333 (local instance, retired — collections empty).
+      - ZERO_QDRANT_URL=http://legion-qdrant:6333
       - ZERO_MINIO_ENDPOINT=http://zero-minio:9000
       - ZERO_MINIO_ACCESS_KEY=${ZERO_MINIO_ACCESS_KEY:-zero-minio}
       - ZERO_MINIO_SECRET_KEY=${ZERO_MINIO_SECRET_KEY:-zero-minio-change-me}
