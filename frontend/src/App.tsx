@@ -4,6 +4,7 @@ import { Toaster } from '@/components/ui/toaster'
 import { NotificationListener } from '@/components/NotificationListener'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { SystemStatusPage } from '@/pages/SystemStatusPage'
+import { NotificationsHistoryPage } from '@/pages/NotificationsHistoryPage'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { MobileLayout } from '@/layouts/MobileLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -135,6 +136,7 @@ function App() {
             <Route path="/email/drafts" element={<DraftsInbox />} />
             <Route path="/approvals" element={<ApprovalsPage />} />
             <Route path="/meeting-steward" element={<SystemStatusPage />} />
+            <Route path="/notifications/history" element={<NotificationsHistoryPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/crm" element={<CrmPage />} />

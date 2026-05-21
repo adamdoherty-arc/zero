@@ -862,6 +862,26 @@ _SPECS: Dict[str, Dict[str, Any]] = {
         "description": "Summarise the meeting that is recording RIGHT NOW (uses companion policy.meeting_active_id). Use when the user asks 'summarise so far', 'recap so far', or 'what have we covered'.",
         "parameters": {"type": "object", "properties": {}},
     },
+    "enroll_face_from_meeting": {
+        "type": "function",
+        "name": "enroll_face_from_meeting",
+        "description": "Attach a real person's display name to an unknown face cluster from the active or most-recent meeting. Use when the user says 'that was Sarah', 'label SPEAKER_01 as Sarah', 'enroll the new face as Mike', etc. Pulls the latest face cluster centroid + crop from the meeting's face-match step and enrolls it as a faceprint.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "display_name": {"type": "string", "description": "Human name to attach (e.g., 'Sarah Smith')."},
+                "speaker_label": {
+                    "type": "string",
+                    "description": "Optional. The SPEAKER_XX or 'Unknown #2' label from the transcript. When omitted, attaches to the most-recently-clustered face.",
+                },
+                "meeting_id": {
+                    "type": "string",
+                    "description": "Optional. Defaults to companion policy.meeting_active_id or the most recent completed meeting.",
+                },
+            },
+            "required": ["display_name"],
+        },
+    },
 }
 
 
@@ -1463,6 +1483,109 @@ async def _mark_meeting_private(deps: ToolDependencies, args: Dict[str, Any], _m
         }
 
 
+async def _enroll_face_from_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """Voice 'Hey Zero, that was Sarah'. Re-clusters frames from the
+    target meeting, picks the matching cluster, enrolls its centroid
+    embedding as a faceprint under the user-supplied display name."""
+    display_name = str(args.get("display_name") or "").strip()
+    if not display_name:
+        return {"error": "missing display_name", "response_text": "I need a name to enroll the face under."}
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    speaker_label = str(args.get("speaker_label") or "").strip()
+    if not meeting_id:
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+
+            meeting_id = (
+                get_reachy_companion_service().get_policy().meeting_active_id or ""
+            )
+        except Exception:
+            meeting_id = ""
+    if not meeting_id:
+        # Fall back to the most-recent meeting with face frames.
+        try:
+            from app.infrastructure.config import get_workspace_path
+
+            frames_root = get_workspace_path("meetings")
+            candidates = sorted(
+                [p for p in frames_root.iterdir() if p.is_dir() and (p / "frames").exists()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                meeting_id = candidates[0].name
+        except Exception:
+            pass
+    if not meeting_id:
+        return {
+            "error": "no meeting",
+            "response_text": "I couldn't find a meeting with face frames. Was the camera on?",
+        }
+    try:
+        from pathlib import Path
+
+        from app.services.meeting_face_service import (
+            extract_faces_from_meeting,
+            get_faceprint_service,
+        )
+        from app.infrastructure.config import get_workspace_path
+
+        frames_dir: Path = get_workspace_path("meetings") / meeting_id / "frames"
+        if not frames_dir.exists():
+            return {
+                "error": "no_frames",
+                "response_text": "That meeting doesn't have face frames captured.",
+            }
+        clusters = extract_faces_from_meeting(meeting_id, frames_dir)
+        if not clusters:
+            return {
+                "error": "no_clusters",
+                "response_text": "I see frames but couldn't find any faces in them.",
+            }
+        # Pick the cluster: if a speaker_label is provided and it looks
+        # like a numeric index (SPEAKER_03 or cluster id 3), use it;
+        # otherwise default to the largest cluster (most frames).
+        chosen = None
+        if speaker_label:
+            import re
+            m = re.search(r"(\d+)", speaker_label)
+            if m:
+                cid = int(m.group(1))
+                chosen = next((c for c in clusters if c.cluster_id == cid), None)
+        if chosen is None:
+            chosen = max(clusters, key=lambda c: len(c.frames))
+        if chosen.centroid is None:
+            return {
+                "error": "no_embedding",
+                "response_text": "I couldn't compute a face embedding for that cluster.",
+            }
+        svc = get_faceprint_service()
+        row, replaced = await svc.enroll(
+            display_name=display_name,
+            embedding=chosen.centroid.astype("float32"),
+            sample_count=len(chosen.frames),
+            source_meeting_id=meeting_id,
+        )
+        action = "updated" if replaced else "enrolled"
+        return {
+            "ok": True,
+            "faceprint_id": row.id,
+            "display_name": display_name,
+            "meeting_id": meeting_id,
+            "cluster_id": chosen.cluster_id,
+            "sample_count": len(chosen.frames),
+            "response_text": f"Got it — {action} {display_name} from {len(chosen.frames)} frames in that meeting.",
+        }
+    except Exception as e:
+        logger.warning("enroll_face_from_meeting_failed", error=str(e))
+        return {
+            "error": str(e),
+            "response_text": "Face enrollment failed.",
+        }
+
+
 async def _summarize_current_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
     """Voice: 'Hey Zero, summarise so far'. Reads companion's active
     meeting_id and routes through meeting_rag_query so the user gets a
@@ -1578,6 +1701,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "meeting_rag_query": _meeting_rag_query,
     "mark_meeting_private": _mark_meeting_private,
     "summarize_current_meeting": _summarize_current_meeting,
+    "enroll_face_from_meeting": _enroll_face_from_meeting,
 }
 
 

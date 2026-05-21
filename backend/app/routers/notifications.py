@@ -31,6 +31,60 @@ async def recent_notifications(limit: int = 20):
     return {"events": await bus.recent(limit=limit)}
 
 
+@router.get("/history")
+async def notifications_history(
+    since_hours: int = 24,
+    type: str | None = None,
+    limit: int = 200,
+):
+    """F-64 — DB-backed history reader. Pulls from notification_events
+    (Enhancement-11 persistence). Filter by event type + lookback hours.
+    Default 24h / 200 events is the dashboard tile shape.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        from sqlalchemy import select
+        from app.db.models import NotificationEventModel  # type: ignore
+        from app.infrastructure.database import get_session
+    except Exception as exc:
+        return {"events": [], "error": str(exc)}
+
+    since_hours = max(1, min(int(since_hours), 24 * 30))
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    stmt = (
+        select(NotificationEventModel)
+        .where(NotificationEventModel.created_at >= cutoff)
+        .order_by(NotificationEventModel.created_at.desc())
+        .limit(max(1, min(int(limit), 1000)))
+    )
+    if type:
+        stmt = stmt.where(NotificationEventModel.type == type)
+    try:
+        async with get_session() as db:
+            rows = (await db.execute(stmt)).scalars().all()
+    except Exception as exc:
+        return {"events": [], "error": str(exc)}
+    events = []
+    by_type: dict[str, int] = {}
+    for row in rows:
+        ev = {
+            "type": row.type,
+            "source": row.source,
+            "ts": row.created_at.astimezone(timezone.utc).isoformat() if row.created_at else None,
+            **(row.payload or {}),
+        }
+        events.append(ev)
+        by_type[row.type] = by_type.get(row.type, 0) + 1
+    return {
+        "events": events,
+        "since_hours": since_hours,
+        "type_filter": type,
+        "by_type": by_type,
+        "count": len(events),
+    }
+
+
 @router.post("/publish")
 async def publish_notification(payload: dict[str, Any] = Body(...)):
     """Manual publish hook. Useful for host_agent / external producers."""

@@ -377,6 +377,64 @@ async def meeting_private_status(meeting_id: str):
     }
 
 
+@router.post("/{meeting_id}/vault-write", status_code=200)
+async def meeting_vault_rerender(meeting_id: str):
+    """F-63 — re-render the meeting markdown into /vault/Meetings/.
+    Useful after the user manually edits the summary or attaches new
+    artifacts. Returns the new file path + whether the meeting was
+    treated as private."""
+    from app.services.meeting_vault_writer import get_meeting_vault_writer
+    from app.services.meeting_privacy_service import get_meeting_privacy_service
+
+    async with get_session() as db:
+        meeting_row = (
+            await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+        ).scalar_one_or_none()
+        if meeting_row is None:
+            raise HTTPException(404, "Meeting not found")
+        summary_row = (
+            await db.execute(
+                select(MeetingSummaryModel)
+                .where(MeetingSummaryModel.meeting_id == meeting_id)
+                .order_by(MeetingSummaryModel.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        segments = (
+            await db.execute(
+                select(MeetingTranscriptSegmentModel)
+                .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+            )
+        ).scalars().all()
+        recording_row = (
+            await db.execute(
+                select(MeetingRecordingModel)
+                .where(MeetingRecordingModel.meeting_id == meeting_id)
+                .order_by(MeetingRecordingModel.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    if summary_row is None:
+        raise HTTPException(409, "Meeting has no summary yet; cannot render to vault")
+    speakers = sorted({s.speaker for s in segments if s.speaker})
+    res = get_meeting_vault_writer().write(
+        meeting_id=meeting_id,
+        title=meeting_row.title or "Untitled meeting",
+        start_time=meeting_row.start_time,
+        end_time=meeting_row.end_time,
+        attendees=list(meeting_row.participants or []),
+        summary_text=summary_row.summary_text or "",
+        key_topics=list(summary_row.key_topics or []),
+        action_items=list(summary_row.action_items or []),
+        decisions=list(summary_row.decisions or []),
+        transcript_segment_count=len(segments),
+        recording_path=getattr(recording_row, "file_path", None) if recording_row else None,
+        speakers=speakers,
+        private=get_meeting_privacy_service().is_private(meeting_id),
+    )
+    return {"meeting_id": meeting_id, **res}
+
+
 def _event_dt_to_datetime(event_dt) -> datetime | None:
     """Pull a tz-aware UTC datetime out of an EventDateTime payload."""
     if event_dt is None:

@@ -174,6 +174,92 @@ class MeetingFollowupService:
     # ------------------------------------------------------------------
     # Pass 1: action items → tasks (F-20)
     # ------------------------------------------------------------------
+    async def _resolve_owner_identity(
+        self, *, meeting_id: str, owner: str
+    ) -> dict[str, Any] | None:
+        """Map an action-item ``owner`` string (probably a first name from
+        the LLM summary) to a known identity. Priority:
+
+            1. voiceprint match — speaker label assigned by enrolled
+               voiceprint in the transcript segments
+            2. faceprint match — speaker label assigned by face cluster
+            3. fall back to a substring match against meeting.participants
+
+        Returns ``{email, source}`` or None if nothing resolves. We don't
+        overwrite the owner string — that stays as the LLM gave it; the
+        ``email`` becomes a separate ``owner_email:`` tag on the task so
+        downstream tooling can pivot on it.
+        """
+        owner_lc = owner.lower().strip()
+        if not owner_lc:
+            return None
+        try:
+            from app.infrastructure.database import get_session
+            from sqlalchemy import select, func
+            from app.db.models import (  # type: ignore
+                MeetingTranscriptSegmentModel,
+                MeetingModel,
+            )
+
+            async with get_session() as db:
+                # Distinct speaker labels seen in this meeting.
+                speakers = (
+                    await db.execute(
+                        select(func.distinct(MeetingTranscriptSegmentModel.speaker))
+                        .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                        .where(MeetingTranscriptSegmentModel.speaker.is_not(None))
+                    )
+                ).scalars().all()
+                # Pull the participant list to enable email match-back.
+                meeting_row = (
+                    await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+                ).scalar_one_or_none()
+        except Exception as exc:
+            logger.debug("owner_resolve_db_failed", error=str(exc))
+            return None
+        if not speakers:
+            return None
+        participants = list(getattr(meeting_row, "participants", None) or []) if meeting_row else []
+
+        def _participant_email(needle: str) -> str | None:
+            n = needle.lower().strip()
+            if not n:
+                return None
+            for p in participants:
+                s = str(p or "").strip()
+                if "<" in s and ">" in s:
+                    s = s[s.find("<") + 1 : s.find(">")].strip()
+                if "@" not in s:
+                    continue
+                local = s.split("@", 1)[0].lower()
+                if n == local or n in local or local in n:
+                    return s
+            return None
+
+        # Speakers labeled by voiceprint or face have human-readable names
+        # (e.g., "Sarah Smith" or "sarah"). Raw diarization labels look
+        # like "SPEAKER_00" / "SPEAKER_01" — skip those.
+        named_speakers = [
+            s for s in speakers
+            if s and not str(s).upper().startswith("SPEAKER_")
+        ]
+        # Voiceprint match path: assume speakers prefixed "vp:" or
+        # carrying email syntax came from voiceprint enroll. Faceprint
+        # match path: speakers in pure name form. We don't have an
+        # explicit source marker today; treat email-shaped or "vp:"
+        # prefixed as voiceprint, everything else as face.
+        for s in named_speakers:
+            sl = str(s).lower()
+            if owner_lc in sl or sl in owner_lc or sl.split()[0] == owner_lc.split()[0]:
+                source = "voiceprint" if (sl.startswith("vp:") or "@" in sl) else "faceprint"
+                email = _participant_email(s) or _participant_email(owner)
+                if email:
+                    return {"email": email, "source": source}
+        email = _participant_email(owner)
+        if email:
+            return {"email": email, "source": "participant_match"}
+        return None
+
     async def _fetch_summary(self, meeting_id: str) -> dict[str, Any] | None:
         """Read MeetingSummaryModel for a meeting; returns None when no
         summary has been written yet (transcription/summary pipeline still
@@ -272,9 +358,30 @@ class MeetingFollowupService:
                         logger.debug("approval_queue_request_failed", error=str(exc))
                         # Fall through to direct create.
 
+                # F-61: enrich the owner with face/voice-named speakers
+                # when the LLM said "John will follow up" and the transcript
+                # has a diarized speaker labelled "John Smith <john@x.com>".
+                # Conflict policy: voiceprint > faceprint > LLM-inferred.
+                owner_email = ""
+                owner_identity_source = "llm"
+                if owner:
+                    try:
+                        resolved = await self._resolve_owner_identity(
+                            meeting_id=meeting_id, owner=owner
+                        )
+                        if resolved:
+                            owner_email = resolved.get("email") or ""
+                            owner_identity_source = resolved.get("source") or "llm"
+                    except Exception as exc:
+                        logger.debug("owner_resolve_failed", error=str(exc))
+
                 tags = ["meeting_followup", f"meeting:{meeting_id}"]
                 if owner:
                     tags.append(f"owner:{owner.lower()}")
+                if owner_email:
+                    tags.append(f"owner_email:{owner_email.lower()}")
+                if owner_identity_source != "llm":
+                    tags.append(f"owner_identity:{owner_identity_source}")
                 due_at = None
                 if item.get("due"):
                     try:

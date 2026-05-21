@@ -21,7 +21,7 @@ import {
   useDeleteFace,
 } from '@/hooks/useIdentitiesApi'
 
-export function IdentitiesPage(): JSX.Element {
+export function IdentitiesPage() {
   const { identities, isLoading, error, refetch } = useIdentities()
   const enrollVoice = useEnrollVoice()
   const enrollFace = useEnrollFace()

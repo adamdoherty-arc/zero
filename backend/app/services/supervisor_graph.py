@@ -215,6 +215,56 @@ async def _bookkeeper_adapter(user_text: str, ctx: dict[str, Any]) -> Supervisor
         )
 
 
+async def _face_enroll_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
+    """F-65 — voice 'Hey Zero, that was Sarah'. Extracts the proposed
+    display name from the trailing tokens and routes to the realtime
+    enroll tool via a synthetic dispatch."""
+    import re
+
+    text = (user_text or "").strip()
+    # Try to extract the name from common phrasings.
+    m = (
+        re.search(r"that (?:was|is)\s+(.+?)$", text, re.IGNORECASE)
+        or re.search(r"(?:label|name|save)\s+(?:speaker[_\s\d]*\s+)?(?:as\s+|that as\s+)?(.+?)$", text, re.IGNORECASE)
+        or re.search(r"enroll\s+(?:the\s+new\s+face|that\s+face)?\s*(?:as\s+)?(.+?)$", text, re.IGNORECASE)
+        or re.search(r"remember this face as\s+(.+?)$", text, re.IGNORECASE)
+    )
+    name = (m.group(1).strip(" .!?") if m else "").strip()
+    name = re.sub(r"^(an?\s+|the\s+)", "", name, flags=re.IGNORECASE).strip()
+    if not name or len(name) < 2:
+        return SupervisorResult(
+            intent="face_enroll",
+            spoken="Who should I save that face as?",
+            tool_calls=[{"adapter": "face_enroll", "ok": False, "reason": "no_name"}],
+        )
+    try:
+        from app.services.reachy_realtime.tools import _enroll_face_from_meeting
+        from app.services.reachy_realtime.common import ToolDependencies
+        from app.services.reachy_realtime.bg_tool_manager import BackgroundToolManager
+
+        deps = ToolDependencies()  # bare deps OK — tool reads companion
+        # policy + workspace directly.
+        result = await _enroll_face_from_meeting(
+            deps, {"display_name": name}, BackgroundToolManager()
+        )
+        spoken = result.get("response_text") or (
+            f"Saved that face as {name}." if result.get("ok") else "Face enrollment didn't work."
+        )
+        return SupervisorResult(
+            intent="face_enroll",
+            spoken=spoken[:500],
+            tool_calls=[{"adapter": "face_enroll", "ok": bool(result.get("ok")), "name": name, "result": result}],
+        )
+    except Exception as e:
+        logger.warning("supervisor_face_enroll_failed", error=str(e))
+        return SupervisorResult(
+            intent="face_enroll",
+            spoken="I couldn't reach the face enrollment service.",
+            tool_calls=[{"adapter": "face_enroll", "ok": False, "error": str(e)}],
+            error=str(e),
+        )
+
+
 async def _adhoc_capture_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
     """F-50 — voice 'Hey Zero, record this' / 'end recording'.
 
@@ -435,6 +485,13 @@ _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
         "record the meeting", "end recording", "stop recording",
         "stop the meeting", "end the meeting", "finish recording", "wrap up",
     )),
+    # F-65: voice face-enrollment. "that was sarah" / "label speaker_01 as
+    # mike" — short phrases the LLM should hand to enroll_face_from_meeting.
+    ("face_enroll", (
+        "that was ", "that is ", "label speaker", "label that as",
+        "enroll the new face", "enroll that face", "name this face",
+        "save that as ", "remember this face as",
+    )),
     # F-45: system_check wins early so "how's everything" doesn't fall
     # into the daily-brief / calendar buckets.
     ("system_check", (
@@ -497,6 +554,7 @@ class SupervisorGraph:
             "meeting_rag": _meeting_rag_adapter,
             "system_check": _system_check_adapter,
             "meeting_capture": _adhoc_capture_adapter,
+            "face_enroll": _face_enroll_adapter,
         }
         self._lg_app: Any = None
         if USE_LANGGRAPH:

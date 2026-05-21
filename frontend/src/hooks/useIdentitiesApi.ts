@@ -75,20 +75,19 @@ export function useIdentities() {
   const upsert = (name: string, patch: Partial<Identity>): void => {
     const key = name.toLowerCase()
     const existing = byName.get(key)
+    const mergedPrimary =
+      (existing?.is_primary ?? false) || (patch.is_primary ?? false)
+    const a = existing?.last_enrolled ?? ''
+    const b = patch.last_enrolled ?? ''
+    const mergedEnrolled = a > b ? a : b
     const next: Identity = {
       display_name: existing?.display_name ?? name,
-      is_primary: existing?.is_primary ?? false,
-      last_enrolled: existing?.last_enrolled ?? '',
       voice: existing?.voice,
       face: existing?.face,
       ...patch,
-      // Keep the truthy is_primary value across both modalities.
-      is_primary: (existing?.is_primary ?? false) || (patch.is_primary ?? false),
-      last_enrolled: (() => {
-        const a = existing?.last_enrolled ?? ''
-        const b = patch.last_enrolled ?? ''
-        return a > b ? a : b
-      })(),
+      // After ...patch so the merged values stay authoritative.
+      is_primary: mergedPrimary,
+      last_enrolled: mergedEnrolled,
     }
     byName.set(key, next)
   }

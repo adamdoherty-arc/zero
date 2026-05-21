@@ -315,6 +315,11 @@ DAILY_SCHEDULE = {
         "description": "Audit meeting pipeline (recording capability, host_agent reachable, transcript backlog, wake-word fired in 24h, notification bus alive) and publish meeting.health.alarm on failures",
         "enabled": True
     },
+    "notification_events_janitor": {
+        "cron": "0 4 * * *",  # 4:00 AM daily
+        "description": "Prune notification_events older than ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS (default 30) so the table doesn't grow unbounded",
+        "enabled": True
+    },
     "reachy_morning_briefing": {
         "cron": "0 8 * * *",  # 8:00 AM daily
         "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
@@ -1449,6 +1454,7 @@ class SchedulerService:
             "meeting_recordings_janitor": self._run_meeting_recordings_janitor,
             "meeting_audio_watchdog": self._run_meeting_audio_watchdog,
             "meeting_pipeline_health": self._run_meeting_pipeline_health,
+            "notification_events_janitor": self._run_notification_events_janitor,
             "reachy_morning_briefing": self._run_reachy_morning_briefing,
             "reachy_evening_journal": self._run_reachy_evening_journal,
             "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
@@ -2283,6 +2289,62 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.warning("meeting_recordings_janitor_failed", error=str(e))
+
+    async def _run_notification_events_janitor(self):
+        """F-64 — prune notification_events older than N days.
+
+        The bus persists every published event (Enhancement-11) so
+        recent() reads survive restarts. Without a janitor the table
+        grows forever. Default retention 30 days; override via
+        ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS. Cap deletions at 5k
+        per run so a runaway backlog doesn't lock the table.
+        """
+        try:
+            import os
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import delete, select, func
+            from app.infrastructure.database import get_session
+            from app.db.models import NotificationEventModel  # type: ignore
+
+            retain_days = max(
+                1, int(os.getenv("ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS", "30"))
+            )
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retain_days)
+            max_per_run = 5000
+
+            async with get_session() as db:
+                old_ids = (
+                    await db.execute(
+                        select(NotificationEventModel.id)
+                        .where(NotificationEventModel.created_at < cutoff)
+                        .limit(max_per_run)
+                    )
+                ).scalars().all()
+                if not old_ids:
+                    logger.debug(
+                        "notification_events_janitor_nothing_to_do",
+                        cutoff=cutoff.isoformat(),
+                    )
+                    return
+                await db.execute(
+                    delete(NotificationEventModel)
+                    .where(NotificationEventModel.id.in_(old_ids))
+                )
+                await db.commit()
+                remaining = (
+                    await db.execute(
+                        select(func.count()).select_from(NotificationEventModel)
+                    )
+                ).scalar_one()
+            logger.info(
+                "notification_events_janitor_done",
+                deleted=len(old_ids),
+                remaining=int(remaining or 0),
+                cutoff=cutoff.isoformat(),
+                retain_days=retain_days,
+            )
+        except Exception as e:
+            logger.warning("notification_events_janitor_failed", error=str(e))
 
     async def _run_meeting_audio_watchdog(self):
         """Detect host_agent / recording state divergence.
