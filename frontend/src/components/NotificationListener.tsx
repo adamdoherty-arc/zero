@@ -67,6 +67,25 @@ export function NotificationListener() {
             })
             return
           }
+          if (type === 'meeting.prep') {
+            const title = String(event.title ?? 'an upcoming meeting')
+            const summary = String(event.summary ?? '')
+            toast({
+              title: `Prep brief — ${title}`,
+              description: summary || 'Tap to view full prep context.',
+            })
+            return
+          }
+          if (type === 'meeting.consent_needed') {
+            const title = String(event.title ?? 'meeting')
+            const reason = String(event.reason ?? '')
+            toast({
+              title: `Confirm recording — ${title}`,
+              description: `Auto-record paused (${reason}). Click record-now if you still want to capture this meeting.`,
+              variant: 'destructive',
+            })
+            return
+          }
           // Generic notice fallback.
           const summary = String(event.summary ?? event.message ?? '')
           if (summary) {

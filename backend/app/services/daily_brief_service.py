@@ -99,6 +99,7 @@ class DailyBriefService:
         sections = await asyncio.gather(
             self._email_section(),
             self._calendar_section(),
+            self._meeting_prep_section(),
             self._company_section(),
             self._finance_section(),
             self._reflection_section(),
@@ -208,6 +209,67 @@ class DailyBriefService:
             return BriefSection(title="Today's calendar", body=str(today)[:1000])
         except Exception as e:
             return BriefSection(title="Today's calendar", error=str(e))
+
+    async def _meeting_prep_section(self) -> BriefSection:
+        """Per-meeting prep brief for events on today's calendar.
+
+        For each event today, compose a one-paragraph "what this is
+        probably about" via meeting_prep_service. The bullets stay short
+        because the brief tile is dense already; full briefs are fetched
+        on demand via POST /api/meetings/{id}/prep-brief.
+        """
+        try:
+            from app.services.calendar_service import get_calendar_service
+            from app.services.meeting_prep_service import build_prep_brief
+            from datetime import datetime as _dt, timedelta as _td
+
+            svc = get_calendar_service()
+            now = _dt.now(timezone.utc)
+            try:
+                events = await svc.list_events(
+                    start_date=now,
+                    end_date=now + _td(hours=18),
+                    limit=8,
+                )
+            except Exception:
+                events = []
+            if not events:
+                return BriefSection(
+                    title="Meeting prep",
+                    body="No meetings scheduled in the next 18 hours.",
+                )
+            bullets: list[str] = []
+            briefed = 0
+            for ev in events:
+                try:
+                    brief = await build_prep_brief(
+                        meeting_id=str(
+                            getattr(ev, "id", None) or getattr(ev, "event_id", None) or ""
+                        ),
+                        calendar_event=ev,
+                    )
+                except Exception as exc:
+                    logger.debug("daily_brief_prep_compose_failed", error=str(exc))
+                    continue
+                if not brief:
+                    continue
+                title = brief.get("title") or "Untitled meeting"
+                summary = brief.get("summary") or ""
+                bullets.append(f"{title} — {summary}")
+                briefed += 1
+                if briefed >= 5:
+                    break
+            return BriefSection(
+                title="Meeting prep",
+                body=(
+                    f"{briefed} upcoming meeting{'s' if briefed != 1 else ''} have prep context."
+                    if briefed
+                    else "Couldn't compose prep briefs."
+                ),
+                bullets=bullets,
+            )
+        except Exception as e:
+            return BriefSection(title="Meeting prep", error=str(e))
 
     async def _company_section(self) -> BriefSection:
         bullets: list[str] = []

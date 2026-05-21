@@ -215,6 +215,55 @@ async def _bookkeeper_adapter(user_text: str, ctx: dict[str, Any]) -> Supervisor
         )
 
 
+async def _meeting_rag_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
+    """Voice → meeting-transcript RAG.
+
+    Powers questions like "what did Sarah say about the budget last week?" or
+    "what did we agree to in the standup yesterday?". Routes through
+    meeting_rag_service.query() which ranks chunks across past transcripts
+    and returns a synthesized answer + sourced excerpts.
+    """
+    try:
+        from app.services.meeting_rag_service import get_meeting_rag_service
+        from app.infrastructure.database import get_session
+
+        svc = get_meeting_rag_service()
+        async with get_session() as db:
+            result = await svc.query(question=user_text, db=db, meeting_id=None, top_k=6)
+        answer = (result.get("answer") or "").strip()
+        sources = result.get("sources") or []
+        if not answer:
+            answer = (
+                "I searched recent meetings but didn't find anything that matches."
+                if not sources
+                else "I found some context but couldn't summarise it just yet."
+            )
+        return SupervisorResult(
+            intent="meeting_rag",
+            spoken=answer[:600],
+            tool_calls=[{
+                "adapter": "meeting_rag",
+                "ok": True,
+                "sources": [
+                    {
+                        "meeting_id": s.get("meeting_id"),
+                        "meeting_title": s.get("meeting_title"),
+                        "speaker": s.get("speaker"),
+                    }
+                    for s in sources[:5]
+                ],
+            }],
+        )
+    except Exception as e:
+        logger.warning("supervisor_meeting_rag_adapter_failed", error=str(e))
+        return SupervisorResult(
+            intent="meeting_rag",
+            spoken="I couldn't search the meeting archive right now.",
+            tool_calls=[{"adapter": "meeting_rag", "ok": False, "error": str(e)}],
+            error=str(e),
+        )
+
+
 async def _brief_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
     try:
         from app.services.daily_brief_service import get_daily_brief_service
@@ -247,6 +296,19 @@ async def _brief_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResul
 _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
     ("daily_brief", (
         "daily brief", "morning brief", "what should i work on", "overnight report",
+    )),
+    # meeting_rag wins over calendar when the question is about transcript
+    # content. "what did" / "what was said" / "summarise the meeting" route
+    # here. Keep before the calendar entry so "what did sarah say in our
+    # meeting?" doesn't get pulled into a calendar lookup.
+    ("meeting_rag", (
+        "what did", "what was said", "what was discussed", "who said",
+        "summarise the meeting", "summarize the meeting", "recap the meeting",
+        "in the meeting", "in our meeting", "in yesterday's meeting",
+        "in the last meeting", "in our last meeting", "in our recent meeting",
+        "in the previous meeting", "last meeting", "previous meeting",
+        "in the standup", "in our standup", "in the call", "in our call",
+        "what was decided", "what did we decide", "what did we agree",
     )),
     ("research", ("research ", "look up", "find out", "investigate", "compare")),
     ("email", ("email", "inbox", "mail", "gmail", "message", "messages")),
@@ -284,6 +346,7 @@ class SupervisorGraph:
             "research": _research_adapter,
             "bookkeeper": _bookkeeper_adapter,
             "daily_brief": _brief_adapter,
+            "meeting_rag": _meeting_rag_adapter,
         }
         self._lg_app: Any = None
         if USE_LANGGRAPH:

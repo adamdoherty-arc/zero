@@ -813,13 +813,33 @@ _SPECS: Dict[str, Dict[str, Any]] = {
     "supervisor_dispatch": {
         "type": "function",
         "name": "supervisor_dispatch",
-        "description": "Hand the user's request to the supervisor agent which routes to the right sub-agent (email, calendar, company, research, bookkeeper, daily brief).",
+        "description": "Hand the user's request to the supervisor agent which routes to the right sub-agent (email, calendar, company, research, bookkeeper, daily brief, meeting RAG).",
         "parameters": {
             "type": "object",
             "properties": {
                 "text": {"type": "string"},
             },
             "required": ["text"],
+        },
+    },
+    "meeting_rag_query": {
+        "type": "function",
+        "name": "meeting_rag_query",
+        "description": "Search the meeting archive (transcripts + summaries) and answer a question about what was said, who said it, or what was agreed. Use for questions like 'what did Sarah say about the budget?' or 'recap yesterday's standup'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "meeting_id": {
+                    "type": "string",
+                    "description": "Optional: restrict the search to a specific meeting id.",
+                },
+                "speaker": {
+                    "type": "string",
+                    "description": "Optional: restrict to a specific diarized speaker label.",
+                },
+            },
+            "required": ["question"],
         },
     },
 }
@@ -1388,6 +1408,57 @@ async def _supervisor_dispatch(deps: ToolDependencies, args: Dict[str, Any], _mg
         return {"error": str(e), "response_text": "Supervisor unavailable."}
 
 
+async def _meeting_rag_query(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """Search past meetings (transcripts + summaries) and answer a question.
+    Powers 'Hey Zero, what did Sarah say last week?' from inside an active
+    realtime turn — does not go through the keyword classifier."""
+    question = str(args.get("question") or "").strip()
+    if not question:
+        return {"error": "missing question", "response_text": "What did you want to know about the meeting?"}
+    meeting_id = args.get("meeting_id")
+    speaker_hint = args.get("speaker")
+    try:
+        from app.services.meeting_rag_service import get_meeting_rag_service
+        from app.infrastructure.database import get_session
+
+        svc = get_meeting_rag_service()
+        async with get_session() as db:
+            result = await svc.query(
+                question=question,
+                db=db,
+                meeting_id=meeting_id,
+                top_k=6,
+            )
+        answer = (result.get("answer") or "").strip()
+        sources = result.get("sources") or []
+        if speaker_hint:
+            sources = [
+                s for s in sources
+                if speaker_hint.lower() in str(s.get("speaker") or "").lower()
+            ]
+        if not answer:
+            answer = (
+                "I searched the meeting archive but couldn't find anything matching that."
+                if not sources
+                else "I found some context but can't summarise it just yet."
+            )
+        return {
+            "response_text": answer,
+            "sources": [
+                {
+                    "meeting_id": s.get("meeting_id"),
+                    "meeting_title": s.get("meeting_title"),
+                    "speaker": s.get("speaker"),
+                    "timestamp": s.get("timestamp"),
+                }
+                for s in sources[:5]
+            ],
+        }
+    except Exception as e:
+        logger.warning("meeting_rag_query_tool_failed", error=str(e))
+        return {"error": str(e), "response_text": "I couldn't reach the meeting archive."}
+
+
 _HANDLERS: Dict[str, ToolHandler] = {
     "move_head": _move_head,
     "dance": _dance,
@@ -1423,6 +1494,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "draft_email": _draft_email,
     "bookkeeping_query": _bookkeeping_query,
     "supervisor_dispatch": _supervisor_dispatch,
+    "meeting_rag_query": _meeting_rag_query,
 }
 
 

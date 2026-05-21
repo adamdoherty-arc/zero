@@ -313,6 +313,36 @@ async def meeting_prep_brief(meeting_id: str):
     return brief
 
 
+@router.post("/{meeting_id}/followup", status_code=200)
+async def meeting_followup_now(meeting_id: str, max_wait_for_summary_s: int = 60):
+    """Run the post-meeting follow-up pipeline: action-items → tasks
+    plus per-attendee follow-up email drafts in email/drafts/pool.
+
+    Normally fires automatically when the auto-record scheduler stops the
+    meeting. This endpoint lets the user re-run or run manually after a
+    quick-meeting recording."""
+    from app.services.meeting_followup_service import (
+        get_meeting_followup_service,
+    )
+
+    return await get_meeting_followup_service().run(
+        meeting_id=meeting_id,
+        max_wait_for_summary_s=max(10, min(int(max_wait_for_summary_s or 60), 600)),
+    )
+
+
+@router.get("/{meeting_id}/followup", status_code=200)
+async def meeting_followup_status(meeting_id: str):
+    """Inspect the per-meeting follow-up ledger (whether action items
+    became tasks, whether follow-up email drafts landed, when it ran)."""
+    from app.services.meeting_followup_service import (
+        get_meeting_followup_service,
+    )
+
+    svc = get_meeting_followup_service()
+    return {"meeting_id": meeting_id, **svc._ledger_get(meeting_id)}
+
+
 def _event_dt_to_datetime(event_dt) -> datetime | None:
     """Pull a tz-aware UTC datetime out of an EventDateTime payload."""
     if event_dt is None:

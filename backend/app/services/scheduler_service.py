@@ -295,6 +295,16 @@ DAILY_SCHEDULE = {
         "description": "Auto-stop a recording when its calendar event ends",
         "enabled": True
     },
+    "reachy_meeting_prep_brief": {
+        "cron": "* * * * *",  # Every minute — fires at T-5min once per event
+        "description": "Compose and publish a prep brief for each event ~5 minutes before it starts",
+        "enabled": True
+    },
+    "meeting_recordings_janitor": {
+        "cron": "30 3 * * *",  # 3:30 AM daily — quiet hours
+        "description": "Delete meeting WAV files older than N days once the meeting has a transcript + summary",
+        "enabled": True
+    },
     "reachy_morning_briefing": {
         "cron": "0 8 * * *",  # 8:00 AM daily
         "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
@@ -1425,6 +1435,8 @@ class SchedulerService:
             "reachy_email_nudge": self._run_reachy_email_nudge,
             "reachy_meeting_auto_record": self._run_reachy_meeting_auto_record,
             "reachy_meeting_auto_stop": self._run_reachy_meeting_auto_stop,
+            "reachy_meeting_prep_brief": self._run_reachy_meeting_prep_brief,
+            "meeting_recordings_janitor": self._run_meeting_recordings_janitor,
             "reachy_morning_briefing": self._run_reachy_morning_briefing,
             "reachy_evening_journal": self._run_reachy_evening_journal,
             "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
@@ -2110,6 +2122,157 @@ Have a great evening!"""
             if announced:
                 logger.info("reachy_email_nudge_announced", email_id=announced)
 
+    async def _run_meeting_recordings_janitor(self):
+        """Delete WAV files for meetings older than ZERO_MEETING_RECORDING_RETENTION_DAYS
+        (default 30) IFF the meeting has a transcript + summary on file.
+
+        Runs at 3:30 AM in quiet hours. Skips active recordings, skips
+        anything without a confirmed summary so we never delete an
+        un-transcribed source file. Cap at 200 files per run so a runaway
+        backlog doesn't stall the scheduler.
+        """
+        try:
+            import os
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select
+            from app.infrastructure.database import get_session
+            from app.db.models import (  # type: ignore
+                MeetingRecordingModel,
+                MeetingSummaryModel,
+                MeetingModel,
+            )
+
+            retain_days = max(7, int(os.getenv("ZERO_MEETING_RECORDING_RETENTION_DAYS", "30")))
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retain_days)
+            max_per_run = 200
+            deleted = 0
+            kept = 0
+
+            async with get_session() as db:
+                rows = (
+                    await db.execute(
+                        select(MeetingRecordingModel, MeetingSummaryModel.id)
+                        .join(
+                            MeetingSummaryModel,
+                            MeetingSummaryModel.meeting_id == MeetingRecordingModel.meeting_id,
+                        )
+                        .join(MeetingModel, MeetingModel.id == MeetingRecordingModel.meeting_id)
+                        .where(MeetingRecordingModel.created_at < cutoff)
+                        .where(MeetingModel.status != "recording")
+                        .limit(max_per_run)
+                    )
+                ).all()
+            if not rows:
+                logger.debug("meeting_recordings_janitor_nothing_to_do", cutoff=cutoff.isoformat())
+                return
+            for recording, _summary_id in rows:
+                fp = recording.file_path
+                try:
+                    if fp and os.path.isfile(fp):
+                        os.remove(fp)
+                        deleted += 1
+                    else:
+                        kept += 1
+                except Exception as exc:
+                    kept += 1
+                    logger.debug(
+                        "meeting_recordings_janitor_delete_failed",
+                        path=fp,
+                        error=str(exc),
+                    )
+            logger.info(
+                "meeting_recordings_janitor_done",
+                deleted=deleted,
+                kept=kept,
+                cutoff=cutoff.isoformat(),
+                retain_days=retain_days,
+            )
+        except Exception as e:
+            logger.warning("meeting_recordings_janitor_failed", error=str(e))
+
+    async def _run_reachy_meeting_prep_brief(self):
+        """Fire a per-event prep brief ~5 minutes before each calendar event.
+
+        Cron is every minute so we don't miss the T-5 window; the prep
+        service's is_due_for_brief() returns true only inside the 2-minute
+        window centered at T-5 so each event fires exactly once across
+        cron ticks. We dedupe per event_id via self._reachy_prep_briefed
+        with a 1-hour TTL.
+        """
+        import time as _time
+
+        try:
+            from app.services.calendar_service import get_calendar_service
+            from app.services.meeting_prep_service import build_prep_brief, is_due_for_brief
+            from app.services.notification_bus import get_notification_bus
+            from datetime import datetime, timedelta, timezone
+
+            svc = get_calendar_service()
+            now = datetime.now(tz=timezone.utc)
+            events = await svc.list_events(
+                start_date=now,
+                end_date=now + timedelta(minutes=10),
+                limit=10,
+            )
+        except Exception as exc:
+            logger.debug("reachy_meeting_prep_brief_skipped", error=str(exc))
+            return
+
+        if not events:
+            return
+
+        now_s = _time.time()
+        if not hasattr(self, "_reachy_prep_briefed"):
+            self._reachy_prep_briefed: dict[str, float] = {}
+        # Drop old entries (1h TTL).
+        self._reachy_prep_briefed = {
+            k: v for k, v in self._reachy_prep_briefed.items() if now_s - v < 3600
+        }
+
+        for ev in events:
+            event_id = str(
+                getattr(ev, "id", None) or getattr(ev, "event_id", None) or ""
+            )
+            if not event_id or event_id in self._reachy_prep_briefed:
+                continue
+            start = getattr(ev, "start_time", None) or getattr(ev, "start", None)
+            if not start:
+                continue
+            try:
+                if isinstance(start, str):
+                    from datetime import datetime as _dt
+                    start_dt = _dt.fromisoformat(start.replace("Z", "+00:00"))
+                else:
+                    start_dt = start
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+            if not is_due_for_brief(start_dt=start_dt, now=datetime.now(timezone.utc)):
+                continue
+            try:
+                brief = await build_prep_brief(meeting_id=event_id, calendar_event=ev)
+                await get_notification_bus().publish({
+                    "type": "meeting.prep",
+                    "event_id": event_id,
+                    "title": brief.get("title"),
+                    "starts_at": start_dt.isoformat(),
+                    "summary": brief.get("summary"),
+                    "markdown": brief.get("markdown"),
+                })
+                self._reachy_prep_briefed[event_id] = now_s
+                logger.info(
+                    "reachy_meeting_prep_brief_fired",
+                    event_id=event_id,
+                    title=brief.get("title"),
+                )
+            except Exception as exc:
+                logger.debug(
+                    "reachy_meeting_prep_brief_compose_failed",
+                    event_id=event_id,
+                    error=str(exc),
+                )
+
     async def _run_reachy_meeting_auto_record(self):
         """Start a recording for any flagged meeting whose start time just hit.
 
@@ -2360,6 +2523,24 @@ Have a great evening!"""
                             })
                         except Exception as exc:
                             logger.debug("notification_publish_skip", error=str(exc))
+                        # F-20 + F-21: close the loop. After the meeting
+                        # is captured + summarized, kick off (a) action-
+                        # items → tasks and (b) follow-up email drafts in
+                        # the background so the user has them ready by
+                        # the time the summary email lands.
+                        try:
+                            from app.services.meeting_followup_service import (
+                                get_meeting_followup_service,
+                            )
+                            import asyncio as _asyncio
+
+                            _asyncio.create_task(
+                                get_meeting_followup_service().run(
+                                    meeting_id=entry["meeting_id"]
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("meeting_followup_kickoff_skip", error=str(exc))
                 except Exception as e:
                     logger.warning(
                         "reachy_meeting_auto_stop_failed",
