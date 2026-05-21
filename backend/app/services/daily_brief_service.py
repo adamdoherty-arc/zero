@@ -100,6 +100,7 @@ class DailyBriefService:
             self._email_section(),
             self._calendar_section(),
             self._meeting_prep_section(),
+            self._conflict_section(),
             self._company_section(),
             self._finance_section(),
             self._reflection_section(),
@@ -209,6 +210,73 @@ class DailyBriefService:
             return BriefSection(title="Today's calendar", body=str(today)[:1000])
         except Exception as e:
             return BriefSection(title="Today's calendar", error=str(e))
+
+    async def _conflict_section(self) -> BriefSection:
+        """F-72 — surface overlapping calendar events scheduled in the
+        next 24 hours so the user can decline before T-0."""
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+
+            from app.services.calendar_service import get_calendar_service
+
+            svc = get_calendar_service()
+            now = _dt.now(tz=timezone.utc)
+            events = await svc.list_events(
+                start_date=now,
+                end_date=now + _td(hours=24),
+                limit=40,
+            )
+        except Exception as e:
+            return BriefSection(title="Conflict alert", error=str(e))
+
+        def _dt_from(val: Any) -> Optional[datetime]:
+            if val is None:
+                return None
+            try:
+                if isinstance(val, str):
+                    return datetime.fromisoformat(val.replace("Z", "+00:00"))
+                if isinstance(val, datetime):
+                    return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+            return None
+
+        items: list[dict[str, Any]] = []
+        for ev in events:
+            start = _dt_from(getattr(ev, "start_time", None) or getattr(ev, "start", None))
+            end = _dt_from(getattr(ev, "end_time", None) or getattr(ev, "end", None))
+            if start is None or end is None:
+                continue
+            items.append({
+                "title": str(getattr(ev, "summary", None) or getattr(ev, "title", None) or "Untitled"),
+                "start": start,
+                "end": end,
+            })
+        items.sort(key=lambda e: e["start"])
+
+        bullets: list[str] = []
+        for i, a in enumerate(items):
+            for b in items[i + 1:]:
+                if b["start"] >= a["end"]:
+                    continue
+                bullets.append(
+                    f"{a['start'].strftime('%H:%M')} {a['title']} ⟷ {b['start'].strftime('%H:%M')} {b['title']}"
+                )
+                if len(bullets) >= 5:
+                    break
+            if len(bullets) >= 5:
+                break
+
+        if not bullets:
+            return BriefSection(
+                title="Conflict alert",
+                body="No overlapping meetings in the next 24 hours.",
+            )
+        return BriefSection(
+            title="Conflict alert",
+            body=f"{len(bullets)} overlap{'s' if len(bullets) != 1 else ''} in the next 24 hours — see the steward to decline one.",
+            bullets=bullets,
+        )
 
     async def _meeting_prep_section(self) -> BriefSection:
         """Per-meeting prep brief for events on today's calendar.

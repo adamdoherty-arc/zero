@@ -56,6 +56,7 @@ except Exception:
 
 from audio_capture import (
     AudioCapture,
+    MicCaptureError,
     list_audio_devices,
     find_default_mic_index,
     preferred_mic_indices,
@@ -303,6 +304,14 @@ async def lifespan(app: FastAPI):
     global _pool, _wake_loop, _main_loop, _wake_start_task
     _main_loop = asyncio.get_running_loop()
 
+    # Enhancement-09: load any leftover state from the previous run and log
+    # warnings about orphaned recordings before doing anything else.
+    try:
+        from state import log_startup_recovery
+        log_startup_recovery()
+    except Exception as e:
+        logger.warning("host_agent_state_load_failed", error=str(e))
+
     async def _db_startup_background() -> None:
         global _pool
         try:
@@ -456,6 +465,51 @@ class StartRecordingRequest(BaseModel):
     source: str = "mic"  # default "mic" (Reachy-only); override to "mixed"/"system"
     mic_device_index: Optional[int] = None
     system_device_index: Optional[int] = None
+    # Feature-52: when true, host_agent saves a JPEG to
+    # workspace/meetings/{id}/frames/{ts}.jpg every 1s during the recording.
+    # The pipeline's face match step picks these up after stop.
+    camera_capture: bool = False
+    camera_capture_fps: float = 1.0
+
+
+# Module-level camera-capture loop handle so /record/stop can cancel it.
+_camera_capture_task: Optional["asyncio.Task"] = None
+_camera_capture_meeting_id: Optional[str] = None
+
+
+async def _camera_capture_loop(meeting_id: str, fps: float) -> None:
+    """Save JPEG frames to workspace/meetings/{id}/frames/ at the given fps.
+
+    Uses the existing CameraWorker singleton; non-fatal if the camera is
+    unavailable. The recording continues without frames (face match step
+    will just produce 0 face clusters).
+    """
+    frames_dir = RECORDINGS_DIR.parent / "meetings" / meeting_id / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    interval = max(0.2, 1.0 / max(0.1, fps))
+    worker = get_camera_worker()
+    try:
+        worker.ensure_started()
+    except Exception as e:
+        logger.warning("camera_capture_start_failed", meeting_id=meeting_id, error=str(e))
+        return
+    logger.info("camera_capture_loop_started", meeting_id=meeting_id, fps=fps, dir=str(frames_dir))
+    saved = 0
+    try:
+        while True:
+            try:
+                jpeg = worker.latest_jpeg(wait_s=1.0)
+            except Exception as e:
+                logger.debug("camera_capture_frame_skip", error=str(e))
+                jpeg = None
+            if jpeg:
+                ts_ms = int(time.time() * 1000)
+                (frames_dir / f"{ts_ms}.jpg").write_bytes(jpeg)
+                saved += 1
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        logger.info("camera_capture_loop_stopped", meeting_id=meeting_id, frames_saved=saved)
+        raise
 
 
 @app.get("/health")
@@ -470,6 +524,20 @@ async def health():
         "recordings_dir": str(RECORDINGS_DIR),
         "wake": _wake_loop.status() if _wake_loop else _wake_unavailable_status(),
     }
+
+
+@app.get("/state")
+async def state_snapshot():
+    """Enhancement-09 — return the persisted host_agent state (active
+    recording / wake mode / last heartbeat). Read-only; zero-api's
+    meeting-steward status aggregator polls this so the dashboard sees
+    crash-survival info."""
+    try:
+        from state import get_state_store
+
+        return {"ok": True, "state": get_state_store().snapshot()}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
@@ -730,12 +798,22 @@ async def wake_set_mode(request: WakeModeRequest):
 
     if requested == "off":
         _wake_mode_actual = "off"
+        try:
+            from state import get_state_store
+            get_state_store().update({"wake_mode": "off"})
+        except Exception:
+            pass
         return {"mode": "off", "running": False}
 
     mic_idx = await asyncio.to_thread(find_default_mic_index, PREFERRED_MIC)
     _wake_loop = _build_wake_loop(requested, mic_idx)
     await asyncio.to_thread(_wake_loop.start)
     _wake_mode_actual = requested
+    try:
+        from state import get_state_store
+        get_state_store().update({"wake_mode": _wake_mode_actual})
+    except Exception:
+        pass
     return {"mode": _wake_mode_actual, **_wake_loop.status()}
 
 
@@ -1430,23 +1508,48 @@ async def record_status():
     }
 
 
+def _reachy_mic_fallback_chain(primary: int | None) -> list[int]:
+    """Ordered list of mic device indices to try when /record/start fails.
+
+    Picks Reachy USB mics from the device enumeration and orders them
+    DirectSound > WASAPI > WDM-KS > MME. DirectSound goes first as the
+    fallback because Windows lets multiple processes share a DirectSound
+    handle, where WASAPI/WDM-KS often fight the wake-word loop. MME is
+    last because it captures at low gain.
+    """
+    devices = list_audio_devices().get("mic", [])
+    reachy = [d for d in devices if d.get("is_reachy")]
+    api_priority = {
+        "windows directsound": 0,
+        "windows wasapi": 1,
+        "windows wdm-ks": 2,
+        "mme": 3,
+    }
+    reachy.sort(key=lambda d: api_priority.get(str(d.get("host_api", "")).lower(), 99))
+    chain: list[int] = []
+    if primary is not None:
+        chain.append(primary)
+    for d in reachy:
+        idx = int(d["index"])
+        if idx not in chain:
+            chain.append(idx)
+    return chain
+
+
 @app.post("/record/start")
 async def record_start(request: StartRecordingRequest):
-    global _active_meeting_id
-    capture = _get_capture(
-        mic_device_index=request.mic_device_index,
-        system_device_index=request.system_device_index,
-    )
-    if capture.is_recording:
+    global _active_meeting_id, _capture
+    if _capture is not None and _capture.is_recording:
         raise HTTPException(409, "Already recording")
 
     pool = await _db()
     meeting_id = request.meeting_id or uuid_mod.uuid4().hex
     title = request.title or f"Recording {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     start_time = datetime.now(timezone.utc)
+    meeting_was_pre_existing = bool(request.meeting_id)
 
     async with pool.acquire() as conn:
-        if request.meeting_id:
+        if meeting_was_pre_existing:
             existing = await conn.fetchrow(
                 "SELECT id FROM meetings WHERE id = $1",
                 request.meeting_id,
@@ -1476,7 +1579,72 @@ async def record_start(request: StartRecordingRequest):
             recording_id, meeting_id, str(output_path), SAMPLE_RATE, request.source,
         )
 
-    capture.start(output_path, source=request.source)
+    # Try each candidate device. Hard-surface the failure (HTTP 502) only
+    # after the entire chain is exhausted; before that, the next iteration
+    # is the recovery path.
+    capture = None
+    chosen_idx: int | None = None
+    last_err: Exception | None = None
+    chain = _reachy_mic_fallback_chain(request.mic_device_index) if request.source != "system" else [request.mic_device_index]
+    if not chain:
+        chain = [request.mic_device_index]
+    for cand_idx in chain:
+        capture = _get_capture(
+            mic_device_index=cand_idx,
+            system_device_index=request.system_device_index,
+        )
+        try:
+            capture.start(output_path, source=request.source)
+        except MicCaptureError as e:
+            last_err = e
+            logger.warning(
+                "record_start_device_failed",
+                device_index=cand_idx,
+                error=str(e),
+                next_candidates=[i for i in chain[chain.index(cand_idx) + 1:]],
+            )
+            _capture = None  # force _get_capture to build a fresh AudioCapture next loop
+            continue
+        # Probe ~1.5s to confirm the stream is actually pulling frames.
+        # Silent room is fine -- we check duration_seconds, not loudness.
+        await asyncio.sleep(1.5)
+        if capture.duration_seconds < 1.0 and request.source == "mic":
+            logger.warning(
+                "record_start_device_silent",
+                device_index=cand_idx,
+                duration_after_probe=capture.duration_seconds,
+            )
+            try:
+                capture.stop()
+            except Exception:
+                pass
+            last_err = MicCaptureError(
+                f"mic device {cand_idx} opened but produced no samples in 1.5s probe",
+                device_index=cand_idx,
+            )
+            _capture = None
+            continue
+        chosen_idx = cand_idx
+        break
+
+    if chosen_idx is None:
+        # All candidates exhausted -- roll back the DB rows we wrote at top.
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM meeting_recordings WHERE id = $1",
+                recording_id,
+            )
+            if not meeting_was_pre_existing:
+                await conn.execute("DELETE FROM meetings WHERE id = $1", meeting_id)
+            else:
+                await conn.execute(
+                    "UPDATE meetings SET status = 'scheduled' WHERE id = $1",
+                    request.meeting_id,
+                )
+        raise HTTPException(
+            502,
+            f"All mic devices failed to capture audio. Last error: {last_err}",
+        )
 
     # Persist device name once capture has reported it.
     if capture.mic_device_name:
@@ -1488,6 +1656,25 @@ async def record_start(request: StartRecordingRequest):
 
     _active_meeting_id = meeting_id
 
+    # Enhancement-09: persist that a recording is in flight so a host_agent
+    # crash mid-recording is detectable on next startup.
+    try:
+        from state import get_state_store
+        get_state_store().update({
+            "active_recording": {
+                "meeting_id": meeting_id,
+                "recording_id": recording_id,
+                "mic_device_index": chosen_idx,
+                "mic_device_name": capture.mic_device_name,
+                "file_path": str(output_path),
+                "started_at": start_time.isoformat(),
+            },
+            # Clear the recovered flag so a subsequent crash gets flagged.
+            "recording_recovered": False,
+        })
+    except Exception as e:
+        logger.debug("host_agent_state_save_failed", error=str(e))
+
     # Spin up live Whisper on the audio ring buffer — subscribers on
     # /ws/meeting-live-transcript get segment events as they arrive.
     try:
@@ -1498,11 +1685,23 @@ async def record_start(request: StartRecordingRequest):
     if TTS_CONFIRMATIONS:
         asyncio.create_task(_reachy_say_quiet("Recording started"))
 
+    # Feature-52: optional camera frame capture during the meeting.
+    global _camera_capture_task, _camera_capture_meeting_id
+    if request.camera_capture:
+        if _camera_capture_task is not None and not _camera_capture_task.done():
+            _camera_capture_task.cancel()
+        _camera_capture_meeting_id = meeting_id
+        _camera_capture_task = asyncio.create_task(
+            _camera_capture_loop(meeting_id, request.camera_capture_fps),
+            name=f"camera_capture_{meeting_id}",
+        )
+
     return {
         "meeting_id": meeting_id,
         "recording_id": recording_id,
         "file_path": str(output_path),
         "mic_device_name": capture.mic_device_name,
+        "camera_capture": request.camera_capture,
     }
 
 
@@ -1512,6 +1711,25 @@ async def record_stop():
     capture = _get_capture()
     if not capture.is_recording:
         raise HTTPException(400, "No active recording")
+
+    # Enhancement-09: clear the active-recording marker as the very first
+    # thing so a crash during stop's teardown doesn't leave a stale entry.
+    try:
+        from state import get_state_store
+        get_state_store().clear("active_recording")
+    except Exception as e:
+        logger.debug("host_agent_state_clear_failed", error=str(e))
+
+    # Feature-52: stop the camera frame loop if it was active.
+    global _camera_capture_task, _camera_capture_meeting_id
+    if _camera_capture_task is not None and not _camera_capture_task.done():
+        _camera_capture_task.cancel()
+        try:
+            await asyncio.wait_for(_camera_capture_task, timeout=3.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        _camera_capture_task = None
+        _camera_capture_meeting_id = None
 
     # Stop live Whisper before audio tears down — avoids a race where the
     # worker reads from a half-released ring buffer.
@@ -1805,6 +2023,8 @@ class SpeakerStartRequest(BaseModel):
 
 @app.post("/speaker/start")
 async def speaker_start(req: SpeakerStartRequest):
+    if _reachy_speaker_muted():
+        raise HTTPException(503, "Reachy speaker muted via ZERO_REACHY_SPEAKER_MUTE")
     global _speaker_stream
     async with _speaker_lock:
         if _speaker_matches(_speaker_stream, rate=req.rate, device_index=req.device_index):
@@ -2005,8 +2225,22 @@ async def speaker_stream_ws(ws: WebSocket):
 # Reachy TTS (fire-and-forget)
 # ---------------------------------------------------------------------------
 
+def _reachy_speaker_muted() -> bool:
+    """True when ZERO_REACHY_SPEAKER_MUTE is set. Feature-54.
+
+    Used by Reachy AEC self-loop testing: muting the speaker lets the
+    pipeline transcribe room audio without Reachy's echo-cancelling
+    nulling its own output from the mic capture.
+    """
+    val = os.getenv("ZERO_REACHY_SPEAKER_MUTE", "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
+
+
 async def _reachy_say_quiet(text: str) -> None:
     """Synth via edge-tts and play on the Reachy speaker. Never raises."""
+    if _reachy_speaker_muted():
+        logger.debug("reachy_speaker_muted_skip_say", text_preview=text[:40])
+        return
     try:
         wav_bytes = await _tts_synthesize(text)
     except Exception as e:

@@ -51,7 +51,7 @@ async def meeting_steward_status() -> dict[str, Any]:
         out["companion"] = {"error": str(exc)}
         out["issues"].append({"id": "companion", "detail": str(exc)})
 
-    # host_agent /health
+    # host_agent /health + Enhancement-09 /state snapshot
     try:
         import httpx
 
@@ -59,12 +59,31 @@ async def meeting_steward_status() -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=2.0) as c:
             r = await c.get(f"{host_url}/health")
             data = r.json() if r.status_code < 400 else {}
-            out["host_agent"] = {
+            host_agent_block: dict[str, Any] = {
                 "ok": bool(data.get("ok")),
                 "wake_mode": data.get("wake", {}).get("mode"),
                 "recordings_dir": data.get("recordings_dir"),
                 "url": host_url,
             }
+            # Pull persisted state if /state is exposed (Enhancement-09).
+            try:
+                s = await c.get(f"{host_url}/state")
+                if s.status_code < 400:
+                    sdata = s.json() or {}
+                    host_agent_block["state"] = sdata.get("state") or {}
+                    active = (host_agent_block["state"] or {}).get("active_recording")
+                    if active:
+                        out["issues"].append({
+                            "id": "host_agent_active_recording",
+                            "detail": (
+                                f"host_agent still thinks meeting "
+                                f"{active.get('meeting_id')} is recording — may be a "
+                                "crashed capture from a prior boot."
+                            ),
+                        })
+            except Exception:
+                pass
+            out["host_agent"] = host_agent_block
             if not data.get("ok"):
                 out["issues"].append({"id": "host_agent", "detail": f"status={r.status_code}"})
     except Exception as exc:
@@ -232,6 +251,120 @@ async def meeting_steward_status() -> dict[str, Any]:
     if out["issues"]:
         out["ok"] = False
     return out
+
+
+@router.get("/weekly-analytics")
+async def weekly_analytics() -> dict[str, Any]:
+    """F-73 — week-over-week meeting analytics for the dashboard tile.
+
+    Returns counts + minutes + top attendees + action-item completion
+    rate for this week and last week. Reads from MeetingModel +
+    meeting_followup ledger + TaskModel tagged meeting_followup. No new
+    DB tables; everything is computed on demand.
+    """
+    from sqlalchemy import select, func
+    from app.infrastructure.database import get_session
+    from app.db.models import MeetingModel, TaskModel  # type: ignore
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=7)
+    prev_week_start = now - timedelta(days=14)
+
+    async def _week_stats(start: datetime, end: datetime) -> dict[str, Any]:
+        async with get_session() as db:
+            count = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(MeetingModel)
+                    .where(MeetingModel.start_time >= start)
+                    .where(MeetingModel.start_time < end)
+                )
+            ).scalar_one()
+            rows = (
+                await db.execute(
+                    select(
+                        MeetingModel.duration_seconds,
+                        MeetingModel.participants,
+                    )
+                    .where(MeetingModel.start_time >= start)
+                    .where(MeetingModel.start_time < end)
+                )
+            ).all()
+        total_seconds = 0
+        attendee_tally: dict[str, int] = {}
+        for dur, parts in rows:
+            if dur:
+                total_seconds += int(dur)
+            for p in (parts or []):
+                s = str(p or "").strip()
+                if not s:
+                    continue
+                if "<" in s and ">" in s:
+                    s = s[s.find("<") + 1 : s.find(">")].strip()
+                attendee_tally[s] = attendee_tally.get(s, 0) + 1
+        top_attendees = sorted(
+            attendee_tally.items(), key=lambda kv: kv[1], reverse=True
+        )[:5]
+        return {
+            "count": int(count or 0),
+            "minutes": int(total_seconds // 60),
+            "top_attendees": [{"name": n, "meetings": k} for n, k in top_attendees],
+        }
+
+    this_week = await _week_stats(week_start, now)
+    prev_week = await _week_stats(prev_week_start, week_start)
+
+    # Action-item completion rate this week.
+    completion: dict[str, Any] = {}
+    try:
+        from sqlalchemy import or_
+
+        async with get_session() as db:
+            total = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(TaskModel)
+                    .where(
+                        or_(
+                            TaskModel.source_reference.like("meeting:%"),
+                            TaskModel.tags.contains(["meeting_followup"]),
+                        )
+                    )
+                    .where(TaskModel.created_at >= week_start)
+                )
+            ).scalar_one()
+            done = (
+                await db.execute(
+                    select(func.count())
+                    .select_from(TaskModel)
+                    .where(
+                        or_(
+                            TaskModel.source_reference.like("meeting:%"),
+                            TaskModel.tags.contains(["meeting_followup"]),
+                        )
+                    )
+                    .where(TaskModel.created_at >= week_start)
+                    .where(TaskModel.status.in_(["DONE", "completed"]))
+                )
+            ).scalar_one()
+    except Exception as exc:
+        total = 0
+        done = 0
+        completion["error"] = str(exc)
+    completion.update({
+        "total": int(total or 0),
+        "done": int(done or 0),
+        "ratio": round((done / total) if total else 0.0, 3),
+    })
+
+    return {
+        "checked_at": now.isoformat(),
+        "this_week": this_week,
+        "previous_week": prev_week,
+        "delta_count": this_week["count"] - prev_week["count"],
+        "delta_minutes": this_week["minutes"] - prev_week["minutes"],
+        "action_item_completion": completion,
+    }
 
 
 @router.get("/janitor/last")

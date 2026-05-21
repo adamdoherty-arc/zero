@@ -229,16 +229,32 @@ export function useRetranscribe() {
 }
 
 // ---- Search ----
-export function useMeetingSearch(query: string, type?: string) {
+export function useMeetingSearch(query: string, type?: string, speaker?: string) {
   const params = new URLSearchParams()
   if (query) params.set('q', query)
   if (type) params.set('search_type', type)
+  if (speaker) params.set('speaker', speaker)
   const qs = params.toString()
 
   return useQuery({
-    queryKey: meetingKeys.search(query, type),
+    queryKey: [...meetingKeys.search(query, type), speaker ?? null],
     queryFn: () => fetchApi<MeetingSearchResponse>(`/meeting-search/?${qs}`),
     enabled: query.length > 0,
+  })
+}
+
+// ---- F-62 Speakers across recent meetings ----
+export interface SpeakerHit { speaker: string; segments: number }
+export interface SpeakersResponse {
+  named: SpeakerHit[]
+  anonymous: SpeakerHit[]
+  since_days: number
+}
+export function useMeetingSearchSpeakers(days = 90) {
+  return useQuery({
+    queryKey: ['meeting-search', 'speakers', days],
+    queryFn: () => fetchApi<SpeakersResponse>(`/meeting-search/speakers?days=${days}`),
+    staleTime: 60000,
   })
 }
 

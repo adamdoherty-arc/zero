@@ -8,6 +8,7 @@ import { TaskSubmitForm } from '@/components/agent/TaskSubmitForm'
 import { TaskHistory } from '@/components/agent/TaskHistory'
 import { ReachyCameraViewer } from '@/components/reachy/ReachyCameraViewer'
 import { DailyBrief } from '@/components/DailyBrief'
+import { MeetingAnalyticsTile } from '@/components/meetings/MeetingAnalyticsTile'
 
 function SystemStatusCard() {
   const { data: health } = useHealthReady()
@@ -72,6 +73,11 @@ export function DashboardPage() {
       {/* Zero Daily Brief — composed by daily_brief_service at 7am */}
       <div className="mb-8">
         <DailyBrief />
+      </div>
+
+      {/* F-73 Meeting analytics — week-over-week counts + completion rate */}
+      <div className="mb-8">
+        <MeetingAnalyticsTile />
       </div>
 
       {/* Daily Briefing Card */}

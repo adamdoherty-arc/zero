@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, Mic } from 'lucide-react'
+import { ArrowLeft, Download, Mic, FileText } from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -113,6 +114,34 @@ export function MeetingDetailPage() {
           >
             <Mic className="h-4 w-4 mr-1" />
             Speakers
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                const res = await fetch(`/api/meetings/${meetingId}/vault-write`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+                })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data?.detail || `${res.status}`)
+                toast({
+                  title: data.private ? 'Private stub written' : 'Vault refreshed',
+                  description: data.path ? `Saved to ${data.path}` : 'Re-rendered the meeting markdown.',
+                })
+              } catch (e) {
+                toast({
+                  title: 'Vault write failed',
+                  description: String(e),
+                  variant: 'destructive',
+                })
+              }
+            }}
+            title="Re-render the meeting markdown to /vault/Meetings/<YYYY>/<MM>/"
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            Regenerate vault
           </Button>
           <a href={`/api/meetings/${meetingId}/export`} download>
             <Button variant="outline" size="sm">

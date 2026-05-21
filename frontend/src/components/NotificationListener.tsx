@@ -104,6 +104,16 @@ export function NotificationListener() {
             })
             return
           }
+          if (type === 'meeting.conflict.preflight') {
+            const evs = (event.events as Array<{title: string; start: string}>) || []
+            const titles = evs.map((e) => e.title).slice(0, 2).join(' ⟷ ')
+            const suggested = String(event.suggested_decline_title ?? '')
+            toast({
+              title: `Calendar conflict ahead`,
+              description: `${titles}. Suggest declining: ${suggested || 'see calendar'}.`,
+            })
+            return
+          }
           if (type === 'meeting.health.alarm') {
             const issues = (event.issues as Array<{id: string; detail: string}>) || []
             toast({

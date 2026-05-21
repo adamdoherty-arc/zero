@@ -862,6 +862,20 @@ _SPECS: Dict[str, Dict[str, Any]] = {
         "description": "Summarise the meeting that is recording RIGHT NOW (uses companion policy.meeting_active_id). Use when the user asks 'summarise so far', 'recap so far', or 'what have we covered'.",
         "parameters": {"type": "object", "properties": {}},
     },
+    "regenerate_summary": {
+        "type": "function",
+        "name": "regenerate_summary",
+        "description": "Re-run summarization on the active or most-recent meeting and re-render its vault markdown. Use when the user says 'redo the summary', 'try the summary again', 'make a better summary', or 'rebuild the recap'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {
+                    "type": "string",
+                    "description": "Optional. Defaults to companion policy.meeting_active_id or the most recent completed meeting.",
+                },
+            },
+        },
+    },
     "enroll_face_from_meeting": {
         "type": "function",
         "name": "enroll_face_from_meeting",
@@ -1483,6 +1497,151 @@ async def _mark_meeting_private(deps: ToolDependencies, args: Dict[str, Any], _m
         }
 
 
+async def _regenerate_summary(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """Voice 'Hey Zero, redo the summary'. Re-runs meeting_summary_service
+    on the meeting's stored transcript and rewrites the vault markdown."""
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    if not meeting_id:
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            meeting_id = (
+                get_reachy_companion_service().get_policy().meeting_active_id or ""
+            )
+        except Exception:
+            meeting_id = ""
+    if not meeting_id:
+        # Fall back to the most-recent meeting that has transcript segments.
+        try:
+            from sqlalchemy import select, func
+            from app.infrastructure.database import get_session
+            from app.db.models import (  # type: ignore
+                MeetingModel,
+                MeetingTranscriptSegmentModel,
+            )
+
+            async with get_session() as db:
+                row = (
+                    await db.execute(
+                        select(MeetingTranscriptSegmentModel.meeting_id, func.max(MeetingTranscriptSegmentModel.id))
+                        .group_by(MeetingTranscriptSegmentModel.meeting_id)
+                        .order_by(func.max(MeetingTranscriptSegmentModel.id).desc())
+                        .limit(1)
+                    )
+                ).first()
+                if row:
+                    meeting_id = row[0]
+        except Exception as exc:
+            logger.debug("regenerate_summary_fallback_failed", error=str(exc))
+    if not meeting_id:
+        return {
+            "error": "no meeting",
+            "response_text": "I couldn't find a meeting to re-summarise.",
+        }
+    try:
+        import time
+        import uuid
+        from sqlalchemy import select, delete
+        from app.infrastructure.database import get_session
+        from app.db.models import (  # type: ignore
+            MeetingModel,
+            MeetingTranscriptSegmentModel,
+            MeetingSummaryModel,
+            MeetingRecordingModel,
+        )
+        from app.services.meeting_summary_service import get_meeting_summary_service
+        from app.services.meeting_vault_writer import get_meeting_vault_writer
+        from app.services.meeting_privacy_service import get_meeting_privacy_service
+        from app.infrastructure.config import get_settings
+
+        async with get_session() as db:
+            meeting = (
+                await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+            ).scalar_one_or_none()
+            if meeting is None:
+                return {"error": "meeting_not_found", "response_text": "That meeting isn't on file."}
+            segments = (
+                await db.execute(
+                    select(MeetingTranscriptSegmentModel)
+                    .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                    .order_by(MeetingTranscriptSegmentModel.start_time.asc())
+                )
+            ).scalars().all()
+            recording = (
+                await db.execute(
+                    select(MeetingRecordingModel)
+                    .where(MeetingRecordingModel.meeting_id == meeting_id)
+                    .order_by(MeetingRecordingModel.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        if not segments:
+            return {
+                "error": "no_segments",
+                "response_text": "That meeting has no transcript yet. Wait for transcription to finish.",
+            }
+        transcript_text = "\n".join(
+            f"[{seg.speaker or 'Speaker'}]: {seg.text}" for seg in segments
+        )
+        title = getattr(meeting, "title", "") or ""
+        t0 = time.time()
+        summary_data = await get_meeting_summary_service().summarize(
+            transcript_text, meeting_title=title
+        )
+        elapsed = int((time.time() - t0) * 1000)
+        async with get_session() as db:
+            await db.execute(
+                delete(MeetingSummaryModel).where(MeetingSummaryModel.meeting_id == meeting_id)
+            )
+            db.add(MeetingSummaryModel(
+                id=uuid.uuid4().hex,
+                meeting_id=meeting_id,
+                summary_text=summary_data.get("summary_text", "") or "",
+                key_topics=summary_data.get("key_topics", []) or [],
+                action_items=summary_data.get("action_items", []) or [],
+                decisions=summary_data.get("decisions", []) or [],
+                model_used=get_settings().ollama_model,
+                generation_time_ms=elapsed,
+            ))
+            await db.commit()
+        # Re-render vault markdown with the new summary.
+        try:
+            speakers = sorted({s.speaker for s in segments if s.speaker})
+            vault_res = get_meeting_vault_writer().write(
+                meeting_id=meeting_id,
+                title=title or "Untitled meeting",
+                start_time=meeting.start_time,
+                end_time=meeting.end_time,
+                attendees=list(meeting.participants or []),
+                summary_text=summary_data.get("summary_text", "") or "",
+                key_topics=summary_data.get("key_topics", []) or [],
+                action_items=summary_data.get("action_items", []) or [],
+                decisions=summary_data.get("decisions", []) or [],
+                transcript_segment_count=len(segments),
+                recording_path=getattr(recording, "file_path", None) if recording else None,
+                speakers=speakers,
+                private=get_meeting_privacy_service().is_private(meeting_id),
+            )
+        except Exception as exc:
+            vault_res = {"ok": False, "reason": str(exc)}
+        action_count = len(summary_data.get("action_items", []) or [])
+        return {
+            "ok": True,
+            "meeting_id": meeting_id,
+            "elapsed_ms": elapsed,
+            "action_items": action_count,
+            "vault": vault_res,
+            "response_text": (
+                f"Re-summarised in {elapsed} ms — {action_count} action item"
+                f"{'s' if action_count != 1 else ''} and the vault file is refreshed."
+            ),
+        }
+    except Exception as e:
+        logger.warning("regenerate_summary_failed", error=str(e))
+        return {"error": str(e), "response_text": "Re-summarising failed."}
+
+
 async def _enroll_face_from_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
     """Voice 'Hey Zero, that was Sarah'. Re-clusters frames from the
     target meeting, picks the matching cluster, enrolls its centroid
@@ -1702,6 +1861,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "mark_meeting_private": _mark_meeting_private,
     "summarize_current_meeting": _summarize_current_meeting,
     "enroll_face_from_meeting": _enroll_face_from_meeting,
+    "regenerate_summary": _regenerate_summary,
 }
 
 

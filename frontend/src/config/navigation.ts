@@ -25,9 +25,7 @@ import {
   HeartPulse,
   Home,
   Inbox,
-  Kanban,
   LayoutDashboard,
-  ListTodo,
   Mail,
   Megaphone,
   MessageCircle,
@@ -49,7 +47,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-export type NavModeKey = 'personal' | 'company' | 'build' | 'systems' | 'robot' | 'content'
+export type NavModeKey = 'personal' | 'company' | 'robot' | 'systems' | 'content'
 
 export interface NavMode {
   key: NavModeKey
@@ -72,10 +70,9 @@ export interface NavSection {
 
 export const navModes: NavMode[] = [
   { key: 'personal', label: 'Personal', href: '/ask-zero' },
-  { key: 'company', label: 'Company', href: '/company' },
-  { key: 'build', label: 'Build', href: '/board' },
-  { key: 'systems', label: 'Systems', href: '/operations' },
   { key: 'robot', label: 'Robot', href: '/zero' },
+  { key: 'company', label: 'Company', href: '/company' },
+  { key: 'systems', label: 'Systems', href: '/operations' },
   { key: 'content', label: 'Content', href: '/tiktok-shop' },
 ]
 
@@ -145,24 +142,6 @@ export const navSections: NavSection[] = [
     ],
   },
   {
-    label: 'Build',
-    mode: 'build',
-    items: [
-      { label: 'Board', href: '/board', icon: Kanban },
-      { label: 'Sprints', href: '/sprints', icon: ListTodo },
-      { label: 'Projects', href: '/projects', icon: FolderGit2 },
-      { label: 'Workflows', href: '/workflows', icon: Workflow },
-      { label: 'Agent Tasks', href: '/agent', icon: Cpu },
-      { label: 'Gateway', href: '/orchestrator', icon: Radio },
-      { label: 'Experiment Lab', href: '/experiments', icon: FlaskConical },
-      { label: 'Loops', href: '/loops', icon: Zap },
-      { label: 'Skills', href: '/skills', icon: Brain },
-      { label: 'Skill Teams', href: '/skills/teams', icon: Bot },
-      { label: 'Council Room', href: '/council', icon: Scale },
-      { label: 'Employee', href: '/employee', icon: Briefcase },
-    ],
-  },
-  {
     label: 'Systems',
     mode: 'systems',
     items: [
@@ -177,6 +156,21 @@ export const navSections: NavSection[] = [
       { label: 'Exec Dashboard', href: '/execution-dashboard', icon: Timer },
       { label: 'Outcomes', href: '/outcomes', icon: Target },
       { label: 'Settings', href: '/settings', icon: Cog },
+    ],
+  },
+  {
+    label: 'Agents & Workflows',
+    mode: 'systems',
+    items: [
+      { label: 'Workflows', href: '/workflows', icon: Workflow },
+      { label: 'Agent Tasks', href: '/agent', icon: Cpu },
+      { label: 'Gateway', href: '/orchestrator', icon: Radio },
+      { label: 'Experiment Lab', href: '/experiments', icon: FlaskConical },
+      { label: 'Loops', href: '/loops', icon: Zap },
+      { label: 'Skills', href: '/skills', icon: Brain },
+      { label: 'Skill Teams', href: '/skills/teams', icon: Bot },
+      { label: 'Council Room', href: '/council', icon: Scale },
+      { label: 'Employee', href: '/employee', icon: Briefcase },
     ],
   },
   {

@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Clock, User, ArrowRight } from 'lucide-react'
+import { Search, Clock, User, ArrowRight, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useMeetingSearch } from '@/hooks/useMeetings'
+import { useMeetingSearch, useMeetingSearchSpeakers } from '@/hooks/useMeetings'
 
 const SEARCH_TYPES = [
   { label: 'All', value: undefined },
@@ -18,8 +18,10 @@ export function MeetingSearchPage() {
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
   const [searchType, setSearchType] = useState<string | undefined>()
+  const [speakerFilter, setSpeakerFilter] = useState<string | undefined>()
 
-  const { data, isPending } = useMeetingSearch(activeQuery, searchType)
+  const { data, isPending } = useMeetingSearch(activeQuery, searchType, speakerFilter)
+  const speakers = useMeetingSearchSpeakers(90)
 
   const handleSearch = () => {
     if (query.trim()) {
@@ -59,6 +61,42 @@ export function MeetingSearchPage() {
           </Button>
         ))}
       </div>
+
+      {/* F-71: Speaker filter chips (named first, then anonymous) */}
+      {speakers.data && (speakers.data.named.length > 0 || speakers.data.anonymous.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground mr-1">
+            Speaker
+          </span>
+          {speakerFilter && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="h-7 gap-1"
+              onClick={() => setSpeakerFilter(undefined)}
+            >
+              <X className="h-3 w-3" /> Clear
+            </Button>
+          )}
+          {speakers.data.named.slice(0, 8).map((s) => (
+            <Button
+              key={s.speaker}
+              variant={speakerFilter === s.speaker ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSpeakerFilter(speakerFilter === s.speaker ? undefined : s.speaker)}
+              title={`${s.segments} segments in the last 90 days`}
+            >
+              {s.speaker}
+            </Button>
+          ))}
+          {speakers.data.anonymous.length > 0 && !speakerFilter && (
+            <span className="text-xs text-muted-foreground ml-1">
+              +{speakers.data.anonymous.length} unnamed
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Results */}
       {isPending && activeQuery ? (

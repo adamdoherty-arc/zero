@@ -320,6 +320,11 @@ DAILY_SCHEDULE = {
         "description": "Prune notification_events older than ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS (default 30) so the table doesn't grow unbounded",
         "enabled": True
     },
+    "meeting_conflict_pre_flight": {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "description": "F-72: scan upcoming 24h for overlapping calendar events; publish meeting.conflict.preflight on first detection per pair so user can decline before T-0",
+        "enabled": True
+    },
     "reachy_morning_briefing": {
         "cron": "0 8 * * *",  # 8:00 AM daily
         "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
@@ -1455,6 +1460,7 @@ class SchedulerService:
             "meeting_audio_watchdog": self._run_meeting_audio_watchdog,
             "meeting_pipeline_health": self._run_meeting_pipeline_health,
             "notification_events_janitor": self._run_notification_events_janitor,
+            "meeting_conflict_pre_flight": self._run_meeting_conflict_pre_flight,
             "reachy_morning_briefing": self._run_reachy_morning_briefing,
             "reachy_evening_journal": self._run_reachy_evening_journal,
             "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
@@ -2289,6 +2295,124 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.warning("meeting_recordings_janitor_failed", error=str(e))
+
+    async def _run_meeting_conflict_pre_flight(self):
+        """F-72: scan the next 24h for overlapping calendar events.
+
+        Publishes ``meeting.conflict.preflight`` for each pair of
+        overlapping events the FIRST time we see the overlap. Dedupes
+        per-pair via ``self._conflict_preflight_seen`` (TTL 6h).
+
+        The notification carries:
+          - ``events``: [{event_id, title, start, end}, ...]
+          - ``suggested_decline``: the event_id we recommend declining
+            (the one that appears later in the day or has more attendees;
+            heuristic, user picks).
+        Acts read-only — declining stays the user's call until they post
+        to the Calendar API via the suggested_decline field.
+        """
+        try:
+            from datetime import datetime, timedelta, timezone
+
+            from app.services.calendar_service import get_calendar_service
+            from app.services.notification_bus import get_notification_bus
+
+            svc = get_calendar_service()
+            now = datetime.now(tz=timezone.utc)
+            events = await svc.list_events(
+                start_date=now,
+                end_date=now + timedelta(hours=24),
+                limit=40,
+            )
+        except Exception as e:
+            logger.debug("meeting_conflict_pre_flight_skipped", error=str(e))
+            return
+
+        if len(events) < 2:
+            return
+
+        def _to_dt(value: Any) -> datetime | None:
+            if value is None:
+                return None
+            try:
+                if isinstance(value, str):
+                    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if isinstance(value, datetime):
+                    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+            return None
+
+        normalized: list[dict[str, Any]] = []
+        for ev in events:
+            start = _to_dt(getattr(ev, "start_time", None) or getattr(ev, "start", None))
+            end = _to_dt(getattr(ev, "end_time", None) or getattr(ev, "end", None))
+            if start is None or end is None:
+                continue
+            normalized.append({
+                "event_id": str(
+                    getattr(ev, "id", None) or getattr(ev, "event_id", None) or ""
+                ),
+                "title": str(
+                    getattr(ev, "summary", None) or getattr(ev, "title", None) or "Untitled"
+                ),
+                "start": start,
+                "end": end,
+                "attendee_count": len(getattr(ev, "attendees", None) or []),
+            })
+        normalized.sort(key=lambda e: e["start"])
+
+        if not hasattr(self, "_conflict_preflight_seen"):
+            self._conflict_preflight_seen: dict[str, float] = {}
+        import time as _time
+
+        now_ts = _time.time()
+        # 6h TTL on the dedupe ledger.
+        self._conflict_preflight_seen = {
+            k: v for k, v in self._conflict_preflight_seen.items() if now_ts - v < 21600
+        }
+
+        conflicts: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for i, a in enumerate(normalized):
+            for b in normalized[i + 1:]:
+                if b["start"] >= a["end"]:
+                    continue
+                key = "|".join(sorted([a["event_id"], b["event_id"]]))
+                if key in self._conflict_preflight_seen:
+                    continue
+                self._conflict_preflight_seen[key] = now_ts
+                conflicts.append((a, b))
+
+        for a, b in conflicts:
+            # Heuristic suggested decline: later start or fewer attendees.
+            if b["attendee_count"] < a["attendee_count"]:
+                suggested = b
+            elif a["attendee_count"] < b["attendee_count"]:
+                suggested = a
+            else:
+                suggested = b
+            try:
+                await get_notification_bus().publish({
+                    "type": "meeting.conflict.preflight",
+                    "events": [
+                        {
+                            "event_id": e["event_id"],
+                            "title": e["title"],
+                            "start": e["start"].isoformat(),
+                            "end": e["end"].isoformat(),
+                            "attendee_count": e["attendee_count"],
+                        }
+                        for e in (a, b)
+                    ],
+                    "suggested_decline": suggested["event_id"],
+                    "suggested_decline_title": suggested["title"],
+                })
+                logger.info(
+                    "meeting_conflict_preflight_published",
+                    pair=[a["event_id"], b["event_id"]],
+                )
+            except Exception as exc:
+                logger.debug("conflict_preflight_publish_failed", error=str(exc))
 
     async def _run_notification_events_janitor(self):
         """F-64 — prune notification_events older than N days.

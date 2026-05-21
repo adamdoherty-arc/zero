@@ -215,6 +215,40 @@ async def _bookkeeper_adapter(user_text: str, ctx: dict[str, Any]) -> Supervisor
         )
 
 
+async def _summary_regen_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
+    """F-75 — voice 'Hey Zero, redo the summary'. Dispatches to the
+    realtime regenerate_summary tool which finds the active or most-
+    recent meeting and re-summarises + re-renders the vault file."""
+    try:
+        from app.services.reachy_realtime.tools import _regenerate_summary
+        from app.services.reachy_realtime.common import ToolDependencies
+        from app.services.reachy_realtime.bg_tool_manager import BackgroundToolManager
+
+        result = await _regenerate_summary(
+            ToolDependencies(), {}, BackgroundToolManager()
+        )
+        spoken = result.get("response_text") or (
+            "Summary regenerated." if result.get("ok") else "Could not regenerate the summary."
+        )
+        return SupervisorResult(
+            intent="summary_regen",
+            spoken=spoken[:500],
+            tool_calls=[{"adapter": "summary_regen", "ok": bool(result.get("ok")), "result": {
+                "meeting_id": result.get("meeting_id"),
+                "elapsed_ms": result.get("elapsed_ms"),
+                "action_items": result.get("action_items"),
+            }}],
+        )
+    except Exception as e:
+        logger.warning("supervisor_summary_regen_failed", error=str(e))
+        return SupervisorResult(
+            intent="summary_regen",
+            spoken="I couldn't reach the summarizer.",
+            tool_calls=[{"adapter": "summary_regen", "ok": False, "error": str(e)}],
+            error=str(e),
+        )
+
+
 async def _face_enroll_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
     """F-65 — voice 'Hey Zero, that was Sarah'. Extracts the proposed
     display name from the trailing tokens and routes to the realtime
@@ -492,6 +526,15 @@ _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
         "enroll the new face", "enroll that face", "name this face",
         "save that as ", "remember this face as",
     )),
+    # F-75: redo the summary verbs. Win before meeting_rag's broader
+    # "recap the meeting" so the user gets a fresh regeneration, not a
+    # repeat read of the old summary.
+    ("summary_regen", (
+        "redo the summary", "redo summary", "try the summary again",
+        "regenerate the summary", "regenerate summary", "rebuild the recap",
+        "better summary", "summarise again", "summarize again",
+        "remake the summary", "re-summarise", "re-summarize",
+    )),
     # F-45: system_check wins early so "how's everything" doesn't fall
     # into the daily-brief / calendar buckets.
     ("system_check", (
@@ -555,6 +598,7 @@ class SupervisorGraph:
             "system_check": _system_check_adapter,
             "meeting_capture": _adhoc_capture_adapter,
             "face_enroll": _face_enroll_adapter,
+            "summary_regen": _summary_regen_adapter,
         }
         self._lg_app: Any = None
         if USE_LANGGRAPH:
