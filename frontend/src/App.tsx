@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { NotificationListener } from '@/components/NotificationListener'
+import { MeetingPrepPopup } from '@/components/MeetingPrepPopup'
 import { LiveCaptionsOverlay } from '@/components/meetings/LiveCaptionsOverlay'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { SystemStatusPage } from '@/pages/SystemStatusPage'
@@ -111,6 +112,7 @@ function App() {
     <BrowserRouter>
       <div className="dark">
         <NotificationListener />
+        <MeetingPrepPopup />
         <LiveCaptionsOverlay />
         <Toaster />
         <Routes>

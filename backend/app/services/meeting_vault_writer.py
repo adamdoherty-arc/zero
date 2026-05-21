@@ -42,6 +42,11 @@ logger = structlog.get_logger(__name__)
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
+def _fmt_ts(seconds: float) -> str:
+    total = max(0, int(seconds))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 def _slug(text: str, max_len: int = 60) -> str:
     cleaned = _SLUG_RE.sub("-", (text or "").strip().lower()).strip("-")
     return (cleaned or "meeting")[:max_len]
@@ -101,6 +106,7 @@ class MeetingVaultWriter:
         recording_path: str | None,
         speakers: Iterable[str] | None,
         private: bool = False,
+        topics: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not self.vault_available():
             return {"ok": False, "reason": "vault_not_mounted", "vault_root": str(self._root)}
@@ -193,11 +199,24 @@ class MeetingVaultWriter:
                 if txt:
                     body_lines.append(f"- {txt}")
             body_lines.append("")
+        if topics:
+            body_lines += ["## Topics", ""]
+            for t in topics:
+                start_s = float(t.get("start_time") or 0)
+                end_s = float(t.get("end_time") or 0)
+                label = str(t.get("label") or "topic")
+                seg_count = int(t.get("segment_count") or 0)
+                body_lines.append(
+                    f"- **{_fmt_ts(start_s)}–{_fmt_ts(end_s)}** {label}"
+                    + (f" _({seg_count} segments)_" if seg_count else "")
+                )
+            body_lines.append("")
         body_lines += [
             "## Sources",
             "",
             f"- transcript: /api/meeting-transcriptions/{meeting_id}",
             f"- search: /api/meeting-search/?meeting_id={meeting_id}",
+            f"- topics: /api/meetings/{meeting_id}/topics",
         ]
         if recording_path:
             body_lines.append(f"- recording: `{recording_path}`")

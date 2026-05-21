@@ -1,6 +1,7 @@
 """Meeting AI processing pipeline: transcribe -> diarize -> store -> summarize -> embed."""
 
 import json
+import os
 import time
 import uuid
 
@@ -226,6 +227,24 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
             t0 = time.time()
             clusters = extract_faces_from_meeting(meeting_id, frames_dir)
             face_svc = get_faceprint_service()
+            # Feature-57 — best-effort auto-enroll attendees we don't have
+            # a face for yet, using their Google profile photo. Runs
+            # before match so the new enrollments are eligible to match
+            # this meeting's clusters in a single pass.
+            try:
+                attendees_for_enroll = list(getattr(meeting, "participants", None) or [])
+                if attendees_for_enroll:
+                    auto_enrolled = await face_svc.auto_enroll_from_attendees(
+                        attendees_for_enroll,
+                        meeting_id=meeting_id,
+                    )
+                    if auto_enrolled:
+                        result["steps"]["face_auto_enroll"] = {
+                            "enrolled": auto_enrolled,
+                            "count": len(auto_enrolled),
+                        }
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("face_auto_enroll_skipped", meeting_id=meeting_id, error=str(exc))
             face_labels: dict[int, str] = {}
             for cluster in clusters:
                 if cluster.centroid is None:
@@ -302,36 +321,88 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
     for ts in stored_segments:
         await db.refresh(ts)
 
+    # --- Step 3b: Topic segmentation (F-76) ---
+    # Runs before summarization + vault write so the vault file ships
+    # with topic anchors. Pure lexical / silence-based; no LLM, no
+    # embeddings, ~constant time relative to transcript length.
+    try:
+        from app.services.meeting_topic_segmenter import (
+            segment_transcript,
+            get_meeting_topic_store,
+        )
+
+        seg_dicts_for_topics = [
+            {
+                "text": getattr(ts, "text", "") or "",
+                "start": float(getattr(ts, "start_time", 0.0) or 0.0),
+                "end": float(getattr(ts, "end_time", 0.0) or 0.0),
+            }
+            for ts in stored_segments
+        ]
+        topics = segment_transcript(seg_dicts_for_topics)
+        get_meeting_topic_store().write(meeting_id, topics)
+        result["steps"]["topics"] = {
+            "topic_count": len(topics),
+            "labels": [t.label for t in topics[:8]],
+        }
+    except Exception as exc:
+        logger.warning("topic_segmentation_failed", error=str(exc))
+        result["steps"]["topics"] = {"skipped": True, "reason": str(exc)}
+
     # --- Step 4: Summarize ---
     await broadcast_processing_progress({"stage": "summarizing", "progress": 0.0, "message": "Generating summary..."})
     try:
         from app.services.meeting_summary_service import get_meeting_summary_service
+        from app.services.meeting_privacy_service import (
+            get_meeting_privacy_service,
+        )
         summary_svc = get_meeting_summary_service()
-
-        transcript_lines = [f"[{seg.get('speaker', 'Speaker')}]: {seg['text']}" for seg in segments]
-        transcript_text = "\n".join(transcript_lines)
 
         meeting_result = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
         meeting = meeting_result.scalar_one_or_none()
         title = meeting.title if meeting else ""
 
-        t0 = time.time()
-        summary_data = await summary_svc.summarize(transcript_text, meeting_title=title)
-        elapsed = int((time.time() - t0) * 1000)
+        # Audit-47 — private meetings must not propagate to an LLM. The
+        # transcript stays on disk for the user but no summary is generated,
+        # no LLM call is made, and downstream gates (vault writer, follow-up
+        # service, RAG embed) continue to honour the flag.
+        is_private = get_meeting_privacy_service().is_private(meeting_id)
+        if is_private:
+            summary_data: dict = {
+                "summary_text": "",
+                "key_topics": [],
+                "action_items": [],
+                "decisions": [],
+                "token_count": 0,
+            }
+            elapsed = 0
+            result["steps"]["summarization"] = {"skipped": True, "reason": "private"}
+            logger.info("meeting_summary_skipped_private", meeting_id=meeting_id)
+            # Wipe any prior summary too — the user marked it private, so
+            # remove a stale public summary if one already existed.
+            await db.execute(delete(MeetingSummaryModel).where(MeetingSummaryModel.meeting_id == meeting_id))
+            await db.commit()
+            await broadcast_processing_progress({"stage": "summarizing", "progress": 1.0, "message": "Private meeting — summary skipped"})
+        else:
+            transcript_lines = [f"[{seg.get('speaker', 'Speaker')}]: {seg['text']}" for seg in segments]
+            transcript_text = "\n".join(transcript_lines)
+            t0 = time.time()
+            summary_data = await summary_svc.summarize(transcript_text, meeting_title=title)
+            elapsed = int((time.time() - t0) * 1000)
 
-        await db.execute(delete(MeetingSummaryModel).where(MeetingSummaryModel.meeting_id == meeting_id))
-        db.add(MeetingSummaryModel(
-            id=uuid.uuid4().hex, meeting_id=meeting_id,
-            summary_text=summary_data["summary_text"],
-            key_topics=summary_data.get("key_topics", []),
-            action_items=summary_data.get("action_items", []),
-            decisions=summary_data.get("decisions", []),
-            model_used=get_settings().ollama_model,
-            generation_time_ms=elapsed,
-        ))
-        await db.commit()
-        result["steps"]["summarization"] = {"elapsed_ms": elapsed}
-        await broadcast_processing_progress({"stage": "summarizing", "progress": 1.0, "message": "Summary generated"})
+            await db.execute(delete(MeetingSummaryModel).where(MeetingSummaryModel.meeting_id == meeting_id))
+            db.add(MeetingSummaryModel(
+                id=uuid.uuid4().hex, meeting_id=meeting_id,
+                summary_text=summary_data["summary_text"],
+                key_topics=summary_data.get("key_topics", []),
+                action_items=summary_data.get("action_items", []),
+                decisions=summary_data.get("decisions", []),
+                model_used=get_settings().ollama_model,
+                generation_time_ms=elapsed,
+            ))
+            await db.commit()
+            result["steps"]["summarization"] = {"elapsed_ms": elapsed}
+            await broadcast_processing_progress({"stage": "summarizing", "progress": 1.0, "message": "Summary generated"})
 
         # F-82: record summary leg of cost telemetry.
         try:
@@ -363,6 +434,17 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
                 for s in segments
                 if s.get("speaker")
             })
+            # F-83: include topics in vault render if F-76 has produced them.
+            topics_for_vault: list[dict[str, Any]] = []
+            try:
+                from app.services.meeting_topic_segmenter import (
+                    get_meeting_topic_store,
+                )
+                cached = get_meeting_topic_store().read(meeting_id)
+                if cached and cached.get("topics"):
+                    topics_for_vault = list(cached["topics"])
+            except Exception:
+                topics_for_vault = []
             vault_res = get_meeting_vault_writer().write(
                 meeting_id=meeting_id,
                 title=title or "Untitled meeting",
@@ -377,6 +459,7 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
                 recording_path=getattr(recording, "file_path", None) if recording else None,
                 speakers=speakers,
                 private=get_meeting_privacy_service().is_private(meeting_id),
+                topics=topics_for_vault,
             )
             result["steps"]["vault_write"] = vault_res
             logger.info(
@@ -392,44 +475,27 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         logger.warning("summarization_failed", error=str(e))
         result["steps"]["summarization"] = {"skipped": True, "reason": str(e)}
 
-    # --- Step 4b: Topic segmentation (F-76) ---
-    try:
-        from app.services.meeting_topic_segmenter import (
-            segment_transcript,
-            get_meeting_topic_store,
-        )
-
-        seg_dicts_for_topics = [
-            {
-                "text": getattr(ts, "text", "") or "",
-                "start": float(getattr(ts, "start_time", 0.0) or 0.0),
-                "end": float(getattr(ts, "end_time", 0.0) or 0.0),
-            }
-            for ts in stored_segments
-        ]
-        topics = segment_transcript(seg_dicts_for_topics)
-        get_meeting_topic_store().write(meeting_id, topics)
-        result["steps"]["topics"] = {
-            "topic_count": len(topics),
-            "labels": [t.label for t in topics[:8]],
-        }
-    except Exception as exc:
-        logger.warning("topic_segmentation_failed", error=str(exc))
-        result["steps"]["topics"] = {"skipped": True, "reason": str(exc)}
-
     # --- Step 5: Embed ---
-    await broadcast_processing_progress({"stage": "embedding", "progress": 0.0, "message": "Indexing for search..."})
-    try:
-        from app.services.meeting_vector_service import get_meeting_vector_service
-        vector_svc = get_meeting_vector_service()
+    # Audit-47 — private meetings stay out of the RAG / vector store so
+    # the dashboard's cross-meeting chat can't surface them.
+    from app.services.meeting_privacy_service import get_meeting_privacy_service
+    if get_meeting_privacy_service().is_private(meeting_id):
+        result["steps"]["embedding"] = {"skipped": True, "reason": "private"}
+        await broadcast_processing_progress({"stage": "embedding", "progress": 1.0, "message": "Private meeting — embedding skipped"})
+        logger.info("meeting_embedding_skipped_private", meeting_id=meeting_id)
+    else:
+        await broadcast_processing_progress({"stage": "embedding", "progress": 0.0, "message": "Indexing for search..."})
+        try:
+            from app.services.meeting_vector_service import get_meeting_vector_service
+            vector_svc = get_meeting_vector_service()
 
-        seg_dicts = [{"id": ts.id, "text": ts.text, "start_time": ts.start_time} for ts in stored_segments]
-        count = await vector_svc.embed_segments(meeting_id, seg_dicts, db)
-        result["steps"]["embedding"] = {"chunks_indexed": count}
-        await broadcast_processing_progress({"stage": "embedding", "progress": 1.0, "message": f"Indexed {count} chunks"})
-    except Exception as e:
-        logger.warning("embedding_failed", error=str(e))
-        result["steps"]["embedding"] = {"skipped": True, "reason": str(e)}
+            seg_dicts = [{"id": ts.id, "text": ts.text, "start_time": ts.start_time} for ts in stored_segments]
+            count = await vector_svc.embed_segments(meeting_id, seg_dicts, db)
+            result["steps"]["embedding"] = {"chunks_indexed": count}
+            await broadcast_processing_progress({"stage": "embedding", "progress": 1.0, "message": f"Indexed {count} chunks"})
+        except Exception as e:
+            logger.warning("embedding_failed", error=str(e))
+            result["steps"]["embedding"] = {"skipped": True, "reason": str(e)}
 
     # --- Update meeting status ---
     meeting_result = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))

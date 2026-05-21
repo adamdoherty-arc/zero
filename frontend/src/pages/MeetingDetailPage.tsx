@@ -10,7 +10,25 @@ import { getAuthHeaders } from '@/lib/auth'
 import {
   useMeeting, useMeetingTranscript, useMeetingSummary,
   useGenerateSummary, useMeetingSpeakers, useUpdateSpeakers,
+  useMeetingCost,
 } from '@/hooks/useMeetings'
+import { MeetingTopicTimeline } from '@/components/meetings/MeetingTopicTimeline'
+
+function MeetingCostFooter({ meetingId }: { meetingId: string }) {
+  const { data } = useMeetingCost(meetingId)
+  if (!data) return null
+  const usd = (data.estimated_cost_usd ?? 0).toFixed(4)
+  const audioMin = data.audio_seconds ? Math.round((data.audio_seconds / 60) * 10) / 10 : 0
+  return (
+    <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-[11px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+      <span>transcribed in <span className="font-mono">{data.transcription_seconds ?? 0}s</span></span>
+      <span>audio <span className="font-mono">{audioMin}m</span></span>
+      <span>tokens <span className="font-mono">{data.summary_tokens ?? 0}</span></span>
+      <span>model <span className="font-mono">{data.summary_model ?? 'n/a'}</span></span>
+      <span>est. cost <span className="font-mono">${usd}</span></span>
+    </div>
+  )
+}
 import { useMeetingProcessingWS, type ProcessingProgress } from '@/hooks/useMeetingWebSocket'
 import { MeetingAudioPlayer } from '@/components/meetings/MeetingAudioPlayer'
 import { MeetingTranscriptViewer } from '@/components/meetings/MeetingTranscriptViewer'
@@ -155,6 +173,14 @@ export function MeetingDetailPage() {
       {/* Audio Player */}
       {meeting.status === 'completed' && <MeetingAudioPlayer meetingId={meetingId} />}
 
+      {/* F-83 Topic timeline (only when transcript exists) */}
+      {meeting.status === 'completed' && (
+        <MeetingTopicTimeline meetingId={meetingId} />
+      )}
+
+      {/* F-84 Cost footer (cheap, conditional render in component) */}
+      {meeting.status === 'completed' && <MeetingCostFooter meetingId={meetingId} />}
+
       {/* Processing Progress */}
       {meeting.status === 'processing' && processingState && (
         <MeetingProcessingProgress
@@ -190,6 +216,7 @@ export function MeetingDetailPage() {
             <MeetingTranscriptViewer
               segments={transcript.segments}
               speakerMap={speakerMap}
+              meetingId={meetingId}
             />
           ) : (
             <div className="text-center text-muted-foreground py-12">

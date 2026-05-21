@@ -85,6 +85,19 @@ async def notifications_history(
     }
 
 
+@router.get("/metrics")
+async def notification_metrics():
+    """Enhancement-12 — surface notification_bus counters.
+
+    publish_total / deliver_total / drop_queue_full_total / persist_ok_total /
+    persist_fail_total + per-event-type breakdown so a silent regression
+    (e.g. every event dropped because no subscriber is alive) becomes
+    visible. Counters are process-local; aggregate across pods if scaled.
+    """
+    bus = get_notification_bus()
+    return bus.metrics()
+
+
 @router.post("/publish")
 async def publish_notification(payload: dict[str, Any] = Body(...)):
     """Manual publish hook. Useful for host_agent / external producers."""

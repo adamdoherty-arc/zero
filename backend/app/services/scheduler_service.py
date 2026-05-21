@@ -2734,11 +2734,29 @@ Have a great evening!"""
                 await bus.publish(test_event)
                 recent = await bus.recent(limit=5)
                 if not any(e.get("type") == "meeting.health.probe" for e in recent):
-                    issues.append({
-                        "id": "notification_bus",
-                        "detail": "publish→recent roundtrip failed",
-                        "repair": "Reload notification_bus singleton (zero-api restart).",
-                    })
+                    # F-86: AUTO-RECOVER. Bust the lru_cache so the next
+                    # get_notification_bus() call builds a fresh instance,
+                    # then re-test. If it still fails after the rebuild,
+                    # surface the issue.
+                    try:
+                        get_notification_bus.cache_clear()  # type: ignore[attr-defined]
+                        bus2 = get_notification_bus()
+                        await bus2.publish({"type": "meeting.health.probe", "probe": True, "after_recover": True})
+                        recent2 = await bus2.recent(limit=5)
+                        if not any(e.get("type") == "meeting.health.probe" for e in recent2):
+                            issues.append({
+                                "id": "notification_bus",
+                                "detail": "publish→recent roundtrip failed AND singleton rebuild didn't recover",
+                                "repair": "Restart zero-api container.",
+                            })
+                        else:
+                            logger.info("notification_bus_singleton_recovered")
+                    except Exception as exc:
+                        issues.append({
+                            "id": "notification_bus",
+                            "detail": f"singleton rebuild failed: {exc}",
+                            "repair": "Restart zero-api container.",
+                        })
                 checked.append("notification_bus")
             except Exception as exc:
                 issues.append({

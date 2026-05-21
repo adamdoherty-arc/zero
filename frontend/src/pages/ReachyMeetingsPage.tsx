@@ -214,18 +214,29 @@ export function ReachyMeetingsPage() {
           >
             Auto-tasks: {prefs.data?.auto_create_tasks_from_meetings ? 'ON' : 'OFF'}
           </button>
-          <button
-            onClick={handleSync}
-            disabled={sync.isPending || !isConnected}
-            className="text-sm px-3 py-1.5 rounded bg-gray-700/50 text-gray-200 hover:bg-gray-600/60 flex items-center gap-1.5 disabled:opacity-50"
-          >
-            {sync.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
+          {isConnected ? (
+            <button
+              onClick={handleSync}
+              disabled={sync.isPending}
+              className="text-sm px-3 py-1.5 rounded bg-gray-700/50 text-gray-200 hover:bg-gray-600/60 flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {sync.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Sync now
+            </button>
+          ) : (
+            <button
+              onClick={handleConnectCalendar}
+              className="text-sm px-3 py-1.5 rounded bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 flex items-center gap-1.5 font-semibold"
+              title="Re-run Google OAuth to refresh expired calendar tokens"
+            >
               <RefreshCw className="w-4 h-4" />
-            )}
-            Sync now
-          </button>
+              Reconnect calendar
+            </button>
+          )}
           <QuickMeetingDialog
             onStarted={setActiveQuickMeetingId}
             disabled={!canRecord || !!activeQuickMeetingId}

@@ -102,6 +102,25 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
     except Exception as exc:
         logger.debug("prep_brief_xproject_resolve_failed", error=str(exc))
 
+    # F-85: prior topic links — "last time this topic came up was in X"
+    prior_topics: list[dict[str, Any]] = []
+    try:
+        from app.services.meeting_topic_link_service import (
+            get_meeting_topic_link_service,
+        )
+
+        link_svc = get_meeting_topic_link_service()
+        hits = await link_svc.search(
+            label=title or "",
+            exclude_meeting_id=meeting_id,
+            limit=4,
+            min_score=0.35,
+        )
+        hits = await link_svc.hydrate(hits)
+        prior_topics = [h.to_dict() for h in hits]
+    except Exception as exc:
+        logger.debug("prep_brief_topic_link_failed", error=str(exc))
+
     summary = _compose_summary(title, location, attendees, prior_meetings)
 
     markdown = _render_markdown(
@@ -117,6 +136,19 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
     xproject_md = _render_xproject_section(xproject)
     if xproject_md:
         markdown = markdown.rstrip() + "\n\n" + xproject_md.rstrip() + "\n"
+    if prior_topics:
+        lines = ["## Last time this topic came up", ""]
+        for h in prior_topics:
+            when = h.get("when") or ""
+            ttl = h.get("title") or "(untitled)"
+            label = h.get("label") or "topic"
+            score = h.get("score") or 0
+            lines.append(
+                f"- **{label}** in [{ttl}](/meetings/{h.get('meeting_id')})"
+                + (f" — {when[:10]}" if when else "")
+                + f" (overlap {int(score * 100)}%)"
+            )
+        markdown = markdown.rstrip() + "\n\n" + "\n".join(lines) + "\n"
 
     return {
         "meeting_id": meeting_id,
@@ -128,6 +160,7 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
         "attendee_notes": attendee_notes,
         "related_tasks": related_tasks,
         "xproject": xproject,
+        "prior_topics": prior_topics,
         "summary": summary,
         "markdown": markdown,
     }

@@ -20,6 +20,7 @@ import {
   useDeleteVoice,
   useDeleteFace,
 } from '@/hooks/useIdentitiesApi'
+import { WebcamFaceCapture } from '@/components/identities/WebcamFaceCapture'
 
 export function IdentitiesPage() {
   const { identities, isLoading, error, refetch } = useIdentities()
@@ -33,6 +34,7 @@ export function IdentitiesPage() {
   const voiceFileRef = useRef<HTMLInputElement>(null)
   const faceFileRef = useRef<HTMLInputElement>(null)
   const [enrollNote, setEnrollNote] = useState<string | null>(null)
+  const [webcamOpen, setWebcamOpen] = useState(false)
 
   const onEnrollVoice = async (): Promise<void> => {
     setEnrollNote(null)
@@ -71,6 +73,25 @@ export function IdentitiesPage() {
       if (faceFileRef.current) faceFileRef.current.value = ''
     } catch (e) {
       setEnrollNote(`Face enroll failed: ${(e as Error).message}`)
+    }
+  }
+
+  const onWebcamCapture = async (file: File): Promise<void> => {
+    setEnrollNote(null)
+    if (!enrollName.trim()) {
+      setEnrollNote('Pick a display name first')
+      return
+    }
+    try {
+      await enrollFace.mutateAsync({
+        face: file,
+        display_name: enrollName.trim(),
+        is_primary: enrollPrimary,
+      })
+      setEnrollNote(`Face enrolled from webcam as ${enrollName.trim()}`)
+      setWebcamOpen(false)
+    } catch (e) {
+      setEnrollNote(`Webcam enroll failed: ${(e as Error).message}`)
     }
   }
 
@@ -130,20 +151,41 @@ export function IdentitiesPage() {
           </div>
           <div className="bg-gray-900 rounded p-3 border border-gray-700">
             <div className="text-sm font-medium mb-2">Face</div>
-            <input
-              ref={faceFileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/*"
-              className="block text-sm text-gray-300 mb-2"
-            />
-            <button
-              type="button"
-              onClick={onEnrollFace}
-              disabled={enrollFace.isPending}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded"
-            >
-              {enrollFace.isPending ? 'Enrolling…' : 'Enroll face'}
-            </button>
+            {webcamOpen ? (
+              <WebcamFaceCapture
+                onCapture={onWebcamCapture}
+                onCancel={() => setWebcamOpen(false)}
+                disabled={enrollFace.isPending}
+              />
+            ) : (
+              <>
+                <input
+                  ref={faceFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/*"
+                  className="block text-sm text-gray-300 mb-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={onEnrollFace}
+                    disabled={enrollFace.isPending}
+                    className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded"
+                  >
+                    {enrollFace.isPending ? 'Enrolling…' : 'Enroll from file'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWebcamOpen(true)}
+                    disabled={enrollFace.isPending || !enrollName.trim()}
+                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded"
+                    title={enrollName.trim() ? 'Capture a face from your webcam' : 'Set a display name first'}
+                  >
+                    Use webcam
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
         {enrollNote && <div className="mt-3 text-sm text-gray-300">{enrollNote}</div>}

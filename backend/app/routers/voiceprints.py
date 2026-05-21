@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.models.meeting import (
     VoiceprintEnrollResponse,
@@ -26,6 +28,17 @@ from app.services.voiceprint_service import (
     DEFAULT_MATCH_THRESHOLD,
     get_voiceprint_service,
 )
+
+
+class EnrollFromSegmentPayload(BaseModel):
+    """Feature-70 — enroll a voiceprint from a transcript-time slice
+    of an existing meeting recording. No upload required."""
+
+    meeting_id: str = Field(..., min_length=1)
+    start_seconds: float = Field(..., ge=0)
+    end_seconds: float = Field(..., gt=0)
+    display_name: str = Field(..., min_length=1)
+    is_primary: bool = False
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -127,6 +140,64 @@ async def delete_voiceprint(voiceprint_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail="Voiceprint not found")
     return {"deleted": True, "id": voiceprint_id}
+
+
+@router.post("/enroll-from-segment", response_model=VoiceprintEnrollResponse)
+async def enroll_from_segment(payload: EnrollFromSegmentPayload = Body(...)):
+    """Feature-70 — enroll a voiceprint from a transcript segment of an
+    existing meeting. Looks up the meeting's recording file, slices to
+    [start_seconds, end_seconds], computes the embedding, and persists.
+
+    Replaces the upload-a-WAV flow with a per-segment click on the
+    meeting detail page.
+    """
+    if payload.end_seconds <= payload.start_seconds:
+        raise HTTPException(status_code=400, detail="end_seconds must exceed start_seconds")
+    if (payload.end_seconds - payload.start_seconds) < 0.8:
+        raise HTTPException(status_code=400, detail="Segment too short (<0.8s) for a stable embedding")
+
+    from app.db.models import MeetingRecordingModel
+    from app.infrastructure.database import get_session
+
+    async with get_session() as session:
+        recording = (await session.execute(
+            select(MeetingRecordingModel)
+            .where(MeetingRecordingModel.meeting_id == payload.meeting_id)
+            .order_by(MeetingRecordingModel.created_at.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+
+    if recording is None:
+        raise HTTPException(status_code=404, detail=f"No recording for meeting {payload.meeting_id}")
+
+    audio_path = Path(recording.file_path)
+    if not audio_path.exists():
+        raise HTTPException(status_code=404, detail=f"Recording file missing on disk: {recording.file_path}")
+
+    service = get_voiceprint_service()
+    try:
+        embedding = service.compute_embedding(
+            audio_path,
+            start_sec=payload.start_seconds,
+            end_sec=payload.end_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("voiceprint_segment_compute_failed", meeting_id=payload.meeting_id)
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {exc}") from exc
+
+    row, replaced = await service.enroll(
+        display_name=payload.display_name.strip(),
+        embedding=embedding,
+        samples_seconds=float(payload.end_seconds - payload.start_seconds),
+        is_primary=payload.is_primary,
+        source_meeting_id=payload.meeting_id,
+    )
+    return VoiceprintEnrollResponse(
+        voiceprint=VoiceprintResponse.model_validate(row),
+        replaced_existing=replaced,
+    )
 
 
 @router.post("/match", response_model=Optional[VoiceprintMatchResult])

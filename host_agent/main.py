@@ -540,6 +540,22 @@ async def state_snapshot():
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/state/clear-active-recording")
+async def state_clear_active_recording():
+    """F-86 — steward auto-remediation hook. Clears a stale
+    ``active_recording`` flag in host_agent's persisted state when the
+    steward determined the recording isn't actually live. Idempotent;
+    no-ops if the key is already absent."""
+    try:
+        from state import get_state_store
+
+        before = get_state_store().snapshot().get("active_recording")
+        get_state_store().clear("active_recording")
+        return {"ok": True, "cleared": bool(before), "before": before}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
 @app.post("/dnd/start")
 async def dnd_start():
     """F-78 — enter Windows Do-Not-Disturb. MVP: fires a BurntToast banner

@@ -258,6 +258,58 @@ export function useMeetingSearchSpeakers(days = 90) {
   })
 }
 
+// ---- F-76/F-83 Topic timeline ----
+export interface MeetingTopic {
+  topic_id: number
+  start_idx: number
+  end_idx: number
+  start_time: number
+  end_time: number
+  label: string
+  segment_count: number
+}
+export interface MeetingTopicsResponse {
+  meeting_id: string
+  topic_count: number
+  topics: MeetingTopic[]
+}
+export function useMeetingTopics(meetingId: string) {
+  return useQuery({
+    queryKey: ['meetings', meetingId, 'topics'],
+    queryFn: () => fetchApi<MeetingTopicsResponse>(`/meetings/${meetingId}/topics`),
+    enabled: !!meetingId,
+    staleTime: 30000,
+  })
+}
+
+// ---- F-82/F-84 Cost telemetry ----
+export interface MeetingCost {
+  meeting_id: string
+  transcription_seconds?: number
+  audio_seconds?: number
+  transcription_model?: string
+  summary_tokens?: number
+  summary_model?: string
+  summary_ms?: number
+  estimated_cost_usd?: number
+  updated_at?: string
+}
+export function useMeetingCost(meetingId: string) {
+  return useQuery({
+    queryKey: ['meetings', meetingId, 'cost'],
+    queryFn: async () => {
+      const r = await fetch(`/api/meetings/${meetingId}/cost`, {
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      })
+      if (r.status === 404) return null
+      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+      return (await r.json()) as MeetingCost
+    },
+    enabled: !!meetingId,
+    staleTime: 30000,
+  })
+}
+
 // ---- Speakers ----
 export function useMeetingSpeakers(id: string) {
   return useQuery({

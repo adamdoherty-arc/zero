@@ -40,6 +40,8 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/directory.readonly",
 ]
 
 
@@ -335,6 +337,7 @@ class GmailOAuthService:
                 existing.label = label
                 existing.scopes = list(getattr(creds, "scopes", []) or GOOGLE_SCOPES)
                 existing.last_refreshed_at = datetime.now(timezone.utc)
+                self._refresh_failed.pop(existing.id, None)
                 return existing.id
 
             # Promote to default if this is the only account.
@@ -365,6 +368,7 @@ class GmailOAuthService:
             if row:
                 row.credentials = json.loads(creds.to_json())
                 row.last_refreshed_at = datetime.now(timezone.utc)
+        self._refresh_failed.pop(account_id, None)
 
     async def disconnect(self, account_id: Optional[str] = None) -> bool:
         """Remove credentials for the given (or default) account from the DB

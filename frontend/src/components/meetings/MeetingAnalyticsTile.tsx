@@ -1,7 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, Clock, Users } from 'lucide-react'
+import { Activity, ArrowDownRight, ArrowRight, ArrowUpRight, CheckCircle2, Clock, DollarSign, Users } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getAuthHeaders } from '@/lib/auth'
+
+interface CostSummary {
+  meetings: number
+  total_audio_seconds: number
+  total_transcription_seconds: number
+  total_summary_tokens: number
+  estimated_cost_usd: number
+  by_model: Record<string, number>
+}
 
 interface WeeklyAnalytics {
   checked_at: string
@@ -46,6 +55,18 @@ export function MeetingAnalyticsTile() {
       })
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
       return (await res.json()) as WeeklyAnalytics
+    },
+    refetchInterval: 60000,
+  })
+
+  const costQuery = useQuery({
+    queryKey: ['meeting-steward', 'cost', 'weekly'],
+    queryFn: async (): Promise<CostSummary> => {
+      const res = await fetch('/api/meeting-steward/cost/weekly', {
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      })
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      return (await res.json()) as CostSummary
     },
     refetchInterval: 60000,
   })
@@ -125,6 +146,31 @@ export function MeetingAnalyticsTile() {
               </span>
             ))}
           </div>
+        </div>
+      )}
+      {costQuery.data && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-400 border-t border-gray-800 pt-2">
+          <DollarSign className="w-3.5 h-3.5" />
+          <span>
+            <span className="font-mono text-gray-200">
+              ${(costQuery.data.estimated_cost_usd ?? 0).toFixed(4)}
+            </span>{' '}
+            est. cost
+          </span>
+          <span>·</span>
+          <span>
+            <span className="font-mono text-gray-200">
+              {costQuery.data.total_summary_tokens}
+            </span>{' '}
+            tokens
+          </span>
+          <span>·</span>
+          <span>
+            <span className="font-mono text-gray-200">
+              {Math.round((costQuery.data.total_transcription_seconds ?? 0) / 60)}
+            </span>{' '}
+            min Whisper
+          </span>
         </div>
       )}
       <Link

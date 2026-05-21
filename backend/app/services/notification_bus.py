@@ -31,6 +31,16 @@ class NotificationBus:
         self._lock = asyncio.Lock()
         self._recent: list[dict[str, Any]] = []
         self._recent_limit = 50
+        # Enhancement-12: monotonic counters surfaced via /api/notifications/metrics.
+        # Silent drops (queue full, persist failure) are otherwise invisible.
+        self._counters: dict[str, int] = {
+            "publish_total": 0,
+            "deliver_total": 0,
+            "drop_queue_full_total": 0,
+            "persist_ok_total": 0,
+            "persist_fail_total": 0,
+        }
+        self._counters_by_type: dict[str, int] = {}
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
@@ -53,6 +63,8 @@ class NotificationBus:
         if "ts" not in event:
             event = {**event, "ts": datetime.now(timezone.utc).isoformat()}
         delivered = 0
+        dropped = 0
+        ev_type = str(event.get("type") or "notice")
         async with self._lock:
             self._recent.append(event)
             if len(self._recent) > self._recent_limit:
@@ -63,10 +75,15 @@ class NotificationBus:
                 q.put_nowait(event)
                 delivered += 1
             except asyncio.QueueFull:
+                dropped += 1
                 logger.debug(
                     "notification_bus_subscriber_full",
-                    event_type=event.get("type"),
+                    event_type=ev_type,
                 )
+        self._counters["publish_total"] += 1
+        self._counters["deliver_total"] += delivered
+        self._counters["drop_queue_full_total"] += dropped
+        self._counters_by_type[ev_type] = self._counters_by_type.get(ev_type, 0) + 1
         # Fire-and-forget persistence so a slow / blocked DB does not
         # back-pressure the publisher chain.
         asyncio.create_task(self._persist(event))
@@ -95,8 +112,21 @@ class NotificationBus:
                     payload=payload,
                 )
                 session.add(row)
+            self._counters["persist_ok_total"] += 1
         except Exception as exc:  # noqa: BLE001
+            self._counters["persist_fail_total"] += 1
             logger.debug("notification_persist_failed", error=str(exc))
+
+    def metrics(self) -> dict[str, Any]:
+        """Enhancement-12 — expose publish/persist counters so silent drops
+        (queue-full subscribers, DB blips) become visible. Counters are
+        process-local and reset on restart; aggregate via /metrics scrape."""
+        return {
+            "counters": dict(self._counters),
+            "by_type": dict(self._counters_by_type),
+            "subscribers": len(self._subscribers),
+            "recent_buffer_size": len(self._recent),
+        }
 
     async def recent(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return the most recent N events, blending the in-memory ring

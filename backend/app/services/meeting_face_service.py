@@ -136,26 +136,170 @@ def _crop_face(image_path: Path, bbox: tuple[int, int, int, int], out_path: Path
     return bool(cv2.imwrite(str(out_path), crop))
 
 
-def compute_embedding(face_crop_path: Path) -> Optional[np.ndarray]:
-    """Compute a 128-dim embedding for a face crop. MVP uses imagehash.
+_FACE_MESH_SINGLETON = None
 
-    Future: swap to face_recognition.face_encodings (128-d) — exact
-    same shape — without changing callers or DB schema.
+
+def _get_face_mesh():
+    """Lazy mediapipe FaceMesh singleton — model load is expensive."""
+    global _FACE_MESH_SINGLETON
+    if _FACE_MESH_SINGLETON is None:
+        try:
+            import mediapipe as mp
+            _FACE_MESH_SINGLETON = mp.solutions.face_mesh.FaceMesh(
+                static_image_mode=True,
+                max_num_faces=1,
+                refine_landmarks=False,
+                min_detection_confidence=0.5,
+            )
+        except Exception as e:
+            logger.debug("face_mesh_init_failed", error=str(e))
+            _FACE_MESH_SINGLETON = False
+    return _FACE_MESH_SINGLETON or None
+
+
+# Canonical mediapipe FaceMesh landmark indices for stable geometric pairs.
+# Chosen to span eye / nose / mouth / jaw geometry. 64 pairs -> 64 distances.
+# Doubled with z-coordinate spread for the second half of the 128-d vector.
+_LANDMARK_PAIRS: list[tuple[int, int]] = [
+    (33, 263),    # left-eye-outer to right-eye-outer (inter-eye baseline)
+    (159, 386),   # eyebrow inner corners
+    (133, 362),   # left-eye-inner to right-eye-inner
+    (61, 291),    # mouth corners
+    (13, 14),     # upper-lip-center to lower-lip-center
+    (1, 168),     # nose tip to glabella
+    (1, 152),     # nose tip to chin
+    (1, 61),      # nose tip to left mouth corner
+    (1, 291),     # nose tip to right mouth corner
+    (10, 152),    # forehead to chin
+    (234, 454),   # cheek-to-cheek width
+    (132, 361),   # mid jaw width
+    (323, 93),    # outer jaw width
+    (152, 10),    # chin to forehead (signed)
+    (33, 133),    # left eye width
+    (362, 263),   # right eye width
+    (159, 145),   # left eye height
+    (386, 374),   # right eye height
+    (8, 168),     # nasion vertical
+    (4, 1),       # nose subnasale to tip
+    (197, 152),   # philtrum to chin
+    (78, 308),    # mouth inner corners
+    (13, 0),      # upper lip to philtrum top
+    (17, 18),     # lower lip thickness
+    (152, 175),   # chin protrusion
+    (10, 67),     # forehead to left temple
+    (10, 297),    # forehead to right temple
+    (33, 234),    # left eye outer to left cheek
+    (263, 454),   # right eye outer to right cheek
+    (61, 78),     # left lip outer to inner
+    (291, 308),   # right lip outer to inner
+    (227, 447),   # widest face width
+    (54, 284),    # forehead width
+    (143, 372),   # eye-level outer width
+    (118, 347),   # nostril-level width
+    (50, 280),    # mid-cheek width
+    (172, 397),   # mid-jaw width inner
+    (136, 365),   # lower jaw width
+    (149, 378),   # near-chin width
+    (148, 377),   # chin width
+    (152, 199),   # chin tip to lower jaw center
+    (199, 175),   # lower-jaw vertical
+    (175, 152),   # mental protuberance
+    (4, 6),       # nose ridge
+    (6, 168),     # nose to glabella
+    (168, 10),    # glabella to forehead
+    (33, 7),      # left eye outer to lower lid corner
+    (263, 249),   # right eye outer to lower lid corner
+    (133, 155),   # left eye inner to inner lid
+    (362, 382),   # right eye inner to inner lid
+    (159, 158),   # upper left eyelid spread
+    (386, 385),   # upper right eyelid spread
+    (145, 144),   # lower left eyelid spread
+    (374, 373),   # lower right eyelid spread
+    (105, 334),   # eyebrow outer ends
+    (52, 282),    # eyebrow inner ends
+    (66, 296),    # mid eyebrow span
+    (107, 336),   # superior brow span
+    (98, 327),    # nostril width
+    (49, 279),    # nostril mid width
+    (203, 423),   # nasolabial outer width
+    (206, 426),   # cheek hollow width
+    (216, 436),   # upper jaw width
+    (43, 273),    # lateral nasal width
+]
+
+
+def compute_embedding(face_crop_path: Path) -> Optional[np.ndarray]:
+    """Compute a 128-dim face embedding for a crop.
+
+    Feature-56: geometry-first descriptor built from mediapipe FaceMesh
+    468 landmarks. Sixty-four canonical pairwise distances normalized by
+    inter-eye baseline form the first 64 dims; sixty-four z-spread
+    distances (depth geometry) fill the second half. L2-normalized to
+    keep cosine-distance ordering stable.
+
+    Falls back to imagehash when the mesh fails to detect (occluded,
+    extreme angle, low light) so callers always get *something* rather
+    than dropping the cluster.
     """
     try:
         from PIL import Image
-        import imagehash
     except Exception as e:
         logger.debug("face_embedding_deps_missing", error=str(e))
         return None
+
     try:
-        img = Image.open(face_crop_path).convert("L").resize((128, 128))
+        img = Image.open(face_crop_path).convert("RGB")
     except Exception as e:
         logger.debug("face_embedding_open_failed", path=str(face_crop_path), error=str(e))
         return None
-    ph = imagehash.phash(img)  # 8x8 phash int
-    phash_int = int(str(ph), 16)
-    return _hash_to_embedding(phash_int)
+
+    mesh = _get_face_mesh()
+    if mesh is not None:
+        try:
+            arr = np.asarray(img)
+            result = mesh.process(arr)
+            faces = getattr(result, "multi_face_landmarks", None)
+            if faces:
+                lm = faces[0].landmark
+                # Inter-eye baseline (canonical scale).
+                left_eye = np.array([lm[33].x, lm[33].y, lm[33].z], dtype=np.float32)
+                right_eye = np.array([lm[263].x, lm[263].y, lm[263].z], dtype=np.float32)
+                eye_dist = float(np.linalg.norm(left_eye - right_eye))
+                if eye_dist < 1e-6:
+                    raise ValueError("degenerate inter-eye distance")
+
+                feats: list[float] = []
+                # 64 xy-plane normalized pair distances.
+                for a, b in _LANDMARK_PAIRS:
+                    pa = np.array([lm[a].x, lm[a].y], dtype=np.float32)
+                    pb = np.array([lm[b].x, lm[b].y], dtype=np.float32)
+                    feats.append(float(np.linalg.norm(pa - pb) / eye_dist))
+                # 64 xyz pair distances — adds depth geometry.
+                for a, b in _LANDMARK_PAIRS:
+                    pa = np.array([lm[a].x, lm[a].y, lm[a].z], dtype=np.float32)
+                    pb = np.array([lm[b].x, lm[b].y, lm[b].z], dtype=np.float32)
+                    feats.append(float(np.linalg.norm(pa - pb) / eye_dist))
+
+                vec = np.asarray(feats[:EMBEDDING_DIM], dtype=np.float32)
+                if vec.shape[0] < EMBEDDING_DIM:
+                    pad = np.zeros(EMBEDDING_DIM - vec.shape[0], dtype=np.float32)
+                    vec = np.concatenate([vec, pad])
+                norm = float(np.linalg.norm(vec))
+                if norm > 1e-6:
+                    vec = vec / norm
+                return vec.astype("float32")
+        except Exception as e:
+            logger.debug("face_mesh_embedding_failed", error=str(e))
+
+    # Fallback: imagehash-based descriptor (legacy behaviour).
+    try:
+        import imagehash
+        gray = img.convert("L").resize((128, 128))
+        ph = imagehash.phash(gray)
+        return _hash_to_embedding(int(str(ph), 16))
+    except Exception as e:
+        logger.debug("face_embedding_fallback_failed", error=str(e))
+        return None
 
 
 def extract_faces_from_meeting(meeting_id: str, frames_dir: Path) -> list[FaceCluster]:
@@ -271,6 +415,74 @@ class FaceprintService:
             await session.flush()
             await session.refresh(row)
             return row, replaced
+
+    async def auto_enroll_from_attendees(
+        self,
+        attendees: list[str],
+        *,
+        meeting_id: Optional[str] = None,
+    ) -> list[str]:
+        """Feature-57 — for each attendee email we don't yet have a face
+        for, fetch their Google profile photo via the People API and
+        enroll. Returns the list of display_names auto-enrolled (best
+        effort — failures are silent so the meeting pipeline still
+        finishes).
+
+        Skips primary-user records and any attendee email/name that
+        already has a faceprint row.
+        """
+        if not attendees:
+            return []
+        import tempfile
+        from app.services.google_people_service import get_google_people_service
+
+        people = get_google_people_service()
+        async with get_session() as session:
+            existing = (await session.execute(
+                select(FaceprintModel.display_name)
+            )).scalars().all()
+        existing_lower = {(n or "").lower() for n in existing}
+
+        enrolled: list[str] = []
+        for attendee in attendees:
+            if not attendee or "@" not in attendee:
+                continue
+            display = attendee
+            if display.lower() in existing_lower:
+                continue
+            try:
+                photo = await people.fetch_photo(attendee)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("auto_enroll_photo_failed", attendee=attendee, error=str(exc))
+                continue
+            if not photo:
+                continue
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                tmp.write(photo)
+                tmp_path = Path(tmp.name)
+            try:
+                embedding = compute_embedding(tmp_path)
+                if embedding is None:
+                    continue
+                await self.enroll(
+                    display_name=display,
+                    embedding=embedding,
+                    face_crop_path=None,
+                    sample_count=1,
+                    is_primary=False,
+                    source_meeting_id=meeting_id,
+                )
+                enrolled.append(display)
+                existing_lower.add(display.lower())
+                logger.info("face_auto_enrolled", attendee=attendee, meeting_id=meeting_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("auto_enroll_compute_failed", attendee=attendee, error=str(exc))
+            finally:
+                try:
+                    tmp_path.unlink()
+                except Exception:
+                    pass
+        return enrolled
 
     async def list_all(self) -> list[FaceprintModel]:
         async with get_session() as session:

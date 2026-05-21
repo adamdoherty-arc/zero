@@ -73,14 +73,58 @@ async def meeting_steward_status() -> dict[str, Any]:
                     host_agent_block["state"] = sdata.get("state") or {}
                     active = (host_agent_block["state"] or {}).get("active_recording")
                     if active:
-                        out["issues"].append({
-                            "id": "host_agent_active_recording",
-                            "detail": (
-                                f"host_agent still thinks meeting "
-                                f"{active.get('meeting_id')} is recording — may be a "
-                                "crashed capture from a prior boot."
-                            ),
-                        })
+                        # F-86: auto-recover stale active_recording. If
+                        # host_agent /health reports is_recording=false
+                        # AND the auto-recorder ledger has no entry that
+                        # matches this meeting_id still in window, the
+                        # flag is leftover from a crashed boot — clear it.
+                        recovered = False
+                        try:
+                            mid = str(active.get("meeting_id") or "")
+                            from app.services.meeting_auto_recorder_service import (
+                                get_meeting_auto_recorder_service,
+                            )
+
+                            marked = await get_meeting_auto_recorder_service().list_marked()
+                            is_active_marked = any(
+                                str(m.get("meeting_id") or "") == mid
+                                and m.get("started")
+                                and not m.get("stopped")
+                                and not m.get("skipped")
+                                for m in (marked or [])
+                            )
+                            if not is_active_marked:
+                                try:
+                                    cr = await c.post(
+                                        f"{host_url}/state/clear-active-recording",
+                                        timeout=2.0,
+                                    )
+                                    if cr.status_code < 400:
+                                        recovered = True
+                                        host_agent_block.setdefault(
+                                            "remediation",
+                                            [],
+                                        ).append("cleared_stale_active_recording")
+                                        logger.info(
+                                            "host_agent_active_recording_cleared",
+                                            meeting_id=mid,
+                                        )
+                                except Exception as exc:
+                                    logger.debug(
+                                        "stale_active_recording_clear_failed",
+                                        error=str(exc),
+                                    )
+                        except Exception as exc:
+                            logger.debug("stale_active_recording_check_failed", error=str(exc))
+                        if not recovered:
+                            out["issues"].append({
+                                "id": "host_agent_active_recording",
+                                "detail": (
+                                    f"host_agent still thinks meeting "
+                                    f"{active.get('meeting_id')} is recording — may be a "
+                                    "crashed capture from a prior boot."
+                                ),
+                            })
             except Exception:
                 pass
             out["host_agent"] = host_agent_block

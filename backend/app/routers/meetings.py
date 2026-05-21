@@ -410,6 +410,25 @@ async def meeting_topics(meeting_id: str):
     return store.write(meeting_id, topics)
 
 
+@router.get("/topics/{label:path}", status_code=200)
+async def topics_by_label(label: str, limit: int = 12):
+    """F-85 — meetings whose F-76 topic labels overlap with the query.
+    Ranked by token-Jaccard score (descending). Hydrates titles +
+    meeting start times so the UI / prep brief can render directly."""
+    from app.services.meeting_topic_link_service import (
+        get_meeting_topic_link_service,
+    )
+
+    svc = get_meeting_topic_link_service()
+    hits = await svc.search(label=label, limit=max(1, min(limit, 50)))
+    hits = await svc.hydrate(hits)
+    return {
+        "label": label,
+        "count": len(hits),
+        "hits": [h.to_dict() for h in hits],
+    }
+
+
 @router.post("/{meeting_id}/topics/regenerate", status_code=200)
 async def meeting_topics_regenerate(meeting_id: str):
     """Force-recompute topics. Useful after editing transcript segments
