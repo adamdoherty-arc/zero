@@ -59,6 +59,7 @@ from app.routers import (
     telegram_channel,
     openhands,
     notifications,
+    meeting_steward_status,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -890,6 +891,7 @@ app.include_router(browser_control.router, prefix="/api/browser-control", tags=[
 app.include_router(telegram_channel.router, prefix="/api/telegram", tags=["Telegram"])
 app.include_router(openhands.router, prefix="/api", tags=["OpenHands"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
+app.include_router(meeting_steward_status.router, prefix="/api/meeting-steward", tags=["Meeting Steward Status"])
 
 
 @app.get("/")

@@ -3680,20 +3680,48 @@ async def wake_word_fired(payload: dict[str, Any] = Body(default={})):
     Out-of-band wake notification from host_agent (its local openwakeword
     loop detected the phrase). Opens the speak window via the companion
     policy so Reachy is allowed to answer once.
+
+    Side effects:
+      * stamps companion policy.last_wake_at (opens 30s speak window)
+      * F-39: plays a subtle confirm beep via Reachy speaker so the
+        user has instant feedback that the wake landed before the LLM
+        starts generating. Opt out via ZERO_WAKE_ACK_SOUND=off.
     """
+    import os
     source = str(payload.get("source") or "host_agent.wake_loop")
     try:
         from app.services.reachy_companion_service import (
             get_reachy_companion_service,
         )
         policy = get_reachy_companion_service().mark_wake_fired(source=source)
-        return {
-            "ok": True,
-            "wake_response_window_s": policy.wake_response_window_s,
-            "last_wake_at": policy.last_wake_at.isoformat() if policy.last_wake_at else None,
-        }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+    ack_choice = os.getenv("ZERO_WAKE_ACK_SOUND", "chime").strip().lower()
+    if ack_choice not in {"off", "false", "0"}:
+        try:
+            import asyncio as _asyncio
+            from app.services.reachy_service import get_reachy_service
+
+            async def _play_ack():
+                try:
+                    if ack_choice in {"chime", "default"}:
+                        await get_reachy_service().test_sound()
+                    else:
+                        await get_reachy_service().play_sound(ack_choice)
+                except Exception as exc:
+                    logger.debug("wake_ack_sound_failed", error=str(exc))
+
+            _asyncio.create_task(_play_ack())
+        except Exception as exc:
+            logger.debug("wake_ack_dispatch_failed", error=str(exc))
+
+    return {
+        "ok": True,
+        "wake_response_window_s": policy.wake_response_window_s,
+        "last_wake_at": policy.last_wake_at.isoformat() if policy.last_wake_at else None,
+        "ack_sound": ack_choice,
+    }
 
 
 @router.post("/vision/detect")

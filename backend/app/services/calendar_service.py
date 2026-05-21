@@ -40,6 +40,14 @@ class CalendarService:
         self.credentials_file = self.calendar_path / "calendar_credentials.json"
         self.tokens_file = self.calendar_path / "calendar_tokens.json"
         self._service = None
+        # F-36: shared 55s cache for the "next 60 minutes" lookup. Four
+        # every-minute scheduler jobs (nudge, auto_record, auto_stop,
+        # prep_brief) all hit this same window — without the cache they
+        # 4x the DB-scan + Python filter cost. 55s is just under their
+        # 1-minute cadence so each tick gets a fresh row exactly once.
+        self._next60_cache: Optional[List[EventSummary]] = None
+        self._next60_cache_at: float = 0.0
+        self._next60_cache_ttl_s: float = 55.0
 
     def _load_google_modules(self):
         """Lazy load Google OAuth modules."""
@@ -574,6 +582,33 @@ class CalendarService:
         filtered.sort(key=lambda x: x[0])
 
         return [self._row_to_event_summary(row) for _, row in filtered[:limit]]
+
+    async def cached_next_60min(self, limit: int = 10) -> List[EventSummary]:
+        """Cached read of events in the next 60 minutes.
+
+        Designed to be called by the four every-minute scheduler jobs
+        (nudge, auto_record, auto_stop, prep_brief) so they share one
+        DB hit per minute instead of four. 55 s TTL ensures one fresh
+        fetch per minute. Always returns at most ``limit`` items.
+        """
+        import time as _time
+        from datetime import datetime, timedelta, timezone
+
+        now_s = _time.time()
+        if (
+            self._next60_cache is not None
+            and now_s - self._next60_cache_at < self._next60_cache_ttl_s
+        ):
+            return list(self._next60_cache)[:limit]
+        now = datetime.now(tz=timezone.utc)
+        events = await self.list_events(
+            start_date=now,
+            end_date=now + timedelta(minutes=60),
+            limit=max(limit, 10),
+        )
+        self._next60_cache = list(events)
+        self._next60_cache_at = now_s
+        return events[:limit]
 
     async def get_event(self, event_id: str) -> Optional[CalendarEvent]:
         """Get event by ID."""

@@ -169,6 +169,7 @@ export const navSections: NavSection[] = [
       { label: 'Operations', href: '/operations', icon: Activity },
       { label: 'Ecosystem', href: '/ecosystem', icon: Globe },
       { label: 'System Health', href: '/system-health', icon: HeartPulse },
+      { label: 'Meeting Steward', href: '/meeting-steward', icon: AudioLines },
       { label: 'Architecture', href: '/architecture', icon: Network },
       { label: 'QA', href: '/qa', icon: ShieldCheck },
       { label: 'Analytics', href: '/analytics', icon: BarChart3 },

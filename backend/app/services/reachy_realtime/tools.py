@@ -856,6 +856,12 @@ _SPECS: Dict[str, Dict[str, Any]] = {
             },
         },
     },
+    "summarize_current_meeting": {
+        "type": "function",
+        "name": "summarize_current_meeting",
+        "description": "Summarise the meeting that is recording RIGHT NOW (uses companion policy.meeting_active_id). Use when the user asks 'summarise so far', 'recap so far', or 'what have we covered'.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 }
 
 
@@ -1457,6 +1463,32 @@ async def _mark_meeting_private(deps: ToolDependencies, args: Dict[str, Any], _m
         }
 
 
+async def _summarize_current_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """Voice: 'Hey Zero, summarise so far'. Reads companion's active
+    meeting_id and routes through meeting_rag_query so the user gets a
+    transcript-grounded recap without leaving the realtime turn."""
+    try:
+        from app.services.reachy_companion_service import (
+            get_reachy_companion_service,
+        )
+
+        meeting_id = (
+            get_reachy_companion_service().get_policy().meeting_active_id or ""
+        )
+    except Exception:
+        meeting_id = ""
+    if not meeting_id:
+        return {
+            "response_text": "I'm not capturing a meeting right now, so there's nothing to summarise yet.",
+        }
+    return await _meeting_rag_query(
+        deps,
+        {"question": "Summarise everything that has been discussed so far in this meeting.",
+         "meeting_id": meeting_id},
+        _mgr,
+    )
+
+
 async def _meeting_rag_query(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
     """Search past meetings (transcripts + summaries) and answer a question.
     Powers 'Hey Zero, what did Sarah say last week?' from inside an active
@@ -1545,6 +1577,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "supervisor_dispatch": _supervisor_dispatch,
     "meeting_rag_query": _meeting_rag_query,
     "mark_meeting_private": _mark_meeting_private,
+    "summarize_current_meeting": _summarize_current_meeting,
 }
 
 

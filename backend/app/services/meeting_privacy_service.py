@@ -24,6 +24,7 @@ import threading
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, Iterable
 
 import structlog
 
@@ -77,6 +78,67 @@ class MeetingPrivacyService:
 
     def list_private(self) -> list[str]:
         return list(self._load().keys())
+
+    # ------------------------------------------------------------------
+    # F-43: default privacy policy per attendee domain / title
+    # ------------------------------------------------------------------
+    @property
+    def _policy_path(self) -> Path:
+        return self._dir / "privacy_policy.json"
+
+    def _default_policy(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "always_private_domains": [],
+            "always_private_titles": ["therapy", "doctor", "personal", "1:1 personal"],
+            "notes": (
+                "Auto-mark a meeting private (no summary, no RAG, no email "
+                "drafts) when any attendee email matches always_private_domains "
+                "OR the title contains a substring (case-insensitive) from "
+                "always_private_titles. Voice can override per-meeting via "
+                "'Hey Zero, record this one' (clears the private flag)."
+            ),
+        }
+
+    def _load_policy(self) -> dict[str, Any]:
+        with self._lock:
+            if not self._policy_path.exists():
+                pol = self._default_policy()
+                self._policy_path.write_text(
+                    json.dumps(pol, indent=2), encoding="utf-8"
+                )
+                return pol
+            try:
+                return json.loads(self._policy_path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                logger.warning("meeting_privacy_policy_load_failed", error=str(exc))
+                return self._default_policy()
+
+    def evaluate_default(
+        self,
+        *,
+        title: str | None,
+        attendees: Iterable[str] | None = None,
+    ) -> tuple[bool, str | None]:
+        """Return (should_be_private, reason). Called at meeting start
+        to decide whether to auto-mark private without user input."""
+        pol = self._load_policy()
+        title_norm = (title or "").strip().lower()
+        for needle in pol.get("always_private_titles", []):
+            if needle.lower() in title_norm:
+                return True, f"title matches always_private rule: {needle!r}"
+        domains = {d.strip().lower() for d in pol.get("always_private_domains", []) if d}
+        if domains:
+            for raw in (attendees or []):
+                s = str(raw or "").strip()
+                if "<" in s and ">" in s:
+                    s = s[s.find("<") + 1 : s.find(">")].strip()
+                if "@" not in s:
+                    continue
+                domain = s.rsplit("@", 1)[1].strip().lower()
+                if domain in domains:
+                    return True, f"attendee in always_private domain: {domain}"
+        return False, None
 
 
 @lru_cache()

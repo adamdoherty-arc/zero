@@ -1967,13 +1967,12 @@ Have a great evening!"""
                 return
             from app.services.calendar_service import get_calendar_service
             svc = get_calendar_service()
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, timezone
             now = datetime.now(tz=timezone.utc)
-            events = await svc.list_events(
-                start_date=now,
-                end_date=now + timedelta(minutes=60),
-                limit=10,
-            )
+            # F-36: use the shared 55s cache so all four every-minute
+            # scheduler jobs (nudge, auto_record, auto_stop, prep_brief)
+            # share one DB read per minute instead of four.
+            events = await svc.cached_next_60min(limit=10)
         except Exception as e:
             logger.debug("reachy_calendar_nudge_skipped", error=str(e))
             return
@@ -2135,68 +2134,151 @@ Have a great evening!"""
                 logger.info("reachy_email_nudge_announced", email_id=announced)
 
     async def _run_meeting_recordings_janitor(self):
-        """Delete WAV files for meetings older than ZERO_MEETING_RECORDING_RETENTION_DAYS
-        (default 30) IFF the meeting has a transcript + summary on file.
+        """Two-pass janitor for meeting WAV files.
 
-        Runs at 3:30 AM in quiet hours. Skips active recordings, skips
-        anything without a confirmed summary so we never delete an
-        un-transcribed source file. Cap at 200 files per run so a runaway
-        backlog doesn't stall the scheduler.
+        Pass 1 (transcribed + summarized, age > retention_days):
+          Delete recordings whose meeting has a summary on file.
+          Default retention: ZERO_MEETING_RECORDING_RETENTION_DAYS=30.
+
+        Pass 2 (F-42 unmaterialized, age > 24h):
+          Delete recordings whose meeting has NO transcript segments
+          AND NO summary AFTER 24h. These are abandoned captures (host
+          crashed, mic disconnect, false-positive scheduler trigger).
+
+        Both passes skip active recordings (MeetingModel.status='recording'),
+        cap 200 deletions per run, and write a summary to
+        workspace/meetings/janitor_log.json so the system-status page can
+        show "last run: deleted X, kept Y, reclaimed Z MB".
         """
         try:
+            import json as _json
             import os
             from datetime import datetime, timedelta, timezone
-            from sqlalchemy import select
+            from sqlalchemy import select, func
             from app.infrastructure.database import get_session
             from app.db.models import (  # type: ignore
                 MeetingRecordingModel,
                 MeetingSummaryModel,
+                MeetingTranscriptSegmentModel,
                 MeetingModel,
             )
 
             retain_days = max(7, int(os.getenv("ZERO_MEETING_RECORDING_RETENTION_DAYS", "30")))
-            cutoff = datetime.now(timezone.utc) - timedelta(days=retain_days)
+            cutoff_summarized = datetime.now(timezone.utc) - timedelta(days=retain_days)
+            cutoff_unmaterialized = datetime.now(timezone.utc) - timedelta(hours=24)
             max_per_run = 200
             deleted = 0
             kept = 0
+            bytes_reclaimed = 0
+            failed: list[str] = []
 
+            def _try_delete(path: str | None) -> bool:
+                nonlocal deleted, kept, bytes_reclaimed
+                if not path:
+                    return False
+                try:
+                    if os.path.isfile(path):
+                        size = os.path.getsize(path)
+                        os.remove(path)
+                        deleted += 1
+                        bytes_reclaimed += size
+                        return True
+                except Exception as exc:
+                    failed.append(f"{path}: {exc}")
+                kept += 1
+                return False
+
+            # Pass 1 — summarized + old enough
             async with get_session() as db:
-                rows = (
+                pass1_rows = (
                     await db.execute(
-                        select(MeetingRecordingModel, MeetingSummaryModel.id)
+                        select(MeetingRecordingModel)
                         .join(
                             MeetingSummaryModel,
                             MeetingSummaryModel.meeting_id == MeetingRecordingModel.meeting_id,
                         )
                         .join(MeetingModel, MeetingModel.id == MeetingRecordingModel.meeting_id)
-                        .where(MeetingRecordingModel.created_at < cutoff)
+                        .where(MeetingRecordingModel.created_at < cutoff_summarized)
                         .where(MeetingModel.status != "recording")
                         .limit(max_per_run)
                     )
-                ).all()
-            if not rows:
-                logger.debug("meeting_recordings_janitor_nothing_to_do", cutoff=cutoff.isoformat())
-                return
-            for recording, _summary_id in rows:
-                fp = recording.file_path
-                try:
-                    if fp and os.path.isfile(fp):
-                        os.remove(fp)
-                        deleted += 1
-                    else:
-                        kept += 1
-                except Exception as exc:
-                    kept += 1
-                    logger.debug(
-                        "meeting_recordings_janitor_delete_failed",
-                        path=fp,
-                        error=str(exc),
-                    )
+                ).scalars().all()
+            for rec in pass1_rows:
+                _try_delete(rec.file_path)
+                if deleted >= max_per_run:
+                    break
+
+            # Pass 2 (F-42) — unmaterialized after 24h
+            if deleted < max_per_run:
+                remaining = max_per_run - deleted
+                async with get_session() as db:
+                    pass2_rows = (
+                        await db.execute(
+                            select(MeetingRecordingModel)
+                            .join(MeetingModel, MeetingModel.id == MeetingRecordingModel.meeting_id)
+                            .outerjoin(
+                                MeetingSummaryModel,
+                                MeetingSummaryModel.meeting_id == MeetingRecordingModel.meeting_id,
+                            )
+                            .where(MeetingRecordingModel.created_at < cutoff_unmaterialized)
+                            .where(MeetingModel.status != "recording")
+                            .where(MeetingSummaryModel.id.is_(None))
+                            .limit(remaining)
+                        )
+                    ).scalars().all()
+                # Only delete if there are also no transcript segments
+                # (the segments table is per-meeting; if user has segments
+                # but no summary, transcription is still in progress).
+                for rec in pass2_rows:
+                    async with get_session() as db:
+                        seg_count = (
+                            await db.execute(
+                                select(func.count())
+                                .select_from(MeetingTranscriptSegmentModel)
+                                .where(MeetingTranscriptSegmentModel.meeting_id == rec.meeting_id)
+                            )
+                        ).scalar_one()
+                    if seg_count == 0:
+                        _try_delete(rec.file_path)
+                        if deleted >= max_per_run:
+                            break
+
+            # Janitor log — persist last 30 runs so /api/meetings/janitor/
+            # last can return it for the system-status page.
+            try:
+                from app.infrastructure.config import get_workspace_path
+
+                log_path = (
+                    get_workspace_path("meetings") / "janitor_log.json"
+                )
+                history = []
+                if log_path.exists():
+                    try:
+                        history = _json.loads(log_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        history = []
+                entry = {
+                    "ran_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted": deleted,
+                    "kept": kept,
+                    "bytes_reclaimed": bytes_reclaimed,
+                    "retain_days": retain_days,
+                    "failed_count": len(failed),
+                    "failed_examples": failed[:3],
+                }
+                history.append(entry)
+                history = history[-30:]
+                tmp = log_path.with_suffix(".json.tmp")
+                tmp.write_text(_json.dumps(history, indent=2), encoding="utf-8")
+                tmp.replace(log_path)
+            except Exception as exc:
+                logger.debug("meeting_janitor_log_write_failed", error=str(exc))
+
             logger.info(
                 "meeting_recordings_janitor_done",
                 deleted=deleted,
                 kept=kept,
-                cutoff=cutoff.isoformat(),
+                bytes_reclaimed_mb=round(bytes_reclaimed / (1024 * 1024), 2),
                 retain_days=retain_days,
             )
         except Exception as e:
@@ -2396,20 +2478,66 @@ Have a great evening!"""
             try:
                 async with get_session() as db:
                     one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
-                    stuck = (
+                    stuck_rows = (
                         await db.execute(
-                            select(func.count())
-                            .select_from(MeetingModel)
+                            select(MeetingModel.id, MeetingModel.title)
                             .where(MeetingModel.status == "processing")
                             .where(MeetingModel.updated_at < one_hour_ago)
+                            .limit(5)
                         )
-                    ).scalar_one()
+                    ).all()
+                    stuck = len(stuck_rows)
                     if stuck:
                         issues.append({
                             "id": "transcript_backlog",
                             "detail": f"{stuck} meeting(s) stuck in processing > 1h",
-                            "repair": "Restart meeting_processing_pipeline; check Whisper worker.",
+                            "repair": "Restarting meeting_processing_pipeline (F-38 auto-remediation)…",
+                            "stuck_ids": [r[0] for r in stuck_rows],
                         })
+                        # F-38: ACTIVELY re-kick the processing pipeline
+                        # for each stuck meeting. Tracks per-meeting
+                        # attempts via self._stuck_restart_attempts so we
+                        # don't restart-loop a meeting that's genuinely
+                        # broken.
+                        if not hasattr(self, "_stuck_restart_attempts"):
+                            self._stuck_restart_attempts: dict[str, int] = {}
+                        try:
+                            from app.services.meeting_processing_pipeline import (
+                                process_meeting_recording,
+                            )
+                            import asyncio as _asyncio
+
+                            for mid, mtitle in stuck_rows:
+                                attempts = self._stuck_restart_attempts.get(mid, 0)
+                                if attempts >= 2:
+                                    logger.warning(
+                                        "transcription_restart_giving_up",
+                                        meeting_id=mid,
+                                        attempts=attempts,
+                                    )
+                                    continue
+                                self._stuck_restart_attempts[mid] = attempts + 1
+
+                                async def _restart(_mid: str):
+                                    try:
+                                        async with get_session() as _db:
+                                            await process_meeting_recording(
+                                                _mid, _db
+                                            )
+                                        logger.info(
+                                            "transcription_restart_ok",
+                                            meeting_id=_mid,
+                                        )
+                                    except Exception as exc:
+                                        logger.warning(
+                                            "transcription_restart_failed",
+                                            meeting_id=_mid,
+                                            error=str(exc),
+                                        )
+
+                                _asyncio.create_task(_restart(mid))
+                        except Exception as exc:
+                            logger.debug("transcription_restart_dispatch_failed", error=str(exc))
                     checked.append("transcript_backlog")
             except Exception as exc:
                 logger.debug("pipeline_health_backlog_failed", error=str(exc))
@@ -2492,15 +2620,12 @@ Have a great evening!"""
             from app.services.calendar_service import get_calendar_service
             from app.services.meeting_prep_service import build_prep_brief, is_due_for_brief
             from app.services.notification_bus import get_notification_bus
-            from datetime import datetime, timedelta, timezone
+            from datetime import datetime, timezone
 
             svc = get_calendar_service()
             now = datetime.now(tz=timezone.utc)
-            events = await svc.list_events(
-                start_date=now,
-                end_date=now + timedelta(minutes=10),
-                limit=10,
-            )
+            # F-36: share calendar cache with the other every-minute jobs.
+            events = await svc.cached_next_60min(limit=10)
         except Exception as exc:
             logger.debug("reachy_meeting_prep_brief_skipped", error=str(exc))
             return
@@ -2740,6 +2865,27 @@ Have a great evening!"""
                         )
                     except Exception as exc:
                         logger.debug("companion_meeting_active_skip", error=str(exc))
+                    # F-43: auto-mark private if attendees / title match
+                    # the always_private policy (therapy, doctor, etc.).
+                    try:
+                        from app.services.meeting_privacy_service import (
+                            get_meeting_privacy_service,
+                        )
+
+                        priv = get_meeting_privacy_service()
+                        private, reason = priv.evaluate_default(
+                            title=entry.get("title"),
+                            attendees=entry.get("attendees"),
+                        )
+                        if private:
+                            priv.mark_private(str(meeting_id), source=f"auto:{reason or 'policy'}")
+                            logger.info(
+                                "meeting_auto_private",
+                                meeting_id=meeting_id,
+                                reason=reason,
+                            )
+                    except Exception as exc:
+                        logger.debug("auto_private_skip", error=str(exc))
                     # Fan out a meeting.starting notification (browser toast,
                     # Windows tray via host_agent, Reachy speech).
                     try:

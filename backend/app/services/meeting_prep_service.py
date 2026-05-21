@@ -72,6 +72,21 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
     except Exception as exc:
         logger.debug("prep_brief_memory_lookup_failed", error=str(exc))
 
+    # F-40: surface meeting-followup tasks still open for these attendees
+    open_from_prior: list[dict[str, Any]] = []
+    try:
+        from app.services.meeting_open_actions_service import (
+            get_meeting_open_actions_service,
+        )
+
+        open_from_prior = await get_meeting_open_actions_service().open_for_attendees(
+            attendees=attendees, limit=5
+        )
+    except Exception as exc:
+        logger.debug("prep_brief_open_actions_lookup_failed", error=str(exc))
+    if open_from_prior:
+        related_tasks = open_from_prior  # surface in the markdown render
+
     summary = _compose_summary(title, location, attendees, prior_meetings)
 
     markdown = _render_markdown(
