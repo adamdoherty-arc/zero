@@ -96,9 +96,30 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
 
     t0 = time.time()
     segments = transcription.transcribe(audio_path)
-    result["steps"]["transcription"] = {"segments": len(segments), "elapsed_ms": int((time.time() - t0) * 1000)}
+    transcription_seconds = round(time.time() - t0, 2)
+    result["steps"]["transcription"] = {"segments": len(segments), "elapsed_ms": int(transcription_seconds * 1000)}
 
     await broadcast_processing_progress({"stage": "transcribing", "progress": 1.0, "message": f"Transcribed {len(segments)} segments"})
+
+    # F-82: record per-meeting cost telemetry (transcription leg).
+    try:
+        from app.services.meeting_cost_service import get_meeting_cost_service
+
+        audio_seconds_total = 0.0
+        if segments:
+            try:
+                audio_seconds_total = float(segments[-1].get("end", 0.0))
+            except Exception:
+                audio_seconds_total = 0.0
+        get_meeting_cost_service().record(
+            meeting_id=meeting_id,
+            transcription_seconds=transcription_seconds,
+            transcription_model=getattr(transcription, "model_name", None)
+            or os.getenv("REACHY_LOCAL_WHISPER_MODEL", "distil-large-v3"),
+            audio_seconds=audio_seconds_total,
+        )
+    except Exception as exc:
+        logger.debug("meeting_cost_transcription_record_failed", error=str(exc))
 
     if not segments:
         meeting_result = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
@@ -312,6 +333,20 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         result["steps"]["summarization"] = {"elapsed_ms": elapsed}
         await broadcast_processing_progress({"stage": "summarizing", "progress": 1.0, "message": "Summary generated"})
 
+        # F-82: record summary leg of cost telemetry.
+        try:
+            from app.services.meeting_cost_service import get_meeting_cost_service
+
+            get_meeting_cost_service().record(
+                meeting_id=meeting_id,
+                summary_tokens=int(summary_data.get("token_count") or 0)
+                or len((summary_data.get("summary_text") or "").split()) * 2,  # rough estimate
+                summary_model=get_settings().ollama_model,
+                summary_ms=elapsed,
+            )
+        except Exception as exc:
+            logger.debug("meeting_cost_summary_record_failed", error=str(exc))
+
         # F-44 — write the summary to /vault/Meetings/<YYYY>/<MM>/. Private
         # meetings get a stub-only file (no transcript content). Best-
         # effort: never fail the pipeline if the vault mount is missing.
@@ -356,6 +391,31 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
     except Exception as e:
         logger.warning("summarization_failed", error=str(e))
         result["steps"]["summarization"] = {"skipped": True, "reason": str(e)}
+
+    # --- Step 4b: Topic segmentation (F-76) ---
+    try:
+        from app.services.meeting_topic_segmenter import (
+            segment_transcript,
+            get_meeting_topic_store,
+        )
+
+        seg_dicts_for_topics = [
+            {
+                "text": getattr(ts, "text", "") or "",
+                "start": float(getattr(ts, "start_time", 0.0) or 0.0),
+                "end": float(getattr(ts, "end_time", 0.0) or 0.0),
+            }
+            for ts in stored_segments
+        ]
+        topics = segment_transcript(seg_dicts_for_topics)
+        get_meeting_topic_store().write(meeting_id, topics)
+        result["steps"]["topics"] = {
+            "topic_count": len(topics),
+            "labels": [t.label for t in topics[:8]],
+        }
+    except Exception as exc:
+        logger.warning("topic_segmentation_failed", error=str(exc))
+        result["steps"]["topics"] = {"skipped": True, "reason": str(exc)}
 
     # --- Step 5: Embed ---
     await broadcast_processing_progress({"stage": "embedding", "progress": 0.0, "message": "Indexing for search..."})

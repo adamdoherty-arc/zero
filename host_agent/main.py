@@ -540,6 +540,64 @@ async def state_snapshot():
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/dnd/start")
+async def dnd_start():
+    """F-78 — enter Windows Do-Not-Disturb. MVP: fires a BurntToast banner
+    so the user knows DND is on; sets host_agent state['dnd']=True. Real
+    OS-level Focus Assist enforcement is queued as a follow-on (the
+    public Windows surface for it is messy)."""
+    try:
+        from state import get_state_store
+
+        get_state_store().update({"dnd": True, "dnd_started_at": datetime.now(timezone.utc).isoformat()})
+        _maybe_burnt_toast("Zero DND on", "Recording — notifications muted via Zero.")
+        return {"ok": True, "dnd": True}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/dnd/stop")
+async def dnd_stop():
+    """F-78 — exit Windows Do-Not-Disturb. Clears state['dnd'] flag and
+    surfaces a BurntToast 'meeting wrapped' banner."""
+    try:
+        from state import get_state_store
+
+        get_state_store().clear("dnd", "dnd_started_at")
+        _maybe_burnt_toast("Zero DND off", "Meeting wrapped — notifications back on.")
+        return {"ok": True, "dnd": False}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+def _maybe_burnt_toast(title: str, body: str) -> None:
+    """Best-effort BurntToast banner. Silent when the module isn't
+    installed; F-64 already documents the install step."""
+    try:
+        import shutil
+        import subprocess as _subprocess
+
+        if not shutil.which("powershell.exe") and not shutil.which("pwsh.exe"):
+            return
+        title_safe = title.replace("'", "''")
+        body_safe = body.replace("'", "''")
+        ps = (
+            "Import-Module BurntToast -ErrorAction SilentlyContinue; "
+            f"New-BurntToastNotification -Text '{title_safe}', '{body_safe}' "
+            "-AppLogo $null -SilentNotification:$false -ErrorAction SilentlyContinue"
+        )
+        _subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-NonInteractive",
+             "-WindowStyle", "Hidden", "-Command", ps],
+            stdin=_subprocess.DEVNULL,
+            stdout=_subprocess.DEVNULL,
+            stderr=_subprocess.DEVNULL,
+            creationflags=getattr(_subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Push-to-talk / hotkey-driven voice capture
 # ---------------------------------------------------------------------------

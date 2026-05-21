@@ -377,6 +377,78 @@ async def meeting_private_status(meeting_id: str):
     }
 
 
+@router.get("/{meeting_id}/topics", status_code=200)
+async def meeting_topics(meeting_id: str):
+    """F-76 — topic timeline for a meeting. Falls back to computing on
+    demand when the workspace file is missing (older meetings that ran
+    before the segmenter was wired in)."""
+    from app.services.meeting_topic_segmenter import (
+        get_meeting_topic_store,
+        segment_transcript,
+    )
+
+    store = get_meeting_topic_store()
+    cached = store.read(meeting_id)
+    if cached and cached.get("topics"):
+        return cached
+    # On-demand regen from stored transcript segments.
+    async with get_session() as db:
+        rows = (
+            await db.execute(
+                select(MeetingTranscriptSegmentModel)
+                .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                .order_by(MeetingTranscriptSegmentModel.start_time.asc())
+            )
+        ).scalars().all()
+    if not rows:
+        raise HTTPException(404, "No transcript segments for this meeting")
+    seg_dicts = [
+        {"text": r.text or "", "start": float(r.start_time or 0.0), "end": float(r.end_time or 0.0)}
+        for r in rows
+    ]
+    topics = segment_transcript(seg_dicts)
+    return store.write(meeting_id, topics)
+
+
+@router.post("/{meeting_id}/topics/regenerate", status_code=200)
+async def meeting_topics_regenerate(meeting_id: str):
+    """Force-recompute topics. Useful after editing transcript segments
+    or tuning segmenter thresholds."""
+    from app.services.meeting_topic_segmenter import (
+        get_meeting_topic_store,
+        segment_transcript,
+    )
+
+    async with get_session() as db:
+        rows = (
+            await db.execute(
+                select(MeetingTranscriptSegmentModel)
+                .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                .order_by(MeetingTranscriptSegmentModel.start_time.asc())
+            )
+        ).scalars().all()
+    if not rows:
+        raise HTTPException(404, "No transcript segments for this meeting")
+    seg_dicts = [
+        {"text": r.text or "", "start": float(r.start_time or 0.0), "end": float(r.end_time or 0.0)}
+        for r in rows
+    ]
+    topics = segment_transcript(seg_dicts)
+    return get_meeting_topic_store().write(meeting_id, topics)
+
+
+@router.get("/{meeting_id}/cost", status_code=200)
+async def meeting_cost(meeting_id: str):
+    """F-82 — per-meeting cost telemetry (transcription seconds, summary
+    tokens, model, estimated USD). Returns 404 if no record yet."""
+    from app.services.meeting_cost_service import get_meeting_cost_service
+
+    row = get_meeting_cost_service().get(meeting_id)
+    if not row:
+        raise HTTPException(404, "No cost record yet for this meeting")
+    return row
+
+
 @router.post("/{meeting_id}/vault-write", status_code=200)
 async def meeting_vault_rerender(meeting_id: str):
     """F-63 — re-render the meeting markdown into /vault/Meetings/.

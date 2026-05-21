@@ -3072,6 +3072,22 @@ Have a great evening!"""
                             )
                     except Exception as exc:
                         logger.debug("auto_private_skip", error=str(exc))
+                    # F-78: push DND across Windows Focus Assist + Slack
+                    # + Teams. Best-effort; each adapter skipped if its
+                    # token isn't configured.
+                    try:
+                        import asyncio as _asyncio
+                        from app.services.meeting_dnd_service import (
+                            get_meeting_dnd_service,
+                        )
+
+                        _asyncio.create_task(
+                            get_meeting_dnd_service().apply(
+                                active=True, source=f"meeting:{meeting_id}"
+                            )
+                        )
+                    except Exception as exc:
+                        logger.debug("dnd_apply_start_skip", error=str(exc))
                     # Fan out a meeting.starting notification (browser toast,
                     # Windows tray via host_agent, Reachy speech).
                     try:
@@ -3175,6 +3191,21 @@ Have a great evening!"""
                             )
                         except Exception as exc:
                             logger.debug("companion_meeting_inactive_skip", error=str(exc))
+                        # F-78: restore DND state on every adapter.
+                        try:
+                            import asyncio as _asyncio
+                            from app.services.meeting_dnd_service import (
+                                get_meeting_dnd_service,
+                            )
+
+                            _asyncio.create_task(
+                                get_meeting_dnd_service().apply(
+                                    active=False,
+                                    source=f"meeting_stop:{entry['meeting_id']}",
+                                )
+                            )
+                        except Exception as exc:
+                            logger.debug("dnd_apply_stop_skip", error=str(exc))
                         try:
                             from app.services.notification_bus import (
                                 get_notification_bus,

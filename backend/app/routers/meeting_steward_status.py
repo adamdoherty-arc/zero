@@ -253,6 +253,19 @@ async def meeting_steward_status() -> dict[str, Any]:
     return out
 
 
+@router.get("/cost/weekly")
+async def cost_weekly() -> dict[str, Any]:
+    """F-82 — last 7 days of meeting cost telemetry. Cheap workspace JSON
+    rollup; surfaces total transcription seconds + summary tokens + an
+    estimated USD figure."""
+    try:
+        from app.services.meeting_cost_service import get_meeting_cost_service
+
+        return get_meeting_cost_service().weekly_summary()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 @router.get("/weekly-analytics")
 async def weekly_analytics() -> dict[str, Any]:
     """F-73 — week-over-week meeting analytics for the dashboard tile.
