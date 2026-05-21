@@ -65,6 +65,12 @@ class CompanionPolicy(BaseModel):
     meeting_active_id: Optional[str] = None
     last_wake_at: Optional[datetime] = None
     wake_response_window_s: int = Field(30, ge=2, le=600)
+    # F-48 BYO-output toggle. When output_audio_enabled=False, Reachy
+    # synthesises TTS as usual (transcript still streams to the UI) but
+    # the on_assistant_audio callback that drives the Reachy speaker is
+    # short-circuited. Use for headphone mode or office hours.
+    output_audio_enabled: bool = True
+    tts_sink: Literal["reachy_speaker", "browser_only", "both"] = "reachy_speaker"
     updated_at: datetime = Field(default_factory=utc_now)
 
 
@@ -86,6 +92,8 @@ class CompanionPolicyPatch(BaseModel):
     meeting_active_id: Optional[str] = None
     last_wake_at: Optional[datetime] = None
     wake_response_window_s: Optional[int] = Field(None, ge=2, le=600)
+    output_audio_enabled: Optional[bool] = None
+    tts_sink: Optional[Literal["reachy_speaker", "browser_only", "both"]] = None
 
 
 class CompanionModeRequest(BaseModel):

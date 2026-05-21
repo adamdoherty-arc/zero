@@ -3,6 +3,18 @@ name: meeting-pipeline-health
 description: Daily health audit of the meeting steward subsystem. Pings recording, transcript, summary, vault-write, notification fan-out, and wake-word fire counts; grades the pipeline 0-100 and writes the result to legion_loop_runs.
 mode: read-only
 schedule: daily 07:30 UTC
+owner_project: zero
+category: ops-health
+endpoint:
+  method: GET
+  url: http://host.docker.internal:18792/api/meeting-steward/
+  auth: bearer
+dispatch:
+  via: mesh-coordinator
+  cross_post_to: legion_loop_runs
+  triggers_on_alarm: meeting.health.alarm
+backend_job: meeting_pipeline_health
+backend_cron: "*/15 * * * *"
 ---
 
 # Meeting Pipeline Health

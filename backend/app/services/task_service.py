@@ -53,6 +53,29 @@ class TaskService:
                 return None
             return Task.model_validate(row, from_attributes=True)
 
+    async def find_by_source_reference(self, source_reference: str) -> Optional[Task]:
+        """Look up an existing task by its source_reference string.
+
+        Returns the most-recently-created match, or None. Used by meeting
+        action-item -> task creators to stay idempotent: calling the
+        creation endpoint twice for the same meeting should not duplicate
+        tasks.
+        """
+        if not source_reference:
+            return None
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    select(TaskModel)
+                    .where(TaskModel.source_reference == source_reference)
+                    .order_by(TaskModel.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            return Task.model_validate(row, from_attributes=True)
+
     async def create_task(self, task_data: TaskCreate) -> Task:
         """Create a new task."""
         async with get_session() as session:

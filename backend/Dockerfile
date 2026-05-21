@@ -37,8 +37,10 @@ RUN retry_pip() { \
         return 1; \
     }; \
     retry_pip --upgrade pip setuptools wheel \
-    && (sed -n '1,144p' requirements.txt > /tmp/legacy.txt) \
-    && (sed -n '145,$p' requirements.txt > /tmp/carousel_v2.txt) \
+    && retry_pip --extra-index-url https://download.pytorch.org/whl/cpu \
+        "torch==2.5.1+cpu" "torchaudio==2.5.1+cpu" \
+    && (sed -n '1,156p' requirements.txt > /tmp/legacy.txt) \
+    && (sed -n '157,$p' requirements.txt > /tmp/carousel_v2.txt) \
     && retry_pip -r /tmp/legacy.txt \
     && retry_pip -r /tmp/carousel_v2.txt \
     && retry_pip --no-deps "protobuf>=4.25.3,<5"

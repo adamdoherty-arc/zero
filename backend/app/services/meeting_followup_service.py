@@ -223,11 +223,24 @@ class MeetingFollowupService:
             from app.models.task import TaskCategory, TaskCreate, TaskPriority, TaskSource
 
             task_svc = get_task_service()
-            for item in items:
+            for idx, item in enumerate(items):
                 desc = str(item.get("description") or "").strip()
                 if not desc:
                     continue
                 owner = str(item.get("owner") or "").strip()
+                source_ref = f"meeting:{meeting_id}#action-{idx}"
+                # Stay idempotent across reruns + duplicate with the
+                # /action-items/create-tasks endpoint, which uses the same
+                # source_reference scheme. Skip if a task already exists.
+                existing = await task_svc.find_by_source_reference(source_ref)
+                if existing is not None:
+                    skipped.append({
+                        "description": desc,
+                        "owner": owner or None,
+                        "reason": "task_already_exists",
+                        "task_id": existing.id,
+                    })
+                    continue
                 # External owner (not the user) → drop into approval-queue
                 # rather than directly creating a task in their backlog.
                 external = bool(owner and owner.lower() not in {"me", "i", "self", "adam"})
@@ -276,7 +289,7 @@ class MeetingFollowupService:
                             category=TaskCategory.CHORE,
                             priority=TaskPriority.MEDIUM,
                             source=TaskSource.USER_REPORTED,
-                            source_reference=f"meeting:{meeting_id}",
+                            source_reference=source_ref,
                             tags=tags,
                             due_at=due_at,
                         )

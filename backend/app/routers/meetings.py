@@ -642,6 +642,16 @@ async def create_tasks_from_action_items(
             body_lines.append(f"Due (per transcript): {due}")
         full_desc = "\n".join(body_lines) + "\n\n" + description
 
+        source_ref = f"meeting:{meeting_id}#action-{idx}"
+        # Idempotent re-runs: if a task with this source_reference already
+        # exists, surface it as "skipped" so the caller knows what we did
+        # without creating a duplicate row.
+        existing = await task_service.find_by_source_reference(source_ref)
+        if existing is not None:
+            link.task_id = existing.id
+            link.skipped_reason = "task already exists for this action item"
+            skipped.append(link)
+            continue
         try:
             task = await task_service.create_task(TaskCreate(
                 title=title,
@@ -649,7 +659,7 @@ async def create_tasks_from_action_items(
                 category=TaskCategory.CHORE,
                 priority=TaskPriority.MEDIUM,
                 source=TaskSource.USER_REPORTED,
-                source_reference=f"meeting:{meeting_id}#action-{idx}",
+                source_reference=source_ref,
             ))
             link.task_id = task.id
             created.append(link)

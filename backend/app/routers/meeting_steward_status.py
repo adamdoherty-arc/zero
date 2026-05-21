@@ -89,7 +89,8 @@ async def meeting_steward_status() -> dict[str, Any]:
     except Exception as exc:
         out["approvals"] = {"error": str(exc)}
 
-    # Notification bus — recent + counts of meeting-related event types
+    # Notification bus -- recent + counts of meeting-related event types.
+    # As of Enhancement-11, the bus is DB-backed so this survives restarts.
     try:
         from app.services.notification_bus import get_notification_bus
 
@@ -98,14 +99,26 @@ async def meeting_steward_status() -> dict[str, Any]:
         for e in events:
             t = str(e.get("type") or "")
             by_type[t] = by_type.get(t, 0) + 1
+        last_alarm = next(
+            (e for e in reversed(events) if e.get("type") == "meeting.health.alarm"),
+            None,
+        )
+        last_failure = next(
+            (e for e in reversed(events) if e.get("type") == "meeting.processing.failed"),
+            None,
+        )
         out["notifications"] = {
             "recent_count": len(events),
             "by_type": by_type,
-            "last_alarm": next(
-                (e for e in reversed(events) if e.get("type") == "meeting.health.alarm"),
-                None,
-            ),
+            "last_alarm": last_alarm,
+            "last_processing_failure": last_failure,
+            "tail": events[-5:],  # most recent 5, surfaced in the steward UI
         }
+        if last_failure:
+            out["issues"].append({
+                "id": "meeting_processing_failure",
+                "detail": f"recent pipeline failure for meeting {last_failure.get('meeting_id')}",
+            })
     except Exception as exc:
         out["notifications"] = {"error": str(exc)}
 

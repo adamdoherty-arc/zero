@@ -373,6 +373,8 @@ export interface CompanionPolicy {
   meeting_active_id: string | null
   last_wake_at: string | null
   wake_response_window_s: number
+  output_audio_enabled: boolean
+  tts_sink: 'reachy_speaker' | 'browser_only' | 'both'
   updated_at: string
 }
 

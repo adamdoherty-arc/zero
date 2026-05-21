@@ -51,6 +51,7 @@ import { OperationsDashboardPage } from '@/pages/OperationsDashboardPage'
 import { MeetingsPage } from '@/pages/MeetingsPage'
 import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
 import { MeetingSearchPage } from '@/pages/MeetingSearchPage'
+import { IdentitiesPage } from '@/pages/IdentitiesPage'
 import { AiCompanyPage } from '@/pages/AiCompanyPage'
 import { DeepResearchPage } from '@/pages/DeepResearchPage'
 import { CompanyOsPage } from '@/pages/CompanyOsPage'
@@ -163,6 +164,7 @@ function App() {
             <Route path="/meetings" element={<MeetingsPage />} />
             <Route path="/meetings/:id" element={<MeetingDetailPage />} />
             <Route path="/meeting-search" element={<MeetingSearchPage />} />
+            <Route path="/identities" element={<IdentitiesPage />} />
             <Route path="/ai-company" element={<AiCompanyPage />} />
             <Route path="/deep-research" element={<DeepResearchPage />} />
             <Route path="/personal/board" element={<PersonalBoardPage />} />

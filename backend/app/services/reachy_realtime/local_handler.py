@@ -1968,7 +1968,22 @@ class LocalRealtimeHandler:
                     "type": "mascot.viseme",
                     **vf,
                 })
-            if self._on_assistant_audio is not None:
+            # F-48 BYO-output: when companion policy.output_audio_enabled is
+            # False (or tts_sink is browser_only), skip the Reachy speaker
+            # callback. audio.delta still streams to the WS so the browser
+            # can play it through the user's headphones.
+            speaker_allowed = True
+            try:
+                from app.services.reachy_companion_service import (
+                    get_reachy_companion_service,
+                )
+
+                _pol = get_reachy_companion_service().get_policy()
+                if not _pol.output_audio_enabled or _pol.tts_sink == "browser_only":
+                    speaker_allowed = False
+            except Exception:
+                pass
+            if self._on_assistant_audio is not None and speaker_allowed:
                 try:
                     self._assistant_audio_active_until = max(
                         self._assistant_audio_active_until,

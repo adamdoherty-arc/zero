@@ -65,32 +65,60 @@ async def list_devices():
 @router.post("/start")
 async def start_recording_endpoint(request: RecordingStartRequest):
     if _host_agent_url():
-        return await _forward("POST", "/record/start", json=request.model_dump(exclude_none=True))
-    async with get_session() as db:
-        try:
-            return await start_recording(
-                db,
-                meeting_id=request.meeting_id,
-                title=request.title,
-                source=request.source,
-                mic_device_index=request.mic_device_index,
-                system_device_index=request.system_device_index,
-            )
-        except RuntimeError as e:
-            raise HTTPException(409, str(e))
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+        result = await _forward("POST", "/record/start", json=request.model_dump(exclude_none=True))
+    else:
+        async with get_session() as db:
+            try:
+                result = await start_recording(
+                    db,
+                    meeting_id=request.meeting_id,
+                    title=request.title,
+                    source=request.source,
+                    mic_device_index=request.mic_device_index,
+                    system_device_index=request.system_device_index,
+                )
+            except RuntimeError as e:
+                raise HTTPException(409, str(e))
+            except ValueError as e:
+                raise HTTPException(404, str(e))
+    # Enhancement-11: announce on the bus so the dashboard + steward
+    # status card see a meeting starting in real time.
+    try:
+        from app.services.notification_bus import get_notification_bus
+        await get_notification_bus().publish({
+            "type": "meeting.recording.started",
+            "source": "meeting_recordings.start",
+            "meeting_id": result.get("meeting_id"),
+            "mic_device_name": result.get("mic_device_name"),
+            "title": request.title,
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("notify_recording_started_failed", error=str(exc))
+    return result
 
 
 @router.post("/stop")
 async def stop_recording_endpoint():
     if _host_agent_url():
-        return await _forward("POST", "/record/stop")
-    async with get_session() as db:
-        result = await stop_recording(db)
-        if result is None:
-            raise HTTPException(400, "No active recording")
-        return result
+        result = await _forward("POST", "/record/stop")
+    else:
+        async with get_session() as db:
+            r = await stop_recording(db)
+            if r is None:
+                raise HTTPException(400, "No active recording")
+            result = r
+    try:
+        from app.services.notification_bus import get_notification_bus
+        await get_notification_bus().publish({
+            "type": "meeting.recording.stopped",
+            "source": "meeting_recordings.stop",
+            "meeting_id": result.get("meeting_id"),
+            "duration_seconds": result.get("duration_seconds"),
+            "file_size_bytes": result.get("file_size_bytes"),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("notify_recording_stopped_failed", error=str(exc))
+    return result
 
 
 @router.get("/status")
@@ -160,20 +188,53 @@ async def recording_capabilities():
     }
 
 
+# Process-state registry. Keeps /process idempotent so a host_agent
+# auto-trigger plus a user-initiated POST cannot both fire the pipeline
+# (which would double-insert transcript segments + double-bill the LLM).
+_active_pipeline_tasks: dict[str, "asyncio.Task"] = {}
+
+
 @router.post("/{meeting_id}/process")
 async def process_meeting(meeting_id: str):
     """
     Kick off the Whisper transcription + diarization + summary pipeline for
     a meeting whose audio has already been recorded (e.g. via the host agent).
     Runs in the background; returns immediately.
+
+    Idempotent: concurrent calls for the same meeting_id return
+    ``already_running`` instead of spawning a second pipeline.
     """
     import asyncio
     from app.services.meeting_processing_pipeline import process_meeting_recording
 
+    existing = _active_pipeline_tasks.get(meeting_id)
+    if existing is not None and not existing.done():
+        logger.info("meeting_pipeline_already_running", meeting_id=meeting_id)
+        return {"meeting_id": meeting_id, "status": "already_running"}
+
     async def _run():
         try:
+            from app.services.notification_bus import get_notification_bus
+            bus = get_notification_bus()
+            try:
+                await bus.publish({
+                    "type": "meeting.processing.started",
+                    "source": "meeting_recordings.process",
+                    "meeting_id": meeting_id,
+                })
+            except Exception:
+                pass
             async with get_session() as db:
-                await process_meeting_recording(meeting_id, db)
+                pipeline_result = await process_meeting_recording(meeting_id, db)
+            try:
+                await bus.publish({
+                    "type": "meeting.processed",
+                    "source": "meeting_processing_pipeline",
+                    "meeting_id": meeting_id,
+                    "steps": (pipeline_result or {}).get("steps", {}),
+                })
+            except Exception:
+                pass
             # TTS: "Summary ready" after pipeline completes
             settings = get_settings()
             if settings.reachy_tts_confirmations:
@@ -196,8 +257,22 @@ async def process_meeting(meeting_id: str):
                     await db.commit()
             except Exception:
                 pass
+            try:
+                from app.services.notification_bus import get_notification_bus
+                await get_notification_bus().publish({
+                    "type": "meeting.processing.failed",
+                    "source": "meeting_processing_pipeline",
+                    "meeting_id": meeting_id,
+                    "error": str(e)[:500],
+                })
+            except Exception:
+                pass
+        finally:
+            # Free the slot so future re-runs (e.g. via the meeting detail
+            # page's "re-process" button) can fire.
+            _active_pipeline_tasks.pop(meeting_id, None)
 
-    asyncio.create_task(_run())
+    _active_pipeline_tasks[meeting_id] = asyncio.create_task(_run())
     return {"meeting_id": meeting_id, "status": "processing_started"}
 
 

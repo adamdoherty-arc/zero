@@ -30,6 +30,15 @@ Transcript:
 {transcript}
 ---
 
+Extraction rules (apply rigorously, do not skip):
+- ACTION ITEMS = any commitment to do something later. Phrases like "I will",
+  "we should", "X needs to", "let's follow up", "action item for me", "by
+  Friday", "by tomorrow" all signal an action item. Capture EVERY one --
+  err on the side of including borderline cases rather than dropping them.
+- DECISIONS = anything the group agreed to ship, defer, or change. Phrases
+  like "we agreed", "let's go with", "we'll ship" signal decisions.
+- KEY TOPICS = 2-5 short noun phrases naming what was discussed.
+
 Respond with a JSON object containing exactly these fields:
 {{
   "summary_text": "<2-4 paragraph summary of key discussion points>",
@@ -116,6 +125,22 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // _CHARS_PER_TOKEN
 
 
+# Action-item heuristic for the re-prompt path. Cheap substring check;
+# avoids paying for a second LLM call when the transcript truly has no
+# commitments in it.
+_ACTION_HINTS = (
+    "action item", "i will", "i'll ", "we will", "we should",
+    "need to", "needs to", "follow up", "by tomorrow", "by friday",
+    "by monday", "by tuesday", "by wednesday", "by thursday",
+    "by next", "by end of", "to do", "todo:", "let's ", "lets ",
+)
+
+
+def _looks_like_has_actions(transcript: str) -> bool:
+    t = transcript.lower()
+    return any(hint in t for hint in _ACTION_HINTS)
+
+
 def _split_transcript(text: str, chunk_token_target: int = _CHUNK_TOKEN_TARGET) -> list[str]:
     char_target = chunk_token_target * _CHARS_PER_TOKEN
     if len(text) <= char_target:
@@ -135,16 +160,42 @@ def _split_transcript(text: str, chunk_token_target: int = _CHUNK_TOKEN_TARGET) 
     return chunks
 
 
+_THINK_TAG_RE = __import__("re").compile(r"<think>.*?</think>\s*", flags=__import__("re").DOTALL | __import__("re").IGNORECASE)
+
+
 def _parse_json_response(raw: str) -> dict:
-    """Parse JSON from LLM response, stripping markdown fences if present."""
-    text = raw.strip()
+    """Parse JSON from LLM response, stripping markdown fences + Qwen think tags.
+
+    Qwen3-32B-AWQ in thinking mode emits ``<think>...</think>`` reasoning
+    blocks before the actual JSON. Without stripping those, ``json.loads``
+    falls back to the stub return and action_items/decisions are lost.
+
+    When the LLM still returns empty/non-JSON, surface a stub instead of
+    letting JSONDecodeError bubble up and crash the whole pipeline.
+    """
+    text = (raw or "").strip()
+    if not text:
+        logger.warning("summary_llm_empty_response")
+        return {"summary_text": "", "key_topics": [], "action_items": [], "decisions": []}
+    # Strip Qwen thinking-mode wrapper(s) first -- there can be multiple.
+    text = _THINK_TAG_RE.sub("", text).strip()
     if text.startswith("```"):
-        first_newline = text.index("\n")
+        first_newline = text.index("\n") if "\n" in text else len(text)
         text = text[first_newline + 1:]
     if text.endswith("```"):
         text = text[:-3]
     text = text.strip()
-    return json.loads(text)
+    # Some Qwen variants emit the JSON without fences after the think block
+    # but prefix it with stray prose; look for the first '{' as a salvage.
+    if text and not text.startswith("{"):
+        brace = text.find("{")
+        if brace > 0:
+            text = text[brace:]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.warning("summary_llm_non_json", error=str(e), preview=text[:200])
+        return {"summary_text": text[:1000], "key_topics": [], "action_items": [], "decisions": []}
 
 
 class MeetingSummaryService:
@@ -162,11 +213,32 @@ class MeetingSummaryService:
         client = get_unified_llm_client()
         prompt = _SINGLE_PASS_PROMPT.format(title=title, transcript=transcript)
         raw = await client.chat(
-            prompt, system=_SUMMARIZE_SYSTEM, temperature=0.1,
+            prompt, system=_SUMMARIZE_SYSTEM, temperature=0.2,
             task_type="summary",
         )
-        result = _parse_json_response(raw)
-        return self._normalize(result)
+        result = self._normalize(_parse_json_response(raw))
+        # One-shot re-prompt when action items came back empty but the
+        # transcript clearly contains action-item language. Catches LLM
+        # variance where the model is over-conservative.
+        if not result["action_items"] and _looks_like_has_actions(transcript):
+            logger.info("summary_empty_actions_reprompt", title=title)
+            try:
+                raw2 = await client.chat(
+                    prompt + "\n\nThe previous response had empty action_items. "
+                    "Re-read the transcript and extract EVERY clear commitment, "
+                    "including borderline cases. Return the same JSON shape.",
+                    system=_SUMMARIZE_SYSTEM,
+                    temperature=0.3,
+                    task_type="summary",
+                )
+                retry = self._normalize(_parse_json_response(raw2))
+                if retry["action_items"]:
+                    # Keep the original summary_text / topics, only adopt
+                    # the rescued action_items list.
+                    result["action_items"] = retry["action_items"]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("summary_action_reprompt_failed", error=str(exc))
+        return result
 
     async def _map_reduce(self, transcript: str, title: str) -> dict:
         client = get_unified_llm_client()

@@ -87,6 +87,21 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
     if open_from_prior:
         related_tasks = open_from_prior  # surface in the markdown render
 
+    # F-47: cross-project references in the title / description.
+    xproject: dict[str, Any] = {}
+    try:
+        from app.services.meeting_xproject_resolver import (
+            get_meeting_xproject_resolver,
+        )
+
+        xproject = await get_meeting_xproject_resolver().resolve(
+            title=title,
+            description=getattr(calendar_event, "description", None)
+            or getattr(calendar_event, "details", None),
+        )
+    except Exception as exc:
+        logger.debug("prep_brief_xproject_resolve_failed", error=str(exc))
+
     summary = _compose_summary(title, location, attendees, prior_meetings)
 
     markdown = _render_markdown(
@@ -99,6 +114,9 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
         attendee_notes=attendee_notes,
         summary=summary,
     )
+    xproject_md = _render_xproject_section(xproject)
+    if xproject_md:
+        markdown = markdown.rstrip() + "\n\n" + xproject_md.rstrip() + "\n"
 
     return {
         "meeting_id": meeting_id,
@@ -109,6 +127,7 @@ async def build_prep_brief(*, meeting_id: str | None, calendar_event: Any) -> di
         "prior_meetings": prior_meetings,
         "attendee_notes": attendee_notes,
         "related_tasks": related_tasks,
+        "xproject": xproject,
         "summary": summary,
         "markdown": markdown,
     }
@@ -177,6 +196,34 @@ def _render_markdown(
         for t in related_tasks:
             lines.append(f"- {t.get('title')}")
     return "\n".join(lines).strip() + "\n"
+
+
+def _render_xproject_section(xproject: dict[str, Any] | None) -> str:
+    """Optional cross-project links block. Returns empty string when
+    there's nothing to surface."""
+    if not xproject:
+        return ""
+    lines: list[str] = []
+    sprints = xproject.get("legion_sprints") or []
+    if sprints:
+        lines.append("## Related Legion sprints")
+        for s in sprints:
+            slug = s.get("slug") or "?"
+            name = s.get("name") or ""
+            status = s.get("status") or ""
+            if s.get("found", True):
+                lines.append(f"- [{slug}] {name} ({status})")
+            else:
+                lines.append(f"- {slug} (mentioned, not found)")
+        lines.append("")
+    personal = xproject.get("personal_board") or []
+    if personal:
+        lines.append("## Related personal-board items")
+        for p in personal:
+            domain = p.get("domain") or ""
+            lines.append(f"- {p.get('title')}" + (f" ({domain})" if domain else ""))
+        lines.append("")
+    return "\n".join(lines)
 
 
 def is_due_for_brief(*, start_dt: datetime, now: datetime | None = None, lead_min: int = 5) -> bool:

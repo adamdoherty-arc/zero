@@ -1421,6 +1421,47 @@ class VoiceprintModel(Base):
     )
 
 
+class NotificationEventModel(Base):
+    """Persistent notification fan-out events. Enhancement-11.
+
+    notification_bus.publish() writes here so the steward + dashboard
+    "recent events" reads survive zero-api restarts (the in-memory ring
+    buffer doesn't).
+    """
+    __tablename__ = "notification_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(120))
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class FaceprintModel(Base):
+    """Persistent face fingerprint per identity. Feature-52 vision speaker ID.
+
+    Mirrors VoiceprintModel exactly so the meeting pipeline can match camera
+    captures to a known person the same way it matches diarized voice clusters.
+    MVP uses imagehash-derived bits padded to 128 dims; a follow-up swaps in
+    a real face_recognition / insightface embedding without schema changes.
+    """
+    __tablename__ = "faceprints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    embedding = mapped_column(Vector(128), nullable=False)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_meeting_id: Mapped[Optional[str]] = mapped_column(String(64))
+    face_crop_path: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ---------------------------------------------------------------------------
 # Conversation Sessions (persistent)
 # ---------------------------------------------------------------------------

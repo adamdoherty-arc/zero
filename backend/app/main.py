@@ -26,6 +26,7 @@ from app.routers import (
     llc_guidance, approvals, visual_workflows,
     meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
     meeting_chat, meeting_search, meeting_speakers, meeting_ws, voiceprints,
+    faceprints,
     meeting_preferences,
     ecosystem_health,
     tts, reachy, reachy_intent, reachy_email, reachy_realtime, reachy_memory, reachy_companion, home_assistant, oauth_accounts, sight,
@@ -825,6 +826,7 @@ app.include_router(meeting_search.router, prefix="/api/meeting-search", tags=["M
 app.include_router(meeting_speakers.router, prefix="/api/meetings", tags=["Meeting Speakers"])
 app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
 app.include_router(voiceprints.router, prefix="/api/voiceprints", tags=["Voiceprints"])
+app.include_router(faceprints.router, prefix="/api/faceprints", tags=["Faceprints"])
 app.include_router(meeting_preferences.router, prefix="/api/meeting-preferences", tags=["Meeting Preferences"])
 
 # Personal Assistant (feedback, goals, memory)

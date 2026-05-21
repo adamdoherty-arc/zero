@@ -215,6 +215,140 @@ async def _bookkeeper_adapter(user_text: str, ctx: dict[str, Any]) -> Supervisor
         )
 
 
+async def _adhoc_capture_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
+    """F-50 — voice 'Hey Zero, record this' / 'end recording'.
+
+    Treats the user's intent as start-or-stop based on the verb. The
+    actual capture flows through host_agent's /record/start and /stop —
+    same path the auto-record scheduler uses, so the meeting goes
+    through the full transcription / summary / follow-up pipeline."""
+    import httpx
+    import os
+
+    text = (user_text or "").lower()
+    is_stop = any(k in text for k in (
+        "end recording", "stop recording", "stop the meeting",
+        "end the meeting", "finish recording", "wrap up",
+    ))
+    is_start = any(k in text for k in (
+        "record this", "start recording", "begin recording",
+        "capture this", "record the meeting",
+    ))
+    if not is_start and not is_stop:
+        is_start = True  # default to start when ambiguous
+    host_url = (
+        os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796")
+        .rstrip("/")
+    )
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as c:
+            if is_stop:
+                r = await c.post(f"{host_url}/record/stop")
+                data = r.json() if r.status_code < 400 else {}
+                # Companion's meeting_active flag was set on auto-start
+                # via the scheduler — for ad-hoc captures, the host_agent
+                # owns state; we leave companion in whatever state it
+                # was in. The auto-stop loop will mirror later.
+                spoken = (
+                    "Recording stopped. I'll process the transcript and surface action items."
+                    if data.get("meeting_id") or data.get("ok")
+                    else "I don't think a recording was running."
+                )
+                return SupervisorResult(
+                    intent="meeting_capture_stop",
+                    spoken=spoken,
+                    tool_calls=[{"adapter": "adhoc_capture", "action": "stop", "ok": True, "result": data}],
+                )
+            # Start path
+            r = await c.post(
+                f"{host_url}/record/start",
+                json={"source": "mic", "title": _adhoc_title()},
+            )
+            data = r.json() if r.status_code < 400 else {}
+            if data.get("error"):
+                return SupervisorResult(
+                    intent="meeting_capture_start",
+                    spoken=f"I couldn't start recording — {data.get('error')}.",
+                    tool_calls=[{"adapter": "adhoc_capture", "action": "start", "ok": False, "result": data}],
+                )
+            # Flip companion into meeting_active so the silent-listen gate
+            # kicks in and post-stop drains run automatically.
+            try:
+                from app.services.reachy_companion_service import (
+                    get_reachy_companion_service,
+                )
+                mid = str(data.get("meeting_id") or "")
+                if mid:
+                    get_reachy_companion_service().set_meeting_active(
+                        active=True, meeting_id=mid
+                    )
+            except Exception:
+                pass
+            return SupervisorResult(
+                intent="meeting_capture_start",
+                spoken="Recording started. I'll stay silent until you ask a question.",
+                tool_calls=[{"adapter": "adhoc_capture", "action": "start", "ok": True, "result": data}],
+            )
+    except Exception as e:
+        logger.warning("supervisor_adhoc_capture_failed", error=str(e))
+        return SupervisorResult(
+            intent="meeting_capture",
+            spoken="I couldn't reach the recorder right now.",
+            tool_calls=[{"adapter": "adhoc_capture", "ok": False, "error": str(e)}],
+            error=str(e),
+        )
+
+
+def _adhoc_title() -> str:
+    return f"Ad hoc {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+
+
+async def _system_check_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
+    """F-45 — voice "Hey Zero, system check / how's everything?".
+
+    Reads the meeting-steward status aggregator and speaks a one-sentence
+    summary. Falls back to a generic 'something needs attention' line on
+    any failed gate."""
+    try:
+        from app.routers.meeting_steward_status import meeting_steward_status
+
+        data = await meeting_steward_status()
+        issues = data.get("issues") or []
+        if not issues:
+            companion = data.get("companion") or {}
+            approvals = data.get("approvals") or {}
+            backlog = data.get("transcript_backlog") or {}
+            pending = approvals.get("pending") or 0
+            in_flight = backlog.get("total_processing") or 0
+            mode = companion.get("mode") or "ambient"
+            extras = []
+            if pending:
+                extras.append(f"{pending} pending approval{'s' if pending != 1 else ''}")
+            if in_flight:
+                extras.append(f"{in_flight} meeting{'s' if in_flight != 1 else ''} transcribing")
+            tail = " " + " and ".join(extras) + "." if extras else ""
+            spoken = f"All systems nominal. Companion is in {mode} mode.{tail}"
+        else:
+            first = issues[0]
+            spoken = (
+                f"{len(issues)} issue{'s' if len(issues) != 1 else ''} to look at — "
+                f"{first.get('id')}: {first.get('detail', '')[:120]}"
+            )
+        return SupervisorResult(
+            intent="system_check",
+            spoken=spoken[:500],
+            tool_calls=[{"adapter": "system_check", "ok": not issues, "issue_count": len(issues)}],
+        )
+    except Exception as e:
+        logger.warning("supervisor_system_check_failed", error=str(e))
+        return SupervisorResult(
+            intent="system_check",
+            spoken="I couldn't read the system status right now.",
+            tool_calls=[{"adapter": "system_check", "ok": False, "error": str(e)}],
+            error=str(e),
+        )
+
+
 async def _meeting_rag_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
     """Voice → meeting-transcript RAG.
 
@@ -294,6 +428,20 @@ async def _brief_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResul
 # request like "research the best CPAs in Duval" should land on research,
 # not company, even though the latter's keyword list includes "duval"/"cpa".
 _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
+    # F-50: ad-hoc capture verbs win before the broader meeting / calendar
+    # intents. Order matters — "record this" must NOT fall into calendar.
+    ("meeting_capture", (
+        "record this", "start recording", "begin recording", "capture this",
+        "record the meeting", "end recording", "stop recording",
+        "stop the meeting", "end the meeting", "finish recording", "wrap up",
+    )),
+    # F-45: system_check wins early so "how's everything" doesn't fall
+    # into the daily-brief / calendar buckets.
+    ("system_check", (
+        "system check", "system status", "how's everything", "how are things",
+        "any alarms", "any issues", "everything ok", "everything okay",
+        "status report", "health check",
+    )),
     ("daily_brief", (
         "daily brief", "morning brief", "what should i work on", "overnight report",
     )),
@@ -347,6 +495,8 @@ class SupervisorGraph:
             "bookkeeper": _bookkeeper_adapter,
             "daily_brief": _brief_adapter,
             "meeting_rag": _meeting_rag_adapter,
+            "system_check": _system_check_adapter,
+            "meeting_capture": _adhoc_capture_adapter,
         }
         self._lg_app: Any = None
         if USE_LANGGRAPH:

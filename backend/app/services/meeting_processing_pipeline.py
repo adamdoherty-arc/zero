@@ -189,6 +189,80 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
             logger.warning("voiceprint_match_skipped", error=str(e))
             result["steps"]["voiceprint_match"] = {"skipped": True, "reason": str(e)}
 
+    # --- Step 2c: Face match (Feature-52) ---
+    # If host_agent captured camera frames during the meeting, cluster the
+    # detected faces and rewrite SPEAKER_XX labels for diarized turns whose
+    # midpoint falls within a frame timestamp range of a matched face cluster.
+    try:
+        from app.services.meeting_face_service import (
+            extract_faces_from_meeting,
+            get_faceprint_service,
+        )
+        from app.infrastructure.config import get_workspace_path
+
+        frames_dir = get_workspace_path("meetings") / meeting_id / "frames"
+        if frames_dir.exists():
+            t0 = time.time()
+            clusters = extract_faces_from_meeting(meeting_id, frames_dir)
+            face_svc = get_faceprint_service()
+            face_labels: dict[int, str] = {}
+            for cluster in clusters:
+                if cluster.centroid is None:
+                    continue
+                m = await face_svc.match(cluster.centroid.astype("float32"))
+                if m:
+                    face_labels[cluster.cluster_id] = m[0]
+                    logger.info(
+                        "face_match",
+                        meeting_id=meeting_id,
+                        cluster=cluster.cluster_id,
+                        identity=m[0],
+                        similarity=round(m[1], 3),
+                        frames=len(cluster.frames),
+                    )
+
+            # Build (start_ms, end_ms, identity) windows from matched clusters.
+            matched_windows = []
+            for cluster in clusters:
+                name = face_labels.get(cluster.cluster_id)
+                if not name:
+                    continue
+                start_ms, end_ms = cluster.ts_range
+                matched_windows.append((start_ms, end_ms, name))
+
+            # Align: a transcript segment whose midpoint falls within any
+            # window inherits that identity. This complements voiceprint
+            # alignment -- if voiceprint already named the speaker, we don't
+            # overwrite it (voice is more discriminative than imagehash).
+            recording_start_ms = None
+            if recording and recording.created_at:
+                recording_start_ms = int(recording.created_at.timestamp() * 1000)
+            face_assigned = 0
+            for seg in segments:
+                if seg.get("speaker") and not seg["speaker"].startswith("SPEAKER_"):
+                    # Already named (probably by voiceprint match).
+                    continue
+                mid_ms = int(((seg["start"] + seg["end"]) / 2.0) * 1000)
+                if recording_start_ms is not None:
+                    mid_ms += recording_start_ms
+                for start_ms, end_ms, name in matched_windows:
+                    if start_ms <= mid_ms <= end_ms:
+                        seg["speaker"] = name
+                        face_assigned += 1
+                        break
+
+            result["steps"]["face_match"] = {
+                "clusters": len(clusters),
+                "matched_identities": len(face_labels),
+                "segments_renamed": face_assigned,
+                "elapsed_ms": int((time.time() - t0) * 1000),
+            }
+        else:
+            result["steps"]["face_match"] = {"skipped": True, "reason": "no_frames"}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("face_match_skipped", error=str(e))
+        result["steps"]["face_match"] = {"skipped": True, "reason": str(e)}
+
     # --- Step 3: Store segments ---
     await broadcast_processing_progress({"stage": "storing", "progress": 0.0, "message": "Saving transcript..."})
 
@@ -237,6 +311,48 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
         await db.commit()
         result["steps"]["summarization"] = {"elapsed_ms": elapsed}
         await broadcast_processing_progress({"stage": "summarizing", "progress": 1.0, "message": "Summary generated"})
+
+        # F-44 — write the summary to /vault/Meetings/<YYYY>/<MM>/. Private
+        # meetings get a stub-only file (no transcript content). Best-
+        # effort: never fail the pipeline if the vault mount is missing.
+        try:
+            from app.services.meeting_vault_writer import (
+                get_meeting_vault_writer,
+            )
+            from app.services.meeting_privacy_service import (
+                get_meeting_privacy_service,
+            )
+
+            speakers = sorted({
+                str(s.get("speaker") or "")
+                for s in segments
+                if s.get("speaker")
+            })
+            vault_res = get_meeting_vault_writer().write(
+                meeting_id=meeting_id,
+                title=title or "Untitled meeting",
+                start_time=meeting.start_time if meeting else None,
+                end_time=meeting.end_time if meeting else None,
+                attendees=list(getattr(meeting, "participants", None) or []),
+                summary_text=summary_data.get("summary_text", "") or "",
+                key_topics=summary_data.get("key_topics", []) or [],
+                action_items=summary_data.get("action_items", []) or [],
+                decisions=summary_data.get("decisions", []) or [],
+                transcript_segment_count=len(segments),
+                recording_path=getattr(recording, "file_path", None) if recording else None,
+                speakers=speakers,
+                private=get_meeting_privacy_service().is_private(meeting_id),
+            )
+            result["steps"]["vault_write"] = vault_res
+            logger.info(
+                "meeting_vault_write",
+                meeting_id=meeting_id,
+                ok=vault_res.get("ok"),
+                path=vault_res.get("path"),
+            )
+        except Exception as exc:
+            logger.warning("meeting_vault_write_failed", meeting_id=meeting_id, error=str(exc))
+            result["steps"]["vault_write"] = {"skipped": True, "reason": str(exc)}
     except Exception as e:
         logger.warning("summarization_failed", error=str(e))
         result["steps"]["summarization"] = {"skipped": True, "reason": str(e)}

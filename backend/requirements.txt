@@ -36,11 +36,23 @@ faster-whisper>=1.1.0
 numpy>=1.24.0
 soundfile>=0.12.1
 
-# Meeting Intelligence - Heavy/platform-specific deps (install natively, NOT in Docker)
-# pip install pyannote.audio sounddevice PyAudioWPatch
-# pyannote.audio: speaker diarization (requires torch ~5GB, HF_TOKEN)
-# PyAudioWPatch: Windows WASAPI loopback audio capture (Windows-only)
-# sounddevice: microphone input (needs PortAudio system lib)
+# Meeting Intelligence
+# pyannote.audio for speaker diarization. CPU-only torch 2.5.1 wheels are pulled
+# in the Dockerfile via the PyTorch CPU index — bumps the image by ~600MB but
+# unlocks speaker labels + voiceprint matching.
+# Pin to 3.3.x: newer pyannote releases require torch>=2.8 which is much bigger
+# to download; 3.3.x is compatible with torch 2.5.1 and supports the
+# pyannote/speaker-diarization-3.1 model we use.
+# Requires ZERO_HF_TOKEN at runtime (pyannote/speaker-diarization-3.1 is gated).
+pyannote.audio>=3.3.0,<3.4
+# Pin pyannote.audio's PyTorch Lightning dep to match the 3.3.x torch 2.x line.
+pytorch-lightning>=2.0,<2.5
+# huggingface_hub: pyannote 3.3.x calls hf_hub_download(use_auth_token=...)
+# which was removed in hub >=0.27. Pin to the last version that accepted the
+# old kwarg so diarization can load gated models without a TypeError.
+huggingface_hub>=0.23,<0.27
+# PyAudioWPatch: Windows WASAPI loopback audio capture (Windows-only, stays on host_agent)
+# sounddevice: microphone input (stays on host_agent)
 
 # Google APIs (Gmail, Calendar)
 google-auth>=2.23.0
@@ -137,6 +149,11 @@ mediapipe>=0.10.11,<0.10.20
 protobuf>=4.25.3,<5
 # Librosa for BPM detection in radio mode (Wave 13).
 librosa>=0.10.0
+# Pin numba+llvmlite so pip doesn't burn 15+ min backtracking through versions
+# once pyannote.audio's transitive deps push extra constraints. 0.60/0.43 is a
+# known-good cp311 combination compatible with current librosa + pyannote.
+numba==0.60.0
+llvmlite==0.43.0
 # Wake-word detection — used by /api/reachy/wake-word/status + /predict.
 # Pulls scikit-learn + onnxruntime as transitive deps. ~25 MB total.
 openwakeword>=0.6.0
