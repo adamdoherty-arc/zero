@@ -343,6 +343,40 @@ async def meeting_followup_status(meeting_id: str):
     return {"meeting_id": meeting_id, **svc._ledger_get(meeting_id)}
 
 
+@router.post("/{meeting_id}/private", status_code=200)
+async def meeting_mark_private(meeting_id: str):
+    """Mark a meeting private. Recording stays on disk; transcript will
+    NOT be summarized, indexed, or used to draft follow-up emails."""
+    from app.services.meeting_privacy_service import (
+        get_meeting_privacy_service,
+    )
+
+    get_meeting_privacy_service().mark_private(meeting_id, source="api")
+    return {"meeting_id": meeting_id, "private": True}
+
+
+@router.delete("/{meeting_id}/private", status_code=200)
+async def meeting_clear_private(meeting_id: str):
+    from app.services.meeting_privacy_service import (
+        get_meeting_privacy_service,
+    )
+
+    get_meeting_privacy_service().clear(meeting_id)
+    return {"meeting_id": meeting_id, "private": False}
+
+
+@router.get("/{meeting_id}/private", status_code=200)
+async def meeting_private_status(meeting_id: str):
+    from app.services.meeting_privacy_service import (
+        get_meeting_privacy_service,
+    )
+
+    return {
+        "meeting_id": meeting_id,
+        "private": get_meeting_privacy_service().is_private(meeting_id),
+    }
+
+
 def _event_dt_to_datetime(event_dt) -> datetime | None:
     """Pull a tz-aware UTC datetime out of an EventDateTime payload."""
     if event_dt is None:

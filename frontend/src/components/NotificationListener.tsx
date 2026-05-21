@@ -86,6 +86,33 @@ export function NotificationListener() {
             })
             return
           }
+          if (type === 'meeting.conflict') {
+            const title = String(event.title ?? 'meeting')
+            toast({
+              title: `Conflict — ${title}`,
+              description: `Another meeting is already recording. ${title} queued; will start when the recorder frees up if still in window.`,
+            })
+            return
+          }
+          if (type === 'meeting.audio_lost') {
+            const title = String(event.title ?? 'meeting')
+            const attempt = Number(event.attempt ?? 0)
+            toast({
+              title: `Audio lost — ${title}`,
+              description: `Recording stalled (attempt ${attempt}). Check the Reachy mic / host_agent.`,
+              variant: 'destructive',
+            })
+            return
+          }
+          if (type === 'meeting.health.alarm') {
+            const issues = (event.issues as Array<{id: string; detail: string}>) || []
+            toast({
+              title: `Meeting pipeline alarm`,
+              description: issues.slice(0, 2).map((i) => `${i.id}: ${i.detail}`).join(' • ') || 'See /approvals or logs.',
+              variant: 'destructive',
+            })
+            return
+          }
           // Generic notice fallback.
           const summary = String(event.summary ?? event.message ?? '')
           if (summary) {

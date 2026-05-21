@@ -842,6 +842,20 @@ _SPECS: Dict[str, Dict[str, Any]] = {
             "required": ["question"],
         },
     },
+    "mark_meeting_private": {
+        "type": "function",
+        "name": "mark_meeting_private",
+        "description": "Mark the currently-recording meeting as private. The recording stays on local disk for the user's reference, but the transcript will NOT be summarized, indexed, or used to draft follow-up emails. Use when the user says 'this is private', 'don't share this', 'mark this private', or 'don't summarise this one'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "meeting_id": {
+                    "type": "string",
+                    "description": "Optional. Defaults to whatever meeting is currently active (companion policy.meeting_active_id).",
+                },
+            },
+        },
+    },
 }
 
 
@@ -1408,6 +1422,41 @@ async def _supervisor_dispatch(deps: ToolDependencies, args: Dict[str, Any], _mg
         return {"error": str(e), "response_text": "Supervisor unavailable."}
 
 
+async def _mark_meeting_private(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """Mark the currently-recording meeting private. Reads the active
+    meeting from companion policy when ``meeting_id`` is not supplied."""
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    if not meeting_id:
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            policy = get_reachy_companion_service().get_policy()
+            meeting_id = policy.meeting_active_id or ""
+        except Exception:
+            meeting_id = ""
+    if not meeting_id:
+        return {
+            "error": "no active meeting",
+            "response_text": "There's no meeting being recorded right now.",
+        }
+    try:
+        from app.services.meeting_privacy_service import (
+            get_meeting_privacy_service,
+        )
+
+        get_meeting_privacy_service().mark_private(meeting_id, source="voice")
+        return {
+            "meeting_id": meeting_id,
+            "response_text": "Got it — this one stays private. No summary, no email follow-up, no search index.",
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "response_text": "Couldn't mark the meeting private right now.",
+        }
+
+
 async def _meeting_rag_query(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
     """Search past meetings (transcripts + summaries) and answer a question.
     Powers 'Hey Zero, what did Sarah say last week?' from inside an active
@@ -1495,6 +1544,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "bookkeeping_query": _bookkeeping_query,
     "supervisor_dispatch": _supervisor_dispatch,
     "meeting_rag_query": _meeting_rag_query,
+    "mark_meeting_private": _mark_meeting_private,
 }
 
 

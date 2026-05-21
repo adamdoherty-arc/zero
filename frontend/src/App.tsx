@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { NotificationListener } from '@/components/NotificationListener'
+import { ApprovalsPage } from '@/pages/ApprovalsPage'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { MobileLayout } from '@/layouts/MobileLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
@@ -130,6 +131,7 @@ function App() {
             <Route path="/orchestrator" element={<OrchestratorPage />} />
             <Route path="/email" element={<EmailPage />} />
             <Route path="/email/drafts" element={<DraftsInbox />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/crm" element={<CrmPage />} />

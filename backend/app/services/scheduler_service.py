@@ -305,6 +305,16 @@ DAILY_SCHEDULE = {
         "description": "Delete meeting WAV files older than N days once the meeting has a transcript + summary",
         "enabled": True
     },
+    "meeting_audio_watchdog": {
+        "cron": "* * * * *",  # Every minute
+        "description": "If auto-recorder thinks a meeting is recording but host_agent says it isn't, publish meeting.audio_lost",
+        "enabled": True
+    },
+    "meeting_pipeline_health": {
+        "cron": "*/15 * * * *",  # Every 15 minutes
+        "description": "Audit meeting pipeline (recording capability, host_agent reachable, transcript backlog, wake-word fired in 24h, notification bus alive) and publish meeting.health.alarm on failures",
+        "enabled": True
+    },
     "reachy_morning_briefing": {
         "cron": "0 8 * * *",  # 8:00 AM daily
         "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
@@ -1437,6 +1447,8 @@ class SchedulerService:
             "reachy_meeting_auto_stop": self._run_reachy_meeting_auto_stop,
             "reachy_meeting_prep_brief": self._run_reachy_meeting_prep_brief,
             "meeting_recordings_janitor": self._run_meeting_recordings_janitor,
+            "meeting_audio_watchdog": self._run_meeting_audio_watchdog,
+            "meeting_pipeline_health": self._run_meeting_pipeline_health,
             "reachy_morning_briefing": self._run_reachy_morning_briefing,
             "reachy_evening_journal": self._run_reachy_evening_journal,
             "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
@@ -2190,6 +2202,281 @@ Have a great evening!"""
         except Exception as e:
             logger.warning("meeting_recordings_janitor_failed", error=str(e))
 
+    async def _run_meeting_audio_watchdog(self):
+        """Detect host_agent / recording state divergence.
+
+        If the meeting_auto_recorder ledger says a meeting is currently
+        being captured (started but not stopped) but the host_agent
+        recording probe says ``is_recording=false``, the recorder thread
+        has crashed. Publish ``meeting.audio_lost`` so the user knows;
+        attempt a single restart per event before giving up.
+        """
+        try:
+            from datetime import datetime, timezone
+            from app.services.meeting_auto_recorder_service import (
+                get_meeting_auto_recorder_service,
+            )
+            from app.services.meeting_recording_service import (
+                get_recording_status,
+                get_recording_status_via_host_agent,
+                start_recording,
+                start_recording_via_host_agent,
+                _host_agent_base,
+            )
+            from app.services.notification_bus import get_notification_bus
+            from app.infrastructure.database import get_session
+
+            svc = get_meeting_auto_recorder_service()
+            marked = await svc.list_marked()
+            if not marked:
+                return
+            now = datetime.now(timezone.utc)
+
+            def _in_window(entry: dict[str, Any]) -> bool:
+                """Recording active = started, not stopped, and end_time
+                is still in the future (or null)."""
+                if not entry.get("started"):
+                    return False
+                if entry.get("stopped") or entry.get("skipped"):
+                    return False
+                end_iso = entry.get("end_time")
+                if not end_iso:
+                    return True
+                try:
+                    end_dt = datetime.fromisoformat(str(end_iso))
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=timezone.utc)
+                    return end_dt > now
+                except Exception:
+                    return True
+
+            actively_marked = [e for e in marked if _in_window(e)]
+            if not actively_marked:
+                return
+
+            use_host_agent = _host_agent_base() is not None
+            if use_host_agent:
+                status = await get_recording_status_via_host_agent()
+            else:
+                status = get_recording_status()
+            actually_recording = bool(status and status.get("is_recording"))
+            if actually_recording:
+                return  # tracker + probe agree
+
+            # Divergence — recover the most recent active entry.
+            if not hasattr(self, "_audio_watchdog_attempts"):
+                self._audio_watchdog_attempts: dict[str, int] = {}
+            self._audio_watchdog_attempts = {
+                k: v for k, v in self._audio_watchdog_attempts.items()
+                if k in {e.get("calendar_event_id") for e in actively_marked}
+            }
+            for entry in actively_marked:
+                event_id = entry.get("calendar_event_id") or entry.get("meeting_id") or ""
+                attempts = self._audio_watchdog_attempts.get(event_id, 0)
+                if attempts >= 2:
+                    continue  # give up after 2 retries
+                self._audio_watchdog_attempts[event_id] = attempts + 1
+                logger.warning(
+                    "meeting_audio_watchdog_divergence",
+                    meeting_id=entry.get("meeting_id"),
+                    event_id=event_id,
+                    attempt=attempts + 1,
+                )
+                try:
+                    if use_host_agent:
+                        await start_recording_via_host_agent(
+                            meeting_id=entry["meeting_id"], source="mixed"
+                        )
+                    else:
+                        async with get_session() as db:
+                            await start_recording(
+                                db, meeting_id=entry["meeting_id"], source="mixed"
+                            )
+                    logger.info(
+                        "meeting_audio_watchdog_restart_ok",
+                        meeting_id=entry["meeting_id"],
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "meeting_audio_watchdog_restart_failed",
+                        meeting_id=entry["meeting_id"],
+                        error=str(exc),
+                    )
+                    try:
+                        await get_notification_bus().publish({
+                            "type": "meeting.audio_lost",
+                            "meeting_id": entry.get("meeting_id"),
+                            "event_id": event_id,
+                            "title": entry.get("title"),
+                            "attempt": attempts + 1,
+                            "reason": str(exc)[:200],
+                        })
+                    except Exception:
+                        pass
+                break  # one recovery per tick to avoid recorder thrash
+        except Exception as e:
+            logger.debug("meeting_audio_watchdog_skipped", error=str(e))
+
+    async def _run_meeting_pipeline_health(self):
+        """F-33: active remediation of the meeting pipeline.
+
+        Checks five things every 15 min and publishes
+        ``meeting.health.alarm`` per failed gate:
+
+          1. host_agent /health reachable
+          2. /api/meeting-recordings/capabilities can_record=true
+          3. transcript backlog (meetings status='processing' older than
+             1 h is suspicious)
+          4. notification bus reachable (publish→recent roundtrip)
+          5. wake-word fire count in last 24 h > 0 (proxy for whether
+             the wake loop is alive)
+
+        Failures don't auto-remediate yet — they publish alarms with a
+        concrete repair hint so the user can act. Auto-restart of the
+        transcription pipeline is queued as a follow-on.
+        """
+        try:
+            import os
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select, func
+            from app.infrastructure.database import get_session
+            from app.db.models import MeetingModel  # type: ignore
+            from app.services.notification_bus import get_notification_bus
+            import httpx
+
+            issues: list[dict[str, Any]] = []
+            checked: list[str] = []
+
+            host_agent_url = (
+                os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796")
+                .rstrip("/")
+            )
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as c:
+                    r = await c.get(f"{host_agent_url}/health")
+                    if r.status_code >= 400 or not r.json().get("ok"):
+                        issues.append({
+                            "id": "host_agent",
+                            "detail": f"host_agent /health returned {r.status_code}",
+                            "repair": "Restart host_agent (run.bat) on the Windows host.",
+                        })
+                checked.append("host_agent")
+            except Exception as exc:
+                issues.append({
+                    "id": "host_agent",
+                    "detail": f"host_agent unreachable: {exc}",
+                    "repair": "Restart host_agent (run.bat) on the Windows host.",
+                })
+
+            try:
+                from app.services.meeting_recording_service import (
+                    _host_agent_base,
+                )
+                host_url = _host_agent_base()
+                if not host_url:
+                    issues.append({
+                        "id": "recording_capability",
+                        "detail": "host_agent URL not configured",
+                        "repair": "Set ZERO_HOST_AGENT_URL or run host_agent locally.",
+                    })
+                else:
+                    async with httpx.AsyncClient(timeout=3.0) as c:
+                        r = await c.get(f"{host_url}/health")
+                        ha = r.json() if r.status_code < 400 else {}
+                        if not ha.get("ok"):
+                            issues.append({
+                                "id": "recording_capability",
+                                "detail": "host_agent /health returned not-ok",
+                                "repair": "Restart host_agent to re-enable recording route.",
+                            })
+                checked.append("recording_capability")
+            except Exception as exc:
+                logger.debug("pipeline_health_caps_failed", error=str(exc))
+
+            try:
+                async with get_session() as db:
+                    one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+                    stuck = (
+                        await db.execute(
+                            select(func.count())
+                            .select_from(MeetingModel)
+                            .where(MeetingModel.status == "processing")
+                            .where(MeetingModel.updated_at < one_hour_ago)
+                        )
+                    ).scalar_one()
+                    if stuck:
+                        issues.append({
+                            "id": "transcript_backlog",
+                            "detail": f"{stuck} meeting(s) stuck in processing > 1h",
+                            "repair": "Restart meeting_processing_pipeline; check Whisper worker.",
+                        })
+                    checked.append("transcript_backlog")
+            except Exception as exc:
+                logger.debug("pipeline_health_backlog_failed", error=str(exc))
+
+            try:
+                bus = get_notification_bus()
+                test_event = {"type": "meeting.health.probe", "probe": True}
+                await bus.publish(test_event)
+                recent = await bus.recent(limit=5)
+                if not any(e.get("type") == "meeting.health.probe" for e in recent):
+                    issues.append({
+                        "id": "notification_bus",
+                        "detail": "publish→recent roundtrip failed",
+                        "repair": "Reload notification_bus singleton (zero-api restart).",
+                    })
+                checked.append("notification_bus")
+            except Exception as exc:
+                issues.append({
+                    "id": "notification_bus",
+                    "detail": str(exc),
+                    "repair": "Reload notification_bus singleton (zero-api restart).",
+                })
+
+            try:
+                from app.services.reachy_companion_service import (
+                    get_reachy_companion_service,
+                )
+                events = get_reachy_companion_service().list_events(limit=300)
+                day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+                wake_events = [
+                    e for e in events
+                    if str(getattr(e, "type", "")) == "voice_heard"
+                    and getattr(e, "created_at", None)
+                    and getattr(e, "created_at") > day_ago
+                ]
+                if not wake_events:
+                    issues.append({
+                        "id": "wake_word",
+                        "detail": "no wake-word fires in last 24h",
+                        "repair": "Open /reachy → DaemonPanel → Start daemon and verify mic device.",
+                    })
+                checked.append("wake_word")
+            except Exception as exc:
+                logger.debug("pipeline_health_wake_failed", error=str(exc))
+
+            if issues:
+                try:
+                    await get_notification_bus().publish({
+                        "type": "meeting.health.alarm",
+                        "issues": issues,
+                        "checked": checked,
+                    })
+                except Exception:
+                    pass
+                logger.warning(
+                    "meeting_pipeline_health_alarm",
+                    issue_count=len(issues),
+                    checked=checked,
+                )
+            else:
+                logger.info(
+                    "meeting_pipeline_health_ok",
+                    checked=checked,
+                )
+        except Exception as e:
+            logger.debug("meeting_pipeline_health_skipped", error=str(e))
+
     async def _run_reachy_meeting_prep_brief(self):
         """Fire a per-event prep brief ~5 minutes before each calendar event.
 
@@ -2381,6 +2668,51 @@ Have a great evening!"""
                 except Exception as exc:
                     logger.debug("superhuman_handoff_skip", error=str(exc))
 
+                # Concurrency guard — if another recording is already in
+                # progress, queue this meeting instead of dropping it.
+                # The auto-stop loop drains the queue when the current
+                # recording ends, IFF the queued meeting still has window.
+                _other_recording = False
+                try:
+                    from app.services.meeting_recording_service import (
+                        get_recording_status,
+                        get_recording_status_via_host_agent,
+                    )
+
+                    if use_host_agent:
+                        status = await get_recording_status_via_host_agent()
+                        _other_recording = bool(status and status.get("is_recording"))
+                    else:
+                        _other_recording = bool(get_recording_status().get("is_recording"))
+                except Exception:
+                    _other_recording = False
+                if _other_recording:
+                    try:
+                        from app.services.meeting_concurrency_service import (
+                            get_meeting_concurrency_service,
+                        )
+                        from app.services.notification_bus import (
+                            get_notification_bus,
+                        )
+
+                        get_meeting_concurrency_service().enqueue(
+                            meeting_id=meeting_id,
+                            event_id=event_id,
+                            title=entry.get("title"),
+                            end_time=entry.get("end_time"),
+                            reason="recorder_busy",
+                        )
+                        await get_notification_bus().publish({
+                            "type": "meeting.conflict",
+                            "meeting_id": meeting_id,
+                            "event_id": event_id,
+                            "title": entry.get("title"),
+                            "reason": "recorder_busy",
+                        })
+                        await svc.mark_started(event_id)
+                        continue
+                    except Exception as exc:
+                        logger.debug("meeting_concurrency_enqueue_failed", error=str(exc))
                 try:
                     if use_host_agent:
                         await start_recording_via_host_agent(
@@ -2541,6 +2873,55 @@ Have a great evening!"""
                             )
                         except Exception as exc:
                             logger.debug("meeting_followup_kickoff_skip", error=str(exc))
+                        # F-28: drain any queued meetings that collided
+                        # with the recording we just stopped. Start the
+                        # next one inline if its window is still open.
+                        try:
+                            from app.services.meeting_concurrency_service import (
+                                get_meeting_concurrency_service,
+                            )
+
+                            cq = get_meeting_concurrency_service()
+                            fresh = cq.drain_due(datetime.now(timezone.utc))
+                            for q in fresh:
+                                try:
+                                    if use_host_agent:
+                                        await start_recording_via_host_agent(
+                                            meeting_id=q["meeting_id"], source="mixed"
+                                        )
+                                    else:
+                                        async with get_session() as db:
+                                            await start_recording(
+                                                db,
+                                                meeting_id=q["meeting_id"],
+                                                source="mixed",
+                                            )
+                                    is_recording = True  # subsequent stops will fire on this one
+                                    logger.info(
+                                        "meeting_concurrency_drained_started",
+                                        meeting_id=q["meeting_id"],
+                                        event_id=q["calendar_event_id"],
+                                    )
+                                    from app.services.notification_bus import (
+                                        get_notification_bus,
+                                    )
+                                    await get_notification_bus().publish({
+                                        "type": "meeting.starting",
+                                        "meeting_id": q["meeting_id"],
+                                        "event_id": q["calendar_event_id"],
+                                        "title": q.get("title"),
+                                        "via": "host_agent" if use_host_agent else "local",
+                                        "reason": "concurrency_drain",
+                                    })
+                                    break  # one at a time
+                                except Exception as exc:
+                                    logger.debug(
+                                        "meeting_concurrency_drain_start_failed",
+                                        meeting_id=q.get("meeting_id"),
+                                        error=str(exc),
+                                    )
+                        except Exception as exc:
+                            logger.debug("meeting_concurrency_drain_skip", error=str(exc))
                 except Exception as e:
                     logger.warning(
                         "reachy_meeting_auto_stop_failed",

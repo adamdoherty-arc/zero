@@ -95,10 +95,24 @@ class MeetingFollowupService:
         + summary pipeline has finished. We poll for the summary up to
         ``max_wait_for_summary_s`` (default 5 min) before declaring the
         run incomplete.
+
+        Honors the meeting_privacy_service — private meetings bypass the
+        entire pipeline so transcript content never reaches tasks, vault
+        index, or email drafts.
         """
         if not _enabled():
             logger.info("meeting_followup_disabled", meeting_id=meeting_id)
             return {"ok": False, "reason": "disabled"}
+        try:
+            from app.services.meeting_privacy_service import (
+                get_meeting_privacy_service,
+            )
+
+            if get_meeting_privacy_service().is_private(meeting_id):
+                logger.info("meeting_followup_skipped_private", meeting_id=meeting_id)
+                return {"ok": False, "reason": "private"}
+        except Exception:
+            pass
         ledger = self._ledger_get(meeting_id)
         result: dict[str, Any] = {"meeting_id": meeting_id}
 
