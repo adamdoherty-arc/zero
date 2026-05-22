@@ -9,6 +9,7 @@ import threading
 import time
 import os
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -17,6 +18,20 @@ import structlog
 from audio_buffer import RingBuffer
 
 logger = structlog.get_logger(__name__)
+
+
+class MicCaptureError(RuntimeError):
+    """Raised when the recorder cannot open the requested mic device.
+
+    host_agent's /record/start uses this to short-circuit DB writes and
+    return HTTP 502 to zero-api, instead of the old behavior of reporting
+    is_recording=true while the WAV stays at the 44-byte header.
+    """
+
+    def __init__(self, message: str, *, device_index: Optional[int] = None, device_name: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.device_index = device_index
+        self.device_name = device_name
 
 
 REACHY_DEVICE_HINTS = (
@@ -194,10 +209,28 @@ class AudioCapture:
             str(output_path), mode="w", samplerate=self.sample_rate,
             channels=1, format="WAV", subtype="PCM_16",
         )
-        if source in ("system", "mixed"):
-            self._start_system_capture()
-        if source in ("mic", "mixed"):
-            self._start_mic_capture()
+        try:
+            if source in ("system", "mixed"):
+                self._start_system_capture()
+            if source in ("mic", "mixed"):
+                self._start_mic_capture()
+        except MicCaptureError:
+            # Tear down what we partially set up so a follow-up call can
+            # cleanly start with a different device.
+            self._is_recording = False
+            if self._wav_writer is not None:
+                try:
+                    self._wav_writer.close()
+                except Exception:
+                    pass
+                self._wav_writer = None
+            try:
+                if output_path.exists():
+                    output_path.unlink()
+            except Exception:
+                pass
+            self._current_file = None
+            raise
         self._mixer_thread = threading.Thread(
             target=self._mixer_loop, args=(source,), daemon=True, name="audio-mixer",
         )
@@ -272,40 +305,53 @@ class AudioCapture:
     def _start_mic_capture(self) -> None:
         try:
             import sounddevice as sd
-            kwargs = dict(
-                samplerate=self.sample_rate, channels=1, dtype="float32",
-                blocksize=1024, callback=self._mic_callback,
-            )
-            if self.mic_device_index is not None:
-                kwargs["device"] = self.mic_device_index
-                try:
-                    info = sd.query_devices(self.mic_device_index)
-                    self._mic_device_name = info.get("name")
-                except Exception:
-                    self._mic_device_name = f"index={self.mic_device_index}"
-            else:
-                try:
-                    default_in = sd.default.device[0]
-                    if default_in is not None and default_in != -1:
-                        self._mic_device_name = sd.query_devices(default_in).get("name")
-                except Exception:
-                    self._mic_device_name = None
-            self._mic_stream = sd.InputStream(**kwargs)
-            self._mic_stream.start()
-            logger.info(
-                "mic_capture_started",
-                rate=self.sample_rate,
-                device=self._mic_device_name,
-                device_index=self.mic_device_index,
-            )
         except ImportError:
             logger.warning("sounddevice_not_available")
+            raise MicCaptureError(
+                "sounddevice not installed in host_agent venv",
+                device_index=self.mic_device_index,
+            )
+        kwargs = dict(
+            samplerate=self.sample_rate, channels=1, dtype="float32",
+            blocksize=1024, callback=self._mic_callback,
+        )
+        if self.mic_device_index is not None:
+            kwargs["device"] = self.mic_device_index
+            try:
+                info = sd.query_devices(self.mic_device_index)
+                self._mic_device_name = info.get("name")
+            except Exception:
+                self._mic_device_name = f"index={self.mic_device_index}"
+        else:
+            try:
+                default_in = sd.default.device[0]
+                if default_in is not None and default_in != -1:
+                    self._mic_device_name = sd.query_devices(default_in).get("name")
+            except Exception:
+                self._mic_device_name = None
+        try:
+            self._mic_stream = sd.InputStream(**kwargs)
+            self._mic_stream.start()
         except Exception as e:
+            # Hard surface the failure so /record/start can return 502 and
+            # avoid the "is_recording=true with zero bytes" silent failure.
             logger.error(
                 "mic_capture_failed",
                 error=str(e),
                 requested_device_index=self.mic_device_index,
             )
+            self._mic_stream = None
+            raise MicCaptureError(
+                str(e),
+                device_index=self.mic_device_index,
+                device_name=self._mic_device_name,
+            ) from e
+        logger.info(
+            "mic_capture_started",
+            rate=self.sample_rate,
+            device=self._mic_device_name,
+            device_index=self.mic_device_index,
+        )
 
     def _system_callback(self, in_data, frame_count, time_info, status):
         if not self._is_recording:

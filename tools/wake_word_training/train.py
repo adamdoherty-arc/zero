@@ -109,6 +109,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     neg_ambient = sorted((args.neg / "ambient").glob("*.wav"))
     print(f"positives: {len(pos_files)}  negatives: {len(neg_speech)} speech / {len(neg_ambient)} ambient")
 
+    # Honest preflight — refuse to start training with obviously thin data.
+    if len(pos_files) < 200:
+        print(
+            f"\nERROR: only {len(pos_files)} positive samples. Need at least 200 "
+            "(2000 recommended). Generate via:\n"
+            "  python tools/wake_word_training/generate_samples.py --out "
+            f"{args.pos} --count 2000"
+        )
+        return 4
+    if len(neg_speech) + len(neg_ambient) < 100:
+        print(
+            f"\nERROR: only {len(neg_speech) + len(neg_ambient)} negatives. "
+            "Need at least 100 (~2 hours of mixed speech + ambient recommended).\n"
+            "Run: bash tools/wake_word_training/setup.sh"
+        )
+        return 5
+
     random.seed(42)
     random.shuffle(pos_files)
     holdout_n = max(50, int(len(pos_files) * args.holdout_fraction))

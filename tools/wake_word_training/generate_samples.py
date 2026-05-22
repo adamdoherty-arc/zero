@@ -22,7 +22,7 @@ import random
 import subprocess
 import wave
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 # Piper voices that work well on the Reachy speakerphone — soft accents,
 # distinct timbres. Extend this list and the model's recall improves.
@@ -53,12 +53,22 @@ PHRASES: tuple[str, ...] = (
 )
 
 
-def synthesize(voice: str, text: str, out_wav: Path) -> bool:
-    """Run a single Piper TTS synthesis. Returns False on failure."""
+def synthesize(voice: str, text: str, out_wav: Path, voices_dir: Optional[Path] = None) -> bool:
+    """Run a single Piper TTS synthesis. Returns False on failure.
+
+    When ``voices_dir`` is provided, ``voice`` is resolved to
+    ``voices_dir/<voice>.onnx``. Otherwise piper looks up the voice in
+    its own default cache.
+    """
+    if voices_dir is not None:
+        candidate = voices_dir / f"{voice}.onnx"
+        model_arg = str(candidate) if candidate.exists() else voice
+    else:
+        model_arg = voice
     cmd = [
         "piper",
         "--model",
-        voice,
+        model_arg,
         "--output_file",
         str(out_wav),
     ]
@@ -67,7 +77,17 @@ def synthesize(voice: str, text: str, out_wav: Path) -> bool:
             cmd, input=text.encode("utf-8"), capture_output=True, timeout=15
         )
         return proc.returncode == 0 and out_wav.exists() and out_wav.stat().st_size > 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError:
+        # piper binary missing — emit a clear error once.
+        if not hasattr(synthesize, "_piper_missing_logged"):
+            print(
+                "ERROR: 'piper' binary not on PATH. Install via\n"
+                "    pip install piper-tts\n"
+                "and ensure your venv's Scripts dir is on PATH."
+            )
+            synthesize._piper_missing_logged = True  # type: ignore[attr-defined]
+        return False
+    except subprocess.TimeoutExpired:
         return False
 
 
@@ -100,6 +120,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--count", type=int, default=2000)
     p.add_argument("--voices", nargs="+", default=list(DEFAULT_VOICES))
+    p.add_argument(
+        "--voices-dir",
+        type=Path,
+        default=None,
+        help="Directory containing <voice>.onnx files (default: piper's own cache)",
+    )
     args = p.parse_args(argv)
 
     out_dir: Path = args.out
@@ -107,22 +133,48 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_dir = out_dir / "_raw"
     raw_dir.mkdir(exist_ok=True)
 
+    # Filter to voices we can actually find on disk when voices-dir given.
+    voices = list(args.voices)
+    if args.voices_dir:
+        available = {p.stem for p in args.voices_dir.glob("*.onnx")}
+        kept = [v for v in voices if v in available]
+        missing = [v for v in voices if v not in available]
+        if missing:
+            print(f"WARN: missing voices in {args.voices_dir}: {missing}")
+        if not kept:
+            print(
+                f"ERROR: no requested voices found in {args.voices_dir}. "
+                "Run setup.sh first."
+            )
+            return 2
+        voices = kept
+
     generated = 0
     attempts = 0
-    while generated < args.count and attempts < args.count * 3:
+    failed_runs = 0
+    while generated < args.count and attempts < args.count * 4:
         attempts += 1
-        voice = random.choice(args.voices)
+        voice = random.choice(voices)
         phrase = random.choice(PHRASES)
         raw_wav = raw_dir / f"raw_{attempts:05d}.wav"
-        if not synthesize(voice, phrase, raw_wav):
+        if not synthesize(voice, phrase, raw_wav, voices_dir=args.voices_dir):
+            failed_runs += 1
+            if failed_runs > 20 and generated == 0:
+                print(
+                    "\nERROR: 20+ synthesize() failures without any success.\n"
+                    "  - Is piper installed? `pip install piper-tts`\n"
+                    "  - Are voice models present? `bash tools/wake_word_training/setup.sh`\n"
+                )
+                return 3
             continue
         out_wav = out_dir / f"hey_zero_{generated:05d}.wav"
         if perturb(raw_wav, out_wav):
             generated += 1
-            print(f"  [{generated}/{args.count}] {voice} '{phrase}'")
+            if generated % 50 == 0 or generated == args.count:
+                print(f"  [{generated}/{args.count}] last voice={voice}")
 
     print(f"\nGenerated {generated} positive samples in {out_dir}")
-    print(f"Distinct voices used: {len(set(args.voices))}")
+    print(f"Distinct voices used: {len(set(voices))}")
     return 0
 
 

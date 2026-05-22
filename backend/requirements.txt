@@ -8,6 +8,12 @@ python-dotenv>=1.0.0
 # Async file operations
 aiofiles>=23.2.0
 
+# NOTE: F-19 Superhuman virtual attendee (Playwright + pyvirtualcam) runs
+# on the Windows host_agent process (NOT here in the Linux container)
+# because it needs VB-Audio Cable + OBS Virtual Cam — both Windows-only
+# devices. See host_agent/requirements.txt for those deps + the
+# host_agent/superhuman.py driver.
+
 # CORS support
 python-multipart>=0.0.18
 

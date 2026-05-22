@@ -70,6 +70,10 @@ class MeetingSession:
     spoken_turns: int = 0
     error: Optional[str] = None
     notes_vault_paths: list[str] = field(default_factory=list)
+    # F-19: when the host_agent path is in use, this is the session_id
+    # returned by /agent/join so subsequent /agent/speak + /agent/leave
+    # can address the right Chromium tab.
+    host_session_id: Optional[str] = None
 
 
 class MeetingAgentService:
@@ -79,10 +83,22 @@ class MeetingAgentService:
         self._path = self._dir / _SESSIONS_FILE
         self._sessions: dict[str, MeetingSession] = self._load()
         self._driver = self._init_driver()
+        # F-19: when ZERO_MEETING_AGENT_USE_HOST_AGENT=true (default), the
+        # real driver runs in host_agent (Windows-side) so it can talk to
+        # VB-Cable + virtual cam. zero-api becomes a thin proxy. The
+        # in-process Playwright path stays as a fallback for hosts
+        # without VB-Cable (Linux dev boxes), gated by ENABLED + REAL_DRIVER.
+        self._use_host_agent = (
+            os.getenv("ZERO_MEETING_AGENT_USE_HOST_AGENT", "true").lower()
+            in ("1", "true", "yes")
+        )
+        self._host_agent_url = os.getenv(
+            "ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796"
+        ).rstrip("/")
         self._enabled = (
             os.getenv("ZERO_MEETING_AGENT_ENABLED", "").lower() in ("1", "true", "yes")
             and os.getenv("ZERO_MEETING_AGENT_REAL_DRIVER", "").lower() in ("1", "true", "yes")
-            and self._driver is not None
+            and (self._use_host_agent or self._driver is not None)
         )
         self._tasks: dict[str, asyncio.Task] = {}
 
@@ -101,6 +117,22 @@ class MeetingAgentService:
 
     def is_available(self) -> bool:
         return self._enabled
+
+    # ------------------------------------------------------------------
+    # host_agent proxy (F-19) â€” preferred path on Windows
+    # ------------------------------------------------------------------
+
+    async def _host_agent_call(
+        self, path: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """POST to host_agent's /agent/* endpoint with a short timeout."""
+        import httpx
+
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.post(f"{self._host_agent_url}{path}", json=payload or {})
+            if r.status_code >= 500:
+                raise RuntimeError(f"host_agent {path} returned {r.status_code}")
+            return r.json() if r.content else {}
 
     # ------------------------------------------------------------------
     # API
@@ -130,14 +162,44 @@ class MeetingAgentService:
         self._sessions[session.id] = session
         self._save()
         if self.is_available():
-            self._tasks[session.id] = asyncio.create_task(
-                self._driver_lifecycle(session, display_name)
-            )
+            if self._use_host_agent:
+                # F-19: hand off to host_agent (Windows) where VB-Cable +
+                # virtual cam live. Track the host session id so speak +
+                # leave can address it.
+                try:
+                    res = await self._host_agent_call(
+                        "/agent/join",
+                        {
+                            "url": url,
+                            "display_name": display_name,
+                            "dry_run": os.getenv(
+                                "ZERO_MEETING_AGENT_DRY_RUN", ""
+                            ).lower() in ("1", "true", "yes"),
+                        },
+                    )
+                    if res.get("ok") is False and res.get("error"):
+                        session.status = "error"
+                        session.error = res.get("error")
+                    else:
+                        # host_agent returned a HostMeetingSession dict
+                        session.host_session_id = res.get("id")
+                        session.status = res.get("status") or "active"
+                    self._save()
+                except Exception as exc:  # noqa: BLE001
+                    session.status = "error"
+                    session.error = f"host_agent unreachable: {exc}"
+                    self._save()
+                    logger.warning("meeting_agent_host_dispatch_failed", error=str(exc))
+            else:
+                self._tasks[session.id] = asyncio.create_task(
+                    self._driver_lifecycle(session, display_name)
+                )
         logger.info(
             "meeting_agent_join",
             session=session.id,
             url=url,
             available=self.is_available(),
+            via="host_agent" if self._use_host_agent else "in_process",
         )
         return session
 
@@ -151,17 +213,41 @@ class MeetingAgentService:
             from app.services.tts_service import get_tts_service
             tts = get_tts_service()
             wav_bytes, _meta = await tts.synthesize_with_meta(text)
-            # In a full implementation we'd pipe wav_bytes into the
-            # virtual-mic of the headless browser tab. Today: just log +
-            # record the spoken turn so the UI reflects activity.
             session.spoken_turns += 1
             session.status = "speaking"
             self._save()
+            # F-19: pipe to host_agent so the WAV lands on VB-Audio Cable.
+            # Falls back to log-only when host_agent is unavailable or no
+            # host_session_id was issued (in_process driver path).
+            piped = False
+            if self._use_host_agent and session.host_session_id:
+                try:
+                    import base64 as _b64
+                    res = await self._host_agent_call(
+                        "/agent/speak",
+                        {
+                            "session_id": session.host_session_id,
+                            "wav_bytes_b64": _b64.b64encode(wav_bytes).decode("ascii"),
+                        },
+                    )
+                    piped = bool(res.get("ok"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("meeting_agent_host_speak_failed", error=str(exc))
             await asyncio.sleep(0.2)
             session.status = "active"
             self._save()
-            logger.info("meeting_agent_speak", session=session_id, chars=len(text))
-            return {"status": "ok", "bytes": len(wav_bytes), "session_id": session_id}
+            logger.info(
+                "meeting_agent_speak",
+                session=session_id,
+                chars=len(text),
+                piped=piped,
+            )
+            return {
+                "status": "ok",
+                "bytes": len(wav_bytes),
+                "piped_to_virtual_mic": piped,
+                "session_id": session_id,
+            }
         except Exception as e:  # noqa: BLE001
             logger.warning("meeting_agent_speak_failed", error=str(e))
             return {"status": "error", "error": str(e)}
@@ -179,6 +265,15 @@ class MeetingAgentService:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
+        # F-19: tear down the host_agent Chromium tab + virtual cam loop.
+        if self._use_host_agent and session.host_session_id:
+            try:
+                await self._host_agent_call(
+                    "/agent/leave",
+                    {"session_id": session.host_session_id},
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("meeting_agent_host_leave_failed", error=str(exc))
         session.status = "ended"
         session.ended_at = _now_iso()
         self._save()

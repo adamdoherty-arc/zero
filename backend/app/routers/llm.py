@@ -234,7 +234,7 @@ async def available_models():
     try:
         import os
         import httpx
-        vllm_url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
+        vllm_url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18801/v1").rstrip("/")
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{vllm_url}/models")
             if resp.status_code == 200:

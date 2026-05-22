@@ -35,27 +35,36 @@ as if it were a regular microphone.
 Get-CimInstance Win32_SoundDevice | Select-Object Name, Status
 ```
 
-### 2. Install pyvirtualcam (avatar tile)
+### 2. Install pyvirtualcam + Playwright in host_agent
+
+The driver runs in `host_agent` (not the zero-api container) because
+VB-Audio Cable + OBS Virtual Camera are Windows-only devices the Linux
+container can't reach. host_agent owns the meeting tab.
 
 ```powershell
-pip install pyvirtualcam
+cd c:\code\zero\host_agent
+.\.venv\Scripts\activate
+pip install playwright>=1.46 pyvirtualcam>=0.13 Pillow>=10
+playwright install chromium
 ```
 
-`pyvirtualcam` exposes a virtual webcam that any meeting client can
-select. Zero renders a static PNG (the Zero mascot) into it so Reachy
-shows up as a video tile, not a black square.
+`playwright install chromium` downloads a ~150 MB browser binary into
+the venv. One-time.
 
-### 3. Install Playwright Chromium
+### 3. Install OBS Virtual Camera (for the avatar tile)
 
-Already installed inside the zero-api container if you bring up
-the meeting-agent stack:
+`pyvirtualcam` needs a backend. Two options on Windows:
 
-```bash
-docker exec zero-api playwright install chromium
-```
+- **OBS Studio (recommended)** — install OBS, run it once and start the
+  Virtual Camera; Zero detects the device by name and emits its avatar
+  frames at 5 fps.
+- **Unity Capture** — a leaner alternative without OBS UI overhead.
+  Install from https://github.com/schellingb/UnityCapture/releases.
 
-If you ever rebuild the image, the install survives because it's
-declared in `backend/requirements.txt`.
+Zero generates a 640×480 indigo card avatar with the Zero glyph the
+first time the driver runs; the file lives at
+`c:\code\zero\workspace\superhuman\avatar.png`. Replace it with any
+640×480 PNG to customise.
 
 ### 4. Flip the env vars
 
@@ -64,12 +73,37 @@ In `c:/code/zero/.env`:
 ```
 ZERO_MEETING_AGENT_ENABLED=true
 ZERO_MEETING_AGENT_REAL_DRIVER=true
-ZERO_MEETING_AGENT_VIRTUAL_MIC="CABLE Input"
-ZERO_MEETING_AGENT_VIRTUAL_CAM="OBS Virtual Camera"
+# host_agent runs the actual Playwright + virtual mic/cam; this is the default.
+ZERO_MEETING_AGENT_USE_HOST_AGENT=true
+# Optional: dry-run without VB-Cable installed
+# ZERO_MEETING_AGENT_DRY_RUN=true
+# Optional: show the Chromium window (debugging)
+# ZERO_SUPERHUMAN_HEADLESS=false
 ```
 
-Then `docker compose -f docker-compose.sprint.yml up -d zero-api` to
-reload.
+Then restart **both** zero-api and host_agent so they pick up the env:
+
+```bash
+docker compose -f docker-compose.sprint.yml up -d zero-api
+# In another terminal:
+cd c:\code\zero\host_agent ; .\.venv\Scripts\python -m uvicorn main:app --host 0.0.0.0 --port 18796
+```
+
+### 5. Verify the wiring
+
+```powershell
+# dry-run via the host_agent endpoint (won't actually open Chromium):
+curl -X POST http://localhost:18796/agent/join -H "Content-Type: application/json" `
+  -d '{"url":"https://zoom.us/j/000","display_name":"Zero","dry_run":true}'
+
+# Then check the session log:
+curl http://localhost:18796/agent/sessions
+```
+
+A real join (with VB-Cable installed + DRY_RUN unset) returns a session
+with `status: "joining"` and progresses to `"active"` once the
+Chromium tab is in. Real audio piping into "CABLE Input" works
+end-to-end after that.
 
 ## How to send Zero to a meeting
 

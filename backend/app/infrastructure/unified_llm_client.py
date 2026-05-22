@@ -158,11 +158,11 @@ class UnifiedLLMClient:
                 else:
                     provider_name = "vllm"
                     # Default matches the current vllm-chat container served-model name
-                    # (2026-05-18: Qwen3-32B-AWQ replaced the llama.cpp Q5_K_M path).
-                    # ZERO_VLLM_CHAT_MODEL=vllm-local/Qwen3-32B-AWQ in production routes
-                    # through Bifrost which rewrites to whichever upstream model is
-                    # currently bound to the `qwen3-chat` alias.
-                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
+                    # (2026-05-22: Qwen3.6-27B; the legacy Qwen3-32B-AWQ is still loaded
+                    # by the container as a fallback). VLLM_CHAT_MODEL=vllm-local/Qwen3.6-27B
+                    # in production routes through Bifrost which rewrites to whichever
+                    # upstream model is currently bound to the `qwen3-chat` alias.
+                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-27B")
                 fallbacks = []
 
         return await self._execute_with_fallbacks(

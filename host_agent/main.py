@@ -540,6 +540,73 @@ async def state_snapshot():
         return {"ok": False, "error": str(exc)}
 
 
+@app.post("/agent/join")
+async def agent_join(payload: dict[str, Any] = Body(...)):
+    """F-19 — Playwright joins the meeting URL as a virtual attendee.
+
+    Body: ``{url, display_name?, dry_run?}``. When ``dry_run`` is true
+    (or ZERO_MEETING_AGENT_REAL_DRIVER is unset), no browser opens; a
+    session row is still created so the rest of the system can wire up.
+    """
+    try:
+        from superhuman import get_superhuman_driver
+
+        return await get_superhuman_driver().join(
+            url=str(payload.get("url") or ""),
+            display_name=str(payload.get("display_name") or "Zero"),
+            dry_run=bool(payload.get("dry_run") or False),
+        )
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "status_code": 400}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent_join_failed", error=str(exc))
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/agent/speak")
+async def agent_speak(payload: dict[str, Any] = Body(...)):
+    """Pipe a base64 WAV blob into VB-Audio Cable. No-op in dry_run."""
+    import base64 as _b64
+
+    sid = str(payload.get("session_id") or "")
+    if not sid:
+        return {"ok": False, "error": "session_id required"}
+    raw = payload.get("wav_bytes_b64") or ""
+    try:
+        wav = _b64.b64decode(raw) if isinstance(raw, str) else b""
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"bad base64: {exc}"}
+    try:
+        from superhuman import get_superhuman_driver
+
+        return await get_superhuman_driver().speak(session_id=sid, wav_bytes=wav)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/agent/leave")
+async def agent_leave(payload: dict[str, Any] = Body(...)):
+    sid = str(payload.get("session_id") or "")
+    if not sid:
+        return {"ok": False, "error": "session_id required"}
+    try:
+        from superhuman import get_superhuman_driver
+
+        return await get_superhuman_driver().leave(session_id=sid)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@app.get("/agent/sessions")
+async def agent_sessions():
+    try:
+        from superhuman import get_superhuman_driver
+
+        return {"sessions": get_superhuman_driver().list_sessions()}
+    except Exception as exc:  # noqa: BLE001
+        return {"sessions": [], "error": str(exc)}
+
+
 @app.post("/state/clear-active-recording")
 async def state_clear_active_recording():
     """F-86 — steward auto-remediation hook. Clears a stale

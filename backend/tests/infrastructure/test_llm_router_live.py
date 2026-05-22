@@ -17,7 +17,7 @@ import pytest
 def _backend_reachable() -> bool:
     backend = os.getenv("LOCAL_LLM_BACKEND", "").lower()
     if backend == "vllm":
-        url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
+        url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18801/v1").rstrip("/")
         probe = f"{url}/models"
     elif backend == "ollama":
         url = os.getenv("OLLAMA_BASE_URL", "http://localhost:4445/v1").rstrip("/")
@@ -38,7 +38,7 @@ live = pytest.mark.skipif(not _backend_reachable(), reason="local LLM backend no
 def test_live_models_endpoint():
     backend = os.getenv("LOCAL_LLM_BACKEND", "").lower()
     if backend == "vllm":
-        url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18800/v1").rstrip("/")
+        url = os.getenv("VLLM_CHAT_BASE_URL", "http://localhost:18801/v1").rstrip("/")
     else:
         url = os.getenv("OLLAMA_BASE_URL", "http://localhost:4445/v1").rstrip("/")
     resp = httpx.get(f"{url}/models", timeout=5.0)

@@ -49,3 +49,16 @@ opencv-python>=4.10
 # talks to it transparently. Pulls ~200 MB of motor-controller +
 # rust-kinematics wheels.
 reachy-mini==1.6.4
+
+# F-19 Superhuman virtual attendee — Playwright drives a headless Chromium
+# tab that joins the Zoom/Meet/Teams URL on the Windows host where VB-Audio
+# Cable + OBS Virtual Cam live. pyvirtualcam emits the Zero avatar tile;
+# sounddevice writes TTS into "CABLE Input" so the meeting picks it up
+# as a regular mic. Pillow renders the avatar frames.
+# Real driver gated by ZERO_MEETING_AGENT_REAL_DRIVER=true; host_agent
+# /agent/* endpoints are no-ops with explicit error otherwise.
+# Chromium binary fetched via "playwright install chromium" — see
+# docs/superhuman-setup.md.
+playwright>=1.46.0
+pyvirtualcam>=0.13.0
+Pillow>=10.0.0

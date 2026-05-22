@@ -207,7 +207,7 @@ class QAVerificationService:
                 "zero-ui": "http://localhost:5173",
                 "zero-searxng": "http://localhost:8888",
                 "legion": "http://localhost:8005/health",
-                "vllm-chat": "http://localhost:18800/v1/models",
+                "vllm-chat": "http://localhost:18801/v1/models",
                 "shared-litellm": "http://localhost:4444/health/liveliness",
             }
 
