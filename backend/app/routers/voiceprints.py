@@ -15,9 +15,11 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+
+from app.infrastructure.auth import require_auth
 
 from app.models.meeting import (
     VoiceprintEnrollResponse,
@@ -40,7 +42,7 @@ class EnrollFromSegmentPayload(BaseModel):
     display_name: str = Field(..., min_length=1)
     is_primary: bool = False
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger(__name__)
 
 
@@ -91,7 +93,16 @@ async def enroll_voiceprint_from_path(
     is_primary: bool = Form(False),
     source_meeting_id: Optional[str] = Form(None),
 ):
+    from app.infrastructure.config import get_workspace_path
+
     path = Path(audio_path)
+    # Reject absolute paths outside workspace and path traversal attempts.
+    workspace = get_workspace_path("meetings")
+    try:
+        path = path if path.is_absolute() else (workspace / path)
+        path.resolve().relative_to(workspace.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="audio_path must be within the meetings workspace")
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Audio not found: {audio_path}")
     return await _enroll_from_path(path, display_name.strip(), is_primary, source_meeting_id)

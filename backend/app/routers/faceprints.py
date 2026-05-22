@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from app.infrastructure.auth import require_auth
 from pydantic import BaseModel
 
 from app.services.meeting_face_service import (
@@ -26,7 +28,7 @@ from app.services.meeting_face_service import (
     get_faceprint_service,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger(__name__)
 
 
