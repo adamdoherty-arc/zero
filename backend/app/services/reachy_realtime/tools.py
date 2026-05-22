@@ -838,6 +838,10 @@ _SPECS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional: restrict to a specific diarized speaker label.",
                 },
+                "topic_label": {
+                    "type": "string",
+                    "description": "Optional: bias results toward segments inside topics matching this label (F-91). Auto-extracted from 'about X' phrasings when omitted.",
+                },
             },
             "required": ["question"],
         },
@@ -874,6 +878,31 @@ _SPECS: Dict[str, Dict[str, Any]] = {
                     "description": "Optional. Defaults to companion policy.meeting_active_id or the most recent completed meeting.",
                 },
             },
+        },
+    },
+    "enroll_voice_from_meeting": {
+        "type": "function",
+        "name": "enroll_voice_from_meeting",
+        "description": "Attach a real person's display name to a diarized speaker cluster from the active or most-recent meeting (voice modality). Use when the user says 'enroll Sarah's voice', 'save SPEAKER_01's voice as Mike', 'remember this voice as Mike', etc. Computes the centroid embedding from that speaker's transcript segments and enrolls it as a voiceprint.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "display_name": {"type": "string"},
+                "speaker_label": {
+                    "type": "string",
+                    "description": "Diarization label like SPEAKER_01 (defaults to the speaker with the most segments).",
+                },
+                "meeting_id": {
+                    "type": "string",
+                    "description": "Optional. Defaults to companion policy.meeting_active_id or the most recent meeting with transcript segments.",
+                },
+                "is_primary": {
+                    "type": "boolean",
+                    "description": "Set true to mark this person as the primary user (e.g., Adam).",
+                    "default": False,
+                },
+            },
+            "required": ["display_name"],
         },
     },
     "enroll_face_from_meeting": {
@@ -1626,15 +1655,34 @@ async def _regenerate_summary(deps: ToolDependencies, args: Dict[str, Any], _mgr
         except Exception as exc:
             vault_res = {"ok": False, "reason": str(exc)}
         action_count = len(summary_data.get("action_items", []) or [])
+        # F-95: kick the follow-up service so the new action items + draft
+        # emails reflect the regenerated summary. Idempotent via the
+        # followup ledger; existing tasks stay, only new items spawn.
+        followup_kicked = False
+        try:
+            import asyncio as _asyncio
+            from app.services.meeting_followup_service import (
+                get_meeting_followup_service,
+            )
+
+            _asyncio.create_task(
+                get_meeting_followup_service().run(
+                    meeting_id=meeting_id, max_wait_for_summary_s=10
+                )
+            )
+            followup_kicked = True
+        except Exception as exc:
+            logger.debug("regenerate_summary_followup_kick_failed", error=str(exc))
         return {
             "ok": True,
             "meeting_id": meeting_id,
             "elapsed_ms": elapsed,
             "action_items": action_count,
             "vault": vault_res,
+            "followup_kicked": followup_kicked,
             "response_text": (
                 f"Re-summarised in {elapsed} ms — {action_count} action item"
-                f"{'s' if action_count != 1 else ''} and the vault file is refreshed."
+                f"{'s' if action_count != 1 else ''}. Vault and follow-ups are refreshed."
             ),
         }
     except Exception as e:
@@ -1745,6 +1793,131 @@ async def _enroll_face_from_meeting(deps: ToolDependencies, args: Dict[str, Any]
         }
 
 
+async def _enroll_voice_from_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
+    """F-24 — voice 'Hey Zero, enroll Sarah's voice'. Computes a
+    voiceprint centroid from the chosen speaker's transcript segments
+    in the active or most-recent meeting + enrolls it."""
+    display_name = str(args.get("display_name") or "").strip()
+    if not display_name:
+        return {"error": "missing display_name", "response_text": "Whose voice should I enroll?"}
+    speaker_label = str(args.get("speaker_label") or "").strip()
+    meeting_id = str(args.get("meeting_id") or "").strip()
+    is_primary = bool(args.get("is_primary") or False)
+    if not meeting_id:
+        try:
+            from app.services.reachy_companion_service import (
+                get_reachy_companion_service,
+            )
+            meeting_id = (
+                get_reachy_companion_service().get_policy().meeting_active_id or ""
+            )
+        except Exception:
+            meeting_id = ""
+    if not meeting_id:
+        # Most recent meeting with segments.
+        try:
+            from sqlalchemy import select, func
+            from app.infrastructure.database import get_session
+            from app.db.models import MeetingTranscriptSegmentModel  # type: ignore
+
+            async with get_session() as db:
+                row = (
+                    await db.execute(
+                        select(MeetingTranscriptSegmentModel.meeting_id, func.max(MeetingTranscriptSegmentModel.id))
+                        .group_by(MeetingTranscriptSegmentModel.meeting_id)
+                        .order_by(func.max(MeetingTranscriptSegmentModel.id).desc())
+                        .limit(1)
+                    )
+                ).first()
+                if row:
+                    meeting_id = row[0]
+        except Exception as exc:
+            logger.debug("enroll_voice_meeting_lookup_failed", error=str(exc))
+    if not meeting_id:
+        return {"error": "no meeting", "response_text": "I couldn't find a meeting to enroll from."}
+    try:
+        from sqlalchemy import select, func
+        from app.infrastructure.database import get_session
+        from app.db.models import (  # type: ignore
+            MeetingTranscriptSegmentModel,
+            MeetingRecordingModel,
+        )
+        from app.services.voiceprint_service import get_voiceprint_service
+        from app.services.meeting_processing_pipeline import _resolve_audio_path
+
+        async with get_session() as db:
+            # Decide which speaker label to enroll.
+            if not speaker_label:
+                row = (
+                    await db.execute(
+                        select(
+                            MeetingTranscriptSegmentModel.speaker,
+                            func.count().label("n"),
+                        )
+                        .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                        .where(MeetingTranscriptSegmentModel.speaker.is_not(None))
+                        .group_by(MeetingTranscriptSegmentModel.speaker)
+                        .order_by(func.count().desc())
+                        .limit(1)
+                    )
+                ).first()
+                if not row:
+                    return {"error": "no_speakers", "response_text": "That meeting has no diarized speakers."}
+                speaker_label = str(row[0])
+            segs = (
+                await db.execute(
+                    select(MeetingTranscriptSegmentModel)
+                    .where(MeetingTranscriptSegmentModel.meeting_id == meeting_id)
+                    .where(MeetingTranscriptSegmentModel.speaker == speaker_label)
+                    .order_by(MeetingTranscriptSegmentModel.start_time.asc())
+                )
+            ).scalars().all()
+            recording = (
+                await db.execute(
+                    select(MeetingRecordingModel)
+                    .where(MeetingRecordingModel.meeting_id == meeting_id)
+                    .order_by(MeetingRecordingModel.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        if not segs:
+            return {"error": "no_segments_for_speaker", "response_text": f"No segments for {speaker_label}."}
+        if recording is None:
+            return {"error": "no_recording", "response_text": "Couldn't locate the audio file."}
+        audio_path = _resolve_audio_path(recording.file_path)
+        speaker_segments = [
+            {"start": float(s.start_time or 0.0), "end": float(s.end_time or 0.0), "speaker": speaker_label}
+            for s in segs
+        ]
+        svc = get_voiceprint_service()
+        centroid = svc.compute_cluster_centroid(audio_path, speaker_segments)
+        if centroid is None:
+            return {"error": "no_embedding", "response_text": "Couldn't compute a voiceprint for that speaker."}
+        sample_seconds = sum(max(0.0, s["end"] - s["start"]) for s in speaker_segments)
+        row, replaced = await svc.enroll(
+            display_name=display_name,
+            embedding=centroid,
+            samples_seconds=sample_seconds,
+            is_primary=is_primary,
+            source_meeting_id=meeting_id,
+        )
+        action = "updated" if replaced else "enrolled"
+        return {
+            "ok": True,
+            "voiceprint_id": getattr(row, "id", None),
+            "display_name": display_name,
+            "speaker_label": speaker_label,
+            "meeting_id": meeting_id,
+            "samples_seconds": round(sample_seconds, 1),
+            "response_text": (
+                f"Got it — {action} {display_name}'s voice from {round(sample_seconds, 1)}s of audio in that meeting."
+            ),
+        }
+    except Exception as e:
+        logger.warning("enroll_voice_from_meeting_failed", error=str(e))
+        return {"error": str(e), "response_text": "Voice enrollment failed."}
+
+
 async def _summarize_current_meeting(deps: ToolDependencies, args: Dict[str, Any], _mgr: BackgroundToolManager) -> Dict[str, Any]:
     """Voice: 'Hey Zero, summarise so far'. Reads companion's active
     meeting_id and routes through meeting_rag_query so the user gets a
@@ -1780,6 +1953,16 @@ async def _meeting_rag_query(deps: ToolDependencies, args: Dict[str, Any], _mgr:
         return {"error": "missing question", "response_text": "What did you want to know about the meeting?"}
     meeting_id = args.get("meeting_id")
     speaker_hint = args.get("speaker")
+    topic_label = args.get("topic_label")
+    # F-91: derive topic_label from the question text when not supplied
+    # explicitly — questions like "what did we say about budget" usually
+    # imply a topical filter on the noun phrase after "about".
+    if not topic_label:
+        ql = question.lower()
+        for trigger in (" about ", " regarding ", " on the topic of "):
+            if trigger in ql:
+                topic_label = question[ql.index(trigger) + len(trigger):].strip(" .?!,")[:60]
+                break
     try:
         from app.services.meeting_rag_service import get_meeting_rag_service
         from app.infrastructure.database import get_session
@@ -1791,6 +1974,7 @@ async def _meeting_rag_query(deps: ToolDependencies, args: Dict[str, Any], _mgr:
                 db=db,
                 meeting_id=meeting_id,
                 top_k=6,
+                topic_label=topic_label,
             )
         answer = (result.get("answer") or "").strip()
         sources = result.get("sources") or []
@@ -1861,6 +2045,7 @@ _HANDLERS: Dict[str, ToolHandler] = {
     "mark_meeting_private": _mark_meeting_private,
     "summarize_current_meeting": _summarize_current_meeting,
     "enroll_face_from_meeting": _enroll_face_from_meeting,
+    "enroll_voice_from_meeting": _enroll_voice_from_meeting,
     "regenerate_summary": _regenerate_summary,
 }
 

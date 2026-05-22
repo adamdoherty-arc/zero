@@ -27,6 +27,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   Wrench,
+  Power,
+  RefreshCcw,
+  Zap,
+  Sun,
 } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
@@ -46,6 +50,10 @@ import {
   useRecoverReachyRealtime,
   usePatchCompanionPolicy,
   useReachyCompanionStatus,
+  useWakeUp,
+  useRetryHardwareScan,
+  useRestartDaemon,
+  useResetAudio,
   type ReachyAssistantStep,
   type ReachyAssistantActivity,
   type ReachyMotionSource,
@@ -137,6 +145,227 @@ function formatLiveIssue(
     return 'Zero microphone is open but no speech signal is arriving. Switch to Computer mic.'
   }
   return stalledReason
+}
+
+// -------------------------------------------------------------------------
+// Robot recovery bar — one-click hardware recovery for the cockpit hero.
+// Shown when the body is asleep, motors are off, or a hardware fault is
+// active. Routes through existing /api/reachy endpoints — no new backend.
+// -------------------------------------------------------------------------
+
+interface RobotRecoveryBarProps {
+  bodyControlMode: string | null | undefined
+  bodyReady: boolean
+  daemonConnected: boolean
+  hardwareFaultActive: boolean
+  hardwarePowerIssue: boolean
+  hardwareStaleFault: boolean
+  bodyMotionLocked: boolean
+}
+
+function RobotRecoveryBar({
+  bodyControlMode,
+  bodyReady,
+  daemonConnected,
+  hardwareFaultActive,
+  hardwarePowerIssue,
+  hardwareStaleFault,
+  bodyMotionLocked,
+}: RobotRecoveryBarProps) {
+  const setMotorMode = useSetMotorMode()
+  const wakeUp = useWakeUp()
+  const retryScan = useRetryHardwareScan()
+  const restartDaemon = useRestartDaemon()
+  const resetAudio = useResetAudio()
+
+  const mode = String(bodyControlMode ?? '').toLowerCase()
+  const motorsOff = mode === 'disabled' || mode === '' || mode === 'unknown'
+  const needsRecovery =
+    hardwareFaultActive ||
+    hardwarePowerIssue ||
+    hardwareStaleFault ||
+    (!bodyReady && daemonConnected) ||
+    motorsOff
+
+  if (!needsRecovery) return null
+
+  const busy =
+    setMotorMode.isPending ||
+    wakeUp.isPending ||
+    retryScan.isPending ||
+    restartDaemon.isPending ||
+    resetAudio.isPending
+
+  const lockTitle = bodyMotionLocked
+    ? 'Body motion is locked in companion policy. Unlock body motion before sending motor commands.'
+    : undefined
+
+  const handleEnableMotors = async () => {
+    if (bodyMotionLocked) {
+      toast({
+        title: 'Body motion is locked',
+        description: 'Unlock body motion in companion policy first.',
+        variant: 'destructive',
+      })
+      return
+    }
+    try {
+      const res = await setMotorMode.mutateAsync('enabled')
+      const err = (res as { error?: string } | undefined)?.error
+      if (err) {
+        toast({ title: 'Could not enable motors', description: err, variant: 'destructive' })
+      } else {
+        toast({ title: 'Motors enabled', description: 'Motor control mode is now enabled.' })
+      }
+    } catch (e) {
+      toast({ title: 'Enable motors failed', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const handleWake = async () => {
+    if (bodyMotionLocked) {
+      toast({
+        title: 'Body motion is locked',
+        description: 'Unlock body motion in companion policy first.',
+        variant: 'destructive',
+      })
+      return
+    }
+    try {
+      const res = (await wakeUp.mutateAsync()) as
+        | { ok?: boolean; robot_ready?: boolean; actions?: Array<{ id: string; ok: boolean; detail?: string }> }
+        | undefined
+      const ok = Boolean(res?.ok ?? res?.robot_ready)
+      const issue = res?.actions?.find((a) => !a.ok)?.detail
+      if (ok) {
+        toast({ title: 'Robot waking up', description: 'Motors enabled and wake motion sent.' })
+      } else {
+        toast({
+          title: 'Wake did not finish',
+          description: issue || 'See diagnostics for details.',
+          variant: 'destructive',
+        })
+      }
+    } catch (e) {
+      toast({ title: 'Wake failed', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const handleRetryScan = async () => {
+    try {
+      const res = await retryScan.mutateAsync('hero_recovery')
+      if (res?.ok) {
+        toast({ title: 'Hardware scan ok', description: res.detail || 'Body is ready.' })
+      } else {
+        toast({
+          title: 'Hardware scan completed',
+          description: res?.detail || 'Daemon restarted; see diagnostics.',
+          variant: 'destructive',
+        })
+      }
+    } catch (e) {
+      toast({ title: 'Retry scan failed', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const handleRestartDaemon = async () => {
+    try {
+      await restartDaemon.mutateAsync()
+      toast({ title: 'Daemon restarting', description: 'Reachy daemon process is restarting.' })
+    } catch (e) {
+      toast({ title: 'Daemon restart failed', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const handleResetAudio = async () => {
+    try {
+      await resetAudio.mutateAsync()
+      toast({ title: 'Audio reset', description: 'Reachy audio pipeline reset.' })
+    } catch (e) {
+      toast({ title: 'Audio reset failed', description: String(e), variant: 'destructive' })
+    }
+  }
+
+  const headline = hardwareFaultActive || hardwarePowerIssue
+    ? 'Recover the robot'
+    : hardwareStaleFault
+      ? 'Previous fault — recover the robot'
+      : motorsOff
+        ? 'Motors are off'
+        : 'Robot is not ready'
+  const subline = hardwarePowerIssue
+    ? 'After reseating motor power/USB, retry the scan or restart the daemon. Then wake.'
+    : hardwareFaultActive
+      ? 'Daemon flagged a motor fault. Try Restart daemon or Retry scan, then Wake Robot.'
+      : motorsOff
+        ? 'Motor control is disabled. Click Wake Robot to enable motors and run the wake-up motion.'
+        : 'Daemon is reachable but the body is not responding. Try Retry scan or Restart daemon.'
+
+  return (
+    <div className="border-t border-amber-700/40 bg-amber-950/15 px-4 py-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-amber-100 flex items-center gap-1.5">
+            <Wrench className="w-4 h-4" />
+            {headline}
+          </div>
+          <div className="text-xs text-amber-100/70 mt-0.5">{subline}</div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void handleWake()}
+          disabled={busy || bodyMotionLocked}
+          title={lockTitle ?? 'Enable motors and play the wake-up motion'}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {wakeUp.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sun className="w-3.5 h-3.5" />}
+          Wake Robot
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleEnableMotors()}
+          disabled={busy || bodyMotionLocked}
+          title={lockTitle ?? 'Set motor mode to enabled without sending a wake motion'}
+          className="rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {setMotorMode.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+          Enable motors
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleRetryScan()}
+          disabled={busy}
+          title="Restart the daemon and re-scan the motor bus"
+          className="rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {retryScan.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+          Retry hardware scan
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleRestartDaemon()}
+          disabled={busy}
+          title="Stop and restart the Reachy daemon process"
+          className="rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {restartDaemon.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+          Restart daemon
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleResetAudio()}
+          disabled={busy}
+          title="Reset the Reachy audio pipeline (mic/speaker)"
+          className="rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {resetAudio.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AudioLines className="w-3.5 h-3.5" />}
+          Reset audio
+        </button>
+      </div>
+    </div>
+  )
 }
 
 // -------------------------------------------------------------------------
@@ -951,6 +1180,15 @@ export function InteractiveModeHero() {
           </div>
         </div>
       )}
+      <RobotRecoveryBar
+        bodyControlMode={assistant.data?.body_control_mode ?? null}
+        bodyReady={Boolean(assistant.data?.robot_ready)}
+        daemonConnected={Boolean(assistant.data?.daemon_connected)}
+        hardwareFaultActive={hardwareActiveFault}
+        hardwarePowerIssue={hardwarePowerIssue}
+        hardwareStaleFault={hardwareStaleFault}
+        bodyMotionLocked={!companionBodyMotionEnabled}
+      />
       <AssistantMotionStrip
         bodyActivity={bodyActivity as ReachyBodyActivity}
         sources={assistant.data?.motion_sources ?? []}

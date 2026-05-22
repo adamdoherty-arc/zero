@@ -310,6 +310,19 @@ async def cost_weekly() -> dict[str, Any]:
         return {"error": str(exc)}
 
 
+@router.get("/cost/breakdown")
+async def cost_breakdown() -> dict[str, Any]:
+    """F-94 — cost rollups by topic label + attendee email for the last
+    7 days, plus outliers (>2x weekly median per meeting). Powers the
+    'most expensive topic' tile + steward issues list flagging."""
+    try:
+        from app.services.meeting_cost_service import get_meeting_cost_service
+
+        return await get_meeting_cost_service().weekly_breakdown()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 @router.get("/weekly-analytics")
 async def weekly_analytics() -> dict[str, Any]:
     """F-73 — week-over-week meeting analytics for the dashboard tile.

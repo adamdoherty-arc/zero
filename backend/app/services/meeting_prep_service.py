@@ -256,6 +256,17 @@ def _render_xproject_section(xproject: dict[str, Any] | None) -> str:
             domain = p.get("domain") or ""
             lines.append(f"- {p.get('title')}" + (f" ({domain})" if domain else ""))
         lines.append("")
+    ada = xproject.get("ada_projects") or []
+    if ada:
+        lines.append("## Related ADA work items")
+        for a in ada:
+            status = a.get("status") or ""
+            domain = a.get("domain") or ""
+            extras = " · ".join(filter(None, [status, domain]))
+            lines.append(
+                f"- {a.get('title')}" + (f" ({extras})" if extras else "")
+            )
+        lines.append("")
     return "\n".join(lines)
 
 

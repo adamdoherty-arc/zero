@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Mic, Loader2 } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { getAuthHeaders } from '@/lib/auth'
@@ -10,6 +10,13 @@ interface Props {
   speakerMap?: Record<string, string>
   meetingId?: string
   onTimestampClick?: (time: number) => void
+  /** F-90 — when set, smooth-scroll the segment whose ``start`` is the
+   * closest match into view + briefly flash a highlight. Changing the
+   * value re-fires the scroll (use ``Date.now()`` or a wrapper). */
+  scrollToSeconds?: number | null
+  /** F-90 — fired with the currently-on-screen segment's start so the
+   * parent (topic timeline) can highlight the active topic block. */
+  onActiveSecondsChange?: (seconds: number) => void
 }
 
 const SPEAKER_COLORS = [
@@ -24,11 +31,64 @@ interface EnrollDialogState {
   displayName: string
 }
 
-export function MeetingTranscriptViewer({ segments, speakerMap = {}, meetingId, onTimestampClick }: Props) {
+export function MeetingTranscriptViewer({
+  segments,
+  speakerMap = {},
+  meetingId,
+  onTimestampClick,
+  scrollToSeconds,
+  onActiveSecondsChange,
+}: Props) {
   const speakerColorMap: Record<string, string> = {}
   let colorIdx = 0
   const [enrollDialog, setEnrollDialog] = useState<EnrollDialogState | null>(null)
   const [enrolling, setEnrolling] = useState(false)
+  const [flashId, setFlashId] = useState<number | null>(null)
+  const segmentRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+
+  // F-90 — react to scrollToSeconds: find the nearest segment and scroll
+  useEffect(() => {
+    if (scrollToSeconds == null || !segments?.length) return
+    let nearest = segments[0]
+    let nearestDelta = Math.abs((segments[0].start_time ?? 0) - scrollToSeconds)
+    for (const s of segments) {
+      const d = Math.abs((s.start_time ?? 0) - scrollToSeconds)
+      if (d < nearestDelta) {
+        nearest = s
+        nearestDelta = d
+      }
+    }
+    if (nearest?.id == null) return
+    const el = segmentRefs.current.get(nearest.id)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setFlashId(nearest.id)
+    const t = window.setTimeout(() => setFlashId(null), 1200)
+    return () => window.clearTimeout(t)
+  }, [scrollToSeconds, segments])
+
+  // F-90 — observe which segment is centered + emit its start
+  useEffect(() => {
+    if (!onActiveSecondsChange || !segments?.length) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting)
+        if (!visible.length) return
+        const center = window.innerHeight / 2
+        const best = visible.reduce((acc, cur) => {
+          const accMid = (acc.boundingClientRect.top + acc.boundingClientRect.bottom) / 2
+          const curMid = (cur.boundingClientRect.top + cur.boundingClientRect.bottom) / 2
+          return Math.abs(curMid - center) < Math.abs(accMid - center) ? cur : acc
+        })
+        const segId = Number(best.target.getAttribute('data-segment-id') ?? -1)
+        const seg = segments.find((s) => s.id === segId)
+        if (seg?.start_time != null) onActiveSecondsChange(seg.start_time)
+      },
+      { threshold: 0.4 },
+    )
+    segmentRefs.current.forEach((el) => obs.observe(el))
+    return () => obs.disconnect()
+  }, [segments, onActiveSecondsChange])
 
   const getSpeakerColor = (speaker: string) => {
     if (!speakerColorMap[speaker]) {
@@ -93,7 +153,17 @@ export function MeetingTranscriptViewer({ segments, speakerMap = {}, meetingId, 
             const duration = seg.end_time - seg.start_time
             const canEnroll = !!meetingId && duration >= 0.8
             return (
-              <div key={seg.id} className="flex gap-3 group">
+              <div
+                key={seg.id}
+                data-segment-id={seg.id}
+                ref={(el) => {
+                  if (el) segmentRefs.current.set(seg.id, el)
+                  else segmentRefs.current.delete(seg.id)
+                }}
+                className={`flex gap-3 group rounded-md px-2 -mx-2 transition-colors ${
+                  flashId === seg.id ? 'bg-indigo-500/15 ring-1 ring-indigo-400/40' : ''
+                }`}
+              >
                 <button
                   onClick={() => onTimestampClick?.(seg.start_time)}
                   className="text-xs text-zinc-500 hover:text-blue-400 font-mono mt-1 shrink-0 w-12"

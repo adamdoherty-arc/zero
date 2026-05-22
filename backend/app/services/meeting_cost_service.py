@@ -114,6 +114,95 @@ class MeetingCostService:
     def get(self, meeting_id: str) -> dict[str, Any] | None:
         return self._load().get(meeting_id)
 
+    async def weekly_breakdown(self) -> dict[str, Any]:
+        """F-94 — cost rollups by topic label + attendee email for the
+        last 7 days. Topics are pulled from the F-76 segmenter store;
+        attendees from MeetingModel.participants. Outliers (>2× weekly
+        median per-meeting cost) are surfaced so the steward issues
+        list can flag them."""
+        from datetime import timedelta
+        from sqlalchemy import select
+        from app.db.models import MeetingModel  # type: ignore
+        from app.infrastructure.database import get_session
+        from app.services.meeting_topic_segmenter import get_meeting_topic_store
+
+        data = self._load()
+        week_start = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        recent = [
+            row for row in data.values()
+            if (row.get("updated_at") or "") >= week_start
+        ]
+        meeting_ids = [r.get("meeting_id") for r in recent if r.get("meeting_id")]
+        meeting_rows: dict[str, Any] = {}
+        if meeting_ids:
+            try:
+                async with get_session() as db:
+                    rows = (
+                        await db.execute(
+                            select(MeetingModel).where(MeetingModel.id.in_(meeting_ids))
+                        )
+                    ).scalars().all()
+                meeting_rows = {row.id: row for row in rows}
+            except Exception as exc:
+                logger.debug("cost_breakdown_meeting_lookup_failed", error=str(exc))
+        topic_store = get_meeting_topic_store()
+        by_topic: dict[str, dict[str, Any]] = {}
+        by_attendee: dict[str, dict[str, Any]] = {}
+        costs: list[float] = []
+        for row in recent:
+            mid = row.get("meeting_id") or ""
+            cost = float(row.get("estimated_cost_usd") or 0)
+            costs.append(cost)
+            # Attendees rollup.
+            participants = list(getattr(meeting_rows.get(mid), "participants", None) or [])
+            for p in participants:
+                s = str(p or "").strip()
+                if "<" in s and ">" in s:
+                    s = s[s.find("<") + 1 : s.find(">")].strip()
+                if not s:
+                    continue
+                slot = by_attendee.setdefault(s, {"name": s, "meetings": 0, "estimated_cost_usd": 0.0})
+                slot["meetings"] += 1
+                slot["estimated_cost_usd"] = round(slot["estimated_cost_usd"] + cost, 4)
+            # Topics rollup.
+            topics_doc = topic_store.read(mid) or {}
+            topics = topics_doc.get("topics") or []
+            if not topics:
+                continue
+            per_topic_cost = round(cost / max(1, len(topics)), 4)
+            for t in topics:
+                label = str(t.get("label") or "topic")
+                slot = by_topic.setdefault(label, {"label": label, "meetings": 0, "estimated_cost_usd": 0.0})
+                slot["meetings"] += 1
+                slot["estimated_cost_usd"] = round(slot["estimated_cost_usd"] + per_topic_cost, 4)
+
+        median = 0.0
+        if costs:
+            ordered = sorted(costs)
+            mid_idx = len(ordered) // 2
+            median = (
+                ordered[mid_idx]
+                if len(ordered) % 2
+                else (ordered[mid_idx - 1] + ordered[mid_idx]) / 2.0
+            )
+        outliers = [
+            {
+                "meeting_id": row.get("meeting_id"),
+                "estimated_cost_usd": float(row.get("estimated_cost_usd") or 0),
+                "summary_tokens": int(row.get("summary_tokens") or 0),
+                "summary_model": row.get("summary_model"),
+            }
+            for row in recent
+            if median and float(row.get("estimated_cost_usd") or 0) > median * 2
+        ]
+        return {
+            "meetings": len(recent),
+            "median_cost_usd": round(median, 4),
+            "by_topic": sorted(by_topic.values(), key=lambda x: x["estimated_cost_usd"], reverse=True)[:10],
+            "by_attendee": sorted(by_attendee.values(), key=lambda x: x["estimated_cost_usd"], reverse=True)[:10],
+            "outliers": outliers,
+        }
+
     def weekly_summary(self) -> dict[str, Any]:
         """Rollup of cost log entries from the last 7 days."""
         from datetime import timedelta

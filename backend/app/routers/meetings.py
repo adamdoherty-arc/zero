@@ -314,18 +314,31 @@ async def meeting_prep_brief(meeting_id: str):
 
 
 @router.post("/{meeting_id}/followup", status_code=200)
-async def meeting_followup_now(meeting_id: str, max_wait_for_summary_s: int = 60):
+async def meeting_followup_now(
+    meeting_id: str,
+    max_wait_for_summary_s: int = 60,
+    force: bool = False,
+):
     """Run the post-meeting follow-up pipeline: action-items → tasks
     plus per-attendee follow-up email drafts in email/drafts/pool.
 
     Normally fires automatically when the auto-record scheduler stops the
     meeting. This endpoint lets the user re-run or run manually after a
-    quick-meeting recording."""
+    quick-meeting recording. F-95: pass ``force=true`` to bypass the
+    ledger and recompute (used by the regenerate_summary voice tool)."""
     from app.services.meeting_followup_service import (
         get_meeting_followup_service,
     )
 
-    return await get_meeting_followup_service().run(
+    svc = get_meeting_followup_service()
+    if force:
+        # Clear this meeting's ledger entry so the pipeline re-evaluates
+        # action items + drafts against the (possibly regenerated) summary.
+        try:
+            svc._ledger_set(meeting_id, {"tasks": None, "drafts": None})
+        except Exception:
+            pass
+    return await svc.run(
         meeting_id=meeting_id,
         max_wait_for_summary_s=max(10, min(int(max_wait_for_summary_s or 60), 600)),
     )

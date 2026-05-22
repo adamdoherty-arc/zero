@@ -38,6 +38,8 @@ class MeetingXProjectResolver:
         self._cache_sprints_at: float = 0.0
         self._cache_pb: list[dict[str, Any]] | None = None
         self._cache_pb_at: float = 0.0
+        self._cache_ada: list[dict[str, Any]] | None = None
+        self._cache_ada_at: float = 0.0
         self._ttl_s: float = 60.0
 
     async def _all_legion_sprints(self) -> dict[str, dict[str, Any]]:
@@ -66,6 +68,32 @@ class MeetingXProjectResolver:
         self._cache_sprints = index
         self._cache_sprints_at = now
         return index
+
+    async def _all_ada_projects(self) -> list[dict[str, Any]]:
+        """F-35 — pull ADA company work items so meeting titles that
+        mention an ADA project surface as a related-project link."""
+        now = time.monotonic()
+        if self._cache_ada is not None and now - self._cache_ada_at < self._ttl_s:
+            return self._cache_ada
+        try:
+            from app.services.company_work_item_service import (
+                get_company_work_item_service,
+            )
+
+            svc = get_company_work_item_service()
+            try:
+                items = await svc.list_open()  # type: ignore[attr-defined]
+            except AttributeError:
+                try:
+                    items = await svc.list_all()  # type: ignore[attr-defined]
+                except AttributeError:
+                    items = []
+        except Exception as exc:
+            logger.debug("xproject_resolver_ada_unreachable", error=str(exc))
+            items = []
+        self._cache_ada = list(items or [])
+        self._cache_ada_at = now
+        return self._cache_ada
 
     async def _all_personal_board(self) -> list[dict[str, Any]]:
         now = time.monotonic()
@@ -130,9 +158,29 @@ class MeetingXProjectResolver:
                         "domain": item.get("domain"),
                     })
 
+        # F-35 — ADA company work items: same exact-substring match as
+        # personal-board so a meeting "Q3 financials with ADA-PROJECT-X"
+        # surfaces the linked work item alongside.
+        ada_projects: list[dict[str, Any]] = []
+        if haystack:
+            items = await self._all_ada_projects()
+            haystack_lower = haystack.lower()
+            for item in items:
+                item_title = str(item.get("title") or item.get("name") or "")
+                if not item_title:
+                    continue
+                if item_title.lower() in haystack_lower:
+                    ada_projects.append({
+                        "id": item.get("id"),
+                        "title": item_title,
+                        "status": item.get("status"),
+                        "domain": item.get("domain"),
+                    })
+
         return {
             "legion_sprints": legion_sprints,
             "personal_board": personal_board,
+            "ada_projects": ada_projects,
         }
 
 

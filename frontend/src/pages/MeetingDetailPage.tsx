@@ -48,6 +48,7 @@ export function MeetingDetailPage() {
   const updateSpeakers = useUpdateSpeakers()
 
   const [processingState, setProcessingState] = useState<ProcessingProgress | null>(null)
+  const [scrollToSeconds, setScrollToSeconds] = useState<number | null>(null)
   const [speakerEditorOpen, setSpeakerEditorOpen] = useState(false)
 
   // Listen for processing progress
@@ -173,9 +174,12 @@ export function MeetingDetailPage() {
       {/* Audio Player */}
       {meeting.status === 'completed' && <MeetingAudioPlayer meetingId={meetingId} />}
 
-      {/* F-83 Topic timeline (only when transcript exists) */}
+      {/* F-83 + F-90 Topic timeline (clickable, scrolls transcript) */}
       {meeting.status === 'completed' && (
-        <MeetingTopicTimeline meetingId={meetingId} />
+        <MeetingTopicTimeline
+          meetingId={meetingId}
+          onJumpTo={(start) => setScrollToSeconds(start)}
+        />
       )}
 
       {/* F-84 Cost footer (cheap, conditional render in component) */}
@@ -217,6 +221,8 @@ export function MeetingDetailPage() {
               segments={transcript.segments}
               speakerMap={speakerMap}
               meetingId={meetingId}
+              scrollToSeconds={scrollToSeconds}
+              onTimestampClick={(t) => setScrollToSeconds(t)}
             />
           ) : (
             <div className="text-center text-muted-foreground py-12">

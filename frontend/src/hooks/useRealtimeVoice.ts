@@ -217,13 +217,10 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const [inputHealth, setInputHealth] = useState<VoiceInputHealth | null>(null)
   const [outputHealth, setOutputHealth] = useState<VoiceOutputHealth | null>(null)
   const [latestViseme, setLatestViseme] = useState<VisemeFrame | null>(null)
-  // Reachy should speak through its own USB speaker by default. Browser
-  // playback is a manual fallback so we do not get double audio or route the
-  // assistant through the computer without making that explicit.
-  // Default ON — most users want to hear the assistant on their computer
-  // speaker, not exclusively through Reachy's USB speaker. Turn off via the
-  // "Computer on / Computer muted" toggle in the management panel or TopBar.
-  const [localPlayback, setLocalPlaybackState] = useState(true)
+  // Reachy speaks through its own USB speaker by default. Browser playback is
+  // an explicit fallback (the "Computer on / Computer muted" toggle) so the
+  // robot is the only voice unless the user opts in.
+  const [localPlayback, setLocalPlaybackState] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -234,10 +231,10 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   const partialIdRef = useRef(0)
   const mutedRef = useRef(false)
   const bodyMotionRef = useRef(false)
-  const localPlaybackRef = useRef(true)
+  const localPlaybackRef = useRef(false)
   const sessionReadyRef = useRef(false)
   const inputReadyRef = useRef(false)
-  const inputSourceRef = useRef<'reachy' | 'browser'>('browser')
+  const inputSourceRef = useRef<'reachy' | 'browser'>('reachy')
   const connectTimerRef = useRef<number | null>(null)
   // Scheduled BufferSource nodes for assistant playback. Kept so we can
   // stop-and-flush them when the user barges in mid-reply.
@@ -845,7 +842,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
 
       const merged: VoiceStartArgs = { ...defaults, ...overrides }
       const backend: VoiceBackend = (merged.backend as VoiceBackend) || 'openai'
-      const inputSource = merged.input_source ?? 'browser'
+      const inputSource = merged.input_source ?? 'reachy'
       backendRef.current = backend
       inputSourceRef.current = inputSource
       sessionReadyRef.current = false

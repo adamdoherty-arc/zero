@@ -31,6 +31,14 @@ async def recent_notifications(limit: int = 20):
     return {"events": await bus.recent(limit=limit)}
 
 
+@router.get("/metrics")
+async def notifications_metrics():
+    """Enhancement-12 — expose per-process publish/deliver/drop/persist
+    counters from the notification bus. Used by the steward to detect
+    silent drops + by /metrics scrapers for cross-process aggregation."""
+    return get_notification_bus().metrics()
+
+
 @router.get("/history")
 async def notifications_history(
     since_hours: int = 24,
