@@ -23,7 +23,17 @@ class ProactiveService:
         """Run all proactive checks and send notifications for urgent items."""
         notifications = []
 
-        # Check availability first — don't notify during meetings
+        # Check DND window first — skip all proactive notifications during DND.
+        try:
+            from app.services.attention_middleware import get_attention_middleware
+            decision = get_attention_middleware().should_interrupt({"type": "proactive"})
+            if decision.get("decision") in ("queue", "block"):
+                logger.debug("[Proactive] DND active, skipping notifications", reason=decision.get("reason"))
+                return []
+        except Exception:
+            pass
+
+        # Check availability — don't notify during meetings.
         try:
             from app.services.context_awareness_service import get_context_awareness_service
             ctx = get_context_awareness_service()

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, Loader2, Settings, Radio } from 'lucide-react'
+import { Mic, MicOff, Loader2, Settings } from 'lucide-react'
 import { getAuthHeaders } from '@/lib/auth'
 import { toast } from '@/hooks/use-toast'
-import { useRealtimeVoice } from '@/hooks/useRealtimeVoice'
 import { ReachyRealtimeSettings } from '@/components/reachy/ReachyRealtimeSettings'
 
 interface Provider {
@@ -18,30 +17,11 @@ interface ProvidersResponse {
   providers: Provider[]
 }
 
-interface RealtimeConfigHint {
-  backend: 'local' | 'openai' | 'gemini'
-  has_openai_key: boolean
-  has_gemini_key: boolean
-  preferred_backend: 'local' | 'openai' | 'gemini' | null
-  realtime_available: boolean
-  profile: string | null
-  voice: string
-  model: string
-}
-
-type VoiceMode = 'classic' | 'realtime'
 
 /**
- * Global voice surface for Reachy.
- *
- * Two modes:
- * - **Classic** (existing): push-to-talk STT → LLM → TTS round-trip via the
- *   /api/reachy-intent endpoints. Works fully offline.
- * - **Realtime**: bidirectional streaming via OpenAI Realtime or Gemini Live
- *   through the /api/reachy/realtime/ws bridge. Needs a provider API key.
- *
- * The mode picker lives behind the gear. Ctrl+Shift+J triggers whichever
- * mode is active. Realtime mode auto-selects when a key is configured.
+ * Classic push-to-talk surface for Reachy. Ctrl+Shift+J toggles recording.
+ * Realtime/Interactive Mode is driven exclusively by InteractiveModeBar.
+ * Settings (brain, realtime config) live in the gear → ReachyRealtimeSettings.
  */
 // Hard ceiling on classic voice stop. Backend proxy caps at 30s and per-provider
 // LLM call caps at 12s; 35s here means a server-side abort surfaces as a
@@ -49,18 +29,7 @@ type VoiceMode = 'classic' | 'realtime'
 const VOICE_STOP_TIMEOUT_MS = 35_000
 
 export function FloatingVoiceButton() {
-  // FloatingVoiceButton now serves as the classic push-to-talk surface only.
-  // Realtime/Interactive Mode is driven exclusively by InteractiveModeBar +
-  // InteractiveModeHero, and ALL voice configuration (classic + realtime +
-  // memory + brain) lives in the unified ReachyRealtimeSettings modal that
-  // the gear button opens.
-  const [mode] = useState<VoiceMode>('classic')
-  const [realtimeCfg, setRealtimeCfg] = useState<RealtimeConfigHint | null>(null)
   const [realtimeSettingsOpen, setRealtimeSettingsOpen] = useState(false)
-  // modeTouched used to guard the popup's auto-promote-to-realtime path.
-  // Popup is gone; keep the ref read-only so the loadRealtimeCfg dep-array
-  // below stays stable without re-implementing the auto-promote logic.
-  const [modeTouched] = useState(false)
 
   // --- Classic mode state ---
   const [state, setState] = useState<'idle' | 'starting' | 'listening' | 'processing'>(
@@ -78,9 +47,6 @@ export function FloatingVoiceButton() {
   const [providers, setProviders] = useState<Provider[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const hideTimerRef = useRef<number | null>(null)
-
-  // --- Realtime mode state ---
-  const voice = useRealtimeVoice()
 
   const callApi = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     // Long-running endpoint (/voice/stop) gets a hard client-side deadline so
@@ -130,34 +96,11 @@ export function FloatingVoiceButton() {
     }
   }, [callApi])
 
-  const loadRealtimeCfg = useCallback(async () => {
-    try {
-      const res = await fetch('/api/reachy/realtime/config', { headers: getAuthHeaders() })
-      if (!res.ok) return
-      const cfg = (await res.json()) as RealtimeConfigHint
-      setRealtimeCfg(cfg)
-      // NOTE: auto-promote to realtime mode removed — Interactive Mode lives
-      // in the TopBar now (InteractiveModeBar). The floating button is the
-      // classic push-to-talk surface. Users who want realtime from here can
-      // still pick it explicitly via the settings cog; we just don't open a
-      // second concurrent WebSocket session by default.
-    } catch {
-      // Silent — realtime is optional.
-    }
-  }, [modeTouched])
-
   useEffect(() => {
     loadProviders()
-    loadRealtimeCfg()
-  }, [loadProviders, loadRealtimeCfg])
+  }, [loadProviders])
 
-  const realtimeAvailable = Boolean(realtimeCfg?.realtime_available)
-
-  // handleSetProvider used to back the in-popup classic LLM brain picker.
-  // The popup is gone; classic provider switching now lives in the unified
-  // settings modal (or wherever the project-wide LLM router page lives).
-  // Kept activeId in scope because TopBar / FloatingVoiceButton tooltip
-  // still render the active provider label.
+  // activeId kept for provider label tooltip.
 
   const handleClickClassic = useCallback(async () => {
     if (state === 'starting' || state === 'processing') return
@@ -222,9 +165,7 @@ export function FloatingVoiceButton() {
         toast({
           variant: 'destructive',
           title: 'Voice command failed',
-          description: realtimeAvailable
-            ? `${msg} — switch to Realtime mode via the settings cog for a faster path.`
-            : msg,
+          description: msg,
         })
       } finally {
         setState('idle')
@@ -232,7 +173,7 @@ export function FloatingVoiceButton() {
         setThinkingSecs(0)
       }
     }
-  }, [state, callApi, providers, realtimeAvailable])
+  }, [state, callApi, providers])
 
   // Tick the "Thinking… 12s" counter while the classic pipeline is working.
   useEffect(() => {
@@ -243,58 +184,7 @@ export function FloatingVoiceButton() {
     return () => window.clearInterval(id)
   }, [thinkingSince])
 
-  const handleClickRealtime = useCallback(async () => {
-    if (voice.state === 'connecting') return
-    if (voice.state === 'connected') {
-      await voice.stop()
-      return
-    }
-    if (!realtimeCfg || !realtimeAvailable) {
-      toast({
-        variant: 'destructive',
-        title: 'Realtime voice needs an API key',
-        description:
-          realtimeCfg?.backend === 'gemini'
-            ? 'Add a Gemini API key in the settings cog.'
-            : 'Add an OpenAI API key in the settings cog.',
-      })
-      setRealtimeSettingsOpen(true)
-      return
-    }
-    // Prefer the backend the server says is viable right now, falling back to
-    // whatever the user explicitly configured. This lets the button "just work"
-    // when only one of the two keys is installed.
-    const backend = realtimeCfg.preferred_backend ?? realtimeCfg.backend
-    await voice.start({
-      backend,
-      profile: realtimeCfg.profile,
-      voice: realtimeCfg.voice,
-      model: realtimeCfg.model,
-    })
-  }, [realtimeAvailable, realtimeCfg, voice])
-
-  const handleClick = useCallback(() => {
-    if (mode === 'realtime') return handleClickRealtime()
-    return handleClickClassic()
-  }, [mode, handleClickClassic, handleClickRealtime])
-
-  // Toast realtime errors as they happen.
-  useEffect(() => {
-    const staleBrowserMicError = Boolean(
-      voice.state === 'connected' &&
-        voice.inputSource === 'reachy' &&
-        voice.error &&
-        /microphone permission denied|computer mic permission/i.test(voice.error),
-    )
-    if (staleBrowserMicError) return
-    if (voice.error) {
-      toast({
-        variant: 'destructive',
-        title: 'Realtime voice error',
-        description: voice.error,
-      })
-    }
-  }, [voice.error, voice.inputSource, voice.state])
+  const handleClick = useCallback(() => handleClickClassic(), [handleClickClassic])
 
   useEffect(() => {
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current)
@@ -320,20 +210,13 @@ export function FloatingVoiceButton() {
     return () => window.removeEventListener('keydown', onKey)
   }, [handleClick])
 
-  // --- Derived display state (both modes) ---
-
-  const isListening = mode === 'classic' ? state === 'listening' : voice.state === 'connected'
-  const isBusy =
-    mode === 'classic'
-      ? state === 'starting' || state === 'processing'
-      : voice.state === 'connecting'
+  const isListening = state === 'listening'
+  const isBusy = state === 'starting' || state === 'processing'
   const activeProvider = providers.find((p) => p.id === activeId)
-
-  const realtimeTranscript = voice.transcripts.slice(-3)
 
   return (
     <>
-      {lastReply && (lastReply.response || lastReply.text) && mode === 'classic' && (
+      {lastReply && (lastReply.response || lastReply.text) && (
         <div className="fixed bottom-24 right-6 z-50 max-w-md pointer-events-none">
           <div className="bg-zinc-900 border border-zinc-700 text-zinc-100 rounded-lg shadow-lg p-3 text-sm">
             {lastReply.text && (
@@ -354,29 +237,6 @@ export function FloatingVoiceButton() {
         </div>
       )}
 
-      {mode === 'realtime' && voice.state === 'connected' && realtimeTranscript.length > 0 && (
-        <div className="fixed bottom-24 right-6 z-50 max-w-md pointer-events-none">
-          <div className="bg-zinc-900 border border-indigo-700 text-zinc-100 rounded-lg shadow-lg p-3 text-sm">
-            <div className="flex items-center gap-2 text-xs mb-1">
-              <Radio className="w-3 h-3 text-indigo-400 animate-pulse" />
-              <span className="text-indigo-400 uppercase tracking-wide">
-                realtime · {voice.model ?? ''}
-              </span>
-              {voice.cost > 0 && (
-                <span className="text-zinc-500 ml-auto">${voice.cost.toFixed(4)}</span>
-              )}
-            </div>
-            {realtimeTranscript.map((t) => (
-              <div key={t.id} className={t.role === 'user' ? 'text-zinc-400 italic' : ''}>
-                {t.role === 'user' ? '🧑 ' : '🤖 '}
-                {t.content}
-                {t.partial && <span className="text-zinc-500">…</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Settings popup removed — gear button now opens the unified
           Interactive Mode Settings modal directly. The classic-vs-realtime
           mode toggle and the classic-LLM-brain picker live inside that
@@ -393,7 +253,7 @@ export function FloatingVoiceButton() {
         <Settings className="w-4 h-4" />
       </button>
 
-      {mode === 'classic' && state === 'processing' && thinkingSecs >= 3 && (
+      {state === 'processing' && thinkingSecs >= 3 && (
         <div
           className="fixed bottom-24 right-6 z-50 pointer-events-none"
           aria-live="polite"
@@ -420,7 +280,7 @@ export function FloatingVoiceButton() {
             ? 'Stop recording and send voice command'
             : 'Start recording a voice command'
         }
-        title={`Talk to Zero (${mode} mode · Ctrl+Shift+J)`}
+        title="Talk to Zero (Ctrl+Shift+J)"
         className={[
           'fixed bottom-6 right-6 z-50',
           'w-14 h-14 rounded-full shadow-lg',
@@ -428,14 +288,10 @@ export function FloatingVoiceButton() {
           'transition-all duration-200',
           'border',
           isListening
-            ? mode === 'realtime'
-              ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 animate-pulse'
-              : 'bg-red-600 hover:bg-red-500 border-red-400 animate-pulse'
+            ? 'bg-red-600 hover:bg-red-500 border-red-400 animate-pulse'
             : isBusy
               ? 'bg-zinc-700 border-zinc-600 cursor-wait'
-              : mode === 'realtime'
-                ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400'
-                : 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400',
+              : 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400',
           'text-white',
         ].join(' ')}
       >
@@ -443,8 +299,6 @@ export function FloatingVoiceButton() {
           <Loader2 className="w-6 h-6 animate-spin" />
         ) : isListening ? (
           <MicOff className="w-6 h-6" />
-        ) : mode === 'realtime' ? (
-          <Radio className="w-6 h-6" />
         ) : (
           <Mic className="w-6 h-6" />
         )}
@@ -453,7 +307,6 @@ export function FloatingVoiceButton() {
       <ReachyRealtimeSettings
         open={realtimeSettingsOpen}
         onOpenChange={setRealtimeSettingsOpen}
-        onSaved={() => loadRealtimeCfg()}
       />
     </>
   )
