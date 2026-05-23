@@ -1421,7 +1421,8 @@ class ResearchService:
 
             # Create a new research sprint (Legion defaults to "planned" status)
             sprint_data = {
-                "name": f"S69: Research Discoveries - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
+                "category": "Dev",
+                "title": f"Research Discoveries - {datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
                 "description": "Auto-created sprint for research agent discoveries",
                 "project_id": ZERO_PROJECT_ID,
                 "priority": 3,

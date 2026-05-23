@@ -721,7 +721,8 @@ class QAVerificationService:
 
             if not qa_sprint:
                 qa_sprint = await legion.create_sprint({
-                    "name": f"QA Fixes - {datetime.utcnow().strftime('%Y-%m-%d')}",
+                    "category": "Fix",
+                    "title": f"QA Fixes - {datetime.utcnow().strftime('%Y-%m-%d')}",
                     "project_id": settings.zero_legion_project_id,
                     "status": "active",
                     "description": "Auto-generated sprint for QA verification failures",

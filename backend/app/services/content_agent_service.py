@@ -841,7 +841,8 @@ class ContentAgentService:
             today = datetime.now().strftime("%Y-%m-%d")
             return await legion.create_sprint({
                 "project_id": ZERO_PROJECT_ID,
-                "name": f"Content Production - {today}",
+                "category": "Dev",
+                "title": f"Content Production - {today}",
                 "status": "planned",
             })
         except Exception as e:
@@ -859,7 +860,8 @@ class ContentAgentService:
             today = datetime.now().strftime("%Y-%m-%d")
             return await legion.create_sprint({
                 "project_id": ZERO_PROJECT_ID,
-                "name": f"AIContentTools Improvements - {today}",
+                "category": "Dev",
+                "title": f"AIContentTools Improvements - {today}",
                 "status": "planned",
             })
         except Exception as e:

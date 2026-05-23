@@ -585,7 +585,8 @@ Rules:
             try:
                 client = get_legion_client()
                 sprint = await client.create_sprint({
-                    "name": f"Auto-Enhancement {project_name.title()} {today}",
+                    "category": "Dev",
+                    "title": f"Auto-Enhancement {project_name.title()} {today}",
                     "project_id": legion_id,
                     "status": "active",
                     "description": (

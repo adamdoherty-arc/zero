@@ -1324,7 +1324,8 @@ class TikTokShopService:
             today = datetime.now().strftime("%Y-%m-%d")
             new_sprint = await legion.create_sprint({
                 "project_id": ZERO_PROJECT_ID,
-                "name": f"TikTok Shop Research - {today}",
+                "category": "Dev",
+                "title": f"TikTok Shop Research - {today}",
                 "status": "planned",
             })
             return new_sprint
