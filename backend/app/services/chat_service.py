@@ -120,20 +120,12 @@ class ChatService:
                 session.project_id = project_id
             return session
 
-        # Try loading from persistent storage
+        # Session miss — log it so we can track restart-driven miss rate.
+        # We create a fresh session rather than erroring: the user continues
+        # the conversation without history, which is better than a 404.
         if session_id:
-            try:
-                from app.services.memory_service import get_memory_service
-                import asyncio
-                mem = get_memory_service()
-                # Check if session exists in DB (sync wrapper for static method)
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in async context but this is a sync method
-                    # Just create new session, it will be persisted on first message
-                    pass
-            except Exception:
-                pass
+            logger.info("chat.session_miss", session_id=session_id,
+                        reason="not_in_memory_likely_restart")
 
         new_id = session_id or str(uuid.uuid4())
         session = ConversationSession(

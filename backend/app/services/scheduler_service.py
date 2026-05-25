@@ -1335,12 +1335,24 @@ class SchedulerService:
             )
             return False
 
+    # High-frequency or best-effort jobs that fail often without user impact.
+    # Failures are logged but not surfaced as UI notifications.
+    _SILENT_FAIL_JOBS: frozenset[str] = frozenset({
+        "gpu_refresh",
+        "autonomous_research_tick",
+        "carousel_watchdog",
+        "character_discovery_refvideos",
+        "character_reference_video_processor",
+        "character_image_cleanup",
+    })
+
     async def _run_with_audit(self, job_name: str, handler: Callable):
         """Execute a handler and record the result in the audit log."""
         started = datetime.utcnow()
         t0 = time.monotonic()
         status = "completed"
         error_msg = None
+        exc: Exception | None = None
 
         try:
             if await self._content_production_pauses_job(job_name):
@@ -1352,6 +1364,7 @@ class SchedulerService:
         except Exception as e:
             status = "failed"
             error_msg = str(e)
+            exc = e
             logger.error("job_failed", job=job_name, error=error_msg)
         finally:
             duration = round(time.monotonic() - t0, 2)
@@ -1374,6 +1387,9 @@ class SchedulerService:
             except Exception:
                 pass
             logger.info("job_audit", job=job_name, status=status, duration=duration)
+            # Alert on failure for all non-silent jobs so failures surface in the UI.
+            if status == "failed" and exc is not None and job_name not in self._SILENT_FAIL_JOBS:
+                await self._alert_pipeline_failure(job_name, exc)
         return {
             "status": status,
             "error": error_msg,
