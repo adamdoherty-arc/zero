@@ -50,22 +50,32 @@ class VisionVLMService:
     _instance: Optional["VisionVLMService"] = None
 
     def __init__(self) -> None:
-        # All vision traffic exits through the Bifrost gateway at :4445.
-        # Default: `moonshot/moonshot-v1-32k` (vision-capable cloud SKU).
-        # Local fallback: `vllm-vlm/Qwen2-VL-2B-Instruct-AWQ` (wired but
-        # currently parked — see module docstring for the headroom note).
-        self._base_url = (
-            os.getenv("ZERO_VLLM_CHAT_URL")
-            or os.getenv("ZERO_BIFROST_URL")
-            or "http://host.docker.internal:4445/v1"
-        ).rstrip("/")
-        self._api_key = (
-            os.getenv("ZERO_VLLM_API_KEY")
-            or os.getenv("ZERO_BIFROST_API_KEY")
-            or "EMPTY"
-        )
-        from app.constants.models import VLM_CLOUD
-        self._model = os.getenv("ZERO_VLM_MODEL", VLM_CLOUD)
+        # Vision chain (set in __init__ based on what's available):
+        #   - if NV_API_KEY: primary = NVIDIA Integrate direct (free credits,
+        #     9 vision SKUs incl Nemotron-Nano-12B-VL / Llama 3.2 Vision).
+        #   - else: primary = Bifrost (Moonshot vision SKU — currently parked
+        #     because Kimi account was suspended 2026-05-25).
+        # Fallback chain always includes FreeLLM as last resort.
+        nv_key = os.getenv("NV_API_KEY") or os.getenv("NVIDIA_API_KEY") or ""
+        from app.constants.models import VLM_NVIDIA, VLM_CLOUD
+        if nv_key:
+            self._base_url = "https://integrate.api.nvidia.com/v1"
+            self._api_key = nv_key
+            self._model = os.getenv("ZERO_VLM_MODEL", VLM_NVIDIA)
+            self._primary_provider = "nvidia"
+        else:
+            self._base_url = (
+                os.getenv("ZERO_VLLM_CHAT_URL")
+                or os.getenv("ZERO_BIFROST_URL")
+                or "http://host.docker.internal:4445/v1"
+            ).rstrip("/")
+            self._api_key = (
+                os.getenv("ZERO_VLLM_API_KEY")
+                or os.getenv("ZERO_BIFROST_API_KEY")
+                or "EMPTY"
+            )
+            self._model = os.getenv("ZERO_VLM_MODEL", VLM_CLOUD)
+            self._primary_provider = "bifrost"
         self._timeout = float(os.getenv("ZERO_VLM_TIMEOUT", "45"))
         self._semaphore = asyncio.Semaphore(int(os.getenv("ZERO_VLM_CONCURRENCY", "2")))
         # Diagnostic: surface why the last VLM call failed so callers / the
@@ -168,7 +178,29 @@ class VisionVLMService:
                 break
 
             primary_reason = self._classify_failure(err)
-            # ---- Fallback: FreeLLM (priority chain, may not honor model spec) ----
+            primary_status_capture = status
+            primary_err_capture = err
+
+            # ---- Fallback 1: NVIDIA Integrate API direct ----
+            # Skip if NVIDIA is already the primary (no point retrying same endpoint).
+            nv_key = os.getenv("NV_API_KEY") or os.getenv("NVIDIA_API_KEY") or ""
+            if nv_key and self._primary_provider != "nvidia":
+                from app.constants.models import VLM_NVIDIA
+                nv_status, nv_data, nv_err = await self._post_chat(
+                    "https://integrate.api.nvidia.com/v1", nv_key, VLM_NVIDIA,
+                    prompt, jpeg, max_tokens=max_tokens, temperature=temperature,
+                )
+                if nv_data is not None:
+                    try:
+                        logger.info("vision_vlm_nvidia_ok", model=VLM_NVIDIA)
+                        self._last_failure = None
+                        return (nv_data["choices"][0]["message"]["content"] or "").strip()
+                    except Exception:
+                        logger.warning("vision_vlm_nvidia_bad_response", raw=str(nv_data)[:300])
+                else:
+                    logger.warning("vision_vlm_nvidia_failed", status=nv_status, body_preview=nv_err)
+
+            # ---- Fallback 2: FreeLLM (priority chain, may not honor vision spec) ----
             freellm_base = os.getenv("ZERO_FREELLM_BASE_URL", "http://shared-freellmapi:3001/v1").rstrip("/")
             freellm_token = os.getenv("ZERO_FREELLM_BEARER_TOKEN") or os.getenv("FREELLM_BEARER_TOKEN") or ""
             if freellm_token:
@@ -187,12 +219,13 @@ class VisionVLMService:
                 else:
                     logger.warning("vision_vlm_freellm_failed", status=fl_status, body_preview=fl_err)
 
-            # Both providers failed — record diagnostic
+            # All providers failed — record diagnostic
             self._last_failure = {
                 "primary_model": self._model,
-                "primary_status": status,
+                "primary_status": primary_status_capture,
                 "primary_reason": primary_reason,
-                "primary_body_preview": err,
+                "primary_body_preview": primary_err_capture,
+                "nvidia_attempted": bool(nv_key),
                 "freellm_attempted": bool(freellm_token),
             }
             return ""

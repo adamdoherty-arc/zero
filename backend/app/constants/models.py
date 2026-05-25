@@ -26,12 +26,17 @@ WHISPER_STT = "distil-large-v3"
 KIMI_K2 = "moonshot/kimi-k2.6"
 
 # ---- Vision (VLM) --------------------------------------------------------
-# Primary: Moonshot's vision-capable SKU through Bifrost. Fallback: FreeLLM
-# tier (Gemini 3.1 Flash if the router's priority chain picks it — note that
-# freellmapi as deployed currently ignores explicit model spec and routes by
-# health/quota priority; the request is best-effort).
+# Primary: NVIDIA Build (free credits, 9 vision models incl Nemotron-Nano-12B-VL
+# + Llama 4 Maverick + Llama 3.2 Vision). Direct OpenAI-compatible API at
+# integrate.api.nvidia.com — bypasses Bifrost since their vk admin rejects
+# custom provider names. Set NV_API_KEY in env to enable.
+# Fallback 1 (parked): Moonshot vision through Bifrost — Kimi account was
+# suspended for insufficient balance on 2026-05-25, all vision calls returned
+# 429 with exceeded_current_quota_error.
+# Fallback 2: FreeLLM (Gemini 3.1 Flash if router picks it -- best-effort).
 # Local Qwen2-VL-2B is wired but parked (vllm-vlm container) until GPU
-# headroom frees up (Qwen3-32B-AWQ leaves ~3 GB short on a 32 GB card).
-VLM_CLOUD = "moonshot/moonshot-v1-32k-vision-preview"
-VLM_FREELLM = "gemini-3-flash-preview"  # requested model -- freellmapi router decides actual route
-VLM_LOCAL = "vllm-vlm/Qwen2-VL-2B-Instruct-AWQ"  # parked
+# headroom frees up.
+VLM_NVIDIA = "nvidia/nemotron-nano-12b-v2-vl"  # PRIMARY
+VLM_CLOUD = "moonshot/moonshot-v1-32k-vision-preview"  # parked (account suspended 2026-05-25)
+VLM_FREELLM = "gemini-3-flash-preview"  # FreeLLM router may not honor this
+VLM_LOCAL = "vllm-vlm/Qwen2-VL-2B-Instruct-AWQ"  # parked (GPU memory)

@@ -89,6 +89,9 @@ services:
       - ZERO_FREELLM_BASE_URL=${ZERO_FREELLM_BASE_URL:-http://shared-freellmapi:3001/v1}
       - ZERO_FREELLM_BEARER_TOKEN=${ZERO_FREELLM_BEARER_TOKEN:-${FREELLM_BEARER_TOKEN:-}}
       - ZERO_FREELLM_TIMEOUT_SECONDS=${ZERO_FREELLM_TIMEOUT_SECONDS:-90}
+      # NVIDIA Build API — direct VLM primary (9 vision models, free credits).
+      # Key originated in legion/.env; extended to shared use 2026-05-25.
+      - NV_API_KEY=${NV_API_KEY:-}
       # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
       - ZERO_REACHY_API_URL=${ZERO_REACHY_API_URL:-http://host.docker.internal:8000}
       - ZERO_HOST_AGENT_URL=${ZERO_HOST_AGENT_URL:-http://host.docker.internal:18796}
@@ -156,7 +159,7 @@ services:
       # doesn't fit alongside Qwen3-32B-AWQ on a 32 GB card (KV cache races
       # during init). Falling back to Moonshot's vision-capable model until
       # a bigger GPU or a weight-pruned brain frees up ~3 GB of VRAM.
-      - ZERO_VLM_MODEL=${ZERO_VLM_MODEL:-moonshot/moonshot-v1-32k-vision-preview}
+      - ZERO_VLM_MODEL=${ZERO_VLM_MODEL:-nvidia/nemotron-nano-12b-v2-vl}
       # Point HF Hub at the pre-cached workspace dir; avoids re-downloading
       # models on every rebuild and sidesteps the anonymous rate-limit issue.
       - HF_HOME=/app/workspace/.hf-cache
