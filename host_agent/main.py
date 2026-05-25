@@ -39,7 +39,7 @@ import asyncpg
 import httpx
 import numpy as np
 import structlog
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
