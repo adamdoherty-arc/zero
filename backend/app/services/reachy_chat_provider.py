@@ -58,7 +58,11 @@ AVAILABLE_PROVIDERS: list[ChatProvider] = [
     ),
 ]
 
-DEFAULT_PROVIDER_ID = "bifrost-kimi"
+# Switched 2026-05-25 from "bifrost-kimi" to "bifrost-local-qwen" because the
+# Moonshot Kimi account is suspended for insufficient balance (verified live:
+# 429 exceeded_current_quota_error). Kimi route still selectable via UI; the
+# default is just the safer one. Restore "bifrost-kimi" once account is funded.
+DEFAULT_PROVIDER_ID = "bifrost-local-qwen"
 
 
 def _state_path() -> Path:
