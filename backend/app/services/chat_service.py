@@ -21,7 +21,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
-from app.infrastructure.ollama_client import get_llm_client
+from app.infrastructure.unified_llm_client import get_unified_llm_client
+from app.infrastructure.llm_router import get_llm_router
 
 logger = structlog.get_logger(__name__)
 
@@ -107,7 +108,7 @@ class ChatService:
             del _sessions[sid]
 
     @staticmethod
-    def get_or_create_session(
+    async def get_or_create_session(
         session_id: Optional[str] = None,
         project_id: Optional[str] = None,
     ) -> ConversationSession:
@@ -120,12 +121,38 @@ class ChatService:
                 session.project_id = project_id
             return session
 
-        # Session miss — log it so we can track restart-driven miss rate.
-        # We create a fresh session rather than erroring: the user continues
-        # the conversation without history, which is better than a 404.
+        # Session miss — try to rehydrate from DB before creating fresh.
+        # ConversationMessageModel persists every turn (see chat()/chat_stream()
+        # below). After a container restart the in-memory cache is empty, so
+        # without this load the user appears to lose history.
         if session_id:
-            logger.info("chat.session_miss", session_id=session_id,
-                        reason="not_in_memory_likely_restart")
+            try:
+                from app.services.memory_service import get_memory_service
+                mem = get_memory_service()
+                history = await mem.get_messages(session_id, limit=20)
+                if history:
+                    session = ConversationSession(
+                        session_id=session_id,
+                        project_id=project_id,
+                    )
+                    for m in history:
+                        role = m.get("role")
+                        content = m.get("content") or ""
+                        if role == "human":
+                            session.messages.append(HumanMessage(content=content))
+                        elif role == "ai":
+                            session.messages.append(AIMessage(content=content))
+                        elif role == "system":
+                            session.messages.append(SystemMessage(content=content))
+                    _sessions[session_id] = session
+                    logger.info("chat.session_rehydrated", session_id=session_id,
+                                message_count=len(history))
+                    return session
+                logger.info("chat.session_miss", session_id=session_id,
+                            reason="not_in_db_new_session")
+            except Exception as e:
+                logger.warning("chat.session_rehydrate_failed",
+                               session_id=session_id, error=str(e))
 
         new_id = session_id or str(uuid.uuid4())
         session = ConversationSession(
@@ -424,7 +451,7 @@ class ChatService:
         session_id: Optional[str] = None,
         project_id: Optional[str] = None,
     ) -> ChatResponse:
-        session = self.get_or_create_session(session_id, project_id)
+        session = await self.get_or_create_session(session_id, project_id)
         session.messages.append(HumanMessage(content=message))
 
         if not session.title:
@@ -433,15 +460,15 @@ class ChatService:
         system_prompt, sources = await self._build_system_prompt(message, session)
         ollama_msgs = self._build_message_window(system_prompt, session.messages)
 
-        client = get_llm_client()
+        client = get_unified_llm_client()
+        model = get_llm_router().resolve("chat")
         try:
             content = await client.chat(
                 messages=ollama_msgs,
                 task_type="chat",
                 temperature=0.5,
-                num_predict=4096,
+                max_tokens=4096,
             )
-            model = client._resolve_model(None, "chat")
         except Exception as e:
             logger.error("ask_zero_chat_failed", error=str(e))
             content = f"Sorry, I couldn't generate a response. Error: {e}"
@@ -479,7 +506,7 @@ class ChatService:
         project_id: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Stream a chat response as SSE events."""
-        session = self.get_or_create_session(session_id, project_id)
+        session = await self.get_or_create_session(session_id, project_id)
         session.messages.append(HumanMessage(content=message))
 
         if not session.title:
@@ -488,8 +515,8 @@ class ChatService:
         system_prompt, sources = await self._build_system_prompt(message, session)
         ollama_msgs = self._build_message_window(system_prompt, session.messages)
 
-        client = get_llm_client()
-        model_name = client._resolve_model(None, "chat")
+        client = get_unified_llm_client()
+        model_name = get_llm_router().resolve("chat")
         full_content = ""
 
         try:
@@ -497,7 +524,7 @@ class ChatService:
                 messages=ollama_msgs,
                 task_type="chat",
                 temperature=0.5,
-                num_predict=4096,
+                max_tokens=4096,
             ):
                 full_content += chunk
                 yield f'data: {json.dumps({"type": "chunk", "content": chunk})}\n\n'

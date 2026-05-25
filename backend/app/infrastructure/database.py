@@ -82,6 +82,13 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
+def AsyncSessionLocal() -> AsyncSession:
+    """Backwards-compat callable shim — `async with AsyncSessionLocal() as db:`.
+    Several services (memory_service, etc.) import this name; route them
+    through the canonical factory rather than maintaining a parallel symbol."""
+    return get_session_factory()()
+
+
 def get_engine() -> AsyncEngine:
     """Get the async engine. Raises if database not initialized."""
     if _engine is None:
