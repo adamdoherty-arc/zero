@@ -26,7 +26,12 @@ WHISPER_STT = "distil-large-v3"
 KIMI_K2 = "moonshot/kimi-k2.6"
 
 # ---- Vision (VLM) --------------------------------------------------------
-# Moonshot's vision-capable SKU. Local Qwen2-VL-2B is wired but parked
-# (vllm-vlm container) until GPU headroom frees up.
+# Primary: Moonshot's vision-capable SKU through Bifrost. Fallback: FreeLLM
+# tier (Gemini 3.1 Flash if the router's priority chain picks it — note that
+# freellmapi as deployed currently ignores explicit model spec and routes by
+# health/quota priority; the request is best-effort).
+# Local Qwen2-VL-2B is wired but parked (vllm-vlm container) until GPU
+# headroom frees up (Qwen3-32B-AWQ leaves ~3 GB short on a 32 GB card).
 VLM_CLOUD = "moonshot/moonshot-v1-32k-vision-preview"
+VLM_FREELLM = "gemini-3-flash-preview"  # requested model -- freellmapi router decides actual route
 VLM_LOCAL = "vllm-vlm/Qwen2-VL-2B-Instruct-AWQ"  # parked

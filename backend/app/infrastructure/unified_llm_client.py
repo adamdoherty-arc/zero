@@ -568,12 +568,14 @@ class UnifiedLLMClient:
         async with _LLM_SEMAPHORE:
             last_error = None
 
-            # Try primary with one retry on transient connection errors. LiteLLM
-            # in front of vLLM will sometimes drop the first call during a
-            # model swap ("Server disconnected without sending a response"),
-            # then succeed on the second. Retrying here avoids falling through
-            # to misconfigured fallbacks (e.g. expired MiniMax/Kimi keys).
-            for attempt in range(2):
+            # Try primary with up to 3 attempts on transient errors. Includes:
+            #  - Connection drops (LiteLLM/vLLM model-swap blips: "Server disconnected")
+            #  - HTTP 429 rate-limits (Moonshot caps hit during ambient ticks)
+            #  - HTTP 502/503/504 (upstream transient unavailability)
+            # Exponential backoff (1s, 2s, 4s) so a brief rate-limit window doesn't
+            # cascade into the fallback chain (which may be misconfigured / cost more).
+            max_attempts = 3
+            for attempt in range(max_attempts):
                 try:
                     return await self._call_provider(
                         provider_name, model_name, messages,
@@ -591,6 +593,11 @@ class UnifiedLLMClient:
                         or "ConnectError" in err_s
                         or "RemoteProtocolError" in err_s
                         or "ReadTimeout" in err_s
+                        or "429" in err_s
+                        or "Too Many Requests" in err_s
+                        or "502" in err_s
+                        or "503" in err_s
+                        or "504" in err_s
                     )
                     logger.warning(
                         "llm_primary_failed",
@@ -600,8 +607,8 @@ class UnifiedLLMClient:
                         transient=transient,
                         error=err_s,
                     )
-                    if attempt == 0 and transient:
-                        await asyncio.sleep(1.0)
+                    if attempt < max_attempts - 1 and transient:
+                        await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
                         continue
                     break
 

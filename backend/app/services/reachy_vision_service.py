@@ -196,6 +196,7 @@ class ReachyVisionService:
         answer = await answer_task if answer_task is not None else None
         detections = self.detect(jpeg, kind=kind)
 
+        vlm_failure = vlm.last_failure() if (not scene.get("caption")) else None
         return {
             "available": bool(scene.get("caption") or detections.get("detections")),
             "provider": provider_used,
@@ -206,6 +207,7 @@ class ReachyVisionService:
             "detections": detections.get("detections", []),
             "backend": detections.get("backend"),
             "tags": [],  # tag_objects is optional + slower; caller can invoke separately
+            "vlm_unavailable": vlm_failure,  # None when VLM succeeded; populated when both providers failed
         }
 
     def _detect_hands(self, image_bytes: bytes) -> dict:

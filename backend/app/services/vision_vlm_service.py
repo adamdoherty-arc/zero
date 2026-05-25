@@ -68,6 +68,10 @@ class VisionVLMService:
         self._model = os.getenv("ZERO_VLM_MODEL", VLM_CLOUD)
         self._timeout = float(os.getenv("ZERO_VLM_TIMEOUT", "45"))
         self._semaphore = asyncio.Semaphore(int(os.getenv("ZERO_VLM_CONCURRENCY", "2")))
+        # Diagnostic: surface why the last VLM call failed so callers / the
+        # dashboard can show "VLM unavailable — Moonshot account suspended"
+        # instead of a silent empty caption.
+        self._last_failure: Optional[dict] = None
 
     @classmethod
     def get_instance(cls) -> "VisionVLMService":
@@ -79,17 +83,21 @@ class VisionVLMService:
     # Low-level chat-completion helper
     # ------------------------------------------------------------------
 
-    async def _chat(
+    async def _post_chat(
         self,
+        base_url: str,
+        api_key: str,
+        model: str,
         prompt: str,
         jpeg: bytes,
         *,
-        max_tokens: int = 256,
-        temperature: float = 0.2,
-    ) -> str:
-        url = f"{self._base_url}/chat/completions"
+        max_tokens: int,
+        temperature: float,
+    ) -> tuple[int, dict | None, str]:
+        """Single HTTP attempt. Returns (status_code, parsed_json_or_None, error_preview)."""
+        url = f"{base_url}/chat/completions"
         body = {
-            "model": self._model,
+            "model": model,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": [
@@ -103,31 +111,112 @@ class VisionVLMService:
             ],
         }
         headers = {
-            "Authorization": f"Bearer {self._api_key}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        async with self._semaphore:
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.post(url, headers=headers, json=body)
-                if resp.status_code >= 400:
-                    logger.warning(
-                        "vision_vlm_http_error",
-                        status=resp.status_code,
-                        body_preview=resp.text[:300],
-                    )
-                    return ""
-                data = resp.json()
-            except Exception as e:
-                logger.warning("vision_vlm_request_failed", error=str(e)[:200])
-                return ""
-
         try:
-            choice = data["choices"][0]
-            return (choice["message"]["content"] or "").strip()
-        except Exception:
-            logger.warning("vision_vlm_bad_response", raw=str(data)[:300])
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(url, headers=headers, json=body)
+            if resp.status_code >= 400:
+                return resp.status_code, None, resp.text[:300]
+            return resp.status_code, resp.json(), ""
+        except Exception as e:
+            return 0, None, str(e)[:200]
+
+    async def _chat(
+        self,
+        prompt: str,
+        jpeg: bytes,
+        *,
+        max_tokens: int = 256,
+        temperature: float = 0.2,
+    ) -> str:
+        """Call the VLM with retry + FreeLLM fallback.
+
+        Primary: ZERO_VLM_MODEL via Bifrost (Moonshot vision SKU by default).
+        On 429/5xx, retry up to 3 times with exponential backoff (1s, 2s, 4s).
+        On final primary failure, attempt FreeLLM (best-effort -- the router's
+        priority chain may pick a text-only model and 4xx the image content,
+        in which case we log and surface the diagnostic so callers know).
+        """
+        async with self._semaphore:
+            # ---- Primary: Bifrost-routed VLM with backoff on transients ----
+            primary_max_attempts = 3
+            for attempt in range(primary_max_attempts):
+                status, data, err = await self._post_chat(
+                    self._base_url, self._api_key, self._model,
+                    prompt, jpeg, max_tokens=max_tokens, temperature=temperature,
+                )
+                if data is not None:
+                    try:
+                        return (data["choices"][0]["message"]["content"] or "").strip()
+                    except Exception:
+                        logger.warning("vision_vlm_bad_response", raw=str(data)[:300])
+                        return ""
+                transient = status in (429, 502, 503, 504) or status == 0
+                logger.warning(
+                    "vision_vlm_http_error",
+                    status=status,
+                    attempt=attempt + 1,
+                    transient=transient,
+                    body_preview=err,
+                    model=self._model,
+                )
+                if transient and attempt < primary_max_attempts - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                break
+
+            primary_reason = self._classify_failure(err)
+            # ---- Fallback: FreeLLM (priority chain, may not honor model spec) ----
+            freellm_base = os.getenv("ZERO_FREELLM_BASE_URL", "http://shared-freellmapi:3001/v1").rstrip("/")
+            freellm_token = os.getenv("ZERO_FREELLM_BEARER_TOKEN") or os.getenv("FREELLM_BEARER_TOKEN") or ""
+            if freellm_token:
+                from app.constants.models import VLM_FREELLM
+                fl_status, fl_data, fl_err = await self._post_chat(
+                    freellm_base, freellm_token, VLM_FREELLM,
+                    prompt, jpeg, max_tokens=max_tokens, temperature=temperature,
+                )
+                if fl_data is not None:
+                    try:
+                        logger.info("vision_vlm_freellm_ok", model=VLM_FREELLM)
+                        self._last_failure = None
+                        return (fl_data["choices"][0]["message"]["content"] or "").strip()
+                    except Exception:
+                        logger.warning("vision_vlm_freellm_bad_response", raw=str(fl_data)[:300])
+                else:
+                    logger.warning("vision_vlm_freellm_failed", status=fl_status, body_preview=fl_err)
+
+            # Both providers failed — record diagnostic
+            self._last_failure = {
+                "primary_model": self._model,
+                "primary_status": status,
+                "primary_reason": primary_reason,
+                "primary_body_preview": err,
+                "freellm_attempted": bool(freellm_token),
+            }
             return ""
+
+    @staticmethod
+    def _classify_failure(body_preview: str) -> str:
+        """Map upstream error bodies to a short stable reason code."""
+        if not body_preview:
+            return "unreachable"
+        low = body_preview.lower()
+        if "insufficient balance" in low or "exceeded_current_quota" in low or "suspended" in low:
+            return "account_suspended"
+        if "no keys found that support model" in low:
+            return "model_not_allowlisted"
+        if "rate" in low and "limit" in low:
+            return "rate_limited"
+        if "401" in body_preview or "unauthorized" in low:
+            return "auth_failed"
+        if "400" in body_preview:
+            return "bad_request"
+        return "upstream_error"
+
+    def last_failure(self) -> Optional[dict]:
+        return self._last_failure
 
     # ------------------------------------------------------------------
     # Public surface

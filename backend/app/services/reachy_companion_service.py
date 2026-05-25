@@ -930,7 +930,45 @@ class ReachyCompanionService:
                 "detail": "Host agent is reachable." if host_health else "Host agent is not reachable.",
                 "repair": "Run host_agent auto-restart task.",
             },
+            self._vlm_diagnostic(),
         ]
+
+    def _vlm_diagnostic(self) -> dict[str, Any]:
+        """Surface last VLM failure (account suspension, quota, auth) so the
+        dashboard shows it instead of users wondering why captions are empty."""
+        try:
+            from app.services.vision_vlm_service import VisionVLMService
+            vlm = VisionVLMService.get_instance()
+            failure = vlm.last_failure()
+        except Exception:
+            failure = None
+        if failure is None:
+            return {
+                "id": "vlm",
+                "label": "Vision LLM",
+                "state": "ready",
+                "ok": True,
+                "detail": "VLM ready (or not yet exercised this session).",
+                "repair": None,
+            }
+        reason = failure.get("primary_reason", "upstream_error")
+        repair_map = {
+            "account_suspended": "Recharge the Kimi/Moonshot account or set ZERO_VLM_MODEL to a paid model with balance.",
+            "model_not_allowlisted": "Add the model to shared-infra/bifrost/config.json moonshot.keys[0].models[] and restart shared-bifrost.",
+            "rate_limited": "Wait for the rate-limit window to reset, or add a higher-quota provider key.",
+            "auth_failed": "Check ZERO_VLLM_API_KEY / ZERO_BIFROST_API_KEY in .env.",
+            "bad_request": "Upstream rejected the image payload; check VLM model selection.",
+            "upstream_error": "Check Bifrost + freellmapi container health.",
+            "unreachable": "Bifrost gateway not reachable; check shared-bifrost container status.",
+        }
+        return {
+            "id": "vlm",
+            "label": "Vision LLM",
+            "state": "repair",
+            "ok": False,
+            "detail": f"VLM {reason}: {failure.get('primary_model', '?')}.",
+            "repair": repair_map.get(reason, "Check VLM provider configuration."),
+        }
 
     def _next_action(
         self,
