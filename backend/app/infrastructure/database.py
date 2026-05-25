@@ -51,6 +51,7 @@ async def init_database(postgres_url: str) -> None:
         max_overflow=5,
         pool_timeout=30,
         pool_recycle=3600,
+        pool_pre_ping=True,
         echo=False,
     )
 

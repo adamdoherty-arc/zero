@@ -61,6 +61,7 @@ from app.routers import (
     openhands,
     notifications,
     meeting_steward_status,
+    zero_run,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -894,6 +895,8 @@ app.include_router(telegram_channel.router, prefix="/api/telegram", tags=["Teleg
 app.include_router(openhands.router, prefix="/api", tags=["OpenHands"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 app.include_router(meeting_steward_status.router, prefix="/api/meeting-steward", tags=["Meeting Steward Status"])
+# Zero Supervisor — /api/zero/run + /critic + /stack-facts (Migration 053)
+app.include_router(zero_run.router)
 
 
 @app.get("/")
@@ -948,6 +951,17 @@ async def health_ready():
     checks["storage"] = "ok" if workspace.exists() and workspace.is_dir() else "missing"
     if checks["storage"] != "ok":
         is_ready = False
+
+    # Check PostgreSQL connectivity (non-blocking: reports degraded but doesn't fail ready)
+    try:
+        from app.infrastructure.database import get_engine
+        import asyncio
+        engine = get_engine()
+        async with engine.connect() as conn:
+            await asyncio.wait_for(conn.execute(__import__("sqlalchemy").text("SELECT 1")), timeout=2.0)
+        checks["postgres"] = "ok"
+    except Exception:
+        checks["postgres"] = "degraded"
 
     # Check scheduler
     try:

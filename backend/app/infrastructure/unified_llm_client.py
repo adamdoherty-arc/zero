@@ -15,6 +15,7 @@ delegates here transparently.
 
 import asyncio
 import json
+import os
 import re
 import time
 from functools import lru_cache
@@ -32,7 +33,7 @@ logger = structlog.get_logger(__name__)
 # - Ollama pool saturation (5 connections)
 # - Kimi rate limiting (3 connections)
 # - Morning peak cascading failures (9 AM: 4+ jobs fire simultaneously)
-_LLM_SEMAPHORE = asyncio.Semaphore(4)
+_LLM_SEMAPHORE = asyncio.Semaphore(int(os.getenv("ZERO_LLM_CONCURRENCY", "4")))
 
 
 class StructuredOutputError(Exception):
@@ -624,6 +625,47 @@ class UnifiedLLMClient:
                         model=fb_model,
                         error=str(e),
                     )
+
+            # Bifrost-Chain-03 (2026-05-25): final-tier emergency fallback through
+            # shared-freellmapi (~14 free-tier providers behind one OpenAI-compatible
+            # endpoint with priority routing + per-key tracking). Only reached when
+            # ALL primary + per-task fallbacks failed. No-op if ZERO_FREELLM_BEARER_TOKEN
+            # is unset.
+            try:
+                from app.infrastructure.freellm_client import (
+                    get_freellm_client,
+                    is_freellm_available,
+                )
+            except Exception as imp_err:
+                logger.warning("freellm_client_import_failed", error=str(imp_err))
+            else:
+                if is_freellm_available():
+                    try:
+                        fl_system = next(
+                            (m["content"] for m in messages if m.get("role") == "system"),
+                            None,
+                        )
+                        fl_prompt = "\n\n".join(
+                            m["content"] for m in messages if m.get("role") != "system"
+                        )
+                        logger.info("freellm_chain_attempt", task_type=task_type)
+                        result = await get_freellm_client().generate(
+                            prompt=fl_prompt,
+                            system=fl_system,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            json_mode=json_mode,
+                        )
+                        logger.info(
+                            "freellm_chain_ok",
+                            routed_via=result.get("routed_via"),
+                            fallback_attempts=result.get("fallback_attempts"),
+                            latency_ms=result.get("latency_ms"),
+                        )
+                        return result.get("content") or ""
+                    except Exception as e:
+                        last_error = e
+                        logger.warning("freellm_chain_failed", error=str(e))
 
             raise Exception(f"All LLM providers failed. Last error: {last_error}")
 

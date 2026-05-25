@@ -76,6 +76,10 @@ services:
       - ZERO_VLLM_API_KEY=${ZERO_VLLM_API_KEY:-}
       - ZERO_BIFROST_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
       - ZERO_BIFROST_API_KEY=${ZERO_BIFROST_API_KEY:-}
+      # bifrost_client.py reads BIFROST_GATEWAY_URL (no ZERO_ prefix) — inject it
+      # so meeting_agent_service, subconscious_loop, etc. see a live gateway.
+      - BIFROST_GATEWAY_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080}
+      - BIFROST_TOKEN=${ZERO_BIFROST_API_KEY:-}
       # Bifrost-Chain-03: emergency LLM fallback chain (shared-freellmapi).
       # Aggregates ~14 free-tier providers (Google, Groq, Cerebras, SambaNova,
       # NVIDIA NIM, Mistral, OpenRouter, GitHub Models, Cloudflare, Cohere, etc.)
@@ -120,6 +124,7 @@ services:
       # LLM API keys removed 2026-05-14: Bifrost owns all upstream creds via
       # shared-infra/.env. The container has no business seeing them.
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
+      - ZERO_LLM_CONCURRENCY=${ZERO_LLM_CONCURRENCY:-4}
       # ADA Bridge
       - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-http://ada-backend:8003}
       - ZERO_ADA_API_TOKEN=${ZERO_ADA_API_TOKEN:-}
@@ -163,7 +168,9 @@ services:
       - ZERO_TEMPORAL_NAMESPACE=${ZERO_TEMPORAL_NAMESPACE:-default}
       # Quality-31 (2026-05-19): point Zero at shared legion-redis db=2.
       # Was: redis://zero-redis:6379/0 (local instance, retired).
-      - ZERO_REDIS_URL=redis://:${LEGION_REDIS_PASSWORD:-legion_redis_secret}@legion-redis:6379/2
+      # legion-redis DNS is only reachable on legion-network (not zero-network).
+      # Use host.docker.internal so zero-api can reach the host-exposed Redis port.
+      - ZERO_REDIS_URL=redis://:${LEGION_REDIS_PASSWORD:-legion_redis_secret}@host.docker.internal:6379/2
       # Quality-32 (2026-05-19): point Zero at shared legion-qdrant.
       # Was: http://zero-qdrant:6333 (local instance, retired — collections empty).
       - ZERO_QDRANT_URL=http://legion-qdrant:6333
@@ -387,6 +394,12 @@ services:
       LOG_LEVEL: warn
     ports:
       - "${ZERO_TEMPORAL_PORT:-7233}:7233"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7233/health -o /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -397,7 +410,8 @@ services:
     container_name: zero-temporal-ui
     restart: unless-stopped
     depends_on:
-      - zero-temporal
+      zero-temporal:
+        condition: service_healthy
     environment:
       TEMPORAL_ADDRESS: zero-temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost:8233

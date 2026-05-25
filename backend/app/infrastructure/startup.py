@@ -32,7 +32,7 @@ class StartupChecker:
             ("storage_writable", self._check_storage_writable, True),
             ("config_directory", self._check_config, True),
             ("environment_variables", self._check_env_vars, True),
-            ("ollama_reachable", self._check_ollama, False),  # non-critical
+            ("bifrost_reachable", self._check_bifrost, False),  # non-critical
             ("legion_reachable", self._check_legion, False),  # non-critical
             ("gpu_manager", self._check_gpu_manager, False),  # non-critical
             ("whisper_warmup", self._check_whisper_warmup, False),  # non-critical, fire-and-forget
@@ -130,19 +130,18 @@ class StartupChecker:
 
         return True
 
-    async def _check_ollama(self) -> bool:
-        """Check if Ollama is reachable and warm up default model."""
-        import asyncio
-        from app.infrastructure.ollama_client import get_llm_client
-
-        client = get_llm_client()
-        healthy = await client.is_healthy()
-
-        if healthy:
-            # Warm up the default model in background (don't block startup)
-            asyncio.create_task(client.warmup())
-
-        return healthy
+    async def _check_bifrost(self) -> bool:
+        """Check if the Bifrost LLM gateway is reachable."""
+        import httpx
+        from app.infrastructure.config import get_settings
+        settings = get_settings()
+        url = getattr(settings, "bifrost_url", None) or "http://shared-bifrost:8080"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{url.rstrip('/')}/health")
+                return resp.status_code < 400
+        except Exception:
+            return False
 
     async def _check_whisper_warmup(self) -> bool:
         """Pre-load the voice-loop Whisper model so the first voice turn
