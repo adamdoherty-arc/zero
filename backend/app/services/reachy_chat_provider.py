@@ -49,6 +49,13 @@ AVAILABLE_PROVIDERS: list[ChatProvider] = [
         model=LOCAL_CHAT,
         description="Local Qwen route through Bifrost; private, but slower on hidden-reasoning turns.",
     ),
+    ChatProvider(
+        id="freellm-auto",
+        label="Free LLM (emergency fallback)",
+        provider="freellm",
+        model="auto",
+        description="shared-freellmapi: ~14 free-tier providers (Gemini/Groq/Kimi-CF/etc). Kicks in when both Bifrost routes are unavailable.",
+    ),
 ]
 
 DEFAULT_PROVIDER_ID = "bifrost-kimi"

@@ -24,6 +24,7 @@ import structlog
 
 from app.infrastructure.llm_providers.base import BaseLLMProvider
 from app.infrastructure.llm_providers.bifrost_provider import BifrostProvider
+from app.infrastructure.llm_providers.freellm_provider import FreeLLMProvider
 from app.infrastructure.llm_providers.vllm_provider import VllmProvider
 
 logger = structlog.get_logger(__name__)
@@ -46,9 +47,11 @@ def get_provider_registry() -> Dict[str, BaseLLMProvider]:
     """
     bifrost_provider = BifrostProvider()
     vllm_provider = VllmProvider()
+    freellm_provider = FreeLLMProvider()
     providers = {
         "bifrost": bifrost_provider,
         "vllm": vllm_provider,
+        "freellm": freellm_provider,
         # Backwards-compat aliases — all route through Bifrost now.
         "ollama": vllm_provider,
         "gemini": bifrost_provider,

@@ -29,18 +29,16 @@ export function HostAgentOfflineBanner() {
             Reachy stack is not running
           </div>
           <p className="mt-1 text-sm text-amber-100/90">
-            Double-click <strong>Start Zero Robot</strong> on your desktop. This banner
-            will clear automatically once <code className="rounded bg-amber-950/40 px-1">{url ?? 'host_agent'}</code>{' '}
+            Run <code className="rounded bg-amber-950/40 px-1">host_agent\start-zero.bat</code> from the Zero
+            directory to start the Reachy supervisor. Then use the{' '}
+            <strong>Reachy</strong> panel to start the robot daemon.
+            This banner clears automatically once{' '}
+            <code className="rounded bg-amber-950/40 px-1">{url ?? 'host_agent :18796'}</code>{' '}
             comes online.
           </p>
-          <p className="mt-1 text-xs text-amber-100/70">
-            No shortcut? Run{' '}
-            <code className="rounded bg-amber-950/40 px-1">
-              powershell -ExecutionPolicy Bypass -File host_agent\install-shortcut.ps1
-            </code>{' '}
-            once.
-            {lastError ? <span className="ml-2 opacity-70">({lastError})</span> : null}
-          </p>
+          {lastError ? (
+            <p className="mt-1 text-xs text-amber-100/70 opacity-70">({lastError})</p>
+          ) : null}
         </div>
         <button
           onClick={() =>

@@ -947,7 +947,7 @@ _PROVIDERS_STATUS_CACHE_TTL = 15.0
 # every turn (Gated Delta Net hybrid attention; llama.cpp PR #13194), so a
 # warm-but-not-cached probe regularly takes 6-12 s. 8 s was marking the
 # local-qwen provider permanently red.
-_PROVIDERS_STATUS_PROBE_TIMEOUT = 20.0
+_PROVIDERS_STATUS_PROBE_TIMEOUT = 40.0
 # 1-token max so probes cost ~nothing even on paid providers. Bifrost routes
 # can spend the first few tokens on hidden reasoning, so status probes raise
 # their cap locally when probing Bifrost.

@@ -21,14 +21,18 @@ The Docker stack IS the personal assistant. The robot (host_agent + Reachy daemo
 
 ## User-launched flow
 
-1. Double-click `Start Zero` on the desktop (one-time setup: run `host_agent\install-shortcut.ps1`).
-2. The shortcut runs `start-zero.bat` → `scripts/start-zero.ps1`:
-   - Waits for Docker Desktop.
-   - `docker compose -f docker-compose.sprint.yml up -d` and searxng / gateway if present.
-   - Waits for `zero-api` container health.
-   - Spawns `host_agent/start-zero.bat` in its own console (atexit hook reaps the Reachy daemon).
-   - Opens <http://localhost:5173/> (main dashboard).
-3. Robot is OFF by default. Open `/reachy` and click **Start daemon** in `DaemonPanel` to bring up Reachy hardware.
+The Docker stack uses `restart: unless-stopped` — containers auto-restart after reboot or crash without any scheduled tasks or shortcuts.
+
+**Docker stack** (starts automatically via Docker Desktop's restart policy):
+- If containers are stopped: `docker compose -f docker-compose.sprint.yml up -d`
+- Or use Docker Desktop UI to start the stack.
+
+**Reachy/Robot** (optional, user-launched when robot is wanted):
+1. Run `host_agent\start-zero.bat` from the Zero directory in a terminal window. This starts the host_agent supervisor on :18796.
+2. Open `/reachy` in the dashboard and click **Start daemon** in `DaemonPanel` to bring up Reachy hardware.
+3. Closing the host_agent terminal window stops the robot cleanly.
+
+**No desktop shortcut required.** All management is via the Zero dashboard at `http://localhost:5173/` or Docker Desktop.
 
 **Do NOT** re-run `attic/autostart-legacy/install-task-scheduler.ps1`, re-add the daemon watchdog, or re-introduce scheduled tasks. If you find yourself reaching for one of those to "fix" something, **stop**: the symptom is real and needs a clear UI status + recovery button, not a hidden watchdog.
 

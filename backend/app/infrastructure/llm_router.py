@@ -63,10 +63,7 @@ def _apply_local_backend_remap(provider: str, model: str) -> Tuple[str, str]:
         return provider, model
 
     if override == "vllm":
-        # Default matches the current vllm-chat served-model (2026-05-22: Qwen3.6-27B).
-        # Production env sets VLLM_CHAT_MODEL=vllm-local/Qwen3.6-27B (Bifrost alias);
-        # legacy Qwen3-32B-AWQ is still loaded by the container as a fallback.
-        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3.6-27B")
+        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
     # override == "ollama" — not running in shared-infra since 2026-04-28; rollback only.
     return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "")
 

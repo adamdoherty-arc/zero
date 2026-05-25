@@ -15,14 +15,17 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 ECOSYSTEM_SERVICES: Dict[str, Dict[str, str]] = {
+    # Self-probe: localhost is valid inside zero-api container.
     "zero": {"url": "http://localhost:18792", "health": "/health"},
-    "ada": {"url": "http://localhost:8003", "health": "/health"},
-    "legion": {"url": "http://localhost:8005", "health": "/health"},
-    # Local LLM is vLLM only (Ollama retired ecosystem-wide 2026-04-27).
-    "vllm-chat": {"url": "http://localhost:18801", "health": "/v1/models"},
-    "vllm-embed": {"url": "http://localhost:8001", "health": "/v1/models"},
-    "shared-litellm": {"url": "http://localhost:4444", "health": "/health/liveliness"},
-    "reachy": {"url": "http://localhost:8000", "health": "/api/daemon/status"},
+    # Cross-project: legion and ada are on separate Docker networks; reach via host.
+    "ada": {"url": "http://host.docker.internal:8006", "health": "/api/health"},
+    "legion": {"url": "http://host.docker.internal:8005", "health": "/health"},
+    # vLLM + Bifrost: zero-api joins shared-infra network — use service DNS names.
+    "vllm-chat": {"url": "http://vllm-chat:8000", "health": "/v1/models"},
+    "vllm-embed": {"url": "http://vllm-embed:8001", "health": "/v1/models"},
+    "shared-bifrost": {"url": "http://shared-bifrost:8080", "health": "/health"},
+    # Reachy daemon runs on the Windows host outside Docker.
+    "reachy": {"url": "http://host.docker.internal:8000", "health": "/api/daemon/status"},
 }
 
 TIMEOUT_SECONDS = 3.0

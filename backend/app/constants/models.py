@@ -8,11 +8,10 @@ If a future migration renames a model, this file is the one place to update.
 from __future__ import annotations
 
 # ---- Local LLM (chat) ----------------------------------------------------
-# Served by shared-infra/vllm-chat (vLLM 0.19 + Qwen3.6-27B + Marlin
-# kernels). Routed through Bifrost provider `vllm-local`. Both Qwen3.6-27B
-# (new default, 2026-05-22) and the legacy Qwen3-32B-AWQ are loaded by the
-# container — override LOCAL_CHAT via VLLM_CHAT_MODEL if you need to pin.
-LOCAL_CHAT = "vllm-local/Qwen3.6-27B"
+# Served by shared-infra/vllm-chat. Bifrost vllm-local provider routes to
+# http://vllm-chat:8000 — model must match what vLLM is actually serving.
+# Running model (2026-05-25 verified): Qwen3-32B-AWQ.
+LOCAL_CHAT = "vllm-local/Qwen3-32B-AWQ"
 
 # ---- Local embeddings -----------------------------------------------------
 LOCAL_EMBED = "embed-local/Qwen/Qwen3-Embedding-0.6B"

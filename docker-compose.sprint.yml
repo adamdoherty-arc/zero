@@ -8,7 +8,7 @@ services:
   zero-postgres:
     image: pgvector/pgvector:pg17
     container_name: zero-postgres
-    restart: "no"
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${ZERO_DB_NAME:-zero}
       POSTGRES_USER: ${ZERO_DB_USER:-zero}
@@ -76,6 +76,15 @@ services:
       - ZERO_VLLM_API_KEY=${ZERO_VLLM_API_KEY:-}
       - ZERO_BIFROST_URL=${ZERO_BIFROST_CONTAINER_URL:-http://shared-bifrost:8080/v1}
       - ZERO_BIFROST_API_KEY=${ZERO_BIFROST_API_KEY:-}
+      # Bifrost-Chain-03: emergency LLM fallback chain (shared-freellmapi).
+      # Aggregates ~14 free-tier providers (Google, Groq, Cerebras, SambaNova,
+      # NVIDIA NIM, Mistral, OpenRouter, GitHub Models, Cloudflare, Cohere, etc.)
+      # behind one OpenAI-compatible endpoint with priority + per-key tracking.
+      # Used by zero/backend/app/infrastructure/freellm_client.py as a last-resort
+      # tier after Bifrost-routed primaries (Kimi + local Qwen) all fail.
+      - ZERO_FREELLM_BASE_URL=${ZERO_FREELLM_BASE_URL:-http://shared-freellmapi:3001/v1}
+      - ZERO_FREELLM_BEARER_TOKEN=${ZERO_FREELLM_BEARER_TOKEN:-${FREELLM_BEARER_TOKEN:-}}
+      - ZERO_FREELLM_TIMEOUT_SECONDS=${ZERO_FREELLM_TIMEOUT_SECONDS:-90}
       # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
       - ZERO_REACHY_API_URL=${ZERO_REACHY_API_URL:-http://host.docker.internal:8000}
       - ZERO_HOST_AGENT_URL=${ZERO_HOST_AGENT_URL:-http://host.docker.internal:18796}
@@ -101,7 +110,13 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID:-}
       # Hugging Face
-      - HF_TOKEN=${HF_TOKEN:-}
+      # Diarization code reads settings.hf_token (-> ZERO_HF_TOKEN under the
+      # Settings env_prefix). Other Zero code historically used
+      # ZERO_HUGGINGFACE_API_KEY for the same value. Route both names off the
+      # single canonical .env value so renames stay non-breaking.
+      - HF_TOKEN=${ZERO_HUGGINGFACE_API_KEY:-${HF_TOKEN:-}}
+      - ZERO_HF_TOKEN=${ZERO_HUGGINGFACE_API_KEY:-${HF_TOKEN:-}}
+      - ZERO_HUGGINGFACE_API_KEY=${ZERO_HUGGINGFACE_API_KEY:-}
       # LLM API keys removed 2026-05-14: Bifrost owns all upstream creds via
       # shared-infra/.env. The container has no business seeing them.
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
@@ -174,7 +189,10 @@ services:
       - ZERO_R2_SECRET_KEY=${ZERO_R2_SECRET_KEY:-}
       - ZERO_R2_BUCKET=${ZERO_R2_BUCKET:-}
       - ZERO_R2_PUBLIC_DOMAIN=${ZERO_R2_PUBLIC_DOMAIN:-}
-    restart: "no"
+    restart: unless-stopped
+    depends_on:
+      zero-postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18792/health/ready')"]
       interval: 30s
@@ -201,8 +219,9 @@ services:
     ports:
       - "5173:80"
     depends_on:
-      - zero-api
-    restart: "no"
+      zero-api:
+        condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/"]
       interval: 30s
@@ -237,8 +256,9 @@ services:
     environment:
       - VITE_API_URL=http://zero-api:18792
     depends_on:
-      - zero-api
-    restart: "no"
+      zero-api:
+        condition: service_healthy
+    restart: unless-stopped
     profiles:
       - dev
     deploy:
@@ -259,7 +279,7 @@ services:
   zero-redis:
     image: redis:7.4-alpine
     container_name: zero-redis
-    restart: "no"
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "${ZERO_REDIS_PORT:-6379}:6379"
@@ -281,7 +301,7 @@ services:
   zero-minio:
     image: minio/minio:RELEASE.2025-01-20T14-49-07Z
     container_name: zero-minio
-    restart: "no"
+    restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${ZERO_MINIO_ACCESS_KEY:-zero-minio}
@@ -310,7 +330,7 @@ services:
   zero-qdrant:
     image: qdrant/qdrant:v1.13.0
     container_name: zero-qdrant
-    restart: "no"
+    restart: unless-stopped
     ports:
       - "${ZERO_QDRANT_HTTP_PORT:-6333}:6333"
       - "${ZERO_QDRANT_GRPC_PORT:-6334}:6334"
@@ -333,7 +353,7 @@ services:
   zero-temporal-postgres:
     image: postgres:16-alpine
     container_name: zero-temporal-postgres
-    restart: "no"
+    restart: unless-stopped
     environment:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
@@ -354,7 +374,7 @@ services:
   zero-temporal:
     image: temporalio/auto-setup:1.27
     container_name: zero-temporal
-    restart: "no"
+    restart: unless-stopped
     depends_on:
       zero-temporal-postgres:
         condition: service_healthy
@@ -375,7 +395,7 @@ services:
   zero-temporal-ui:
     image: temporalio/ui:2.31.2
     container_name: zero-temporal-ui
-    restart: "no"
+    restart: unless-stopped
     depends_on:
       - zero-temporal
     environment:
@@ -395,7 +415,7 @@ services:
   zero-langfuse-clickhouse:
     image: clickhouse/clickhouse-server:24.12-alpine
     container_name: zero-langfuse-clickhouse
-    restart: "no"
+    restart: unless-stopped
     environment:
       CLICKHOUSE_DB: langfuse
       CLICKHOUSE_USER: langfuse
@@ -425,7 +445,7 @@ services:
   zero-langfuse-web:
     image: langfuse/langfuse:3
     container_name: zero-langfuse-web
-    restart: "no"
+    restart: unless-stopped
     depends_on:
       zero-temporal-postgres:
         condition: service_healthy

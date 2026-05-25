@@ -322,7 +322,7 @@ async def stack_facts() -> dict[str, Any]:
             "host_agent": 18796,
             "langfuse_host": 3010,
             "bifrost": 4445,
-            "vllm_chat": 18800,
+            "vllm_chat": 18801,
             "vllm_embed": 8001,
         },
         "network": {
@@ -703,22 +703,55 @@ async def _probe(url: str, label: str) -> dict[str, Any]:
 
 
 def _mcp_presence() -> dict[str, Any]:
-    """Best-effort: confirm the operator's .mcp.json declares the three
-    MCP clients the supervisor depends on (legion-mcp, ada-mcp,
-    cyanheads-obsidian)."""
+    """Best-effort: check MCP server availability.
+
+    The .mcp.json lives on the host, not inside the Docker container, so we
+    can't simply read the file. Instead:
+    - legion_mcp / ada_mcp: probe their health endpoints directly.
+    - cyanheads_obsidian: check OBSIDIAN_API_KEY is set AND the Obsidian
+      Local REST API is reachable (the MCP server wraps that HTTP API).
+    """
     out: dict[str, Any] = {"legion_mcp": False, "ada_mcp": False, "cyanheads_obsidian": False}
-    for p in (Path("/c/code/zero/.mcp.json"), Path("/app/.mcp.json")):
+
+    # legion-mcp: probe Legion health
+    try:
+        import urllib.request
+        req = urllib.request.urlopen("http://host.docker.internal:8005/health", timeout=2)
+        if req.status in (200, 404):  # 404 = no /health but server is up
+            out["legion_mcp"] = True
+    except Exception:  # noqa: BLE001
+        pass
+
+    # ada-mcp: probe ADA health
+    try:
+        import urllib.request
+        req = urllib.request.urlopen("http://host.docker.internal:8006/health", timeout=2)
+        if req.status in (200, 404):
+            out["ada_mcp"] = True
+    except Exception:  # noqa: BLE001
+        pass
+
+    # cyanheads-obsidian: OBSIDIAN_API_KEY env set AND plugin port reachable
+    api_key = os.getenv("OBSIDIAN_API_KEY", "")
+    if api_key:
+        import ssl
+        import urllib.request
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        obsidian_base = os.getenv("OBSIDIAN_BASE_URL", "https://127.0.0.1:27124")
         try:
-            if p.exists():
-                txt = p.read_text(encoding="utf-8")
-                if "legion-mcp" in txt:
-                    out["legion_mcp"] = True
-                if "ada-mcp" in txt:
-                    out["ada_mcp"] = True
-                if "cyanheads-obsidian" in txt:
-                    out["cyanheads_obsidian"] = True
-                out["mcp_json_path"] = str(p)
-                break
+            req = urllib.request.urlopen(
+                urllib.request.Request(
+                    obsidian_base.rstrip("/") + "/",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                ),
+                context=ctx,
+                timeout=2,
+            )
+            if req.status in (200, 204, 401):
+                out["cyanheads_obsidian"] = True
         except Exception:  # noqa: BLE001
-            continue
+            pass
+
     return out

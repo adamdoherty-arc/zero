@@ -270,9 +270,9 @@ export function DaemonPanel() {
                 <div className="text-xs">
                   <div className="font-semibold">Host agent isn't responding</div>
                   <div className="mt-0.5 opacity-90">
-                    host_agent on :18796 is unreachable. Double-click <strong>Start Zero Robot</strong> on
-                    your desktop to relaunch it. If the shortcut is missing, run{' '}
-                    <code className="px-1 bg-black/40 rounded">host_agent\install-shortcut.ps1</code>.
+                    host_agent on :18796 is unreachable. Run{' '}
+                    <code className="px-1 bg-black/40 rounded">host_agent\start-zero.bat</code>{' '}
+                    from the Zero directory to relaunch it.
                   </div>
                 </div>
               </div>
