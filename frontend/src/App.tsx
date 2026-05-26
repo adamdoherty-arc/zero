@@ -14,6 +14,7 @@ import { MobileHomePage } from '@/pages/MobileHomePage'
 import { MobileReviewPage } from '@/pages/MobileReviewPage'
 import { MobileVideosPage } from '@/pages/MobileVideosPage'
 import { MobileCharactersPage } from '@/pages/MobileCharactersPage'
+import MobileCameraPage from '@/pages/MobileCameraPage'
 import MascotPopout from '@/pages/MascotPopout'
 import { MobileOnboardingPage } from '@/pages/MobileOnboardingPage'
 import { SharePage } from '@/pages/SharePage'
@@ -122,6 +123,7 @@ function App() {
             <Route path="review" element={<MobileReviewPage />} />
             <Route path="videos" element={<MobileVideosPage />} />
             <Route path="characters" element={<MobileCharactersPage />} />
+            <Route path="camera" element={<MobileCameraPage />} />
           </Route>
           <Route path="/m/onboarding" element={<MobileOnboardingPage />} />
           <Route path="/m/mascot" element={<MascotPopout />} />

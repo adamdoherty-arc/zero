@@ -14,6 +14,7 @@ import structlog
 
 from .base import SightProvider, SightStatus
 from .meta_rayban_provider import MetaRayBanProvider
+from .phone_camera_provider import PhoneCameraProvider
 from .reachy_provider import ReachySightProvider
 
 logger = structlog.get_logger()
@@ -32,6 +33,7 @@ class SightRegistry:
 
         self.register(ReachySightProvider())
         self.register(MetaRayBanProvider())
+        self.register(PhoneCameraProvider())
 
     # --- Eyes-off kill switch ------------------------------------------
 

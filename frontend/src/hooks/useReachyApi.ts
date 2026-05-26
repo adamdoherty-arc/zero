@@ -756,6 +756,75 @@ export function useCameraStatus(pollMs = 2000) {
   })
 }
 
+export interface CameraDevice {
+  index: number
+  name: string
+  available: boolean
+  width: number
+  height: number
+  is_reachy: boolean
+}
+
+export function useCameraDevices() {
+  return useQuery<CameraDevice[]>({
+    queryKey: ['reachy', 'camera', 'devices'],
+    queryFn: () => fetchApi('/reachy/camera/devices'),
+    staleTime: 30_000,
+    retry: 1,
+  })
+}
+
+export function useSwitchCamera() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (deviceIndex: number) =>
+      fetchApi('/reachy/camera/switch', {
+        method: 'POST',
+        body: JSON.stringify({ device_index: deviceIndex }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reachy', 'camera'] })
+    },
+  })
+}
+
+export interface SightProvider {
+  provider: string
+  active: boolean
+  last_frame_ts: number | null
+  last_error: string | null
+  [key: string]: unknown
+}
+
+export interface SightProviders {
+  active: string
+  eyes_off: boolean
+  providers: SightProvider[]
+}
+
+export function useSightProviders() {
+  return useQuery<SightProviders>({
+    queryKey: ['sight', 'providers'],
+    queryFn: () => fetchApi('/sight/providers'),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+export function useSelectSightProvider() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (provider: string) =>
+      fetchApi('/sight/select', {
+        method: 'POST',
+        body: JSON.stringify({ provider }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sight'] })
+    },
+  })
+}
+
 export interface ReachyState {
   head_pose?: { x: number; y: number; z: number; roll: number; pitch: number; yaw: number }
   body_yaw?: number

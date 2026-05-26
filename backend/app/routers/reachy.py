@@ -3413,6 +3413,36 @@ async def camera_mjpeg():
     )
 
 
+@router.get("/camera/devices")
+async def camera_devices():
+    """Enumerate available camera devices with names, indices, and availability."""
+    base = _host_agent_base()
+    if not base:
+        raise HTTPException(503, "ZERO_HOST_AGENT_URL not configured")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(f"{base}/camera/devices")
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.RequestError as e:
+        raise HTTPException(503, f"host_agent unreachable: {e}")
+
+
+@router.post("/camera/switch")
+async def camera_switch(payload: dict):
+    """Switch active camera device. payload: {device_index: int}"""
+    base = _host_agent_base()
+    if not base:
+        raise HTTPException(503, "ZERO_HOST_AGENT_URL not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(f"{base}/camera/switch", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.RequestError as e:
+        raise HTTPException(503, f"host_agent unreachable: {e}")
+
+
 # ---- Vision (Wave 3) ----
 
 @router.get("/vision/backends")

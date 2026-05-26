@@ -2526,7 +2526,9 @@ async def camera_status():
 @app.get("/camera/frame.jpg")
 async def camera_frame():
     """Single JPEG snapshot of the latest frame. Starts the worker on demand."""
-    jpeg = get_camera_worker().latest_jpeg(wait_s=3.0)
+    # 8s wait: GStreamer probe (1.5s) + media-release timeout (2s) + cv2 probe (1s)
+    # = ~4.5s worst case before the first frame arrives. 8s leaves room for slow USB.
+    jpeg = get_camera_worker().latest_jpeg(wait_s=8.0)
     if not jpeg:
         raise HTTPException(503, "No frame available (camera unavailable or starting)")
     return Response(content=jpeg, media_type="image/jpeg")
@@ -2541,6 +2543,23 @@ async def camera_mjpeg():
         worker.mjpeg_chunks(),
         media_type=f"multipart/x-mixed-replace; boundary=zero-frame",
     )
+
+
+@app.get("/camera/devices")
+async def camera_devices():
+    """Enumerate all available camera devices with names and indices."""
+    from camera_worker import list_devices
+    return list_devices()
+
+
+@app.post("/camera/switch")
+async def camera_switch(payload: dict):
+    """Switch the active camera device at runtime. payload: {device_index: int}"""
+    index = payload.get("device_index")
+    if index is None or not isinstance(index, int) or index < 0:
+        raise HTTPException(400, "device_index must be a non-negative integer")
+    result = get_camera_worker().switch_device(index)
+    return result
 
 
 if __name__ == "__main__":

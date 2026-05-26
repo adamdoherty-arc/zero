@@ -33,12 +33,20 @@ logger = structlog.get_logger()
 _BOUNDARY = "zero-frame"
 
 # Configurable via env so users with multiple cams can pick.
-_DEFAULT_INDEX = int(os.getenv("ZERO_REACHY_CAMERA_DEVICE", "0"))
+# -1 = auto-detect: find the Reachy Mini Camera by name; fall back to index 0.
+_DEFAULT_INDEX = int(os.getenv("ZERO_REACHY_CAMERA_DEVICE", "-1"))
 _DEFAULT_WIDTH = int(os.getenv("ZERO_REACHY_CAMERA_WIDTH", "1280"))
 _DEFAULT_HEIGHT = int(os.getenv("ZERO_REACHY_CAMERA_HEIGHT", "720"))
 _DEFAULT_FPS = int(os.getenv("ZERO_REACHY_CAMERA_FPS", "15"))
 _DEFAULT_JPEG_Q = int(os.getenv("ZERO_REACHY_CAMERA_JPEG_QUALITY", "80"))
 _IDLE_SHUTDOWN_S = float(os.getenv("ZERO_REACHY_CAMERA_IDLE_SHUTDOWN_S", "15"))
+
+# Keywords in the Windows PnP device name that identify the robot camera.
+_REACHY_NAME_KEYWORDS = ["reachy", "38fb"]  # VID_38FB = Pollen Robotics USB VID
+
+# Module-level cache so repeated calls to _find_reachy_device_index() don't
+# re-run the expensive PowerShell + cv2 probe after the first resolution.
+_resolved_device_index: Optional[int] = None
 
 # Reachy daemon grabs the USB camera on boot and won't release it unless asked.
 # We hit /api/media/release before opening so cv2 can actually get the device.
@@ -60,7 +68,7 @@ def _release_reachy_media() -> None:
             data=b"",
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=2.0) as resp:
+        with urllib.request.urlopen(req, timeout=0.5) as resp:
             logger.debug("reachy_media_released", status=resp.status)
     except Exception as e:
         logger.debug("reachy_media_release_skipped", error=str(e))
@@ -138,6 +146,8 @@ class CameraWorker:
         self._thread: Optional[threading.Thread] = None
         self._consumers_lock = threading.Lock()
         self._last_consumer_ts: float = 0.0
+        # Per-instance device index; -1 means "auto-detect on next open"
+        self._device_index: int = _DEFAULT_INDEX
 
     @classmethod
     def instance(cls) -> "CameraWorker":
@@ -162,6 +172,29 @@ class CameraWorker:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
         self._thread = None
+
+    def switch_device(self, index: int) -> dict:
+        """Stop the current capture, switch to the given device index, restart."""
+        logger.info("camera_switch_device", from_index=self._device_index, to_index=index)
+        self._device_index = index
+        self.stop()
+        # Clear stale frame so consumers don't get stale bytes from old device
+        with self._latest_lock:
+            self._latest_jpeg = None
+            self._status = CameraStatus()
+            self._status.device_index = index
+        self._stop.clear()
+        self._frame_event.clear()
+        self.ensure_started()
+        return {"switched": True, "device_index": index}
+
+    def _active_device_index(self) -> int:
+        """Return the resolved device index (auto-detect if still -1)."""
+        if self._device_index >= 0:
+            return self._device_index
+        resolved = _find_reachy_device_index()
+        self._device_index = resolved
+        return resolved
 
     def status(self) -> dict:
         data = self._status.to_dict()
@@ -300,13 +333,16 @@ class CameraWorker:
         # before cv2 can open the device.
         _release_reachy_media()
 
+        device_idx = self._active_device_index()
+        self._status.device_index = device_idx
+
         backends = [
             (cv2.CAP_DSHOW, "dshow"),
             (cv2.CAP_MSMF, "msmf"),
             (cv2.CAP_ANY, "any"),
         ]
         for backend, name in backends:
-            cap = cv2.VideoCapture(_DEFAULT_INDEX, backend)
+            cap = cv2.VideoCapture(device_idx, backend)
             if cap is None or not cap.isOpened():
                 if cap is not None:
                     cap.release()
@@ -340,15 +376,27 @@ class CameraWorker:
 
         cap = None
         try:
-            # 1) Try the daemon's IPC pipe first — zero-contention path.
-            cap = self._open_gstreamer()
+            # 1) Only try GStreamer IPC when the daemon is reachable — avoids
+            #    a multi-second hang when GST env vars are present but the
+            #    daemon is down (the gi/GStreamer .pth double-prepend can freeze
+            #    the import in the uvicorn process context).
+            daemon_up = False
+            try:
+                import urllib.request as _ur
+                _ur.urlopen(f"{_REACHY_API_URL}/health", timeout=0.4).close()
+                daemon_up = True
+            except Exception:
+                pass
+
+            if daemon_up:
+                cap = self._open_gstreamer()
             # 2) Fall back to directly opening the USB device (only usable
             #    if the daemon has released it, which _open_capture does).
             if cap is None:
                 cap = self._open_capture()
             if cap is None:
-                self._status.last_error = f"could not open camera device {_DEFAULT_INDEX}"
-                logger.warning("camera_worker_open_failed", device=_DEFAULT_INDEX)
+                self._status.last_error = f"could not open camera device {self._status.device_index}"
+                logger.warning("camera_worker_open_failed", device=self._status.device_index)
                 return
 
             self._status.active = True
@@ -362,7 +410,7 @@ class CameraWorker:
             logger.info(
                 "camera_worker_started",
                 backend=self._status.backend,
-                device=_DEFAULT_INDEX,
+                device=self._status.device_index,
                 width=self._status.width,
                 height=self._status.height,
             )
@@ -486,5 +534,142 @@ class CameraWorker:
         return fallback
 
 
-def get_camera_worker() -> CameraWorker:
+def list_devices() -> list[dict]:
+    """
+    Enumerate available camera devices with names and OpenCV indices.
+
+    Uses WinRT DeviceInformation (MSMF order) to get names, then probes
+    each index with OpenCV to confirm readability and get native resolution.
+    Adds an `is_reachy` flag for the robot body camera.
+    """
+    import json
+    import subprocess
+
+    try:
+        import cv2
+    except ImportError:
+        return []
+
+    # --- Step 1: get ordered device names from Windows (WinRT = MSMF order) ---
+    names: list[str] = []
+    try:
+        script = (
+            "$ErrorActionPreference = 'SilentlyContinue';"
+            "Add-Type -AssemblyName 'System.Runtime.WindowsRuntime';"
+            "$t = [Windows.Devices.Enumeration.DeviceInformation];"
+            "$devs = $t::FindAllAsync("
+            "[Windows.Devices.Enumeration.DeviceClass]::VideoCapture"
+            ").GetAwaiter().GetResult();"
+            "$devs | ForEach-Object { $_.Name } | ConvertTo-Json -Compress"
+        )
+        r = subprocess.run(
+            ["powershell", "-Command", script],
+            capture_output=True, text=True, timeout=8,
+        )
+        raw = (r.stdout or "").strip()
+        if raw:
+            parsed = json.loads(raw)
+            if isinstance(parsed, str):
+                parsed = [parsed]
+            names = [str(n) for n in parsed]
+    except Exception as e:
+        logger.debug("camera_list_names_failed", error=str(e)[:120])
+
+    # Fallback: try PnP device class "Camera"
+    if not names:
+        try:
+            r2 = subprocess.run(
+                ["powershell", "-Command",
+                 "Get-PnpDevice -Class Camera -Status OK | Select-Object -ExpandProperty FriendlyName | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, timeout=6,
+            )
+            raw2 = (r2.stdout or "").strip()
+            if raw2:
+                parsed2 = json.loads(raw2)
+                if isinstance(parsed2, str):
+                    parsed2 = [parsed2]
+                names = [str(n) for n in parsed2]
+        except Exception as e2:
+            logger.debug("camera_list_pnp_failed", error=str(e2)[:120])
+
+    # --- Step 2: probe OpenCV indices to confirm availability ---
+    devices: list[dict] = []
+    probe_count = max(len(names), 4)  # always probe at least 4 slots
+    for i in range(probe_count):
+        name = names[i] if i < len(names) else f"Camera {i}"
+        available = False
+        width = height = 0
+
+        for backend, bname in [(cv2.CAP_DSHOW, "dshow"), (cv2.CAP_MSMF, "msmf")]:
+            try:
+                cap = cv2.VideoCapture(i, backend)
+            except Exception:
+                continue
+            if cap is None or not cap.isOpened():
+                if cap is not None:
+                    cap.release()
+                continue
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            ok, _ = cap.read()
+            cap.release()
+            if ok:
+                available = True
+                width, height = w, h
+                break
+
+        is_reachy = any(kw in name.lower() for kw in _REACHY_NAME_KEYWORDS)
+        devices.append(
+            {
+                "index": i,
+                "name": name,
+                "available": available,
+                "width": width,
+                "height": height,
+                "is_reachy": is_reachy,
+            }
+        )
+
+    return devices
+
+
+def _find_reachy_device_index() -> int:
+    """
+    Return the OpenCV device index for the Reachy body camera.
+
+    Strategy:
+    1. If ZERO_REACHY_CAMERA_DEVICE is set to a non-negative value, trust it (no enumeration).
+    2. Otherwise use the module-level cache if already resolved this session.
+    3. Else enumerate devices, find one named "Reachy Mini Camera", cache it.
+    4. Fall back to first available device, then index 0.
+    """
+    global _resolved_device_index
+
+    if _DEFAULT_INDEX >= 0:
+        return _DEFAULT_INDEX
+
+    if _resolved_device_index is not None:
+        return _resolved_device_index
+
+    try:
+        devs = list_devices()
+        for d in devs:
+            if d.get("is_reachy") and d.get("available"):
+                logger.info("camera_reachy_autodetected", index=d["index"], name=d["name"])
+                _resolved_device_index = d["index"]
+                return d["index"]
+        for d in devs:
+            if d.get("available"):
+                logger.info("camera_reachy_fallback_first_available", index=d["index"], name=d["name"])
+                _resolved_device_index = d["index"]
+                return d["index"]
+    except Exception as e:
+        logger.warning("camera_reachy_detection_failed", error=str(e)[:120])
+
+    logger.info("camera_reachy_fallback_index_0")
+    _resolved_device_index = 0
+    return 0
+
+
+def get_camera_worker() -> "CameraWorker":
     return CameraWorker.instance()
