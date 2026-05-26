@@ -5,10 +5,12 @@ from app.models.project import (
     Project, ProjectCreate, ProjectUpdate, ProjectType, ProjectStatus,
     ProjectScanConfig, ProjectScanResult
 )
+from app.models.zero_run import ZeroRunDB, ZeroRunEventDB, ZeroCriticReviewDB
 
 __all__ = [
     "Sprint", "SprintStatus",
     "Task", "TaskCreate", "TaskUpdate", "TaskStatus", "TaskCategory", "TaskPriority", "TaskSource",
     "Project", "ProjectCreate", "ProjectUpdate", "ProjectType", "ProjectStatus",
-    "ProjectScanConfig", "ProjectScanResult"
+    "ProjectScanConfig", "ProjectScanResult",
+    "ZeroRunDB", "ZeroRunEventDB", "ZeroCriticReviewDB",
 ]
