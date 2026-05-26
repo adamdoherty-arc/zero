@@ -1038,6 +1038,24 @@ export function InteractiveModeHero() {
             {connected && connectedVoiceError && (
               <span className="text-[11px] text-amber-300 truncate max-w-xl">{connectedVoiceError}</span>
             )}
+            {voice.inputSource === 'browser' && voice.availableMics.length > 0 && (browserMicUnavailable || voice.availableMics.length > 1) && (
+              <label className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                <span>Mic</span>
+                <select
+                  value={voice.selectedMicId ?? ''}
+                  onChange={(e) => void voice.setSelectedMic(e.target.value || null)}
+                  className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-[11px] rounded px-2 py-0.5 max-w-[16rem]"
+                  title="Pick which computer microphone Zero should use. Pixel/Bluetooth handsfree devices are skipped automatically."
+                >
+                  <option value="">(auto, skip handsfree)</option>
+                  {voice.availableMics.map((mic) => (
+                    <option key={mic.deviceId} value={mic.deviceId}>
+                      {mic.label || `Mic ${mic.deviceId.slice(0, 6)}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {!connected && !connecting && !errored && (
               <span className="text-[11px] text-zinc-500">
                 {repairRequired

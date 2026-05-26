@@ -40,7 +40,7 @@
     },
     "cyanheads-obsidian": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@cyanheads/obsidian-mcp-server"],
+      "args": ["/c", "obsidian-mcp-server"],
       "env": {
         "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
         "OBSIDIAN_BASE_URL": "https://127.0.0.1:27124"

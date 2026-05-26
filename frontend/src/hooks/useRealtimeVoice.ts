@@ -90,12 +90,52 @@ const INPUT_RATE_BY_BACKEND: Record<VoiceBackend, number> = {
   local: 16000,  // matches Silero VAD + faster-whisper native rate
 }
 const BROWSER_MIC_PROMPT_TIMEOUT_MS = 12000
-const BROWSER_MIC_CONSTRAINTS: MediaStreamConstraints = {
-  audio: {
+
+// Windows promotes Bluetooth handsfree (HSP/HFP) mics to default whenever a
+// paired phone (Pixel via Phone Link, AirPods, etc.) is in range. The OS holds
+// HFP devices exclusively, so Chrome's getUserMedia returns NotReadableError:
+// Device in use. Match by label so we can fall back to a wired/USB mic.
+// Also filters virtual audio devices that surface as inputs but never produce
+// signal (Oculus / Quest virtual mic, Windows Sound Mapper, Stereo Mix, NVIDIA
+// Broadcast loopback, VB-Audio Cable). These would just trade one silent mic
+// for another.
+const HANDSFREE_DEVICE_PATTERN =
+  /hands.?free|\bhfp\b|\bhsp\b|bluetooth|pixel|airpods|earbud|oculus|quest|virtual audio|virtual microphone|sound mapper|stereo mix|vb.?audio|cable input|nvidia broadcast/i
+
+// Stable localStorage key for the user's last-good mic deviceId, so a future
+// reload re-picks it without bouncing through the bluetooth device again.
+const PREFERRED_MIC_STORAGE_KEY = 'zero.preferredMicDeviceId'
+
+function loadPreferredMicId(): string | null {
+  try {
+    return window.localStorage.getItem(PREFERRED_MIC_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function savePreferredMicId(deviceId: string | null) {
+  try {
+    if (deviceId) {
+      window.localStorage.setItem(PREFERRED_MIC_STORAGE_KEY, deviceId)
+    } else {
+      window.localStorage.removeItem(PREFERRED_MIC_STORAGE_KEY)
+    }
+  } catch {
+    /* localStorage may be unavailable (private mode); non-fatal */
+  }
+}
+
+function buildMicConstraints(deviceId?: string | null): MediaStreamConstraints {
+  const audio: MediaTrackConstraints = {
     echoCancellation: true,
     noiseSuppression: true,
     channelCount: 1,
-  },
+  }
+  if (deviceId) {
+    audio.deviceId = { exact: deviceId }
+  }
+  return { audio }
 }
 
 function stopStream(stream: MediaStream | null) {
@@ -106,10 +146,10 @@ function stopStream(stream: MediaStream | null) {
   }
 }
 
-function requestBrowserMicStream(): Promise<MediaStream> {
+function requestBrowserMicStream(deviceId?: string | null): Promise<MediaStream> {
   let timedOut = false
   let timeoutId: number | null = null
-  const request = navigator.mediaDevices.getUserMedia(BROWSER_MIC_CONSTRAINTS)
+  const request = navigator.mediaDevices.getUserMedia(buildMicConstraints(deviceId))
   return new Promise((resolve, reject) => {
     timeoutId = window.setTimeout(() => {
       timedOut = true
@@ -135,6 +175,29 @@ function requestBrowserMicStream(): Promise<MediaStream> {
         reject(error)
       })
   })
+}
+
+async function enumerateAudioInputs(): Promise<MediaDeviceInfo[]> {
+  if (!navigator.mediaDevices?.enumerateDevices) return []
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    return devices.filter((d) => d.kind === 'audioinput')
+  } catch {
+    return []
+  }
+}
+
+function isHandsfreeDevice(device: MediaDeviceInfo): boolean {
+  const label = device.label || ''
+  return HANDSFREE_DEVICE_PATTERN.test(label)
+}
+
+function describeDeviceError(error: unknown): string {
+  if (error && typeof error === 'object' && 'name' in error) {
+    const name = String((error as { name?: unknown }).name ?? '')
+    if (name) return name
+  }
+  return String(error)
 }
 
 const OUTPUT_RATE_BY_BACKEND: Record<VoiceBackend, number> = {
@@ -187,6 +250,16 @@ export interface UseRealtimeVoice {
   setMuted: (muted: boolean) => void
   switchInputSource: (source: 'reachy' | 'browser') => Promise<void>
   setLocalPlayback: (next: boolean) => void
+  /** Audioinput devices visible to the browser. Populated after the first
+   * successful getUserMedia (labels are blank until then). */
+  availableMics: MediaDeviceInfo[]
+  /** deviceId currently pinned by the user (via the mic picker). null means
+   * auto-select the first non-handsfree device. */
+  selectedMicId: string | null
+  /** User-driven mic selection. null clears the pin and re-runs auto-select. */
+  setSelectedMic: (deviceId: string | null) => Promise<void>
+  /** Re-enumerate audio inputs (e.g. after the user plugs/unplugs a device). */
+  refreshMics: () => Promise<void>
   isActive: boolean
 }
 
@@ -221,6 +294,12 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
   // an explicit fallback (the "Computer on / Computer muted" toggle) so the
   // robot is the only voice unless the user opts in.
   const [localPlayback, setLocalPlaybackState] = useState(false)
+  const [availableMics, setAvailableMics] = useState<MediaDeviceInfo[]>([])
+  const [selectedMicId, setSelectedMicIdState] = useState<string | null>(() =>
+    loadPreferredMicId(),
+  )
+  const selectedMicIdRef = useRef<string | null>(selectedMicId)
+  const availableMicsRef = useRef<MediaDeviceInfo[]>([])
 
   const wsRef = useRef<WebSocket | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
@@ -397,6 +476,133 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     [markConnectedAfterMicChange],
   )
 
+  const refreshMics = useCallback(async () => {
+    const mics = await enumerateAudioInputs()
+    availableMicsRef.current = mics
+    setAvailableMics(mics)
+    // Self-heal a stale localStorage pin. enumerateDevices doesn't yield labels
+    // until the first successful gUM, so this often runs twice: once empty
+    // (no-op), then again with labels after the first session starts.
+    const pinned = selectedMicIdRef.current
+    if (pinned) {
+      const matched = mics.find((m) => m.deviceId === pinned)
+      if (!matched || (matched.label && isHandsfreeDevice(matched))) {
+        selectedMicIdRef.current = null
+        setSelectedMicIdState(null)
+        savePreferredMicId(null)
+      }
+    }
+  }, [])
+
+  // Acquire a browser mic stream that survives Pixel/AirPods/Bluetooth
+  // handsfree devices monopolizing the Windows default input. Order of attempts:
+  //   1. Explicit user pick (selectedMicId) — fail loud if this errors so the
+  //      picker UI shows the real error.
+  //   2. The OS default (no deviceId) — works in 90% of cases.
+  //   3. Each non-handsfree audioinput in enumerateDevices order.
+  // The first success is persisted to localStorage so reloads don't re-bounce
+  // through the bluetooth device. Returns null + sets `lastError` on full
+  // failure so the caller can surface a single error message.
+  const acquireMicStreamWithFallback = useCallback(
+    async (): Promise<{ stream: MediaStream; deviceId: string | null; deviceLabel: string | null } | { stream: null; lastError: string }> => {
+      let pinned = selectedMicIdRef.current
+      // Drop a poisoned localStorage pin. Earlier builds saved whichever non-
+      // handsfree device the iteration path found, but the handsfree pattern
+      // has since grown to cover Oculus/Quest/Virtual Audio devices. A pin
+      // that used to be "non-handsfree" can now match the new rule, so
+      // validate the saved label every load and silently clear stale ones.
+      if (pinned) {
+        const mics = availableMicsRef.current
+        const matched = mics.find((m) => m.deviceId === pinned)
+        if (matched && isHandsfreeDevice(matched)) {
+          savePreferredMicId(null)
+          selectedMicIdRef.current = null
+          setSelectedMicIdState(null)
+          pinned = null
+        }
+      }
+      // 1. user-pinned device — no automatic fallback when the user explicitly
+      // chose this mic. They want to know it failed. EXCEPT: if the resulting
+      // stream's actual track label matches the handsfree pattern (because an
+      // older build silently saved an Oculus/Bluetooth device), close it,
+      // clear the pin, and fall through to auto-select.
+      if (pinned) {
+        try {
+          const stream = await requestBrowserMicStream(pinned)
+          const trackLabel = stream.getAudioTracks()[0]?.label || ''
+          if (trackLabel && HANDSFREE_DEVICE_PATTERN.test(trackLabel)) {
+            stopStream(stream)
+            savePreferredMicId(null)
+            selectedMicIdRef.current = null
+            setSelectedMicIdState(null)
+            // fall through to path 2/3
+          } else {
+            const mics = availableMicsRef.current
+            const matched = mics.find((m) => m.deviceId === pinned) ?? null
+            // Refresh labels (they only populate after a successful gUM).
+            void refreshMics()
+            return { stream, deviceId: pinned, deviceLabel: matched?.label || trackLabel || null }
+          }
+        } catch (e) {
+          return { stream: null, lastError: `Selected microphone unavailable (${describeDeviceError(e)})` }
+        }
+      }
+      // 2. OS default — fast path; works when the user has no bluetooth mic
+      // grabbed by HFP.
+      let lastError = ''
+      try {
+        const stream = await requestBrowserMicStream(null)
+        // Now that we have permission, labels are populated. Refresh and
+        // verify the default isn't actually a handsfree device — if it is,
+        // close the stream and step into the enumeration retry path below.
+        const mics = await enumerateAudioInputs()
+        availableMicsRef.current = mics
+        setAvailableMics(mics)
+        const trackLabel = stream.getAudioTracks()[0]?.label || ''
+        if (HANDSFREE_DEVICE_PATTERN.test(trackLabel) && mics.some((m) => !isHandsfreeDevice(m))) {
+          stopStream(stream)
+          // fall through to enumeration retry
+        } else {
+          return { stream, deviceId: null, deviceLabel: trackLabel || null }
+        }
+      } catch (e) {
+        lastError = describeDeviceError(e)
+        // Permission needs to be granted before enumerateDevices yields labels,
+        // so if the very first call was NotAllowedError, give up — there is no
+        // device list to walk.
+        if (lastError === 'NotAllowedError' || lastError === 'SecurityError') {
+          return { stream: null, lastError }
+        }
+        // Make sure we have a device list to walk.
+        const mics = await enumerateAudioInputs()
+        availableMicsRef.current = mics
+        setAvailableMics(mics)
+      }
+      // 3. Iterate non-handsfree devices in enumeration order.
+      const mics = availableMicsRef.current
+      for (const device of mics) {
+        if (isHandsfreeDevice(device)) continue
+        if (!device.deviceId) continue
+        try {
+          const stream = await requestBrowserMicStream(device.deviceId)
+          savePreferredMicId(device.deviceId)
+          selectedMicIdRef.current = device.deviceId
+          setSelectedMicIdState(device.deviceId)
+          return { stream, deviceId: device.deviceId, deviceLabel: device.label || null }
+        } catch (e) {
+          lastError = describeDeviceError(e)
+        }
+      }
+      return {
+        stream: null,
+        lastError: lastError
+          ? `${lastError} (tried ${mics.length} input devices)`
+          : 'No usable computer microphone found',
+      }
+    },
+    [refreshMics],
+  )
+
   const beginBrowserMicCapture = useCallback(
     (inputRate: number) => {
       const requestSeq = ++browserMicRequestSeqRef.current
@@ -420,15 +626,17 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
       })
 
       void (async () => {
-        let stream: MediaStream
-        try {
-          stream = await requestBrowserMicStream()
-        } catch (e) {
+        const acquired = await acquireMicStreamWithFallback()
+        if (acquired.stream === null) {
           if (requestSeq !== browserMicRequestSeqRef.current || inputSourceRef.current !== 'browser') {
             return
           }
-          markBrowserMicUnavailable(`Computer microphone unavailable: ${String(e)}`)
+          markBrowserMicUnavailable(`Computer microphone unavailable: ${acquired.lastError}`)
           return
+        }
+        const stream = acquired.stream
+        if (acquired.deviceLabel) {
+          setInputDevice(acquired.deviceLabel)
         }
 
         if (requestSeq !== browserMicRequestSeqRef.current || inputSourceRef.current !== 'browser') {
@@ -482,7 +690,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
         mediaSource.connect(worklet)
         inputReadyRef.current = true
         setInputReady(true)
-        setInputDevice('Browser microphone')
+        setInputDevice(acquired.deviceLabel || 'Browser microphone')
         setInputHealth({
           source: 'browser_mic',
           ready: true,
@@ -502,7 +710,7 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
         markConnectedAfterMicChange()
       })()
     },
-    [markBrowserMicUnavailable, markConnectedAfterMicChange],
+    [acquireMicStreamWithFallback, markBrowserMicUnavailable, markConnectedAfterMicChange],
   )
 
   const handleServerEvent = useCallback(
@@ -657,18 +865,11 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
             }
             setInputHealth(nextHealth)
             setError((evt.message as string) || 'Zero microphone input is degraded.')
-            const needsBrowserFallback =
-              nextHealth.confidence_state === 'no_signal' &&
-              nextHealth.suggested_action === 'switch_to_browser_mic' &&
-              inputSourceRef.current !== 'browser'
-            if (needsBrowserFallback && !autoMicFallbackRef.current) {
-              autoMicFallbackRef.current = true
-              inputReadyRef.current = false
-              setInputReady(false)
-              setSessionPhase('listening')
-              setStalledReason(null)
-              void switchInputSourceRef.current?.('browser')
-            }
+            // Reachy stays as the default mic. The backend used to call us back
+            // into switchInputSourceRef('browser') here whenever Reachy went
+            // silent — that quietly traded a silent USB mic for whatever the
+            // OS default was (Pixel/Oculus/Quest virtual audio), which is also
+            // silent. Surface the error and let the user pick.
           }
           break
         case 'backend_swapped':
@@ -757,13 +958,12 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
           break
         case 'error':
           if (evt.code === 'input_unavailable' && inputSourceRef.current !== 'browser') {
+            // Reachy mic dropped. Show the error but keep the session on
+            // Reachy — user must explicitly Switch Mic to use the computer.
             const message =
               (evt.message as string) ||
-              'Zero microphone is unavailable; switching to computer mic.'
+              'Reachy microphone is unavailable. Check the daemon, or hit Switch Mic.'
             setError(message)
-            autoMicFallbackRef.current = true
-            inputReadyRef.current = true
-            setInputReady(true)
             setInputHealth({
               source: 'reachy_mic',
               ready: false,
@@ -777,7 +977,6 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
             setSessionPhase('stalled')
             setStalledReason('reachy_mic_no_signal')
             markConnectedIfReady()
-            void switchInputSourceRef.current?.('browser')
             break
           }
           if (evt.code === 'stt_timeout' || evt.code === 'llm_timeout') {
@@ -1038,31 +1237,78 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
 
   switchInputSourceRef.current = switchInputSource
 
+  // Surface a banner when Reachy mic is silent, but do NOT auto-switch to the
+  // browser. The browser default on this machine routinely lands on the Oculus
+  // / Pixel handsfree device, which is silent too — so flipping just trades
+  // one silent mic for another. User stays on Reachy until they explicitly
+  // hit "Switch Mic" or pick a device from the picker.
   useEffect(() => {
     if (state !== 'connected') return
     if (inputSource !== 'reachy') return
-    if (autoMicFallbackRef.current) return
     if (!inputHealth) return
-    const needsFallback =
+    const needsAttention =
       inputHealth.confidence_state === 'no_signal' &&
       inputHealth.suggested_action === 'switch_to_browser_mic'
-    if (!needsFallback) return
+    if (!needsAttention) return
+    if (autoMicFallbackRef.current) return
     autoMicFallbackRef.current = true
-    setError(inputHealth.last_error || 'Zero microphone is silent; switching to computer mic.')
-    void switchInputSource('browser')
+    setError(
+      inputHealth.last_error ||
+        'Reachy microphone is silent. Check the daemon, or hit Switch Mic to use the computer mic.',
+    )
   }, [
     inputHealth?.confidence_state,
     inputHealth?.last_error,
     inputHealth?.suggested_action,
     inputSource,
     state,
-    switchInputSource,
   ])
 
   const setLocalPlayback = useCallback((next: boolean) => {
     localPlaybackRef.current = next
     setLocalPlaybackState(next)
   }, [])
+
+  const setSelectedMic = useCallback(
+    async (deviceId: string | null) => {
+      selectedMicIdRef.current = deviceId
+      setSelectedMicIdState(deviceId)
+      savePreferredMicId(deviceId)
+      // If we're currently using the browser mic, swap to the new device.
+      if (inputSourceRef.current === 'browser') {
+        const inputRate = INPUT_RATE_BY_BACKEND[backendRef.current]
+        try {
+          workletNodeRef.current?.disconnect()
+        } catch {
+          /* ignore */
+        }
+        workletNodeRef.current = null
+        try {
+          micStreamRef.current?.getTracks().forEach((t) => t.stop())
+        } catch {
+          /* ignore */
+        }
+        micStreamRef.current = null
+        beginBrowserMicCapture(inputRate)
+      }
+    },
+    [beginBrowserMicCapture],
+  )
+
+  // One-shot enumeration on mount so the picker has something to show before
+  // the first start(). Labels will be blank until the user grants permission;
+  // a second enumeration runs after the first successful getUserMedia.
+  useEffect(() => {
+    void refreshMics()
+    if (!navigator.mediaDevices?.addEventListener) return
+    const handler = () => {
+      void refreshMics()
+    }
+    navigator.mediaDevices.addEventListener('devicechange', handler)
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handler)
+    }
+  }, [refreshMics])
 
   // Auto-cleanup on unmount.
   useEffect(() => {
@@ -1103,6 +1349,10 @@ export function useRealtimeVoice(defaults: VoiceStartArgs = {}): UseRealtimeVoic
     setMuted,
     switchInputSource,
     setLocalPlayback,
+    availableMics,
+    selectedMicId,
+    setSelectedMic,
+    refreshMics,
     isActive: state === 'connected' || state === 'connecting',
   }
 }
