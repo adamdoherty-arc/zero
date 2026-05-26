@@ -22,8 +22,8 @@ Zero is a **personal assistant + Reachy voice UX + autonomous research/trading +
 | Git workflow                | `.claude/rules/20-git-workflow.md`                      |
 | Docker + restart-policy     | `.claude/rules/30-docker.md`                            |
 | Testing + troubleshooting   | `.claude/rules/40-testing.md`                           |
-| LLM architecture (Bifrost)  | `.claude/rules/50-llm.md`                               |
-| Database patterns           | `.claude/rules/60-database.md`                          |
+| LLM architecture (Bifrost)  | `.claude/rules/50-llm.md` (path-scoped: backend/** only) |
+| Database patterns           | `.claude/rules/60-database.md` (path-scoped: backend/** only) |
 | Backend/Frontend/Voice/UX   | `.claude/rules/70-architecture.md`                      |
 | Backend-only patterns       | `.claude/rules/path-scoped/backend.md` (lazy)           |
 | Frontend-only patterns      | `.claude/rules/path-scoped/frontend.md` (lazy)          |
@@ -31,12 +31,12 @@ Zero is a **personal assistant + Reachy voice UX + autonomous research/trading +
 
 ## Recent architectural shifts (last 30 days)
 
-- **OpenHands integration** — `feat: OpenHands integration` — autonomous coding agent backbone
-- **Bifrost client + skills registry** — `feat: Bifrost client + skills registry` — shared LLM gateway at shared-bifrost:4445, skill registry for cross-project discovery
-- **openhuman adoption** — `feat: openhuman adoption` — human-in-the-loop pattern for sensitive autonomous actions
+> Capped at 5 most recent. Older entries archived to `CLAUDE_HISTORY.md` by the weekly curator.
+
 - **Reachy phases 1-8** — `feat(reachy): ship phases 1-8` — voice UX with realtime, robot interaction, character content
-- **Infrastructure pivot (2026-05-17)** — Removed all autostart logic, NSSM service, scheduled tasks. Containers use `restart: unless-stopped`. Legacy autostart scripts moved to `attic/`. User-launched UI replaces scheduled jobs.
-- **vLLM provider refactor + realtime config** — backend refactor, realtime LLM routing config
+- **Infrastructure pivot (2026-05-17)** — Removed NSSM/autostart. Containers use `restart: unless-stopped`. Legacy scripts moved to `attic/`.
+- **Bifrost client + skills registry** — shared LLM gateway at shared-bifrost:4445, skill registry for cross-project discovery
+- **OpenHands integration** — autonomous coding agent backbone
 - **CI: golden-set carousel V2** — automated testing of the carousel/content flow
 
 ## Cross-project
@@ -53,6 +53,16 @@ Zero is a **personal assistant + Reachy voice UX + autonomous research/trading +
 This file is curated by the `claude-md-curator` skill (cron: weekly Sunday 05:00 UTC).
 On-demand: invoke `/claude-md-curator` skill.
 The curator audits stale file refs, detects new patterns from recent commits, and proposes updates to `.claude/MEMORY.md`.
+
+## Code intelligence (codegraph)
+
+Zero's codegraph index is live (23K nodes). See user-scope `~/.claude/CLAUDE.md` for the mandatory decision tree. Per-project CLI:
+
+```bash
+mcp codegraph call codegraph_callers --arg name=<symbol>
+mcp codegraph call codegraph_context --arg query=<feature-area>
+mcp codegraph call codegraph_impact --arg name=<symbol>
+```
 
 ## Quick reference
 

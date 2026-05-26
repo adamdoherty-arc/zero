@@ -1,4 +1,8 @@
-# 60 — Database patterns (always loaded)
+---
+paths: ["backend/**"]
+---
+
+# 60 — Database patterns
 
 ## Async everywhere
 

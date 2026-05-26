@@ -1,4 +1,8 @@
-# 50 — LLM architecture (always loaded)
+---
+paths: ["backend/**"]
+---
+
+# 50 — LLM architecture
 
 ## Always use the latest model
 
