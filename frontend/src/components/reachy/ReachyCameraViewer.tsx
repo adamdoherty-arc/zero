@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CameraOff, ChevronDown, Loader2, Pause, Play, Scan, Settings } from 'lucide-react'
+import { Camera, CameraOff, ChevronDown, Loader2, Pause, Play, Scan, Settings, VideoOff } from 'lucide-react'
 import {
   useCameraDevices,
   useCameraStatus,
   useSightProviders,
   useSwitchCamera,
 } from '@/hooks/useReachyApi'
+import { useSharedRealtimeVoice } from '@/hooks/useSharedRealtimeVoice'
 import { useToast } from '@/hooks/use-toast'
 
 interface Props {
@@ -31,7 +32,14 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
   const [analyzing, setAnalyzing] = useState(false)
   const [lastAnalysis, setLastAnalysis] = useState<string | null>(null)
   const [showDevicePicker, setShowDevicePicker] = useState(false)
-  const status = useCameraStatus(frozen ? 10_000 : 2_000)
+  // Gate camera streaming on an active voice session. The camera worker is
+  // expensive (DirectShow USB device open, 30fps frames, ~30 MB/s in flight)
+  // and the cockpit page shouldn't kick it off until the user has clicked
+  // "Start Robot Assistant". Idle shutdown in host_agent reclaims the device
+  // 15s after the last stream consumer disconnects.
+  const voice = useSharedRealtimeVoice()
+  const sessionActive = voice.state === 'connected' || voice.state === 'connecting'
+  const status = useCameraStatus(frozen ? 10_000 : 2_000, sessionActive)
   const { data: devices } = useCameraDevices()
   const { data: sight } = useSightProviders()
   const switchCamera = useSwitchCamera()
@@ -43,7 +51,10 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
 
   // When camera reports active but the img has a load error (MJPEG stream
   // dropped after a container restart), auto-reconnect by bumping cacheKey.
+  // Only runs while the voice session is active — no point reconnecting to
+  // a stream the user can't see.
   useEffect(() => {
+    if (!sessionActive) return
     if (status.data?.active && imgError) {
       const t = setTimeout(() => {
         setCacheKey(Date.now())
@@ -52,7 +63,16 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
       return () => clearTimeout(t)
     }
     if (status.data?.active) setImgError(null)
-  }, [status.data?.active, imgError])
+  }, [sessionActive, status.data?.active, imgError])
+
+  // When the session ends, drop any stream-error state and bump the cacheKey
+  // so the next session starts with a fresh URL (no stale 304 cache).
+  useEffect(() => {
+    if (!sessionActive) {
+      setImgError(null)
+      setCacheKey(Date.now())
+    }
+  }, [sessionActive])
 
   // Note: auto-opening the device picker after sustained offline made the camera
   // card balloon vertically (4 device entries = +150px), which the user has
@@ -210,7 +230,13 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
         className="relative bg-black rounded overflow-hidden flex items-center justify-center"
         style={{ height }}
       >
-        {frozen ? (
+        {!sessionActive ? (
+          <div className="text-xs text-gray-500 flex flex-col items-center gap-2 px-4 text-center">
+            <VideoOff className="w-6 h-6 text-gray-600" />
+            <span>Camera off</span>
+            <span className="text-[10px] text-gray-600">Start the assistant to see Zero's view.</span>
+          </div>
+        ) : frozen ? (
           <div className="text-xs text-gray-500 flex items-center gap-2">
             <Pause className="w-4 h-4" /> Paused
           </div>
@@ -233,14 +259,14 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
           </button>
         ) : null}
 
-        {!frozen && !active && !imgError && (
+        {sessionActive && !frozen && !active && !imgError && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-gray-500">
             <Loader2 className="w-4 h-4 animate-spin" />
             {isPhoneActive ? 'Waiting for phone frames…' : 'Waiting for host_agent camera…'}
           </div>
         )}
 
-        {hasError && (
+        {sessionActive && hasError && (
           <div className="absolute top-2 left-2 right-2 text-[11px] text-red-300 bg-red-900/60 rounded px-2 py-1 flex items-center gap-1">
             <CameraOff className="w-3 h-3" />
             <span className="truncate">{hasError}</span>

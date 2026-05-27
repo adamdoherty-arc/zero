@@ -747,12 +747,13 @@ export interface CameraStatus {
   reason?: string
 }
 
-export function useCameraStatus(pollMs = 2000) {
+export function useCameraStatus(pollMs = 2000, enabled = true) {
   return useQuery<CameraStatus>({
     queryKey: ['reachy', 'camera', 'status'],
     queryFn: () => fetchApi('/reachy/camera/status'),
-    refetchInterval: pollMs,
+    refetchInterval: enabled ? pollMs : false,
     refetchIntervalInBackground: false,
+    enabled,
   })
 }
 
