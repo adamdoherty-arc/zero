@@ -872,6 +872,7 @@ class LocalRealtimeHandler:
         self._stop = asyncio.Event()
         self._cancel_response = asyncio.Event()
         self._turn_lock = asyncio.Lock()
+        self._active_turn_tasks: set[asyncio.Task] = set()
 
         # Audio + VAD state
         self._vad = _WebRTCVAD()
@@ -925,7 +926,14 @@ class LocalRealtimeHandler:
 
     async def recover(self, *, reason: str = "manual") -> dict[str, Any]:
         self._cancel_response.set()
-        self._reset_audio_turn_state()
+        # Acquire the turn lock so VAD state is not wiped while _handle_turn
+        # is mid-flight (Fix-73: VAD reset race).
+        try:
+            async with asyncio.timeout(1.0):
+                async with self._turn_lock:
+                    self._reset_audio_turn_state()
+        except (asyncio.TimeoutError, Exception):
+            self._reset_audio_turn_state()
         self._drop_audio_turns_until = time.monotonic() + 0.8
         self._ignore_input_until = time.monotonic() + 0.8
         self._assistant_audio_active_until = 0.0
@@ -1119,9 +1127,20 @@ class LocalRealtimeHandler:
     async def stop(self) -> None:
         self._stop.set()
         self._cancel_response.set()
+        # Cancel any in-flight _handle_turn tasks so they don't outlive the session.
+        for task in list(self._active_turn_tasks):
+            task.cancel()
+        if self._active_turn_tasks:
+            await asyncio.gather(*list(self._active_turn_tasks), return_exceptions=True)
         await self._emit_phase("idle")
 
     # -------------------- inbound audio + VAD --------------------
+
+    def _spawn_turn_task(self, segment: bytes) -> None:
+        """Create a tracked _handle_turn task so stop() can cancel orphans."""
+        task = asyncio.create_task(self._handle_turn(segment))
+        self._active_turn_tasks.add(task)
+        task.add_done_callback(self._active_turn_tasks.discard)
 
     async def feed_pcm(self, pcm_bytes: bytes) -> None:
         if not pcm_bytes:
@@ -1180,7 +1199,7 @@ class LocalRealtimeHandler:
                     "local_vad_forced_turn",
                     duration_s=round(speech_ms / 1000.0, 3),
                 )
-                asyncio.create_task(self._handle_turn(segment))
+                self._spawn_turn_task(segment)
                 continue
             if not self._speech_started_emitted and speech_ms >= MIN_SPEECH_MS:
                 # Barge-in only after sustained speech. Short USB speakerphone
@@ -1215,7 +1234,7 @@ class LocalRealtimeHandler:
                         asyncio.create_task(self._emit({"type": "user.speech_started"}))
                 # Kick the turn handler. Use a task so we don't block
                 # the audio ingest path.
-                asyncio.create_task(self._handle_turn(segment))
+                self._spawn_turn_task(segment)
 
     async def commit_audio(self) -> None:
         # Force end-of-turn even if VAD hasn't fired (used by the frontend
@@ -1225,7 +1244,7 @@ class LocalRealtimeHandler:
             self._speech_buf = bytearray()
             self._in_speech = False
             self._silence_ms = 0.0
-            asyncio.create_task(self._handle_turn(segment))
+            self._spawn_turn_task(segment)
 
     async def cancel_response(self) -> None:
         self._cancel_response.set()
@@ -1239,11 +1258,12 @@ class LocalRealtimeHandler:
             self._drop_audio_turns_until,
             time.monotonic() + 1.5,
         )
-        self._reset_audio_turn_state()
         self._cancel_response.clear()
 
         async def _text_turn() -> None:
             async with self._turn_lock:
+                # Reset VAD under lock so it doesn't race with a completing audio turn.
+                self._reset_audio_turn_state()
                 await self._emit({"type": "transcript", "role": "user", "content": text})
                 await self._emit_phase("thinking")
                 self._messages.append({"role": "user", "content": text})
