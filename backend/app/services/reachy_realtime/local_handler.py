@@ -137,14 +137,22 @@ VAD_AGGRESSIVENESS = int(os.getenv("REACHY_LOCAL_VAD_AGGRESSIVENESS", "3"))  # 0
 # constant hum while letting quiet speech through. Combined with aggressiveness=3,
 # webrtcvad rejects most non-speech before the energy gate.
 VAD_MIN_RMS = int(os.getenv("REACHY_LOCAL_VAD_MIN_RMS", "70"))
+# Add per-frame peak filter alongside RMS. Real speech reliably hits peaks
+# > 0.04 normalized (~1300 int16); ambient room hum + clicks may have brief
+# spikes but rarely sustain peaks > this threshold. Rejecting frames below
+# this avoids opening VAD on a single loud click that Whisper hallucinates
+# into "you" / "I don't know" filler captions.
+VAD_MIN_PEAK = int(os.getenv("REACHY_LOCAL_VAD_MIN_PEAK", "1300"))
 HANGOVER_MS = int(os.getenv("REACHY_LOCAL_VAD_HANGOVER_MS", "700"))
-MIN_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MIN_SPEECH_MS", "450"))
+MIN_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MIN_SPEECH_MS", "700"))
 # Cap the VAD-open window. If we misfire on ambient noise, recover faster
 # (was 6500 — wasted 6.5s of Whisper per misfire in a noisy room).
 MAX_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MAX_SPEECH_MS", "4500"))
 # Need a few consecutive speech frames to start, to ignore single-frame
-# false positives like a click or door tap.
-START_FRAMES = int(os.getenv("REACHY_LOCAL_VAD_START_FRAMES", "4"))
+# false positives like a click or door tap. 8 frames = 240ms sustained
+# speech detection before VAD opens (was 4 = 120ms — too short, brief
+# bursts opened VAD into a Whisper-hallucinated turn).
+START_FRAMES = int(os.getenv("REACHY_LOCAL_VAD_START_FRAMES", "8"))
 INPUT_WARMUP_S = float(os.getenv("REACHY_LOCAL_INPUT_WARMUP_S", "1.2"))
 # Barge-in should be stricter than turn detection. On a degraded Reachy mic,
 # low-level USB/AEC noise can trip WebRTC VAD continuously; that must not
@@ -803,10 +811,11 @@ class _WebRTCVAD:
             del self._buf[:VAD_FRAME_BYTES]
             try:
                 is_speech = bool(self._vad.is_speech(frame, INPUT_RATE))
-                if is_speech and VAD_MIN_RMS > 0:
+                if is_speech and (VAD_MIN_RMS > 0 or VAD_MIN_PEAK > 0):
                     samples = np.frombuffer(frame, dtype="<i2").astype(np.float32)
                     rms = float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
-                    is_speech = rms >= VAD_MIN_RMS
+                    peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+                    is_speech = rms >= VAD_MIN_RMS and peak >= VAD_MIN_PEAK
                 out.append(is_speech)
             except Exception:
                 out.append(False)
