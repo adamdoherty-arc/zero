@@ -1700,10 +1700,22 @@ async def _assistant_status_payload(
     info = service.get_status_info()
 
     if fast:
+        # 0.25s was too aggressive — Docker→host.docker.internal RTT can spike
+        # >250ms under any host CPU contention (motor serial retries, GIL,
+        # heavy STT). A single transient timeout flipped the UI to
+        # "Zero offline" / "Zero down" even though the daemon was healthy.
+        # 1.5s is well above worst-case RTT but still fast enough for UI polling.
         host_health, supervisor = await asyncio.gather(
-            _host_agent_get_safe("/health", timeout=0.25, attempts=1),
-            _host_agent_get_safe("/daemon/status", timeout=0.25, attempts=1),
+            _host_agent_get_safe("/health", timeout=1.5, attempts=1),
+            _host_agent_get_safe("/daemon/status", timeout=1.5, attempts=1),
         )
+        # If fast probe fails but cached payload is recent, fall back to it so
+        # one bad poll doesn't tear down the UI's "ready" indicators.
+        if (host_health is None or supervisor is None) and _ASSISTANT_STATUS_FAST_CACHE:
+            cached_ts, cached_payload = _ASSISTANT_STATUS_FAST_CACHE
+            if time.monotonic() - cached_ts < 8.0:
+                logger.debug("assistant_status_fast_using_cache", age_s=time.monotonic() - cached_ts)
+                return cached_payload
     else:
         host_health, supervisor = await asyncio.gather(
             _host_agent_get_safe("/health", timeout=2.0),
