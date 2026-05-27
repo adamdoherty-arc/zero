@@ -812,7 +812,7 @@ export function ReachyMotionLibraryPage() {
       {/* === HERO: merged console + assistant on the left, live camera on the right === */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_400px] gap-4 mb-4">
         <AssistantHero />
-        <ReachyCameraViewer height={420} />
+        <ReachyCameraViewer height={220} compact />
       </div>
 
       {/* === DAEMON STATUS BAR + DEBUG (one expander for everything Reachy is doing) === */}

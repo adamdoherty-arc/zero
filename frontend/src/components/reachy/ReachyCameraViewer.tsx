@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, CameraOff, ChevronDown, Loader2, Pause, Phone, Play, Scan, Settings } from 'lucide-react'
+import { Camera, CameraOff, ChevronDown, Loader2, Pause, Play, Scan, Settings } from 'lucide-react'
 import {
   useCameraDevices,
   useCameraStatus,
-  useSelectSightProvider,
   useSightProviders,
   useSwitchCamera,
 } from '@/hooks/useReachyApi'
@@ -36,22 +35,32 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
   const { data: devices } = useCameraDevices()
   const { data: sight } = useSightProviders()
   const switchCamera = useSwitchCamera()
-  const selectProvider = useSelectSightProvider()
   const { toast } = useToast()
   const imgRef = useRef<HTMLImageElement | null>(null)
 
   const activeProvider = sight?.active ?? 'reachy'
   const isPhoneActive = activeProvider === 'phone_camera'
 
-  // Reset the error banner when status flips back to active.
+  // When camera reports active but the img has a load error (MJPEG stream
+  // dropped after a container restart), auto-reconnect by bumping cacheKey.
   useEffect(() => {
+    if (status.data?.active && imgError) {
+      const t = setTimeout(() => {
+        setCacheKey(Date.now())
+        setImgError(null)
+      }, 1500)
+      return () => clearTimeout(t)
+    }
     if (status.data?.active) setImgError(null)
-  }, [status.data?.active])
+  }, [status.data?.active, imgError])
 
-  // Show device picker automatically when camera is offline (helps user fix it).
+  // Show device picker automatically when camera is persistently offline.
+  // Debounced: only opens after 8s of sustained offline to avoid false triggers
+  // during page load or container restart (camera warmup takes 2-4s).
   useEffect(() => {
     if (!frozen && status.data && !status.data.active && !isPhoneActive) {
-      setShowDevicePicker(true)
+      const t = setTimeout(() => setShowDevicePicker(true), 8000)
+      return () => clearTimeout(t)
     }
   }, [status.data?.active, frozen, isPhoneActive])
 
@@ -73,21 +82,6 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
       toast({ title: 'Camera switched', description: `Now using device ${index}` })
     } catch {
       toast({ title: 'Switch failed', variant: 'destructive' })
-    }
-  }
-
-  const handleSelectProvider = async (provider: string) => {
-    try {
-      await selectProvider.mutateAsync(provider)
-      restart()
-      toast({
-        title: provider === 'phone_camera' ? 'Phone camera active' : 'Robot camera active',
-        description: provider === 'phone_camera'
-          ? 'Open /m/camera on your phone to stream'
-          : 'Streaming from Reachy body camera',
-      })
-    } catch {
-      toast({ title: 'Provider switch failed', variant: 'destructive' })
     }
   }
 
@@ -143,27 +137,7 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
           <Camera className="w-4 h-4" /> Zero sees
         </h2>
         <div className="flex items-center gap-2">
-          {/* Provider toggle: Reachy | Phone */}
-          <div className="flex rounded overflow-hidden border border-gray-700 text-[11px]">
-            <button
-              onClick={() => handleSelectProvider('reachy')}
-              className={`px-2 py-0.5 flex items-center gap-1 transition-colors ${
-                !isPhoneActive ? 'bg-indigo-700 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-              title="Use Reachy body camera (primary)"
-            >
-              <Camera className="w-3 h-3" /> Robot
-            </button>
-            <button
-              onClick={() => handleSelectProvider('phone_camera')}
-              className={`px-2 py-0.5 flex items-center gap-1 transition-colors ${
-                isPhoneActive ? 'bg-indigo-700 text-white' : 'text-gray-400 hover:bg-gray-800'
-              }`}
-              title="Use phone camera — open /m/camera on your phone"
-            >
-              <Phone className="w-3 h-3" /> Phone
-            </button>
-          </div>
+          {/* Provider: Reachy robot camera only. Phone provider hidden — causes OS connection prompts. */}
 
           {/* Status pill */}
           <div className="text-[11px] text-gray-500 flex items-center gap-1">
@@ -236,21 +210,6 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
         </div>
       )}
 
-      {/* Phone camera companion hint */}
-      {isPhoneActive && (
-        <div className="mb-3 rounded bg-indigo-900/40 border border-indigo-700/50 px-3 py-2 text-xs text-indigo-200">
-          Open{' '}
-          <a
-            href="/m/camera"
-            target="_blank"
-            rel="noreferrer"
-            className="underline font-medium"
-          >
-            /m/camera
-          </a>{' '}
-          on your phone to stream its camera here. Or scan the QR code on that page.
-        </div>
-      )}
 
       {/* Video frame */}
       <div
