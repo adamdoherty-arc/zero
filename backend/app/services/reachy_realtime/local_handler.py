@@ -222,7 +222,7 @@ EARLY_TTS_CHARS = int(os.getenv("REACHY_LOCAL_EARLY_TTS_CHARS", "36"))
 # internal ``reasoning_content`` (~200-600 tokens) AND the spoken reply.
 # Even with thinking OFF, 1024 gives room for multi-sentence replies before
 # truncation. Override per-deployment with REACHY_LOCAL_LLM_MAX_TOKENS.
-LLM_MAX_TOKENS = int(os.getenv("REACHY_LOCAL_LLM_MAX_TOKENS", "1024"))
+LLM_MAX_TOKENS = int(os.getenv("REACHY_LOCAL_LLM_MAX_TOKENS", "2048"))
 LLM_TEMPERATURE = float(os.getenv("REACHY_LOCAL_LLM_TEMPERATURE", "0.25"))
 
 # Qwen3 in thinking mode emits ``<think>...</think>`` blocks in front of the
@@ -1875,6 +1875,23 @@ class LocalRealtimeHandler:
         # Drop empty tool calls (some streams emit a placeholder before
         # filling).
         tool_calls = [tc for tc in tool_calls if tc.get("name")]
+
+        # Diagnostic: when cleaned_full is empty AND there are no tool calls,
+        # the model thought-only and produced no user-facing output. Log
+        # head/tail of raw text so we can see WHY (unclosed think block, all
+        # whitespace, reasoning_content only, etc.) — directly addresses
+        # the "I heard you, but I couldn't complete that action" flood.
+        if not cleaned_full and not tool_calls:
+            preview_head = (text_acc or "")[:200].replace("\n", " ")
+            preview_tail = (text_acc or "")[-200:].replace("\n", " ")
+            logger.warning(
+                "local_llm_empty_output_diag",
+                raw_len=len(text_acc or ""),
+                head=preview_head,
+                tail=preview_tail,
+                has_open_think="<think>" in (text_acc or ""),
+                has_close_think="</think>" in (text_acc or ""),
+            )
         return text_acc, tool_calls, eager_tasks
 
     async def _speak_through(self, text_acc: str, spoken_to_idx: int) -> int:

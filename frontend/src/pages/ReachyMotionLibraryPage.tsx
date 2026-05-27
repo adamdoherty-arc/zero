@@ -809,17 +809,30 @@ export function ReachyMotionLibraryPage() {
         </div>
       </div>
 
-      {/* === HERO: merged console + assistant on the left, live camera on the right === */}
-      {/* items-start prevents the grid from stretching the camera card to match
-          AssistantHero's full height. The camera viewer is sticky so as the user
-          scrolls past AssistantHero, the camera stays pinned at the top of the
-          viewport instead of leaving a tall empty space below the card. */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px] gap-4 mb-4 items-start">
-        <AssistantHero />
-        <div className="xl:sticky xl:top-4 xl:self-start">
-          <ReachyCameraViewer height={200} compact />
-        </div>
+      {/* === HERO: AssistantHero takes the full content row; the camera is a
+          FIXED floating widget that does NOT participate in the grid layout.
+          Previous attempts using CSS grid + items-start + sticky still left
+          an empty cell below the camera card, which the user has flagged 6+
+          times as wasted space. By taking the camera out of normal flow
+          entirely, there is no cell to leave empty. The main content gets
+          right padding on xl screens so it doesn't overlap the camera. */}
+
+      {/* Mobile / narrow: camera appears inline above the hero */}
+      <div className="xl:hidden mb-4">
+        <ReachyCameraViewer height={200} compact />
       </div>
+
+      {/* Wide: camera floats fixed in the top-right corner; doesn't occupy grid space */}
+      <div className="hidden xl:block fixed top-20 right-4 z-30 w-[340px]">
+        <ReachyCameraViewer height={180} compact />
+      </div>
+
+      {/* Main content. On xl, the page reserves a right gutter for the fixed
+          camera widget so nothing overflows behind it. Closing the outer
+          right-padding wrapper happens at the end of the page just before
+          the container div closes. */}
+      <div className="xl:pr-[360px]">
+        <AssistantHero />
 
       {/* === DAEMON STATUS BAR + DEBUG (one expander for everything Reachy is doing) === */}
       <DaemonStatusBar isOpen={debugOpen} onToggle={() => setDebugOpen((v) => !v)} />
@@ -978,6 +991,7 @@ export function ReachyMotionLibraryPage() {
           </div>
         )}
       </details>
+      </div>{/* /xl:pr-[360px] wrapper */}
     </div>
   )
 }
