@@ -16,6 +16,7 @@ Same-origin URLs so `<img src>` works without token gymnastics.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -24,6 +25,12 @@ from pydantic import BaseModel, Field
 import structlog
 
 from app.services.sight import get_sight_registry
+
+# Phone camera ingest is disabled by default — the companion PWA auto-starts
+# and sends frames whenever the phone visits /m/camera, which causes
+# unwanted OS connection prompts on the host. Set ZERO_PHONE_CAMERA_ENABLED=1
+# to explicitly allow it.
+_PHONE_CAMERA_ENABLED = os.getenv("ZERO_PHONE_CAMERA_ENABLED", "0").strip() == "1"
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -129,6 +136,8 @@ async def provider_mjpeg(provider_id: str):
 
 @router.post("/{provider_id}/ingest")
 async def provider_ingest(provider_id: str, file: UploadFile = File(...)):
+    if provider_id == "phone_camera" and not _PHONE_CAMERA_ENABLED:
+        raise HTTPException(403, "Phone camera ingestion is disabled on this server.")
     reg = get_sight_registry()
     prov = reg.get(provider_id)
     if prov is None:

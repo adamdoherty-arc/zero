@@ -18,12 +18,22 @@ export default function MobileCameraPage() {
   const streamRef = useRef<MediaStream | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const [state, setState] = useState<'idle' | 'starting' | 'streaming' | 'error'>('idle')
+  const [state, setState] = useState<'idle' | 'starting' | 'streaming' | 'error' | 'disabled'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [frameCount, setFrameCount] = useState(0)
   const [lastStatus, setLastStatus] = useState<string | null>(null)
 
+  // Check on mount whether the server accepts phone camera frames.
+  useEffect(() => {
+    fetch('/api/sight/phone_camera/status')
+      .then(r => {
+        if (r.status === 403) setState('disabled')
+      })
+      .catch(() => {})
+  }, [])
+
   const startCamera = async () => {
+    if (state === 'disabled') return
     setState('starting')
     setError(null)
     try {
@@ -56,6 +66,14 @@ export default function MobileCameraPage() {
             headers: { 'Content-Type': 'image/jpeg' },
             body: blob,
           })
+          if (resp.status === 403) {
+            // Server has phone camera disabled — stop immediately.
+            setLastStatus('disabled')
+            setError('Phone camera is disabled on this server.')
+            stopCamera()
+            setState('error')
+            return
+          }
           setLastStatus(resp.ok ? 'ok' : `${resp.status}`)
           if (resp.ok) setFrameCount(n => n + 1)
         } catch {
@@ -110,6 +128,13 @@ export default function MobileCameraPage() {
         />
         <canvas ref={canvasRef} className="hidden" />
 
+        {state === 'disabled' && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-amber-500 px-6 text-center">
+            <CameraOff className="w-10 h-10" />
+            <p className="text-sm font-medium">Phone camera is disabled</p>
+            <p className="text-xs text-gray-500">This server is configured to use the robot camera only. No frames will be sent.</p>
+          </div>
+        )}
         {state === 'idle' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-gray-500">
             <VideoOff className="w-10 h-10" />

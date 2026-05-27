@@ -134,7 +134,7 @@ VAD_AGGRESSIVENESS = 2  # 0..3, higher = more aggressive at filtering non-speech
 # Optional energy floor in addition to WebRTC VAD. Reachy Mini's speakerphone
 # reports real speech quietly, but open-room USB/AEC noise tends to sit below
 # ~90 raw RMS and otherwise becomes bogus "you"/"okay" turns.
-VAD_MIN_RMS = int(os.getenv("REACHY_LOCAL_VAD_MIN_RMS", "90"))
+VAD_MIN_RMS = int(os.getenv("REACHY_LOCAL_VAD_MIN_RMS", "50"))
 HANGOVER_MS = int(os.getenv("REACHY_LOCAL_VAD_HANGOVER_MS", "700"))
 MIN_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MIN_SPEECH_MS", "450"))
 # Do not let a noisy room keep the VAD open for minutes. Long speakerphone
