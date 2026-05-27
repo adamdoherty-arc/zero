@@ -107,7 +107,10 @@ async def provider_status(provider_id: str):
     if prov is None:
         raise HTTPException(404, f"Unknown provider {provider_id!r}")
     status = await prov.status()
-    return status.to_dict()
+    d = status.to_dict()
+    if provider_id == "phone_camera":
+        d["ingest_enabled"] = _PHONE_CAMERA_ENABLED
+    return d
 
 
 @router.get("/{provider_id}/frame.jpg")

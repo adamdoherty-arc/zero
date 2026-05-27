@@ -26,8 +26,9 @@ export default function MobileCameraPage() {
   // Check on mount whether the server accepts phone camera frames.
   useEffect(() => {
     fetch('/api/sight/phone_camera/status')
-      .then(r => {
-        if (r.status === 403) setState('disabled')
+      .then(r => r.json())
+      .then((d: { ingest_enabled?: boolean }) => {
+        if (d.ingest_enabled === false) setState('disabled')
       })
       .catch(() => {})
   }, [])
