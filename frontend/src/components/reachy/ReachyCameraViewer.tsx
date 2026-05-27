@@ -220,7 +220,7 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
           <div className="text-xs text-gray-500 flex items-center gap-2">
             <Pause className="w-4 h-4" /> Paused
           </div>
-        ) : src ? (
+        ) : src && !imgError ? (
           <img
             ref={imgRef}
             src={src}
@@ -228,6 +228,15 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
             className="max-h-full max-w-full object-contain"
             onError={() => setImgError('stream unavailable')}
           />
+        ) : imgError ? (
+          <button
+            type="button"
+            onClick={restart}
+            className="text-xs text-gray-400 flex items-center gap-2 hover:text-gray-200"
+            title="Reconnect MJPEG stream"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" /> Reconnecting…
+          </button>
         ) : null}
 
         {!frozen && !active && !imgError && (

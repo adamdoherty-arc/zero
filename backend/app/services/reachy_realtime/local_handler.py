@@ -130,17 +130,18 @@ OUTPUT_RATE = 24000
 VAD_FRAME_MS = 30
 VAD_FRAME_SAMPLES = INPUT_RATE * VAD_FRAME_MS // 1000  # 480
 VAD_FRAME_BYTES = VAD_FRAME_SAMPLES * 2
-VAD_AGGRESSIVENESS = 2  # 0..3, higher = more aggressive at filtering non-speech
+VAD_AGGRESSIVENESS = int(os.getenv("REACHY_LOCAL_VAD_AGGRESSIVENESS", "3"))  # 0..3, higher = more aggressive at filtering non-speech
 # Optional energy floor in addition to WebRTC VAD. Reachy Mini's speakerphone
-# reports real speech quietly, but open-room USB/AEC noise tends to sit below
-# ~90 raw RMS and otherwise becomes bogus "you"/"okay" turns.
-VAD_MIN_RMS = int(os.getenv("REACHY_LOCAL_VAD_MIN_RMS", "50"))
+# reports real speech quietly (~75 int16 RMS at normal talking distance), but
+# open-room USB/AEC noise sits ~30-60 int16 RMS. 70 splits the gap: filters
+# constant hum while letting quiet speech through. Combined with aggressiveness=3,
+# webrtcvad rejects most non-speech before the energy gate.
+VAD_MIN_RMS = int(os.getenv("REACHY_LOCAL_VAD_MIN_RMS", "70"))
 HANGOVER_MS = int(os.getenv("REACHY_LOCAL_VAD_HANGOVER_MS", "700"))
 MIN_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MIN_SPEECH_MS", "450"))
-# Do not let a noisy room keep the VAD open for minutes. Long speakerphone
-# captures made the live assistant feel frozen because Whisper had to process
-# the whole room before the LLM could answer.
-MAX_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MAX_SPEECH_MS", "6500"))
+# Cap the VAD-open window. If we misfire on ambient noise, recover faster
+# (was 6500 — wasted 6.5s of Whisper per misfire in a noisy room).
+MAX_SPEECH_MS = int(os.getenv("REACHY_LOCAL_VAD_MAX_SPEECH_MS", "4500"))
 # Need a few consecutive speech frames to start, to ignore single-frame
 # false positives like a click or door tap.
 START_FRAMES = int(os.getenv("REACHY_LOCAL_VAD_START_FRAMES", "4"))
