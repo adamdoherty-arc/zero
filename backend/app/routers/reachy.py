@@ -2139,6 +2139,14 @@ async def assistant_activate(request: AssistantActivationRequest):
     except Exception as e:
         actions.append({"id": "ambient", "ok": False, "detail": _short_error(e)})
 
+    try:
+        from app.services.sight.registry import get_sight_registry
+        sight_registry = get_sight_registry()
+        await sight_registry.set_active("reachy")
+        actions.append({"id": "sight_provider", "ok": True, "detail": "Sight provider reset to reachy camera."})
+    except Exception as e:
+        actions.append({"id": "sight_provider", "ok": False, "detail": _short_error(e)})
+
     daemon = before.get("daemon") or {}
     daemon_step = next((step for step in before.get("steps", []) if step.get("id") == "reachy_daemon"), {})
     daemon_step_state = daemon_step.get("state")
@@ -2498,6 +2506,10 @@ async def daemon_status():
     return await _host_agent_forward("GET", "/daemon/status", timeout=5.0)
 
 
+_HOST_AGENT_PROBE_STATE = {"consecutive_failures": 0, "last_ok_at": 0.0}
+_HOST_AGENT_FAILURE_THRESHOLD = 3
+
+
 @router.get("/host-agent/status")
 async def host_agent_status():
     """Fast probe of host_agent's /health for the UI offline banner.
@@ -2505,6 +2517,10 @@ async def host_agent_status():
     Returns `{reachable, url, last_error}`. Never raises — failure mode is
     `reachable: false` so the frontend can render the "stack offline" banner
     instead of an error toast.
+
+    A single ReadTimeout to host.docker.internal:18796 is treated as transient.
+    Only flips to `reachable: false` after THRESHOLD consecutive failures, so
+    a flaky moment doesn't false-positive the banner.
     """
     base = _host_agent_base()
     if not base:
@@ -2514,9 +2530,14 @@ async def host_agent_status():
             "last_error": "host_agent_url_not_configured",
         }
     try:
-        async with httpx.AsyncClient(timeout=0.5) as client:
+        async with httpx.AsyncClient(timeout=4.0) as client:
             resp = await client.get(f"{base}/health")
             if resp.status_code < 400:
+                _HOST_AGENT_PROBE_STATE["consecutive_failures"] = 0
+                _HOST_AGENT_PROBE_STATE["last_ok_at"] = time.time()
+                return {"reachable": True, "url": base, "last_error": None}
+            _HOST_AGENT_PROBE_STATE["consecutive_failures"] += 1
+            if _HOST_AGENT_PROBE_STATE["consecutive_failures"] < _HOST_AGENT_FAILURE_THRESHOLD:
                 return {"reachable": True, "url": base, "last_error": None}
             return {
                 "reachable": False,
@@ -2524,6 +2545,9 @@ async def host_agent_status():
                 "last_error": f"HTTP {resp.status_code}",
             }
     except Exception as e:  # httpx.RequestError, ConnectError, TimeoutException
+        _HOST_AGENT_PROBE_STATE["consecutive_failures"] += 1
+        if _HOST_AGENT_PROBE_STATE["consecutive_failures"] < _HOST_AGENT_FAILURE_THRESHOLD:
+            return {"reachable": True, "url": base, "last_error": None}
         return {
             "reachable": False,
             "url": base,

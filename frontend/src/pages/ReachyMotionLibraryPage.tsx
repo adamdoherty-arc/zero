@@ -811,10 +811,14 @@ export function ReachyMotionLibraryPage() {
 
       {/* === HERO: merged console + assistant on the left, live camera on the right === */}
       {/* items-start prevents the grid from stretching the camera card to match
-          AssistantHero's full height (which left a tall black void below the video). */}
+          AssistantHero's full height. The camera viewer is sticky so as the user
+          scrolls past AssistantHero, the camera stays pinned at the top of the
+          viewport instead of leaving a tall empty space below the card. */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_360px] gap-4 mb-4 items-start">
         <AssistantHero />
-        <ReachyCameraViewer height={200} compact />
+        <div className="xl:sticky xl:top-4 xl:self-start">
+          <ReachyCameraViewer height={200} compact />
+        </div>
       </div>
 
       {/* === DAEMON STATUS BAR + DEBUG (one expander for everything Reachy is doing) === */}

@@ -54,15 +54,9 @@ export function ReachyCameraViewer({ height = 360, compact = false }: Props) {
     if (status.data?.active) setImgError(null)
   }, [status.data?.active, imgError])
 
-  // Show device picker automatically when camera is persistently offline.
-  // Debounced: only opens after 8s of sustained offline to avoid false triggers
-  // during page load or container restart (camera warmup takes 2-4s).
-  useEffect(() => {
-    if (!frozen && status.data && !status.data.active && !isPhoneActive) {
-      const t = setTimeout(() => setShowDevicePicker(true), 8000)
-      return () => clearTimeout(t)
-    }
-  }, [status.data?.active, frozen, isPhoneActive])
+  // Note: auto-opening the device picker after sustained offline made the camera
+  // card balloon vertically (4 device entries = +150px), which the user has
+  // flagged repeatedly as wasted space. User can still open it via the gear icon.
 
   const src = frozen || isPhoneActive
     ? (isPhoneActive ? `/api/sight/phone_camera/mjpeg?t=${cacheKey}` : '')
