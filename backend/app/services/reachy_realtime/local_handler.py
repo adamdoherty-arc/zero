@@ -172,12 +172,20 @@ INPUT_WARNING_MIN_INTERVAL_S = float(os.getenv("REACHY_LOCAL_INPUT_WARNING_INTER
 INPUT_WARNING_TRANSCRIPT_INTERVAL_S = float(
     os.getenv("REACHY_LOCAL_INPUT_WARNING_TRANSCRIPT_INTERVAL_S", "60")
 )
-# 2026-05-09: distil-large-v3 (~600MB faster-whisper) replaces small.en. It
-# handles speakerphone audio noticeably better and runs at >RT on the 5090.
-# Override with REACHY_LOCAL_WHISPER_MODEL if you need a smaller footprint.
+# Realtime voice sessions run in the zero-api Docker container which has no
+# GPU access. distil-large-v3 (~600 MB) takes 9-15s on CPU — well over the
+# 8s timeout, causing every first voice turn to silently fail with
+# "Speech recognition timed out."
+#
+# REACHY_REALTIME_STT_MODEL controls the *interactive voice* STT model.
+# Default: distil-small.en (~250 MB, ~700 ms on CPU) — fast enough for
+# real-time voice even without GPU.
+#
+# REACHY_LOCAL_WHISPER_MODEL controls the *meeting transcription* path
+# (voice_loop_service.py / host_agent). Keep large models there.
 STT_MODEL_NAME = (
-    os.getenv("REACHY_LOCAL_WHISPER_MODEL", "distil-large-v3").strip()
-    or "distil-large-v3"
+    os.getenv("REACHY_REALTIME_STT_MODEL", "distil-small.en").strip()
+    or "distil-small.en"
 )
 STT_ACTIVE_AUDIO_RMS = float(os.getenv("REACHY_LOCAL_STT_ACTIVE_AUDIO_RMS", "0.012"))
 STT_ACTIVE_AUDIO_PEAK = float(os.getenv("REACHY_LOCAL_STT_ACTIVE_AUDIO_PEAK", "0.08"))
@@ -188,7 +196,7 @@ SPEAKER_CALLBACK_TIMEOUT_S = float(
     os.getenv("REACHY_LOCAL_SPEAKER_CALLBACK_TIMEOUT_S", "0.25")
 )
 TTS_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_TTS_TIMEOUT_S", "12"))
-STT_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_STT_TIMEOUT_S", "8"))
+STT_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_STT_TIMEOUT_S", "20"))
 LLM_TURN_TIMEOUT_S = float(os.getenv("REACHY_LOCAL_LLM_TURN_TIMEOUT_S", "30"))
 LLM_FIRST_TOKEN_TIMEOUT_S = float(
     os.getenv("REACHY_LOCAL_LLM_FIRST_TOKEN_TIMEOUT_S", str(LLM_TURN_TIMEOUT_S))
@@ -1071,6 +1079,25 @@ class LocalRealtimeHandler:
                 self.model = resolved
 
         await self.tool_manager.start_up(callbacks=[self._on_tool_complete])
+
+        # Pre-warm the Whisper model so the first voice turn doesn't pay the
+        # cold-load penalty (up to 5s on CPU for distil-small.en). Runs in
+        # the thread executor, non-blocking, best-effort.
+        loop = asyncio.get_event_loop()
+        async def _prewarm_whisper():
+            try:
+                def _load():
+                    if self._whisper_model is None:
+                        from faster_whisper import WhisperModel  # type: ignore
+                        self._whisper_model = WhisperModel(
+                            STT_MODEL_NAME, device="auto", compute_type="int8"
+                        )
+                await loop.run_in_executor(None, _load)
+                logger.info("whisper_prewarm_done", model=STT_MODEL_NAME)
+            except Exception as e:
+                logger.warning("whisper_prewarm_failed", error=str(e))
+        asyncio.ensure_future(_prewarm_whisper())
+
         await self._emit({
             "type": "session.ready",
             "model": self.model,

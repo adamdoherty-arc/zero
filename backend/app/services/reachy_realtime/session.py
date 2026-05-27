@@ -1087,6 +1087,8 @@ class RealtimeSession:
                         "ready": False,
                         "last_error": message,
                     })
+                    # Nullify hung sink so reconnect fires on next turn.
+                    self._speaker_sink = None
                     await self._safe_send({
                         "type": "error",
                         "code": "speaker_backpressure",
@@ -1447,6 +1449,8 @@ class RealtimeSession:
                         "ready": False,
                         "last_error": message,
                     })
+                    # Nullify hung sink so reconnect fires on next turn.
+                    self._speaker_sink = None
                     await self._safe_send({
                         "type": "error",
                         "code": "speaker_backpressure",

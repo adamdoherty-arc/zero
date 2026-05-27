@@ -148,6 +148,12 @@ services:
       # the model in workspace/.hf-cache (bind-mounted below as HF_HOME), so
       # faster-whisper loads from local disk on container start and never hits HF.
       - REACHY_LOCAL_WHISPER_MODEL=${REACHY_LOCAL_WHISPER_MODEL:-distil-large-v3}
+      # Interactive realtime voice STT model. zero-api has no GPU — distil-large-v3
+      # takes 9-15s on CPU and always exceeds the 8s timeout. distil-small.en
+      # (~250 MB, ~700 ms on CPU) is fast enough for real-time voice.
+      # Meeting transcription keeps using REACHY_LOCAL_WHISPER_MODEL (large model
+      # runs in host_agent which can access the GPU directly).
+      - REACHY_REALTIME_STT_MODEL=${REACHY_REALTIME_STT_MODEL:-distil-small.en}
       # Voice loop is latency-bound — uses distil-small.en (~250 MB, ~700 ms
       # STT) instead of distil-large-v3 (~600 MB, 9-15 s STT). Meeting
       # transcription path stays on the large model via REACHY_LOCAL_WHISPER_MODEL.
