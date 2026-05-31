@@ -591,7 +591,15 @@ async def critic_review(
     description = body.get("sprint_description") or ""
 
     ac = body.get("ac_override") or _extract_ac_from_description(description)
-    diff_text = _diff_for_files(files_changed, base=base_ref)
+    # Fix-95: the zero-api container has no git binary / no .git, so the
+    # in-container `git diff` always fails and the critic sees "(no diff)".
+    # Prefer a caller-supplied diff (the supervisor computes it host-side where
+    # the repo + git exist); fall back to the in-container attempt for the
+    # native-host dev case.
+    diff_text = body.get("diff") or body.get("diff_text") or ""
+    if not diff_text.strip():
+        diff_text = _diff_for_files(files_changed, base=base_ref)
+    diff_text = diff_text[:12000]
     prompt = _CRITIC_PROMPT_TEMPLATE.format(ac=ac, diff=diff_text)
 
     async with get_session() as session:
