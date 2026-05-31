@@ -45,6 +45,19 @@ RUN retry_pip() { \
     && retry_pip -r /tmp/carousel_v2.txt \
     && retry_pip --no-deps "protobuf>=4.25.3,<5"
 
+# Audit-87: mcp CLI shim baked into the image so skill / agent code paths
+# can reach codegraph + serena from inside the zero-api container. Mirrors
+# Legion's Audit-85 (099a1732) and ADA's Audit-86 (304074c9). The shim is
+# written to /usr/local/bin/mcp AFTER `pip install mcp` so it deliberately
+# shadows the typer console script that the mcp package would install.
+# Hot path is HTTP to host.docker.internal:18900 (CODEGRAPH_HTTP_URL) via
+# the codegraph_enricher service — the CLI is for adjacent skill / agent
+# tooling, not the per-call enrichment hook.
+COPY mcpcli.py /opt/zero/mcpcli.py
+RUN pip install --no-cache-dir --timeout=1000 --retries=20 --progress-bar off uv mcp \
+    && printf '#!/bin/bash\nexec python /opt/zero/mcpcli.py "$@"\n' > /usr/local/bin/mcp \
+    && chmod +x /usr/local/bin/mcp
+
 # Pre-download openWakeWord ONNX models so the wake-word service can lazy-load
 # without a network call on first request. Idempotent — no-op if files exist.
 RUN python -c "import openwakeword; openwakeword.utils.download_models()" || true

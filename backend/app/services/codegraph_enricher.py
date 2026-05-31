@@ -45,7 +45,36 @@ from typing import Dict, List, Optional
 
 import structlog
 
+try:
+    from prometheus_client import Counter, Histogram
+    _CG_ENRICH_TOTAL = Counter(
+        "zero_codegraph_enrichment_total",
+        "Codegraph prompt-enrichment outcomes per Zero LLM call",
+        ["project", "outcome"],
+    )
+    _CG_ENRICH_TOKENS = Histogram(
+        "zero_codegraph_enrichment_tokens_added",
+        "Tokens that codegraph_enricher prepended to Zero system prompt",
+        buckets=(50, 100, 200, 400, 800, 1200, 1600, 2000, 3000),
+    )
+except Exception:  # pragma: no cover — defensive
+    _CG_ENRICH_TOTAL = None
+    _CG_ENRICH_TOKENS = None
+
+
 logger = structlog.get_logger(__name__)
+
+
+def _emit_metric(outcome: str, tokens_added: int = 0) -> None:
+    """Audit-87 v2: emit Prometheus metrics. Never raises."""
+    if _CG_ENRICH_TOTAL is None:
+        return
+    try:
+        _CG_ENRICH_TOTAL.labels(project="zero", outcome=outcome).inc()
+        if tokens_added and _CG_ENRICH_TOKENS is not None:
+            _CG_ENRICH_TOKENS.observe(tokens_added)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # Skip sources that would either loop (codegraph touching codegraph) or
@@ -301,13 +330,16 @@ async def enrich(
 ) -> EnrichmentResult:
     """Return an EnrichmentResult; never raises."""
     if _is_disabled():
+        _emit_metric("disabled")
         return EnrichmentResult(False, "disabled", 0, False, (), None)
     if _should_skip_source(source):
+        _emit_metric("skipped")
         return EnrichmentResult(False, "skipped", 0, False, (), None)
 
     key = _cache_key(source, prompt, system_prompt)
     cached = await _CACHE.get(key)
     if cached is not None:
+        _emit_metric(cached.status, cached.tokens_added)
         return EnrichmentResult(
             enriched=cached.enriched,
             status=cached.status,
@@ -321,6 +353,7 @@ async def enrich(
     if not hints:
         res = EnrichmentResult(False, "no_hints", 0, False, (), None)
         await _CACHE.put(key, res)
+        _emit_metric("no_hints")
         return res
 
     chunks: list[str] = []
@@ -336,12 +369,14 @@ async def enrich(
     if not chunks:
         res = EnrichmentResult(False, "unavailable", 0, False, tuple(hints), None)
         await _CACHE.put(key, res)
+        _emit_metric("unavailable")
         return res
 
     block, added_tokens = _format_block(used_hints, chunks, budget_tokens)
     if not block:
         res = EnrichmentResult(False, "no_hints", 0, False, tuple(hints), None)
         await _CACHE.put(key, res)
+        _emit_metric("no_hints")
         return res
 
     new_sys = (block + "\n\n" + system_prompt) if system_prompt else block
@@ -354,6 +389,7 @@ async def enrich(
         new_system_prompt=new_sys,
     )
     await _CACHE.put(key, res)
+    _emit_metric("ok", added_tokens)
     logger.debug(
         "codegraph_enricher_ok", source=source, hints=list(used_hints),
         tokens_added=added_tokens,

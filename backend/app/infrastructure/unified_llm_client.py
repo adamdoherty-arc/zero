@@ -188,6 +188,15 @@ class UnifiedLLMClient:
         msgs = self._build_messages(prompt, messages, system)
         provider_name, model_name, _ = self._resolve(model, task_type)
 
+        # Audit-87: codegraph enrichment on the streaming path. _call_provider
+        # owns the chat() wrap; chat_stream bypasses it, so the same hook is
+        # needed here. Graceful — never raises.
+        try:
+            from app.services.codegraph_enricher import enrich_messages
+            await enrich_messages(msgs, source=task_type or "stream", project="zero")
+        except Exception:  # noqa: BLE001
+            pass
+
         provider = self._get_provider(provider_name)
         async for chunk in provider.chat_stream(
             msgs, model_name, temperature, max_tokens,
