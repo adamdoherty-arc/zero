@@ -37,8 +37,49 @@ def generate_id(prefix: str = "ch") -> str:
 # Text sanitization
 # ---------------------------------------------------------------------------
 
+# Plan-88 (supervise:zero d3a59953 2026-05-31) \u2014 AI-tell phrases to either
+# drop entirely or rewrite to plain English. The list is the high-confidence
+# tells that recur in Kimi/Qwen/GPT outputs and rarely appear in real human
+# copy at the character-content density. Keep additions ASCII so the
+# substitution stays cheap; only add a phrase when you've seen it \u22653 times
+# in real slide output and the human variant is obvious.
+_AI_TELL_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    # Verbose throat-clearing \u2014 strip
+    (r"\bIn conclusion,\s*", ""),
+    (r"\bIn summary,\s*", ""),
+    (r"\bIt is worth noting that\s+", ""),
+    (r"\bIt's worth noting that\s+", ""),
+    (r"\bIt should be noted that\s+", ""),
+    # Hedging filler \u2014 strip
+    (r"\bMoreover,\s*", ""),
+    (r"\bFurthermore,\s*", ""),
+    (r"\bAdditionally,\s*", ""),
+    # Tour-guide hand-waving \u2014 replace with plain verbs
+    (r"\bdelve(s|d|ing)? into\b", lambda m: "explore" + (m.group(1) or "")),
+    (r"\bdive(s|d) into\b", lambda m: "explore" + m.group(1)),
+    (r"\bdive into\b", "explore"),
+    (r"\bnavigate(s|d)? the (landscape|complexities|nuances) of\b", lambda m: "work" + (m.group(1) or "") + " through"),
+    (r"\bunderscore(s|d)? the importance of\b", lambda m: "highlight" + (m.group(1) or "")),
+    (r"\bplay(s|ed)? a (key|pivotal|crucial|vital) role in\b", lambda m: "matter" + (("s" if m.group(1) == "s" else "ed") if m.group(1) else "") + " for"),
+    # Closing-paragraph clich\u00e9s
+    (r"\bIn the world of\s+", "In "),
+    (r"\bAt the end of the day,?\s*", ""),
+)
+
+
+def _strip_ai_tells(text: str) -> str:
+    """Plan-88 \u2014 apply the AI-tell substitution list. Pure regex pass; safe
+    on idempotent calls (each pattern is anchored to phrases the second pass
+    can no longer find)."""
+    for pat, repl in _AI_TELL_REPLACEMENTS:
+        text = re.sub(pat, repl, text, flags=re.IGNORECASE)
+    return text
+
+
 def sanitize_text(text: str, preserve_emphasis: bool = False) -> str:
     """Strip AI-generated formatting: em dashes, markdown asterisks, en dashes.
+    Also rewrites obvious AI-tell phrases (delve, dive into, "In conclusion",
+    etc.) \u2014 see _AI_TELL_REPLACEMENTS for the full list. Plan-88.
 
     When preserve_emphasis is True, keep **bold** markers intact (used for
     slide/hook text rendered by the frontend with pill emphasis). Single
@@ -49,6 +90,7 @@ def sanitize_text(text: str, preserve_emphasis: bool = False) -> str:
         return text
     text = text.replace("\u2014", ". ")   # em dash
     text = text.replace("\u2013", "-")    # en dash -> hyphen
+    text = _strip_ai_tells(text)          # Plan-88 \u2014 drop AI-tell phrases
     if preserve_emphasis:
         # Normalize 3+ asterisks to 2, drop single *italic*
         text = re.sub(r'\*{3,}([^*]+)\*{3,}', r'**\1**', text)
