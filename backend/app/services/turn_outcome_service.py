@@ -101,14 +101,16 @@ class TurnOutcomeService:
                 get_outcome_learning_service,
             )
             svc = get_outcome_learning_service()
-            recorder = (
-                getattr(svc, "record_turn", None)
-                or getattr(svc, "record", None)
+            # Fix-90: OutcomeLearningService exposes record_outcome (not
+            # record_turn/record), so the old getattr-or-None dance always
+            # resolved to None and every voice turn silently skipped the
+            # structured store. Map the turn onto record_outcome directly.
+            await svc.record_outcome(
+                domain="voice",
+                action_type="turn",
+                action_id=getattr(outcome, "turn_id", None),
+                metrics=outcome.to_dict(),
             )
-            if recorder is not None:
-                res = recorder(outcome.to_dict())
-                if asyncio.iscoroutine(res):
-                    await res
         except Exception as e:
             logger.debug("outcome_learning_bridge_failed", error=str(e))
         return outcome

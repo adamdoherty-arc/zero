@@ -1172,11 +1172,18 @@ class LlmUsageModel(Base):
     latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    # Audit-87: codegraph prompt-enrichment observability (Alembic 054).
+    codegraph_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    codegraph_tokens_added: Mapped[int] = mapped_column(Integer, default=0)
+    codegraph_cache_hit: Mapped[bool] = mapped_column(Boolean, default=False)
+    codegraph_status: Mapped[Optional[str]] = mapped_column(String(20))
+    codegraph_hints_used: Mapped[Optional[str]] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     __table_args__ = (
         Index("ix_llm_usage_provider_date", "provider", "created_at"),
         Index("ix_llm_usage_task_provider", "task_type", "provider"),
+        Index("ix_llm_usage_codegraph", "codegraph_used", "created_at"),
     )
 
 

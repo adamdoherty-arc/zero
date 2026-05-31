@@ -128,6 +128,11 @@ services:
       # shared-infra/.env. The container has no business seeing them.
       - ZERO_LLM_DAILY_BUDGET_USD=${ZERO_LLM_DAILY_BUDGET_USD:-5.0}
       - ZERO_LLM_CONCURRENCY=${ZERO_LLM_CONCURRENCY:-4}
+      # Audit-87: codegraph prompt enrichment. The host runs the codegraph
+      # bridge on 127.0.0.1:18900; the container reaches it via
+      # host.docker.internal. Unset/down -> enrichment records status=unavailable.
+      - CODEGRAPH_HTTP_URL=${CODEGRAPH_HTTP_URL:-http://host.docker.internal:18900}
+      - ZERO_CODEGRAPH_ENRICHER=${ZERO_CODEGRAPH_ENRICHER:-true}
       # ADA Bridge
       - ZERO_ADA_API_URL=${ZERO_ADA_API_URL:-http://ada-backend:8003}
       - ZERO_ADA_API_TOKEN=${ZERO_ADA_API_TOKEN:-}
@@ -469,6 +474,11 @@ services:
     image: langfuse/langfuse:3
     container_name: zero-langfuse-web
     restart: unless-stopped
+    # Disabled 2026-05-27 (operator request): was Exited(1). Reversible — remove
+    # this profile to bring the Langfuse UI back. NOTE: its backend
+    # zero-langfuse-clickhouse (~2.2 GB RAM) is now idle; disable it too if you
+    # want the RAM back.
+    profiles: ["disabled"]
     depends_on:
       zero-temporal-postgres:
         condition: service_healthy

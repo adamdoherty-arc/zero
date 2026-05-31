@@ -52,12 +52,39 @@ class ApprovalQueueService:
     def __init__(self) -> None:
         self._settings = get_settings()
 
-    def _requires_gate(self, tier: str) -> bool:
-        """Should this tier pause for human approval?"""
+    def _requires_gate(
+        self,
+        tier: str,
+        *,
+        salience: Optional[float] = None,
+        dnd: bool = False,
+    ) -> bool:
+        """Should this tier pause for human approval?
+
+        Fix-94: implement the documented approval ladder (vault constitution /
+        supervisor profile constraint):
+          read           -> auto
+          write_local     -> auto IF salience >= min_interrupt_salience AND not DND
+          write_external  -> always interrupt
+          financial       -> always interrupt (routes to ADA)
+        DRY_RUN still gates write_local unconditionally. ``salience=None`` means
+        the caller didn't score it -> treated as high-enough so legacy callers
+        keep auto-executing write_local; only an explicit low score (or DND)
+        gates it.
+        """
         if tier in ("write_external", "financial"):
             return True
-        if tier == "write_local" and getattr(self._settings, "dry_run", False):
-            return True
+        if tier == "write_local":
+            if getattr(self._settings, "dry_run", False):
+                return True
+            if dnd:
+                return True
+            if salience is not None:
+                threshold = float(
+                    getattr(self._settings, "min_interrupt_salience", 0.6)
+                )
+                if salience < threshold:
+                    return True
         return False
 
     async def request(
@@ -169,14 +196,20 @@ class ApprovalQueueService:
         requested_by: str,
         execute: Callable[[], Awaitable[Any]],
         wait_timeout_seconds: int = 0,
+        salience: Optional[float] = None,
+        dnd: bool = False,
     ) -> dict[str, Any]:
         """Helper: pause, queue, optionally wait for approval, then execute.
 
         If `wait_timeout_seconds > 0`, polls every 5s for approval and executes
         inline on approve. Otherwise returns immediately with approval_id and
         the caller polls later.
+
+        Fix-94: pass `salience` (and `dnd`) to gate write_local actions per the
+        documented ladder — low-salience or DND write_local queues for approval
+        instead of auto-executing.
         """
-        if not self._requires_gate(tier):
+        if not self._requires_gate(tier, salience=salience, dnd=dnd):
             result = await execute()
             return {"status": "executed_direct", "result": result}
 

@@ -694,6 +694,20 @@ class UnifiedLLMClient:
         behaviour change until keys are added.
         """
         provider = self._get_provider(provider_name)
+
+        # Audit-87: codegraph prompt enrichment. Mutates `messages` in place
+        # (prepends a <codegraph_context> block to the system message based on
+        # symbol/file hints). Graceful — never raises; prompt_tokens below
+        # therefore reflect any added context.
+        cg_result = None
+        try:
+            from app.services.codegraph_enricher import enrich_messages
+            cg_result = await enrich_messages(
+                messages, source=task_type or "", project="zero"
+            )
+        except Exception:  # noqa: BLE001 — enrichment must never break a call
+            cg_result = None
+
         t0 = time.monotonic()
         prompt_tokens = sum(len(m.get("content", "")) for m in messages) // 4
         success = True
@@ -767,6 +781,7 @@ class UnifiedLLMClient:
                     provider_name, model_name, task_type,
                     prompt_tokens, completion_tokens, cost,
                     elapsed_ms, success, error_msg,
+                    codegraph=cg_result,
                 )
             except Exception:
                 pass
@@ -777,6 +792,18 @@ class UnifiedLLMClient:
                 metrics = get_metrics_service()
                 metrics.record("llm_response_time", elapsed_ms, {"provider": provider_name})
                 metrics.increment("llm_requests", {"provider": provider_name, "success": str(success)})
+                # Audit-87: codegraph enrichment coverage + token cost.
+                if cg_result is not None:
+                    metrics.increment(
+                        "codegraph_enrichment",
+                        {"outcome": cg_result.status, "project": "zero"},
+                    )
+                    if cg_result.tokens_added:
+                        metrics.record(
+                            "codegraph_tokens_added",
+                            cg_result.tokens_added,
+                            {"project": "zero"},
+                        )
             except Exception:
                 pass
 
@@ -791,10 +818,22 @@ class UnifiedLLMClient:
         latency_ms: float,
         success: bool,
         error_message: Optional[str],
+        codegraph: Optional[Any] = None,
     ):
-        """Persist usage record to PostgreSQL."""
+        """Persist usage record to PostgreSQL.
+
+        ``codegraph`` is an EnrichmentResult (Audit-87) or None; its fields are
+        flattened into the codegraph_* columns for LLM-console observability.
+        """
         from app.infrastructure.database import get_session
         from app.db.models import LlmUsageModel
+
+        cg_used = bool(getattr(codegraph, "enriched", False))
+        cg_tokens = int(getattr(codegraph, "tokens_added", 0) or 0)
+        cg_cache_hit = bool(getattr(codegraph, "cache_hit", False))
+        cg_status = getattr(codegraph, "status", None)
+        _hints = getattr(codegraph, "hints_used", None)
+        cg_hints = ",".join(_hints) if _hints else None
 
         async with get_session() as session:
             usage = LlmUsageModel(
@@ -808,6 +847,11 @@ class UnifiedLLMClient:
                 latency_ms=latency_ms,
                 success=success,
                 error_message=error_message,
+                codegraph_used=cg_used,
+                codegraph_tokens_added=cg_tokens,
+                codegraph_cache_hit=cg_cache_hit,
+                codegraph_status=cg_status,
+                codegraph_hints_used=cg_hints,
             )
             session.add(usage)
 

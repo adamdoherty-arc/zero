@@ -36,10 +36,15 @@ async def _embed_query(text_: str) -> Optional[list[float]]:
         vec = await client.embed(text_, max_retries=1)
         if not vec:
             return None
-        if len(vec) > 1024:
-            vec = vec[:1024]
-        elif len(vec) < 1024:
-            vec = vec + [0.0] * (1024 - len(vec))
+        # Fix-93: reject dimension mismatches loudly. Silently zero-padding /
+        # truncating to 1024 produced garbage cosine scores against the stored
+        # vectors when the shared embedder's native dim != 1024. Returning None
+        # degrades dense search to BM25-only with a visible warning instead.
+        if len(vec) != 1024:
+            logger.warning(
+                "vault_query_embed_dim_mismatch", got=len(vec), expected=1024
+            )
+            return None
         return vec
     except Exception as e:  # noqa: BLE001
         logger.warning("vault_query_embed_failed", error=str(e))

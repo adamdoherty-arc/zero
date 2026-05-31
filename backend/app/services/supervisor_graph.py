@@ -580,6 +580,41 @@ def _classify(user_text: str) -> str:
     return "direct"
 
 
+async def _classify_llm(user_text: str, intents: list[str]) -> str:
+    """Enhancement-13: LLM fallback classifier.
+
+    Used ONLY when the keyword pass returns "direct", so the common path stays
+    zero-latency. Returns one of ``intents`` or "direct". Never raises — any
+    failure (LLM down, garbage output) degrades to "direct".
+    """
+    text = (user_text or "").strip()
+    if not text or not intents:
+        return "direct"
+    try:
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        llm = get_unified_llm_client()
+        options = ", ".join(list(intents) + ["direct"])
+        prompt = (
+            "Classify the user's request into exactly one intent label.\n"
+            f"Allowed labels: {options}.\n"
+            "Reply with ONLY the single label, nothing else.\n\n"
+            f"Request: {text}"
+        )
+        raw = await llm.chat(
+            prompt=prompt,
+            task_type="classification",
+            temperature=0.0,
+            max_tokens=12,
+        )
+        guess = (raw or "").strip().lower()
+        guess = guess.split()[0] if guess.split() else ""
+        guess = "".join(ch for ch in guess if ch.isalnum() or ch == "_")
+        return guess if guess in intents else "direct"
+    except Exception as e:  # noqa: BLE001
+        logger.warning("supervisor_llm_classify_failed", error=str(e))
+        return "direct"
+
+
 # ---------------------------------------------------------------------------
 # Supervisor — orchestrates the graph. LangGraph is wired only when env
 # `ZERO_SUPERVISOR_LANGGRAPH=1` AND the package is importable.
@@ -662,7 +697,12 @@ class SupervisorGraph:
 
         intent = _classify(user_text)
         if intent == "direct":
-            return SupervisorResult(intent="direct", spoken="", direct=True)
+            # Enhancement-13: keyword pass missed — try the LLM fallback before
+            # giving up to an unrouted direct response (e.g. "show me what's on
+            # for tomorrow" has no calendar keyword). Degrades to direct on error.
+            intent = await _classify_llm(user_text, list(self._adapters.keys()))
+            if intent == "direct":
+                return SupervisorResult(intent="direct", spoken="", direct=True)
         adapter = self._adapters.get(intent)
         if adapter is None:
             return SupervisorResult(intent="direct", spoken="", direct=True)

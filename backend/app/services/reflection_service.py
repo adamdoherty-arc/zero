@@ -131,7 +131,11 @@ class ReflectionService:
                     max_tokens=4096,
                 )
 
-                if improved and len(improved.strip()) > len(current_content) * 0.3:
+                # Fix-92: accept any substantive rewrite via a non-emptiness
+                # floor. The old `> len(current) * 0.3` gate discarded a
+                # correctly-tightened shorter answer, structurally rewarding
+                # verbosity over concision.
+                if improved and len(improved.strip()) >= 40:
                     current_content = improved.strip()
                     improvements.append({
                         "iteration": iteration,

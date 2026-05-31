@@ -198,21 +198,32 @@ class EmailDraftPool:
 
     async def approve(self, draft_id: str) -> Optional[Draft]:
         """Mark approved and dispatch via the gmail service. On send failure
-        the draft moves to ``failed`` so the UI can surface the error."""
-        d = await self.get_draft(draft_id)
-        if d is None:
-            return None
-        if d.status not in ("pending", "approved", "failed"):
-            return d
+        the draft moves to ``failed`` so the UI can surface the error.
 
+        Fix-91: the status check + claim happen atomically under the lock and
+        the row moves to an intermediate ``sending`` state before the lock is
+        released. A concurrent approve (UI double-click + voice "send it")
+        then sees ``sending`` and bails, so gmail.send() fires exactly once.
+        """
         async with self._lock:
             store = self._read()
+            target = None
             for r in store.get("drafts") or []:
                 if r.get("id") == draft_id:
-                    r["status"] = "approved"
-                    r["updated_at"] = _now()
-                    self._write(store)
+                    target = r
                     break
+            if target is None:
+                return None
+            cur = target.get("status")
+            # Only pending/approved/failed are (re)sendable. Anything already
+            # sending/sent is a concurrent or completed approve — return as-is.
+            if cur not in ("pending", "approved", "failed"):
+                return Draft(**{**target, "meta": target.get("meta") or {}})
+            # Claim it so a racing approve can't also reach _send.
+            target["status"] = "sending"
+            target["updated_at"] = _now()
+            self._write(store)
+            d = Draft(**{**target, "meta": target.get("meta") or {}})
 
         sent_id, err = await self._send(d)
         async with self._lock:
