@@ -73,8 +73,8 @@ docker logs -f zero-api
 # Restart gateway after config changes
 docker compose restart zero-gateway
 
-# Check vLLM served models (qwen3-chat / qwen3-coder)
-curl http://localhost:18800/v1/models
+# Check vLLM served models (Qwen3-32B-AWQ)
+curl http://localhost:18801/v1/models
 
 # Tail host-agent / daemon logs
 Get-Content c:\code\zero\host_agent\logs\host-agent-foreground.log -Tail 20 -Wait

@@ -243,32 +243,48 @@ class EmailDraftPool:
         return None
 
     async def _send(self, draft: Draft) -> tuple[Optional[str], Optional[str]]:
-        """Route the send through the Gmail service. Per-account routing is
-        delegated to gmail_service which already takes ``account_id`` on
-        multi-account setups; falls back to its default account otherwise."""
+        """Route the send through the Gmail service, forwarding per-account
+        routing (``account_id``) and threading (``thread_id``) whenever the
+        underlying send method accepts them.
+
+        Fix-96: the old ``except TypeError`` fallback retried
+        ``send_email(to, subject, body)`` with NO account_id/thread_id, so on a
+        multi-account setup an approved reply was silently sent from the default
+        account and un-threaded; the broad except could also double-send if a
+        TypeError was raised from inside ``send()``'s body rather than from a
+        signature mismatch. We now pick the richest available send method and
+        pass only the kwargs its signature accepts — never silently dropping
+        account/thread routing and never retrying a partially-executed send."""
+        import inspect
+
         try:
             from app.services.gmail_service import get_gmail_service  # type: ignore
             gmail = get_gmail_service()
+            send_fn = getattr(gmail, "send", None) or getattr(gmail, "send_email", None)
+            if send_fn is None:
+                return None, "gmail service exposes no send method"
             try:
-                msg = await gmail.send(
-                    account_id=draft.account_id,
-                    to=draft.to,
-                    subject=draft.subject,
-                    body=draft.body,
-                    thread_id=draft.thread_id,
+                params = inspect.signature(send_fn).parameters
+                accepted = set(params)
+                has_kwargs = any(
+                    p.kind == p.VAR_KEYWORD for p in params.values()
                 )
-                msg_id = (
-                    msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
-                )
-                return str(msg_id) if msg_id else "sent", None
-            except TypeError:
-                msg = await gmail.send_email(
-                    to=draft.to, subject=draft.subject, body=draft.body,
-                )
-                msg_id = (
-                    msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
-                )
-                return str(msg_id) if msg_id else "sent", None
+            except (TypeError, ValueError):
+                accepted, has_kwargs = set(), True
+            kwargs: dict[str, Any] = {
+                "to": draft.to,
+                "subject": draft.subject,
+                "body": draft.body,
+            }
+            if draft.account_id and (has_kwargs or "account_id" in accepted):
+                kwargs["account_id"] = draft.account_id
+            if draft.thread_id and (has_kwargs or "thread_id" in accepted):
+                kwargs["thread_id"] = draft.thread_id
+            msg = await send_fn(**kwargs)
+            msg_id = (
+                msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
+            )
+            return str(msg_id) if msg_id else "sent", None
         except Exception as e:
             logger.warning("draft_pool_send_failed", draft_id=draft.id, error=str(e))
             return None, str(e)

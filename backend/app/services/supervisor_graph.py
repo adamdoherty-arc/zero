@@ -329,10 +329,20 @@ async def _adhoc_capture_adapter(user_text: str, ctx: dict[str, Any]) -> Supervi
             if is_stop:
                 r = await c.post(f"{host_url}/record/stop")
                 data = r.json() if r.status_code < 400 else {}
-                # Companion's meeting_active flag was set on auto-start
-                # via the scheduler — for ad-hoc captures, the host_agent
-                # owns state; we leave companion in whatever state it
-                # was in. The auto-stop loop will mirror later.
+                # Fix-96: symmetric with the start path (which flips
+                # meeting_active=True). Clear it on stop so the silent-listen
+                # gate + meeting DND don't stay stuck on after a voice "stop
+                # recording" — the scheduler auto-stop loop only reconciles
+                # calendar-scheduled events, never ad-hoc voice stops.
+                try:
+                    from app.services.reachy_companion_service import (
+                        get_reachy_companion_service,
+                    )
+                    get_reachy_companion_service().set_meeting_active(
+                        active=False, meeting_id=None
+                    )
+                except Exception:
+                    pass
                 spoken = (
                     "Recording stopped. I'll process the transcript and surface action items."
                     if data.get("meeting_id") or data.get("ok")
@@ -649,7 +659,17 @@ class SupervisorGraph:
         sg = StateGraph(dict)
 
         async def classify_node(state: dict) -> dict:
-            return {**state, "intent": _classify(state.get("user_text", ""))}
+            intent = _classify(state.get("user_text", ""))
+            if intent == "direct":
+                # Enhancement-13 parity (Fix-96): the keyword pass missed, so
+                # try the LLM fallback before degrading to an unrouted direct
+                # response. The non-LangGraph handle() path already does this;
+                # the LangGraph branch previously skipped it entirely, so any
+                # intent the keywords missed died as "direct" with no rescue.
+                intent = await _classify_llm(
+                    state.get("user_text", ""), list(self._adapters.keys())
+                )
+            return {**state, "intent": intent}
 
         async def dispatch_node(state: dict) -> dict:
             intent = state.get("intent") or "direct"

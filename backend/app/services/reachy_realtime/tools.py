@@ -1238,6 +1238,21 @@ async def _set_persona(
     persona = str(args.get("persona") or "assistant").strip()
     if not persona:
         return {"error": "persona is required"}
+    # Fix-96: validate against the known persona set before persisting. A
+    # misheard voice command ("switch to persona banana") otherwise writes a
+    # bogus profile id that get_profile() silently falls back to default on,
+    # leaving the stored config wrong. Skip the guard only if profiles can't be
+    # enumerated (infra failure) so we never harden into a hard block.
+    try:
+        from app.services.reachy_realtime.profiles import list_profiles
+        valid = {p.id for p in list_profiles()}
+    except Exception:
+        valid = set()
+    if valid and persona not in valid:
+        return {
+            "error": f"unknown persona '{persona}'",
+            "valid_personas": sorted(valid),
+        }
     try:
         from app.services.reachy_realtime.config_store import update_config
         cfg = update_config({"profile": persona})

@@ -184,12 +184,20 @@ class VaultIndexerService:
             vec = await client.embed(text, max_retries=1)
             if not vec:
                 return None
-            # Ensure we fit the vector(1024) column. vLLM returns 1024; Matryoshka-truncate
-            # anything longer and pad shorter (shouldn't happen with Qwen3-Embedding).
-            if len(vec) > self._embed_dim:
-                vec = vec[: self._embed_dim]
-            elif len(vec) < self._embed_dim:
-                vec = vec + [0.0] * (self._embed_dim - len(vec))
+            # Fix-96: mirror the query-side dim guard (vault_retrieval_service
+            # _embed_query, Fix-93). Silently truncating/zero-padding to 1024
+            # stored garbage vectors whenever the embedder's native dim != 1024,
+            # while the query side already rejects the mismatch — an
+            # index/retrieve asymmetry that left dense retrieval permanently
+            # broken. Reject loudly and store NULL (BM25-only) instead, so both
+            # sides stay consistent.
+            if len(vec) != self._embed_dim:
+                logger.warning(
+                    "vault_embed_dim_mismatch",
+                    got=len(vec),
+                    expected=self._embed_dim,
+                )
+                return None
             return vec
         except Exception as e:  # noqa: BLE001
             logger.warning("vault_embed_failed", error=str(e))

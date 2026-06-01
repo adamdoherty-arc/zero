@@ -66,7 +66,7 @@ mcp codegraph call codegraph_impact --arg name=<symbol>
 
 ## Quick reference
 
-- **Backend health**: `curl http://localhost:18792/api/health`
+- **Backend health**: `curl http://localhost:18792/health`
 - **Sprint DB sync**: Zero's proxy forwards to Legion at host.docker.internal:8005, project_id=7
 - **Latest models** (verify, don't cache): Opus 4.7 | Gemini 3.1 Pro/Flash | GPT-5/o-series
 - **Vision default**: `gemini-3.1-flash` via LiteLLM (`gemini-flash-latest` alias preferred)

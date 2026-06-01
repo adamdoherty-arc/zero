@@ -1702,6 +1702,44 @@ class LocalRealtimeHandler:
             elapsed_s=round(time.perf_counter() - started, 3),
             messages=len(self._messages),
         )
+        # Learn-stage telemetry (Fix-96): record this turn's outcome. No
+        # realtime handler previously called record_turn, so /api/turn-outcomes
+        # and the outcome_learning bridge were permanently empty. Best-effort,
+        # fire-and-forget — never blocks or breaks the voice loop.
+        self._record_turn_outcome(started)
+
+    def _record_turn_outcome(self, started: float) -> None:
+        """Fire-and-forget per-turn outcome write. Mirrors _record_user_memory:
+        swallows all errors so analytics can never kill the voice loop."""
+        try:
+            user_text = ""
+            assistant_text = ""
+            for m in reversed(self._messages):
+                role = m.get("role")
+                content = m.get("content")
+                if not content:
+                    continue
+                if not assistant_text and role == "assistant":
+                    assistant_text = str(content)
+                elif not user_text and role == "user":
+                    user_text = str(content)
+                if user_text and assistant_text:
+                    break
+            total_ms = int((time.perf_counter() - started) * 1000)
+            from app.services.turn_outcome_service import get_turn_outcome_service
+            svc = get_turn_outcome_service()
+            asyncio.create_task(
+                svc.record_turn(
+                    persona_id=self.profile_id,
+                    intent="voice",
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    total_ms=total_ms,
+                    error=self._last_error,
+                )
+            )
+        except Exception as e:
+            logger.debug("turn_outcome_record_skipped", error=str(e))
 
     async def _stream_completion(
         self, chat_tools: list[dict]

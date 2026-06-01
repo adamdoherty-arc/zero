@@ -9,14 +9,14 @@ After ANY rebuild, verify before declaring the task done:
 docker ps --format "table {{.Names}}\t{{.Status}}" | grep zero
 
 # 2. API responds?
-curl http://localhost:18792/api/health
+curl http://localhost:18792/health
 
 # 3. Frontend reachable?
 curl -I http://localhost:5173
 
 # 4. LLM gateway alive?
 curl http://localhost:4444/health/liveliness
-curl http://localhost:18800/v1/models
+curl http://localhost:18801/v1/models
 ```
 
 If any of these fail, fix-on-sight — don't declare done.
@@ -52,7 +52,7 @@ When starting a session or checking the system:
 - **No response from chat**: Check `auth-profiles.json` exists and shared-litellm + vllm-chat are healthy:
   ```bash
   curl http://localhost:4444/health/liveliness
-  curl http://localhost:18800/v1/models
+  curl http://localhost:18801/v1/models
   ```
 - **WhatsApp disconnected**:
   ```bash

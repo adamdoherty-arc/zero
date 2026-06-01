@@ -105,10 +105,13 @@ class TurnOutcomeService:
             # record_turn/record), so the old getattr-or-None dance always
             # resolved to None and every voice turn silently skipped the
             # structured store. Map the turn onto record_outcome directly.
+            # Fix-96: the TurnOutcome field is `id`, not `turn_id` — the old
+            # getattr(outcome, "turn_id") wrote action_id=NULL on every row,
+            # severing the link back to the JSONL turn. Use outcome.id.
             await svc.record_outcome(
                 domain="voice",
                 action_type="turn",
-                action_id=getattr(outcome, "turn_id", None),
+                action_id=outcome.id,
                 metrics=outcome.to_dict(),
             )
         except Exception as e:

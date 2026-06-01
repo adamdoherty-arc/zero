@@ -30,9 +30,9 @@ Zero now routes via the **Bifrost client at `shared-bifrost:4445`** for cross-pr
 
 ## Local realtime (vLLM)
 
-- Default chat model: `qwen3-chat` served by vLLM on `:18800`.
+- Default chat model: `qwen3-chat` served by vLLM on `:18801` (serves `Qwen3-32B-AWQ`).
 - Default coder model: `qwen3-coder`.
-- Probe: `curl http://localhost:18800/v1/models`.
+- Probe: `curl http://localhost:18801/v1/models`.
 
 The realtime voice path (Reachy) uses `reachy_realtime/local_handler.py` (streaming Whisper → vLLM qwen3-chat → Piper/edge-tts) by default. Cloud realtime backends (OpenAI Realtime, Gemini Live) are surfaced through the LLM badge popover but never auto-selected, even if their API keys are configured.
 
