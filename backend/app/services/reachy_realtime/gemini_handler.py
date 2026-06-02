@@ -247,6 +247,13 @@ class GeminiLiveHandler:
                     f"or try OpenAI Realtime."
                 ),
             })
+            # wait_for cancelled __aenter__ mid-handshake; the cm may hold a
+            # half-open socket. Close it best-effort before bubbling up — the
+            # inner finally below is unreachable on this path.
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception:
+                pass
             raise
         try:
             self._session = session

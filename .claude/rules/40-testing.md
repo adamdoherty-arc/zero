@@ -14,8 +14,8 @@ curl http://localhost:18792/health
 # 3. Frontend reachable?
 curl -I http://localhost:5173
 
-# 4. LLM gateway alive?
-curl http://localhost:4444/health/liveliness
+# 4. LLM gateway alive? (Bifrost; LiteLLM :4444 retired)
+curl http://localhost:4445/health/liveliness
 curl http://localhost:18801/v1/models
 ```
 
@@ -49,9 +49,9 @@ When starting a session or checking the system:
 
 ## Common Issues (fix-on-sight)
 
-- **No response from chat**: Check `auth-profiles.json` exists and shared-litellm + vllm-chat are healthy:
+- **No response from chat**: Check `auth-profiles.json` exists and the Bifrost gateway + vllm-chat are healthy:
   ```bash
-  curl http://localhost:4444/health/liveliness
+  curl http://localhost:4445/health/liveliness
   curl http://localhost:18801/v1/models
   ```
 - **WhatsApp disconnected**:

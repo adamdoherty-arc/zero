@@ -31,6 +31,11 @@ from app.services.reachy_motion_policy import body_motion_allowed, body_motion_l
 
 logger = structlog.get_logger()
 
+# Strong refs for fire-and-forget background tasks. CPython only keeps a weak
+# ref to a running task, so an unheld create_task() result can be GC'd before
+# it finishes; tasks self-remove on done.
+_BG_FOLLOWUP_TASKS: set = set()
+
 
 ToolHandler = Callable[[ToolDependencies, Dict[str, Any], BackgroundToolManager], Awaitable[Dict[str, Any]]]
 
@@ -1680,11 +1685,13 @@ async def _regenerate_summary(deps: ToolDependencies, args: Dict[str, Any], _mgr
                 get_meeting_followup_service,
             )
 
-            _asyncio.create_task(
+            _fu_task = _asyncio.create_task(
                 get_meeting_followup_service().run(
                     meeting_id=meeting_id, max_wait_for_summary_s=10
                 )
             )
+            _BG_FOLLOWUP_TASKS.add(_fu_task)
+            _fu_task.add_done_callback(_BG_FOLLOWUP_TASKS.discard)
             followup_kicked = True
         except Exception as exc:
             logger.debug("regenerate_summary_followup_kick_failed", error=str(exc))

@@ -16,7 +16,7 @@ Never hardcode an old model name into source. Route through a configurable name 
 
 ## Shared LiteLLM router
 
-The shared LiteLLM config lives at `shared-infra/litellm/config.yaml` and serves cross-project LLM routing on `http://localhost:4444`.
+The shared model map lives at `shared-infra/litellm/config.yaml`. The standalone LiteLLM gateway on `:4444` is **retired** (no container runs there). Cross-project LLM routing now serves through the **Bifrost gateway on `http://localhost:4445`** (see _Bifrost client_ below); health-check it at `:4445/health/liveliness`.
 
 Use alias names — prefer them over pinned versions:
 - `gemini-latest` — current top-tier Gemini.

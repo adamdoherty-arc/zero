@@ -167,6 +167,13 @@ class OpenAIRealtimeHandler:
                         attempt=attempt,
                         timeout_s=connect_timeout_s,
                     )
+                    # wait_for cancelled __aenter__ mid-handshake; close the
+                    # half-open cm best-effort before retry/return (the finally
+                    # below is unreachable on the timeout path).
+                    try:
+                        await ws_cm.__aexit__(None, None, None)
+                    except Exception:
+                        pass
                     if attempt < max_attempts:
                         delay = (2 ** (attempt - 1)) + random.uniform(0, 0.5)
                         await asyncio.sleep(delay)

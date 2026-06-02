@@ -208,8 +208,22 @@ class ReflectionService:
                 temperature=0.2,
             )
 
+            # structured_chat may hand back a top-level list OR a dict wrapper
+            # (e.g. {"learnings": [...]}); unwrap the dict so meta-learnings
+            # aren't silently dropped for the learn loop.
+            if isinstance(result, dict):
+                result = (
+                    result.get("learnings")
+                    or result.get("results")
+                    or result.get("items")
+                    or []
+                )
             if isinstance(result, list):
-                return [item.get("learning", "") for item in result if item.get("learning")]
+                return [
+                    item.get("learning", "")
+                    for item in result
+                    if isinstance(item, dict) and item.get("learning")
+                ]
             return []
 
         except Exception as e:

@@ -49,6 +49,12 @@ class AttentionMiddleware:
             return start <= h < end
         return h >= start or h < end
 
+    def in_dnd(self) -> bool:
+        """Public DND-window check for callers that pre-filter before they
+        have a concrete alert_id (e.g. the proactive notifier). Synchronous;
+        mirrors the gate ``decide()`` applies per-alert."""
+        return self._in_dnd_now()
+
     async def interrupts_sent_today(self) -> int:
         start = _now_local().replace(hour=0, minute=0, second=0, microsecond=0)
         async with get_session() as session:

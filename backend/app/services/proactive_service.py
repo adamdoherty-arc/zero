@@ -26,12 +26,13 @@ class ProactiveService:
         # Check DND window first — skip all proactive notifications during DND.
         try:
             from app.services.attention_middleware import get_attention_middleware
-            decision = get_attention_middleware().should_interrupt({"type": "proactive"})
-            if decision.get("decision") in ("queue", "block"):
-                logger.debug("[Proactive] DND active, skipping notifications", reason=decision.get("reason"))
+            if get_attention_middleware().in_dnd():
+                logger.debug("[Proactive] DND active, skipping notifications")
                 return []
-        except Exception:
-            pass
+        except Exception as e:
+            # Don't silently swallow: a missing/renamed gate must surface, not
+            # default-open the way the old should_interrupt() AttributeError did.
+            logger.warning("[Proactive] DND check failed; proceeding", error=str(e))
 
         # Check availability — don't notify during meetings.
         try:
