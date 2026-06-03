@@ -534,23 +534,16 @@ class CameraWorker:
         return fallback
 
 
-def list_devices() -> list[dict]:
-    """
-    Enumerate available camera devices with names and OpenCV indices.
+def _list_device_names() -> list[str]:
+    """Ordered camera device NAMES from Windows — opens NO camera.
 
-    Uses WinRT DeviceInformation (MSMF order) to get names, then probes
-    each index with OpenCV to confirm readability and get native resolution.
-    Adds an `is_reachy` flag for the robot body camera.
+    This is the robot-safe enumeration: it reads device names via WinRT (MSMF
+    order), so it never activates a phone-as-webcam / external camera the way
+    opening a cv2.VideoCapture on every index does.
     """
     import json
     import subprocess
 
-    try:
-        import cv2
-    except ImportError:
-        return []
-
-    # --- Step 1: get ordered device names from Windows (WinRT = MSMF order) ---
     names: list[str] = []
     try:
         script = (
@@ -575,7 +568,6 @@ def list_devices() -> list[dict]:
     except Exception as e:
         logger.debug("camera_list_names_failed", error=str(e)[:120])
 
-    # Fallback: try PnP device class "Camera"
     if not names:
         try:
             r2 = subprocess.run(
@@ -592,33 +584,53 @@ def list_devices() -> list[dict]:
         except Exception as e2:
             logger.debug("camera_list_pnp_failed", error=str(e2)[:120])
 
-    # --- Step 2: probe OpenCV indices to confirm availability ---
+    return names
+
+
+def list_devices() -> list[dict]:
+    """
+    Enumerate camera devices by NAME (no open) + flag the Reachy body camera.
+
+    ROBOT-ONLY: to honor "always use the robot camera", we only ever OPEN the
+    Reachy camera (to confirm it + read its native resolution). Non-Reachy
+    devices — e.g. a phone-as-webcam at another index — are reported by name but
+    NEVER opened, so enumeration can't wake your phone.
+    """
+    try:
+        import cv2
+    except ImportError:
+        return []
+
+    names = _list_device_names()
     devices: list[dict] = []
-    probe_count = max(len(names), 4)  # always probe at least 4 slots
+    probe_count = max(len(names), 4)
     for i in range(probe_count):
-        name = names[i] if i < len(names) else f"Camera {i}"
-        available = False
+        named = i < len(names)
+        name = names[i] if named else f"Camera {i}"
+        is_reachy = any(kw in name.lower() for kw in _REACHY_NAME_KEYWORDS)
+        available = bool(named)
         width = height = 0
 
-        for backend, bname in [(cv2.CAP_DSHOW, "dshow"), (cv2.CAP_MSMF, "msmf")]:
-            try:
-                cap = cv2.VideoCapture(i, backend)
-            except Exception:
-                continue
-            if cap is None or not cap.isOpened():
-                if cap is not None:
-                    cap.release()
-                continue
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            ok, _ = cap.read()
-            cap.release()
-            if ok:
-                available = True
-                width, height = w, h
-                break
+        if is_reachy:
+            # The robot camera is the ONLY device we open.
+            for backend, _bname in [(cv2.CAP_DSHOW, "dshow"), (cv2.CAP_MSMF, "msmf")]:
+                try:
+                    cap = cv2.VideoCapture(i, backend)
+                except Exception:
+                    continue
+                if cap is None or not cap.isOpened():
+                    if cap is not None:
+                        cap.release()
+                    continue
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                ok, _ = cap.read()
+                cap.release()
+                if ok:
+                    available = True
+                    width, height = w, h
+                    break
 
-        is_reachy = any(kw in name.lower() for kw in _REACHY_NAME_KEYWORDS)
         devices.append(
             {
                 "index": i,
@@ -635,13 +647,15 @@ def list_devices() -> list[dict]:
 
 def _find_reachy_device_index() -> int:
     """
-    Return the OpenCV device index for the Reachy body camera.
+    Return the OpenCV device index for the Reachy body camera — BY NAME ONLY.
 
-    Strategy:
-    1. If ZERO_REACHY_CAMERA_DEVICE is set to a non-negative value, trust it (no enumeration).
-    2. Otherwise use the module-level cache if already resolved this session.
-    3. Else enumerate devices, find one named "Reachy Mini Camera", cache it.
-    4. Fall back to first available device, then index 0.
+    Resolving by name (via `_list_device_names`) opens no camera, so it can never
+    wake a phone/external webcam. Strategy:
+    1. ZERO_REACHY_CAMERA_DEVICE override (no enumeration).
+    2. Session cache.
+    3. First device whose name matches the Reachy keywords.
+    4. Fall back to index 0 (the robot camera is index 0 on Reachy Mini Lite) —
+       NEVER probe-open other devices to "find" it.
     """
     global _resolved_device_index
 
@@ -652,17 +666,12 @@ def _find_reachy_device_index() -> int:
         return _resolved_device_index
 
     try:
-        devs = list_devices()
-        for d in devs:
-            if d.get("is_reachy") and d.get("available"):
-                logger.info("camera_reachy_autodetected", index=d["index"], name=d["name"])
-                _resolved_device_index = d["index"]
-                return d["index"]
-        for d in devs:
-            if d.get("available"):
-                logger.info("camera_reachy_fallback_first_available", index=d["index"], name=d["name"])
-                _resolved_device_index = d["index"]
-                return d["index"]
+        names = _list_device_names()
+        for i, name in enumerate(names):
+            if any(kw in name.lower() for kw in _REACHY_NAME_KEYWORDS):
+                logger.info("camera_reachy_autodetected", index=i, name=name)
+                _resolved_device_index = i
+                return i
     except Exception as e:
         logger.warning("camera_reachy_detection_failed", error=str(e)[:120])
 
