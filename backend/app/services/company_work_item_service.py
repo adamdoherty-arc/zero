@@ -63,6 +63,9 @@ DOMAIN_ALIASES = {
     "second-brain": "Knowledge",
     "second brain": "Knowledge",
     "marketing": "Marketing",
+    "tax": "Tax",
+    "home office": "Home Office",
+    "home-office": "Home Office",
 }
 
 
@@ -668,6 +671,68 @@ class CompanyWorkItemService:
 
         return {"created": len(created), "skipped": skipped, "tasks": created}
 
+    async def seed_tax_calendar(self, *, year: Optional[int] = None, actor: str = "user") -> dict[str, Any]:
+        """Idempotently seed recurring tax/compliance deadlines as dated Tax tasks.
+
+        Dedupes by title (titles carry the year), so re-running is safe and next
+        year's set can be added later. Forward-looking from the current date.
+        Sourced from docs/company/llc-compliance.md. Florida levies no state
+        income tax; federal estimates use Form 1040-ES. These are low-risk
+        reminders — Adam confirms amounts and safe-harbor with the CPA.
+        """
+        year = year or _now().year
+        nxt = year + 1
+
+        def _due(y: int, m: int, d: int) -> datetime:
+            return datetime(y, m, d, tzinfo=timezone.utc)
+
+        deadlines: list[tuple[str, datetime]] = [
+            (f"Pay Q2 {year} federal estimated tax (Form 1040-ES)", _due(year, 6, 15)),
+            (f"Pay Q3 {year} federal estimated tax (Form 1040-ES)", _due(year, 9, 15)),
+            (f"Renew Duval LBTR (local business tax) — {year}", _due(year, 9, 30)),
+            (f"Pay Q4 {year} federal estimated tax (Form 1040-ES)", _due(nxt, 1, 15)),
+            (f"Pay Q1 {nxt} federal estimated tax (Form 1040-ES)", _due(nxt, 4, 15)),
+            (f"File {year} federal return + Schedule C (single-member LLC)", _due(nxt, 4, 15)),
+            (f"File {nxt} Florida Annual Report with Sunbiz", _due(nxt, 5, 1)),
+        ]
+
+        existing = await self.list_work_items(limit=1000)
+        existing_titles = {t.title.strip().lower() for t in existing}
+        created: list[Task] = []
+        skipped = 0
+        for index, (title, due) in enumerate(deadlines):
+            if title.strip().lower() in existing_titles:
+                skipped += 1
+                continue
+            task = await self.create_work_item(
+                TaskCreate(
+                    title=title,
+                    description=(
+                        "Recurring tax / compliance deadline for ADA AI LLC.\n\n"
+                        "Florida has no state income tax; federal estimates use IRS Form 1040-ES. "
+                        "Confirm the exact amount and safe-harbor coverage with the CPA before paying. "
+                        "Mark done once filed/paid and attach the confirmation as evidence.\n\n"
+                        "Source: docs/company/llc-compliance.md (Recurring Deadlines)."
+                    ),
+                    category=TaskCategory.CHORE,
+                    priority=TaskPriority.HIGH,
+                    source=TaskSource.MANUAL,
+                    source_reference="docs/company/llc-compliance.md",
+                    domain="Tax",
+                    owner_agent="finance_cpa",
+                    due_at=due,
+                    risk_level="low",
+                    approval_state="none",
+                    tags=["tax", "deadline"],
+                    sort_order=index + 1,
+                ),
+                actor=actor,
+            )
+            created.append(task)
+            existing_titles.add(title.strip().lower())
+
+        return {"created": len(created), "skipped": skipped, "tasks": created, "year": year}
+
     def _requires_completion_approval(self, task: Task) -> bool:
         return (task.risk_level in {"high", "critical"}) or bool(HIGH_RISK_PATTERN.search(_text(task)))
 
@@ -731,6 +796,8 @@ class CompanyWorkItemService:
         return {
             "Formation": "legal_compliance",
             "Finance": "finance_cpa",
+            "Tax": "finance_cpa",
+            "Home Office": "finance_cpa",
             "Consulting": "consulting_revenue",
             "Product": "product",
             "Robotics": "robotics_lab",

@@ -63,6 +63,26 @@ export const companyWorkItemKeys = {
   setupProgress: () => [...companyWorkItemKeys.all, 'setupProgress'] as const,
   progressCheckin: () => [...companyWorkItemKeys.all, 'progressCheckin'] as const,
   walkthrough: (taskId?: string) => [...companyWorkItemKeys.all, 'walkthrough', taskId] as const,
+  seedCeoStatus: () => [...companyWorkItemKeys.all, 'seedCeoStatus'] as const,
+  homeOfficeSummary: () => ['companyFacts', 'homeOfficeSummary'] as const,
+}
+
+export interface CompanySeedCeoStatus {
+  has_ceo_tasks: boolean
+  present: number
+  total: number
+  source: string
+}
+
+export interface HomeOfficeSummary {
+  method: string
+  business_use_pct: number | null
+  simplified_estimate: number | null
+  simplified_note: string
+  actual_estimate_annual: number | null
+  inputs: Record<string, string>
+  missing_fields: string[]
+  facts_count: number
 }
 
 export interface CompanySetupDomainBreakdown {
@@ -308,6 +328,49 @@ export function useImportCompanySeedBacklog() {
         body: JSON.stringify({ actor: 'dashboard' }),
       }),
     onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useCompanySeedCeoStatus() {
+  return useQuery({
+    queryKey: companyWorkItemKeys.seedCeoStatus(),
+    queryFn: () => fetchJson<CompanySeedCeoStatus>('/api/company/work-items/seed-ceo/status'),
+    refetchInterval: 60000,
+  })
+}
+
+export function useSeedCompanyCeo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<CompanySeedImportResult>('/api/company/work-items/seed-ceo', {
+        method: 'POST',
+        body: JSON.stringify({ actor: 'dashboard' }),
+      }),
+    onSuccess: () => {
+      invalidate(qc)
+      qc.invalidateQueries({ queryKey: companyWorkItemKeys.seedCeoStatus() })
+    },
+  })
+}
+
+export function useSeedCompanyTaxCalendar() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      fetchJson<CompanySeedImportResult & { year: number }>('/api/company/work-items/seed-tax-calendar', {
+        method: 'POST',
+        body: JSON.stringify({ actor: 'dashboard' }),
+      }),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useHomeOfficeSummary() {
+  return useQuery({
+    queryKey: companyWorkItemKeys.homeOfficeSummary(),
+    queryFn: () => fetchJson<HomeOfficeSummary>('/api/company/facts/home-office/summary'),
+    refetchInterval: 60000,
   })
 }
 

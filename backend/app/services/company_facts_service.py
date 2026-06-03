@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import or_, select
 
@@ -47,6 +47,86 @@ class CompanyFactsService:
             stmt = stmt.order_by(CompanyFactModel.domain.nullsfirst(), CompanyFactModel.label)
             rows = (await session.execute(stmt)).scalars().all()
         return [CompanyFact.model_validate(row, from_attributes=True) for row in rows]
+
+    async def home_office_summary(self) -> dict[str, Any]:
+        """Deduction-ready summary from `home_office.*` facts.
+
+        Surfaces BOTH the simplified ($5/sqft, 300 sqft / $1,500 cap) and actual
+        (% of indirect costs + internet allocation) estimates so the CPA elects
+        the method at tax time (IRS Pub 587). Reads facts keyed `home_office.*`
+        written by the Finance-tab worksheet. Nothing here is tax advice.
+        """
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(CompanyFactModel).where(CompanyFactModel.key.like("home_office.%"))
+                )
+            ).scalars().all()
+        values: dict[str, str] = {row.key.split("home_office.", 1)[-1]: (row.value or "") for row in rows}
+
+        def _num(name: str, *, lo: Optional[float] = None, hi: Optional[float] = None) -> Optional[float]:
+            raw = values.get(name)
+            if raw is None or str(raw).strip() == "":
+                return None
+            try:
+                v = float(str(raw).replace("$", "").replace(",", "").replace("%", "").strip())
+            except Exception:
+                return None
+            # Clamp out-of-range typos so a stray "-50" sqft or ">100%" can't
+            # surface a negative/over-allocated deduction estimate.
+            if lo is not None:
+                v = max(lo, v)
+            if hi is not None:
+                v = min(hi, v)
+            return v
+
+        exclusive = _num("exclusive_sqft", lo=0)
+        total = _num("total_sqft", lo=0)
+        explicit_pct = _num("business_use_pct", lo=0, hi=100)
+        if explicit_pct is not None:
+            business_use_pct: Optional[float] = explicit_pct
+        elif exclusive and total:
+            business_use_pct = round(100 * exclusive / total, 2) if total else None
+        else:
+            business_use_pct = None
+
+        simplified_estimate = round(min(exclusive, 300) * 5, 2) if exclusive else None
+
+        rent = _num("rent_or_mortgage_monthly", lo=0)
+        utilities = _num("utilities_monthly", lo=0)
+        insurance = _num("insurance_monthly", lo=0)
+        repairs = _num("repairs_ytd", lo=0) or 0.0
+        internet = _num("internet_monthly", lo=0)
+        internet_pct = _num("internet_business_pct", lo=0, hi=100)
+
+        actual_estimate_annual: Optional[float] = None
+        if business_use_pct is not None and any(v is not None for v in (rent, utilities, insurance)):
+            indirect_annual = (((rent or 0.0) + (utilities or 0.0) + (insurance or 0.0)) * 12) + repairs
+            actual = indirect_annual * (business_use_pct / 100.0)
+            if internet is not None and internet_pct is not None:
+                actual += internet * 12 * (internet_pct / 100.0)
+            actual_estimate_annual = round(actual, 2)
+
+        required = {
+            "exclusive_sqft": "Exclusive business-use square feet",
+            "total_sqft": "Total home square feet",
+            "rent_or_mortgage_monthly": "Monthly rent or mortgage interest",
+            "utilities_monthly": "Monthly utilities",
+            "internet_monthly": "Monthly internet",
+            "internet_business_pct": "Internet business-use %",
+        }
+        missing_fields = [label for key, label in required.items() if _num(key) is None]
+
+        return {
+            "method": values.get("method") or "undecided",
+            "business_use_pct": business_use_pct,
+            "simplified_estimate": simplified_estimate,
+            "simplified_note": "$5/sqft, max 300 sqft ($1,500/yr cap) — IRS Pub 587 simplified method.",
+            "actual_estimate_annual": actual_estimate_annual,
+            "inputs": values,
+            "missing_fields": missing_fields,
+            "facts_count": len(rows),
+        }
 
     async def get_fact(self, key: str) -> Optional[CompanyFact]:
         async with get_session() as session:

@@ -41,7 +41,10 @@ logger = structlog.get_logger()
 LEDGER_DIR = Path("workspace") / "ada_ai"
 LEDGER_PATH = LEDGER_DIR / "ledger.beancount"
 DRAFT_PATH = LEDGER_DIR / "ledger_drafts.json"
+RECURRING_PATH = LEDGER_DIR / "recurring_expenses.json"
 ENTITY_NAME = os.getenv("ADA_AI_LEGAL_NAME", "ADA AI LLC")
+# Default expense account for AI/LLM subscriptions (Claude Max, ChatGPT, Cursor, ...).
+AI_EXPENSE_ACCOUNT = "Expenses:Software:AI"
 DEFAULT_CURRENCY = os.getenv("ADA_AI_CURRENCY", "USD")
 QUARTERLY_TAX_RATE = float(os.getenv("ADA_AI_TAX_RATE_EST", "0.22"))
 
@@ -102,6 +105,40 @@ class DraftEntry:
         }
 
 
+@dataclass
+class RecurringExpense:
+    """A recurring business expense Adam pays on a fixed cadence.
+
+    Built for AI/LLM subscriptions (Claude Max, ChatGPT, Cursor, ...) that are
+    flat-rate and don't show up in Zero's metered `llm_usage` table, but works
+    for any monthly business expense. Each active entry emits one reviewable
+    ``DraftEntry`` per month via ``generate_recurring_drafts``.
+    """
+
+    id: str
+    vendor: str
+    amount_monthly: float
+    category: str = AI_EXPENSE_ACCOUNT
+    billing_day: int = 1
+    paid_from: str = "personal card"
+    active: bool = True
+    notes: str = ""
+    created_at: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "vendor": self.vendor,
+            "amount_monthly": round(self.amount_monthly, 2),
+            "category": self.category,
+            "billing_day": self.billing_day,
+            "paid_from": self.paid_from,
+            "active": self.active,
+            "notes": self.notes,
+            "created_at": self.created_at,
+        }
+
+
 class BookkeeperService:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
@@ -110,6 +147,8 @@ class BookkeeperService:
             self._write_initial_ledger()
         if not DRAFT_PATH.exists():
             DRAFT_PATH.write_text(json.dumps({"drafts": []}, indent=2), encoding="utf-8")
+        if not RECURRING_PATH.exists():
+            RECURRING_PATH.write_text(json.dumps({"recurring": []}, indent=2), encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Backend detection — Beancount when installed, stub otherwise.
@@ -137,6 +176,7 @@ class BookkeeperService:
             f"1970-01-01 open Income:Software:Sales         {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Income:Consulting             {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Software             {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Software:AI          {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Cloud                {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Hardware             {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Office               {DEFAULT_CURRENCY}\n"
@@ -148,6 +188,27 @@ class BookkeeperService:
             f"1970-01-01 open Equity:Owner:Adam             {DEFAULT_CURRENCY}\n"
         )
         LEDGER_PATH.write_text(opening, encoding="utf-8")
+
+    def _ensure_account_open(self, account: str) -> None:
+        """Idempotently append a Beancount `open` directive for `account`.
+
+        New ledgers get the full chart from `_write_initial_ledger`, but ledgers
+        created before a category existed (e.g. Expenses:Software:AI) need the
+        account opened before a transaction can post against it. No-op in stub
+        mode (snapshot derives from accepted drafts, not the file), harmless in
+        beancount mode.
+        """
+        try:
+            existing = LEDGER_PATH.read_text(encoding="utf-8")
+        except Exception:
+            return
+        if re.search(rf"^\s*\d{{4}}-\d{{2}}-\d{{2}}\s+open\s+{re.escape(account)}\b", existing, re.M):
+            return
+        try:
+            with open(LEDGER_PATH, "a", encoding="utf-8") as f:
+                f.write(f"1970-01-01 open {account}    {DEFAULT_CURRENCY}\n")
+        except Exception as e:
+            logger.warning("bookkeeper_open_account_failed", account=account, error=str(e))
 
     def _read_drafts(self) -> list[DraftEntry]:
         try:
@@ -170,6 +231,193 @@ class BookkeeperService:
             ),
             encoding="utf-8",
         )
+
+    # ------------------------------------------------------------------
+    # Recurring expenses — manual AI-subscription registry.
+    # ------------------------------------------------------------------
+    def _read_recurring(self) -> list[RecurringExpense]:
+        try:
+            data = json.loads(RECURRING_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        out: list[RecurringExpense] = []
+        for r in data.get("recurring") or []:
+            try:
+                out.append(RecurringExpense(**r))
+            except Exception:
+                continue
+        return out
+
+    def _write_recurring(self, items: list[RecurringExpense]) -> None:
+        RECURRING_PATH.write_text(
+            json.dumps(
+                {"recurring": [r.to_dict() for r in items]},
+                indent=2, sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _clamp_billing_day(day: Any) -> int:
+        try:
+            d = int(day)
+        except Exception:
+            d = 1
+        return max(1, min(28, d))
+
+    @staticmethod
+    def _current_period() -> str:
+        today = date.today()
+        return f"{today.year:04d}-{today.month:02d}"
+
+    @staticmethod
+    def _previous_period() -> str:
+        today = date.today()
+        year, month = today.year, today.month - 1
+        if month == 0:
+            year, month = year - 1, 12
+        return f"{year:04d}-{month:02d}"
+
+    async def list_recurring(self) -> list[RecurringExpense]:
+        async with self._lock:
+            items = self._read_recurring()
+        items.sort(key=lambda r: (not r.active, r.vendor.lower()))
+        return items
+
+    async def add_recurring(
+        self,
+        *,
+        vendor: str,
+        amount_monthly: float,
+        category: str = AI_EXPENSE_ACCOUNT,
+        billing_day: int = 1,
+        paid_from: str = "personal card",
+        notes: str = "",
+    ) -> RecurringExpense:
+        entry = RecurringExpense(
+            id=f"rec-{uuid.uuid4().hex[:10]}",
+            vendor=vendor.strip()[:120] or "Unnamed subscription",
+            amount_monthly=abs(float(amount_monthly or 0)),
+            category=(category or AI_EXPENSE_ACCOUNT).strip() or AI_EXPENSE_ACCOUNT,
+            billing_day=self._clamp_billing_day(billing_day),
+            paid_from=(paid_from or "personal card").strip()[:120],
+            active=True,
+            notes=(notes or "").strip()[:500],
+            created_at=time.time(),
+        )
+        async with self._lock:
+            items = self._read_recurring()
+            items.append(entry)
+            self._write_recurring(items)
+        logger.info("bookkeeper_recurring_add", vendor=entry.vendor, amount=entry.amount_monthly)
+        return entry
+
+    async def update_recurring(self, recurring_id: str, **fields: Any) -> Optional[RecurringExpense]:
+        async with self._lock:
+            items = self._read_recurring()
+            for entry in items:
+                if entry.id != recurring_id:
+                    continue
+                if "vendor" in fields and fields["vendor"] is not None:
+                    entry.vendor = str(fields["vendor"]).strip()[:120] or entry.vendor
+                if "amount_monthly" in fields and fields["amount_monthly"] is not None:
+                    entry.amount_monthly = abs(float(fields["amount_monthly"]))
+                if "category" in fields and fields["category"]:
+                    entry.category = str(fields["category"]).strip()
+                if "billing_day" in fields and fields["billing_day"] is not None:
+                    entry.billing_day = self._clamp_billing_day(fields["billing_day"])
+                if "paid_from" in fields and fields["paid_from"] is not None:
+                    entry.paid_from = str(fields["paid_from"]).strip()[:120]
+                if "active" in fields and fields["active"] is not None:
+                    entry.active = bool(fields["active"])
+                if "notes" in fields and fields["notes"] is not None:
+                    entry.notes = str(fields["notes"]).strip()[:500]
+                self._write_recurring(items)
+                return entry
+        return None
+
+    async def delete_recurring(self, recurring_id: str) -> bool:
+        async with self._lock:
+            items = self._read_recurring()
+            kept = [r for r in items if r.id != recurring_id]
+            if len(kept) == len(items):
+                return False
+            self._write_recurring(kept)
+        return True
+
+    async def generate_recurring_drafts(self, *, period: Optional[str] = None) -> dict[str, Any]:
+        """Emit one draft per active recurring expense for `period` (YYYY-MM).
+
+        Idempotent on (recurring_id, period): re-running never double-posts. The
+        draft amount is negative (expense convention used by CSV ingestion) so
+        accepting it posts a debit against the recurring entry's category.
+        """
+        period = period or self._current_period()
+        async with self._lock:
+            recurring = [r for r in self._read_recurring() if r.active]
+            drafts = self._read_drafts()
+            already = {
+                (d.raw.get("recurring_id"), d.raw.get("period"))
+                for d in drafts
+                if d.source == "recurring"
+            }
+            created: list[DraftEntry] = []
+            for entry in recurring:
+                if (entry.id, period) in already:
+                    continue
+                day = self._clamp_billing_day(entry.billing_day)
+                draft = DraftEntry(
+                    id=f"draft-{uuid.uuid4().hex[:10]}",
+                    date=f"{period}-{day:02d}",
+                    description=f"{entry.vendor} — recurring ({period})",
+                    amount=-abs(entry.amount_monthly),
+                    currency=DEFAULT_CURRENCY,
+                    suggested_category=entry.category,
+                    source="recurring",
+                    raw={
+                        "period": period,
+                        "recurring_id": entry.id,
+                        "vendor": entry.vendor,
+                        "paid_from": entry.paid_from,
+                    },
+                    status="pending",
+                    created_at=time.time(),
+                )
+                created.append(draft)
+            if created:
+                drafts.extend(created)
+                self._write_drafts(drafts)
+        logger.info("bookkeeper_recurring_run", period=period, created=len(created))
+        return {
+            "period": period,
+            "created": [d.to_dict() for d in created],
+            "created_count": len(created),
+        }
+
+    async def recurring_summary(self, *, period: Optional[str] = None) -> dict[str, Any]:
+        """Totals + this-period generation status for the AI-spend widget."""
+        period = period or self._current_period()
+        async with self._lock:
+            recurring = self._read_recurring()
+            drafts = self._read_drafts()
+        active = [r for r in recurring if r.active]
+        generated_ids = {
+            d.raw.get("recurring_id")
+            for d in drafts
+            if d.source == "recurring" and d.raw.get("period") == period
+        }
+        by_category: dict[str, float] = {}
+        for r in active:
+            by_category[r.category] = by_category.get(r.category, 0.0) + r.amount_monthly
+        total_monthly = sum(r.amount_monthly for r in active)
+        return {
+            "period": period,
+            "total_monthly": round(total_monthly, 2),
+            "active_count": len(active),
+            "by_category": {k: round(v, 2) for k, v in by_category.items()},
+            "generated_for_period": sorted(i for i in generated_ids if i),
+            "all_generated": bool(active) and all(r.id in generated_ids for r in active),
+        }
 
     # ------------------------------------------------------------------
     # CSV ingestion — draft-only; LLM categorizes; user must accept.
@@ -268,6 +516,7 @@ class BookkeeperService:
                 if d.status != "pending":
                     return d
                 cat = category or d.suggested_category
+                self._ensure_account_open(cat)
                 self._append_journal_entry(d, cat)
                 d.status = "accepted"
                 d.suggested_category = cat

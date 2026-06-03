@@ -101,8 +101,23 @@ import {
   useRunCompanyCompletionReview,
   useRunCompanyProgressCheckin,
   useUpdateCompanyWorkItem,
+  useCompanySeedCeoStatus,
+  useSeedCompanyCeo,
+  useSeedCompanyTaxCalendar,
+  useHomeOfficeSummary,
   type CompanySetupTaskSummary,
 } from '@/hooks/useCompanyWorkItemsApi'
+import {
+  useAcceptDraft,
+  useAddRecurring,
+  useBookkeeperDrafts,
+  useBookkeeperSnapshot,
+  useDeleteRecurring,
+  useRecurringExpenses,
+  useRejectDraft,
+  useRunRecurring,
+  useUpdateRecurring,
+} from '@/hooks/useBookkeeperApi'
 import {
   useCompanyFacts,
   useDeleteCompanyFact,
@@ -187,7 +202,7 @@ const statusColumnClasses: Record<CompanyTaskStatus, string> = {
   blocked: 'border-red-500/50',
   done: 'border-green-500/50',
 }
-const companyDomains = ['Formation', 'Finance', 'Consulting', 'Product', 'Robotics', 'Marketing', 'Operations', 'Dashboard', 'Agents', 'Knowledge']
+const companyDomains = ['Formation', 'Finance', 'Tax', 'Home Office', 'Consulting', 'Product', 'Robotics', 'Marketing', 'Operations', 'Dashboard', 'Agents', 'Knowledge']
 const ownerAgents = [
   'zero-company-operator',
   'chief_of_staff',
@@ -1364,6 +1379,7 @@ function OverviewSection() {
 
   return (
     <div className="space-y-6">
+      <CeoChecklistSeedCard />
       <SetupProgressPanel />
       <OperatorStatusStrip />
       <ZeroCheckinPanel />
@@ -3446,6 +3462,418 @@ function InboxSection() {
   return <AgentInboxSection defaultTab="questions" />
 }
 
+// ---- CEO essentials: live finance panels (AI spend / home office / taxes) ----
+
+function CeoChecklistSeedCard() {
+  const { data: status } = useCompanySeedCeoStatus()
+  const seed = useSeedCompanyCeo()
+  if (status?.has_ceo_tasks) return null
+  return (
+    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-blue-100">
+            <ListChecks className="h-4 w-4" /> New here? Set up your CEO checklist
+          </div>
+          <p className="mt-1 text-xs text-blue-200/80">
+            Seeds the essentials a new CEO needs onto your board: AI-spend accounting, business checking
+            on the books, home office, taxes for next year, and business-financing research.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={seed.isPending}
+          onClick={() =>
+            seed.mutate(undefined, {
+              onSuccess: (r) =>
+                toast({
+                  title: `Added ${r.created} CEO task(s)`,
+                  description: r.skipped ? `${r.skipped} already existed` : undefined,
+                }),
+              onError: (e) => toast({ title: 'Seed failed', description: e.message }),
+            })
+          }
+          className="shrink-0 rounded-md border border-blue-400/50 bg-blue-500/20 px-3 py-2 text-xs font-medium text-blue-100 hover:bg-blue-500/30 disabled:opacity-50"
+        >
+          {seed.isPending ? 'Setting up...' : 'Set up my CEO checklist'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AiSpendPanel() {
+  const { data, isLoading } = useRecurringExpenses()
+  const { data: draftsData } = useBookkeeperDrafts('pending')
+  const addRecurring = useAddRecurring()
+  const updateRecurring = useUpdateRecurring()
+  const deleteRecurring = useDeleteRecurring()
+  const runRecurring = useRunRecurring()
+  const acceptDraft = useAcceptDraft()
+  const rejectDraft = useRejectDraft()
+  const [vendor, setVendor] = useState('')
+  const [amount, setAmount] = useState('')
+  const [billingDay, setBillingDay] = useState('1')
+
+  const recurring = data?.recurring ?? []
+  const summary = data?.summary
+  const recurringDrafts = (draftsData?.drafts ?? []).filter((d) => d.source === 'recurring')
+
+  const handleAdd = () => {
+    const amt = parseFloat(amount)
+    if (!vendor.trim() || !Number.isFinite(amt) || amt <= 0) {
+      toast({ title: 'Enter a vendor and a monthly amount' })
+      return
+    }
+    addRecurring.mutate(
+      { vendor: vendor.trim(), amount_monthly: amt, billing_day: parseInt(billingDay, 10) || 1 },
+      {
+        onSuccess: () => {
+          setVendor('')
+          setAmount('')
+          setBillingDay('1')
+          toast({ title: 'Subscription added' })
+        },
+        onError: (e) => toast({ title: 'Add failed', description: e.message }),
+      },
+    )
+  }
+
+  return (
+    <Panel
+      title={summary ? `AI Spend - ${currency.format(summary.total_monthly)}/mo` : 'AI Spend'}
+      icon={Sparkles}
+      action={
+        <button
+          type="button"
+          disabled={runRecurring.isPending || recurring.length === 0 || summary?.all_generated}
+          onClick={() =>
+            runRecurring.mutate(undefined, {
+              onSuccess: (r) => toast({ title: `Recorded ${r.created_count} draft(s) for ${r.period}` }),
+              onError: (e) => toast({ title: 'Record failed', description: e.message }),
+            })
+          }
+          className="inline-flex items-center gap-1 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
+        >
+          {summary?.all_generated ? 'Recorded this month' : "Record this month's expenses"}
+        </button>
+      }
+    >
+      <p className="mb-3 text-xs text-gray-400">
+        Flat-rate AI subscriptions you pay (Claude Max, ChatGPT, Cursor, ...). Each posts a reviewable monthly
+        draft under <code className="text-gray-300">Expenses:Software:AI</code>.
+      </p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <input
+          value={vendor}
+          onChange={(e) => setVendor(e.target.value)}
+          placeholder="Vendor (e.g. Claude Max)"
+          className="h-8 min-w-[160px] flex-1 rounded-md border border-gray-800 bg-gray-950 px-3 text-xs text-gray-200 outline-none focus:border-blue-500"
+        />
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="$/mo"
+          inputMode="decimal"
+          className="h-8 w-20 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+        />
+        <input
+          value={billingDay}
+          onChange={(e) => setBillingDay(e.target.value)}
+          placeholder="day"
+          inputMode="numeric"
+          title="Billing day of month (1-28)"
+          className="h-8 w-14 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+        />
+        <button
+          type="button"
+          onClick={handleAdd}
+          disabled={addRecurring.isPending}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50"
+        >
+          Add
+        </button>
+      </div>
+      {isLoading ? (
+        <div className="text-xs text-gray-500">Loading subscriptions...</div>
+      ) : recurring.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-800 p-4 text-xs text-gray-400">
+          No AI subscriptions tracked yet. Add the tools you pay for monthly above.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {recurring.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-3 text-sm"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={cn('truncate', item.active ? 'text-gray-100' : 'text-gray-500 line-through')}>
+                    {item.vendor}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    day {item.billing_day} - {item.paid_from}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-600">{item.category}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-200">{currency.format(item.amount_monthly)}</span>
+                <button
+                  type="button"
+                  title={item.active ? 'Pause' : 'Activate'}
+                  onClick={() => updateRecurring.mutate({ id: item.id, data: { active: !item.active } })}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 hover:text-white"
+                >
+                  {item.active ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  title="Delete"
+                  onClick={() => {
+                    if (window.confirm(`Remove ${item.vendor}?`)) deleteRecurring.mutate(item.id)
+                  }}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 hover:border-red-500/40 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {recurringDrafts.length > 0 && (
+        <div className="mt-4 border-t border-gray-800 pt-3">
+          <div className="mb-2 text-xs uppercase tracking-wider text-blue-300">Pending expense drafts</div>
+          <div className="space-y-2">
+            {recurringDrafts.map((d) => (
+              <div
+                key={d.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-2 text-xs"
+              >
+                <span className="truncate text-gray-200">{d.description}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="text-gray-300">{currency.format(Math.abs(d.amount))}</span>
+                  <button
+                    type="button"
+                    onClick={() => acceptDraft.mutate({ id: d.id })}
+                    className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-200 hover:bg-emerald-500/20"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => rejectDraft.mutate(d.id)}
+                    className="rounded border border-gray-700 px-2 py-0.5 text-gray-400 hover:text-white"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function TaxCalendarPanel() {
+  const { data: taxTasks, isLoading } = useCompanyWorkItems({ domain: 'Tax', limit: 50 })
+  const { data: snapshot } = useBookkeeperSnapshot('YTD')
+  const seedTax = useSeedCompanyTaxCalendar()
+  const drawer = useTaskDrawer()
+
+  const sorted = useMemo(() => {
+    const rows = (taxTasks ?? []).filter((t) => t.status !== 'done' && t.status !== 'archived')
+    return [...rows].sort((a, b) => {
+      const ad = a.due_at ? new Date(a.due_at).getTime() : Infinity
+      const bd = b.due_at ? new Date(b.due_at).getTime() : Infinity
+      return ad - bd
+    })
+  }, [taxTasks])
+
+  const quarterly = snapshot ? snapshot.estimated_tax / 4 : null
+  const now = Date.now()
+
+  return (
+    <Panel
+      title="Tax Calendar"
+      icon={Clock3}
+      action={
+        sorted.length === 0 ? (
+          <button
+            type="button"
+            disabled={seedTax.isPending}
+            onClick={() =>
+              seedTax.mutate(undefined, {
+                onSuccess: (r) => toast({ title: `Seeded ${r.created} tax deadline(s)` }),
+                onError: (e) => toast({ title: 'Seed failed', description: e.message }),
+              })
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
+          >
+            Seed tax calendar
+          </button>
+        ) : undefined
+      }
+    >
+      {quarterly != null && (
+        <div className="mb-3 rounded-md border border-gray-800 bg-gray-950/60 p-3">
+          <div className="text-xs text-gray-500">Estimated quarterly payment (net x 22% / 4)</div>
+          <div className="mt-1 text-lg font-semibold text-white">{currency.format(Math.max(quarterly, 0))}</div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            Placeholder until the CPA confirms safe-harbor. Florida has no state income tax.
+          </div>
+        </div>
+      )}
+      {isLoading ? (
+        <div className="text-xs text-gray-500">Loading deadlines...</div>
+      ) : sorted.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-800 p-4 text-xs text-gray-400">
+          No tax deadlines yet. Seed the calendar to track 1040-ES, the annual return, and FL filings.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {sorted.map((t) => {
+            const due = t.due_at ? new Date(t.due_at) : null
+            const overdue = due ? due.getTime() < now : false
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => drawer?.openTaskById(t.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-3 text-left text-sm hover:bg-gray-900"
+              >
+                <span className="truncate text-gray-100">{t.title}</span>
+                <span className={cn('shrink-0 text-xs', overdue ? 'text-red-300' : 'text-gray-400')}>
+                  {due ? due.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'no date'}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+const HOME_OFFICE_FIELDS: Array<{ key: string; label: string; placeholder: string }> = [
+  { key: 'exclusive_sqft', label: 'Exclusive business sq ft', placeholder: 'e.g. 150' },
+  { key: 'total_sqft', label: 'Total home sq ft', placeholder: 'e.g. 1200' },
+  { key: 'rent_or_mortgage_monthly', label: 'Rent / mortgage interest (monthly $)', placeholder: 'e.g. 1800' },
+  { key: 'utilities_monthly', label: 'Utilities (monthly $)', placeholder: 'e.g. 200' },
+  { key: 'internet_monthly', label: 'Internet (monthly $)', placeholder: 'e.g. 80' },
+  { key: 'internet_business_pct', label: 'Internet business use (%)', placeholder: 'e.g. 60' },
+  { key: 'insurance_monthly', label: 'Insurance (monthly $)', placeholder: 'e.g. 40' },
+  { key: 'repairs_ytd', label: 'Repairs YTD ($)', placeholder: 'e.g. 0' },
+]
+
+function HomeOfficePanel() {
+  const { data: summary, isLoading } = useHomeOfficeSummary()
+  const upsertFact = useUpsertCompanyFact()
+  const { data: purchases } = useCompanyWorkItems({ domain: 'Home Office', limit: 50 })
+  const drawer = useTaskDrawer()
+  const [draft, setDraft] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const inputs = summary?.inputs
+    if (inputs) setDraft((prev) => ({ ...inputs, ...prev }))
+  }, [summary?.inputs])
+
+  const saveField = (key: string, label: string) => {
+    const value = (draft[key] ?? '').trim()
+    if (!value || value === (summary?.inputs?.[key] ?? '')) return
+    upsertFact.mutate(
+      { key: `home_office.${key}`, label, value, domain: 'Home Office' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+
+  const purchaseTasks = (purchases ?? []).filter((t) => t.status !== 'archived')
+  const fmt = (n: number | null | undefined) => (n == null ? '--' : currency.format(n))
+
+  return (
+    <Panel title="Home Office Deduction" icon={PackageCheck}>
+      <p className="mb-3 text-xs text-gray-400">
+        Fill the worksheet; the CPA elects simplified vs actual at tax time (IRS Pub 587). The space must be used
+        regularly and exclusively for business. Not tax advice.
+      </p>
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {HOME_OFFICE_FIELDS.map((field) => (
+            <label key={field.key} className="block">
+              <span className="text-[11px] text-gray-400">{field.label}</span>
+              <input
+                value={draft[field.key] ?? ''}
+                placeholder={field.placeholder}
+                inputMode="decimal"
+                onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                onBlur={() => saveField(field.key, field.label)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+                className="mt-1 h-8 w-full rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+            <div className="text-[11px] text-gray-500">Business use</div>
+            <div className="text-lg font-semibold text-white">
+              {summary?.business_use_pct != null ? `${summary.business_use_pct}%` : '--'}
+            </div>
+          </div>
+          <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+            <div className="text-[11px] text-gray-500">Simplified (annual)</div>
+            <div className="text-lg font-semibold text-white">{fmt(summary?.simplified_estimate)}</div>
+            <div className="mt-1 text-[10px] text-gray-600">$5/sqft, $1,500 cap</div>
+          </div>
+          <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+            <div className="text-[11px] text-gray-500">Actual (annual est.)</div>
+            <div className="text-lg font-semibold text-white">{fmt(summary?.actual_estimate_annual)}</div>
+          </div>
+        </div>
+      </div>
+      {!isLoading && summary?.missing_fields && summary.missing_fields.length > 0 && (
+        <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200">
+          Add to finish the estimate: {summary.missing_fields.join(', ')}.
+        </div>
+      )}
+      <div className="mt-4 border-t border-gray-800 pt-3">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-xs uppercase tracking-wider text-blue-300">Purchases</div>
+          <Link to="/company/tasks" className="text-xs text-blue-300">
+            Open tasks
+          </Link>
+        </div>
+        {purchaseTasks.length === 0 ? (
+          <div className="rounded-md border border-dashed border-gray-800 p-3 text-xs text-gray-400">
+            No home-office items yet. Use "Set up my CEO checklist" to seed the purchase list, or add a task with
+            domain Home Office.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {purchaseTasks.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => drawer?.openTaskById(t.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-2 text-left text-sm hover:bg-gray-900"
+              >
+                <span className="truncate text-gray-100">{t.title}</span>
+                <Badge className={statusBadgeClass(t.status)}>{t.status}</Badge>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
 function FinanceSection() {
   const monthly = subscriptions.reduce((sum, item) => sum + item.monthlyCost, 0)
   const assetTotal = assets.reduce((sum, item) => sum + item.cost, 0)
@@ -3459,6 +3887,11 @@ function FinanceSection() {
   return (
     <div className="space-y-6">
       <SetupProgressPanel />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <AiSpendPanel />
+        <TaxCalendarPanel />
+      </div>
+      <HomeOfficePanel />
       <div className="grid gap-4 xl:grid-cols-2">
       <Panel title="Finance Setup Rails" icon={ClipboardList}>
         <div className="space-y-2">

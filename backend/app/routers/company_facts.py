@@ -44,6 +44,12 @@ async def get_by_key(key: str):
     return fact
 
 
+@router.get("/home-office/summary")
+async def home_office_summary():
+    """Deduction-ready home-office summary (simplified vs actual) from home_office.* facts."""
+    return await get_company_facts_service().home_office_summary()
+
+
 @router.post("", response_model=CompanyFact)
 async def upsert_fact(req: CompanyFactCreateRequest):
     payload = CompanyFactCreate(

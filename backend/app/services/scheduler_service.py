@@ -265,6 +265,11 @@ DAILY_SCHEDULE = {
         "description": "Weekly money maker summary to Discord",
         "enabled": True
     },
+    "recurring_expense_monthly": {
+        "cron": "0 6 1 * *",  # 6:00 AM on the 1st of each month
+        "description": "Generate ADA AI bookkeeping drafts for recurring expenses (AI subscriptions) for the prior month",
+        "enabled": True
+    },
     "gmail_check": {
         "cron": "*/5 * * * *",  # Every 5 minutes
         "description": "Incremental Gmail sync and alert check",
@@ -1464,6 +1469,7 @@ class SchedulerService:
             "health_aggregation": self._run_health_aggregation,
             "money_maker_cycle": self._run_money_maker_cycle,
             "money_maker_weekly_report": self._run_money_maker_weekly_report,
+            "recurring_expense_monthly": self._run_recurring_expense_monthly,
             "gmail_check": self._run_gmail_check,
             "calendar_check": self._run_calendar_check,
             "gmail_digest": self._run_gmail_digest,
@@ -1894,6 +1900,29 @@ Have a great evening!"""
 
         except Exception as e:
             logger.error("money_maker_cycle_failed", error=str(e))
+
+    async def _run_recurring_expense_monthly(self):
+        """Generate ADA AI bookkeeping drafts for recurring expenses (prior month).
+
+        Reads the manual recurring-expense registry (AI subscriptions like Claude
+        Max, ChatGPT, Cursor) and emits one reviewable DraftEntry per active entry
+        for the previous calendar month. Idempotent — re-runs never double-post.
+        Adam reviews + accepts each draft in the Finance tab.
+        """
+        logger.info("running_recurring_expense_monthly")
+        try:
+            from app.services.bookkeeper_service import get_bookkeeper_service
+
+            svc = get_bookkeeper_service()
+            period = svc._previous_period()
+            result = await svc.generate_recurring_drafts(period=period)
+            logger.info(
+                "recurring_expense_monthly_complete",
+                period=period,
+                created=result.get("created_count", 0),
+            )
+        except Exception as e:
+            logger.error("recurring_expense_monthly_failed", error=str(e))
 
     async def _run_money_maker_weekly_report(self):
         """

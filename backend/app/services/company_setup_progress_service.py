@@ -21,6 +21,8 @@ from app.services.company_work_item_service import get_company_work_item_service
 SETUP_DOMAINS = {
     "Formation",
     "Finance",
+    "Tax",
+    "Home Office",
     "Legal",
     "Operations",
     "Admin",
