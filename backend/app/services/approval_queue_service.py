@@ -230,6 +230,24 @@ class ApprovalQueueService:
             if fresh is None:
                 return {"status": "missing", "approval_id": approval.id}
             if fresh.status == "approved":
+                # Atomically claim the approval BEFORE executing so two waiters
+                # (or a retried gated_call) can never double-fire the side
+                # effect. The claim is its own tx and is released before the
+                # execute() await — never hold a session across the call.
+                async with get_session() as session:
+                    claim = await session.execute(
+                        update(AgentApprovalModel)
+                        .where(AgentApprovalModel.id == approval.id)
+                        .where(AgentApprovalModel.status == "approved")
+                        .values(status="executing")
+                        .returning(AgentApprovalModel.id)
+                    )
+                    claimed = claim.scalar_one_or_none()
+                    await session.commit()
+                if claimed is None:
+                    # Lost the race; another waiter is executing it. Re-poll for
+                    # the terminal state instead of executing a second time.
+                    continue
                 try:
                     result = await execute()
                     async with get_session() as session:
@@ -249,6 +267,10 @@ class ApprovalQueueService:
                         )
                         await session.commit()
                     return {"status": "failed", "approval_id": approval.id, "error": str(e)}
+            if fresh.status in ("executed", "failed"):
+                # Completed by a concurrent waiter — return the recorded outcome
+                # rather than spinning to timeout.
+                return {"status": fresh.status, "approval_id": approval.id, "result": getattr(fresh, "result", None)}
             if fresh.status in ("rejected", "expired"):
                 return {"status": fresh.status, "approval_id": approval.id}
         return {"status": "timeout", "approval_id": approval.id}

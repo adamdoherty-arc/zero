@@ -103,6 +103,10 @@ class AutonomousResearchLoopService:
         self._vault = get_vault_writer()
         self._spent_usd_today: float = 0.0
         self._spent_date: Optional[str] = None
+        # Strong refs to fire-and-forget watcher tasks so CPython's GC (which
+        # only weak-refs bare tasks) can't collect them mid-poll before they
+        # write the vault report. Discarded via add_done_callback on completion.
+        self._bg_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Budget bookkeeping (rough — real cost tracking lives in llm_router)
@@ -245,7 +249,9 @@ class AutonomousResearchLoopService:
             topic=topic.name,
             report_id=report.id,
         )
-        asyncio.create_task(self._watch_and_write(report.id, topic.name))
+        watcher = asyncio.create_task(self._watch_and_write(report.id, topic.name))
+        self._bg_tasks.add(watcher)
+        watcher.add_done_callback(self._bg_tasks.discard)
         return report.id
 
     async def _watch_and_write(self, report_id: str, topic_name: str, *, timeout_seconds: int = 1800) -> None:

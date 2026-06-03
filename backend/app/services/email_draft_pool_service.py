@@ -274,8 +274,16 @@ class EmailDraftPool:
             kwargs: dict[str, Any] = {
                 "to": draft.to,
                 "subject": draft.subject,
-                "body": draft.body,
             }
+            # Body param name differs across send methods: GmailService.send_email
+            # uses body_text=, not body. Map to whatever the chosen fn accepts so
+            # the send doesn't TypeError (it previously always died on "body").
+            if "body_text" in accepted:
+                kwargs["body_text"] = draft.body
+            elif "body" in accepted or has_kwargs:
+                kwargs["body"] = draft.body
+            else:
+                kwargs["body_text"] = draft.body
             if draft.account_id and (has_kwargs or "account_id" in accepted):
                 kwargs["account_id"] = draft.account_id
             if draft.thread_id and (has_kwargs or "thread_id" in accepted):

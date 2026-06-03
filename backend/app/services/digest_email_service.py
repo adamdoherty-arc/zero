@@ -71,20 +71,33 @@ class DigestEmailService:
         try:
             from app.services.gmail_service import get_gmail_service  # type: ignore
             gmail = get_gmail_service()
+            # Previously called gmail.send(...) which does not exist on
+            # GmailService -> AttributeError (NOT caught by except TypeError),
+            # and the fallback used body= instead of body_text=. Pick the real
+            # send method and map kwargs to its signature so the brief sends.
+            import inspect
+
+            send_fn = getattr(gmail, "send", None) or getattr(gmail, "send_email", None)
+            if send_fn is None:
+                return {"sent": False, "error": "gmail service exposes no send method"}
             try:
-                res = await gmail.send(
-                    account_id=from_account,
-                    to=recipient,
-                    subject=subj,
-                    body=markdown,
-                    html=html,
-                )
-            except TypeError:
-                res = await gmail.send_email(
-                    to=recipient,
-                    subject=subj,
-                    body=markdown,
-                )
+                params = inspect.signature(send_fn).parameters
+                accepted = set(params)
+                has_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+            except (TypeError, ValueError):
+                accepted, has_kwargs = set(), True
+            kwargs: dict[str, Any] = {"to": recipient, "subject": subj}
+            if "body_text" in accepted:
+                kwargs["body_text"] = markdown
+            elif "body" in accepted or has_kwargs:
+                kwargs["body"] = markdown
+            else:
+                kwargs["body_text"] = markdown
+            if html and (has_kwargs or "html" in accepted):
+                kwargs["html"] = html
+            if from_account and (has_kwargs or "account_id" in accepted):
+                kwargs["account_id"] = from_account
+            res = await send_fn(**kwargs)
             return {"sent": True, "to": recipient, "result": str(res)[:200]}
         except Exception as e:
             logger.warning("digest_email_send_failed", error=str(e))

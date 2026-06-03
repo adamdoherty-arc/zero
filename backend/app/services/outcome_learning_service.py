@@ -142,6 +142,7 @@ class OutcomeLearningService:
                             )
                         )
                         .where(BrainOutcomeRecordModel.strategy_used == row.strategy_used)
+                        .where(BrainOutcomeRecordModel.domain == row.domain)
                         .where(BrainOutcomeRecordModel.predicted_score.isnot(None))
                         .where(BrainOutcomeRecordModel.actual_score.isnot(None))
                         .where(BrainOutcomeRecordModel.created_at >= since)

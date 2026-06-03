@@ -6679,7 +6679,7 @@ Have a great evening!"""
 
             # Extract memories from recent LLM interactions
             svc = get_episodic_memory_service()
-            since = datetime.now() - timedelta(minutes=35)
+            since = datetime.now(timezone.utc) - timedelta(minutes=35)
             async with get_session() as session:
                 query = (
                     select(LlmUsageModel)
