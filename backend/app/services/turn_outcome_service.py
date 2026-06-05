@@ -141,7 +141,34 @@ class TurnOutcomeService:
                 new_lines.append(json.dumps(rec, separators=(",", ":")))
             if updated:
                 OUTCOME_PATH.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+                # Bridge the thumbs signal into the structured outcome store so
+                # the calibration / reflection loop actually sees it. The voice
+                # bridge wrote a BrainOutcomeRecordModel row with
+                # action_id == this turn id and actual_score=None; thumbs become
+                # that row's actual_score (1.0 up / 0.0 down). Best-effort: a
+                # failure here must never sink the JSONL feedback write.
+                try:
+                    await self._bridge_feedback_score(turn_id, signal)
+                except Exception as e:
+                    logger.debug("turn_feedback_bridge_failed", turn_id=turn_id, error=str(e))
             return updated
+
+    @staticmethod
+    async def _bridge_feedback_score(turn_id: str, signal: str) -> None:
+        """Propagate a thumbs signal onto the matching structured outcome row
+        (action_id == turn_id) as its actual_score, so it reaches the
+        outcome-learning / reflection store instead of dying in the JSONL."""
+        score = 1.0 if signal == "thumbs_up" else 0.0
+        from app.infrastructure.database import get_session
+        from app.db.models import BrainOutcomeRecordModel
+        from sqlalchemy import update as _sql_update
+        async with get_session() as session:
+            await session.execute(
+                _sql_update(BrainOutcomeRecordModel)
+                .where(BrainOutcomeRecordModel.action_id == turn_id)
+                .values(actual_score=score)
+            )
+            await session.commit()
 
     async def recent(self, *, limit: int = 50) -> list[TurnOutcome]:
         async with self._lock:
@@ -162,7 +189,12 @@ class TurnOutcomeService:
 
     async def trend(self, *, hours: int = 24) -> dict[str, Any]:
         cutoff = time.time() - hours * 3600
-        recent = await self.recent(limit=2000)
+        # Scale the read window with the requested span. The router allows
+        # hours up to 24*30; a hardcoded 2000-line cap silently truncated any
+        # window with >2000 turns, biasing every aggregate to the most recent
+        # 2000. Assume <=200 turns/hour and keep a hard ceiling.
+        limit = min(50000, max(2000, hours * 200))
+        recent = await self.recent(limit=limit)
         in_window = [r for r in recent if r.ts >= cutoff]
         n = len(in_window)
         if n == 0:

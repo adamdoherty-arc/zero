@@ -165,26 +165,25 @@ async def _company_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorRes
 async def _research_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
     try:
         from app.services.deep_research_service import get_deep_research_service  # type: ignore
+        from app.models.agent_company import DeepResearchRequest
         svc = get_deep_research_service()
-        try:
-            handle = await svc.start(query=user_text, source="reachy_voice")  # type: ignore[attr-defined]
-            ref = getattr(handle, "id", None) or getattr(handle, "task_id", None) or "queued"
-            return SupervisorResult(
-                intent="research",
-                spoken=f"I queued a researcher on that. I'll bring back the findings as soon as it's done.",
-                tool_calls=[{"adapter": "research", "ok": True, "task": ref}],
-                followups=[{
-                    "kind": "research_pending",
-                    "task_id": ref,
-                    "query": user_text,
-                }],
-            )
-        except AttributeError:
-            return SupervisorResult(
-                intent="research",
-                spoken="Researcher is configured but the start hook isn't wired yet.",
-                tool_calls=[{"adapter": "research", "ok": False}],
-            )
+        # DeepResearchService exposes start_research(DeepResearchRequest): it
+        # creates the report row, kicks the pipeline off in the background and
+        # returns a report handle immediately. The old svc.start(query=...)
+        # never existed, so every voice research request hit the swallowed
+        # AttributeError and silently did nothing.
+        report = await svc.start_research(DeepResearchRequest(query=user_text))
+        ref = getattr(report, "id", None) or "queued"
+        return SupervisorResult(
+            intent="research",
+            spoken="I queued a researcher on that. I'll bring back the findings as soon as it's done.",
+            tool_calls=[{"adapter": "research", "ok": True, "task": ref}],
+            followups=[{
+                "kind": "research_pending",
+                "task_id": ref,
+                "query": user_text,
+            }],
+        )
     except Exception as e:
         logger.warning("supervisor_research_adapter_failed", error=str(e))
         return SupervisorResult(

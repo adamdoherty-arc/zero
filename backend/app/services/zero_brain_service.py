@@ -413,7 +413,7 @@ class ZeroBrainService:
 
     async def run_reflection(self, domain: Optional[str] = None) -> Dict[str, Any]:
         """Run reflection on recent decisions and outcomes."""
-        recent = await self._outcomes.get_recent(domain=domain, limit=20)
+        recent = await self._outcomes.get_recent(domain=domain, limit=20, scored_only=True)
 
         decisions = [
             {

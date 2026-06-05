@@ -42,6 +42,7 @@ logger = structlog.get_logger(__name__)
 EMBEDDING_DIM = 128
 DEFAULT_MATCH_THRESHOLD = 0.78  # bit-level cosine; tune as quality improves
 _CLUSTER_HAMMING_THRESHOLD = 14  # bits-different cap for same-cluster (out of 128)
+_CLUSTER_COSINE_THRESHOLD = 0.35  # cosine-distance cap for same-cluster (mesh descriptors)
 
 
 @dataclass
@@ -84,6 +85,23 @@ def _hash_to_embedding(phash_int: int) -> np.ndarray:
 def _hamming(a: np.ndarray, b: np.ndarray) -> int:
     """Hamming distance over the first 64 bits (the meaningful ones)."""
     return int(np.sum(np.abs(a[:64] - b[:64])))
+
+
+def _cosine_dist(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine distance (1 - cosine similarity).
+
+    compute_embedding now returns a 128-dim L2-normalized FaceMesh descriptor
+    (Feature-56), so cosine — not bit-Hamming — is the right metric. _hamming
+    (sum of |a-b| over continuous floats) yields sub-threshold values for every
+    pair and collapses all attendees into a single cluster.
+    """
+    a = a.astype("float32")
+    b = b.astype("float32")
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    if na == 0.0 or nb == 0.0:
+        return 1.0
+    return float(1.0 - float(np.dot(a, b)) / (na * nb))
 
 
 def _detect_face_bbox(image_path: Path) -> Optional[tuple[int, int, int, int]]:
@@ -336,16 +354,16 @@ def extract_faces_from_meeting(meeting_id: str, frames_dir: Path) -> list[FaceCl
         emb = compute_embedding(crop_path)
         detections.append(FrameDetection(frame, ts_ms, bbox, crop_path, emb))
 
-    # Cluster by hamming over the 64-bit phash slice.
+    # Cluster by cosine distance over the L2-normalized mesh descriptor.
     clusters: list[FaceCluster] = []
     for det in detections:
         if det.embedding is None:
             continue
         assigned = False
         for cluster in clusters:
-            if _hamming(det.embedding, cluster.centroid) <= _CLUSTER_HAMMING_THRESHOLD:
+            if _cosine_dist(det.embedding, cluster.centroid) <= _CLUSTER_COSINE_THRESHOLD:
                 cluster.frames.append(det)
-                # Update centroid as mean (each dim 0/1 -> float).
+                # Update centroid as the mean descriptor of the cluster.
                 stack = np.stack([f.embedding for f in cluster.frames if f.embedding is not None])
                 cluster.centroid = stack.mean(axis=0).astype("float32")
                 assigned = True

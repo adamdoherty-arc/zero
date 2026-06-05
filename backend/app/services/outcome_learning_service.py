@@ -307,15 +307,25 @@ class OutcomeLearningService:
         self,
         domain: Optional[str] = None,
         limit: int = 20,
+        scored_only: bool = False,
     ) -> List[OutcomeRecord]:
-        """Get recent outcome records."""
+        """Get recent outcome records.
+
+        ``scored_only`` keeps only rows that already have an actual_score, so
+        the reflection job isn't starved to "no_decisions" when unscored
+        voice-turn telemetry (actual_score=None) dominates the most-recent
+        rows. Filters are applied before LIMIT so the cap counts scored rows.
+        """
         try:
             async with get_session() as session:
-                query = select(BrainOutcomeRecordModel).order_by(
-                    BrainOutcomeRecordModel.created_at.desc()
-                ).limit(limit)
+                query = select(BrainOutcomeRecordModel)
                 if domain:
                     query = query.where(BrainOutcomeRecordModel.domain == domain)
+                if scored_only:
+                    query = query.where(BrainOutcomeRecordModel.actual_score.isnot(None))
+                query = query.order_by(
+                    BrainOutcomeRecordModel.created_at.desc()
+                ).limit(limit)
 
                 result = await session.execute(query)
                 rows = result.scalars().all()

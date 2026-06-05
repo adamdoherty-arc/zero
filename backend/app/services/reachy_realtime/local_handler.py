@@ -883,6 +883,7 @@ class LocalRealtimeHandler:
         self._cancel_response = asyncio.Event()
         self._turn_lock = asyncio.Lock()
         self._active_turn_tasks: set[asyncio.Task] = set()
+        self._bg_tasks: set[asyncio.Task] = set()
 
         # Audio + VAD state
         self._vad = _WebRTCVAD()
@@ -1114,7 +1115,7 @@ class LocalRealtimeHandler:
                 logger.info("whisper_prewarm_done", model=STT_MODEL_NAME)
             except Exception as e:
                 logger.warning("whisper_prewarm_failed", error=str(e))
-        asyncio.ensure_future(_prewarm_whisper())
+        self._spawn_bg(_prewarm_whisper())
 
         await self._emit({
             "type": "session.ready",
@@ -1151,6 +1152,16 @@ class LocalRealtimeHandler:
         task = asyncio.create_task(self._handle_turn(segment))
         self._active_turn_tasks.add(task)
         task.add_done_callback(self._active_turn_tasks.discard)
+
+    def _spawn_bg(self, coro) -> asyncio.Task:
+        """Retain a best-effort background task so the event loop keeps a strong
+        ref. CPython only weak-refs running tasks, so an unheld create_task can
+        be GC-collected mid-flight, silently dropping the memory / turn-outcome
+        write the learn loop depends on."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
 
     async def feed_pcm(self, pcm_bytes: bytes) -> None:
         if not pcm_bytes:
@@ -1289,7 +1300,9 @@ class LocalRealtimeHandler:
                     if self._phase != "stalled":
                         await self._emit_phase("listening")
 
-        asyncio.create_task(_text_turn())
+        _typed_task = asyncio.create_task(_text_turn())
+        self._active_turn_tasks.add(_typed_task)
+        _typed_task.add_done_callback(self._active_turn_tasks.discard)
 
     def _reset_audio_turn_state(self) -> None:
         """Drop a half-open VAD segment before a typed/direct command turn."""
@@ -1421,7 +1434,7 @@ class LocalRealtimeHandler:
         try:
             from app.services.reachy_memory import get_reachy_memory_service
             mem = get_reachy_memory_service()
-            asyncio.create_task(mem.add_memory("default", self.profile_id, text))
+            self._spawn_bg(mem.add_memory("default", self.profile_id, text))
         except Exception as e:
             logger.debug("reachy_memory_record_skipped", error=str(e))
 
@@ -1728,7 +1741,7 @@ class LocalRealtimeHandler:
             total_ms = int((time.perf_counter() - started) * 1000)
             from app.services.turn_outcome_service import get_turn_outcome_service
             svc = get_turn_outcome_service()
-            asyncio.create_task(
+            self._spawn_bg(
                 svc.record_turn(
                     persona_id=self.profile_id,
                     intent="voice",
@@ -1900,9 +1913,15 @@ class LocalRealtimeHandler:
             return text_acc, []
 
         # Strip any final think-block before the tail-flush + transcript.
+        # The tail must be sliced from the SAME basis spoken_to_idx indexes
+        # (the non-tone-guarded, lstrip'd streaming text); slicing the
+        # tone-guarded cleaned_full at that index drops/garbles the last
+        # sentence for companion profiles whose tone-guard shortens the text.
+        spoken_basis = _clean_assistant_text(text_acc).lstrip()
+        tail = spoken_basis[spoken_to_idx:]
         cleaned_full = self._tone_guard.clean(_clean_assistant_text(text_acc))
-        if not self._cancel_response.is_set() and cleaned_full[spoken_to_idx:].strip():
-            await self._speak_chunk(cleaned_full[spoken_to_idx:])
+        if not self._cancel_response.is_set() and tail.strip():
+            await self._speak_chunk(self._tone_guard.clean(tail))
 
         if cleaned_full:
             await self._emit({

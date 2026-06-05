@@ -216,8 +216,25 @@ class AudioCapture:
                 self._start_mic_capture()
         except MicCaptureError:
             # Tear down what we partially set up so a follow-up call can
-            # cleanly start with a different device.
+            # cleanly start with a different device. The system loopback stream
+            # may already be open (source=="mixed"/"system" opens it before the
+            # mic), so close it too or the WASAPI device stays held after this
+            # "clean" teardown.
             self._is_recording = False
+            if self._system_stream is not None:
+                try:
+                    self._system_stream.stop_stream()
+                    self._system_stream.close()
+                except Exception:
+                    pass
+                self._system_stream = None
+            if self._mic_stream is not None:
+                try:
+                    self._mic_stream.stop()
+                    self._mic_stream.close()
+                except Exception:
+                    pass
+                self._mic_stream = None
             if self._wav_writer is not None:
                 try:
                     self._wav_writer.close()

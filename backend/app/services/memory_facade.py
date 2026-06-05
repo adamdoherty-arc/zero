@@ -172,8 +172,11 @@ class MemoryFacade:
                     text = n.get("text") or n.get("content") or ""
                     score = float(n.get("score") or 0.4)
                 else:
-                    text = str(n)
-                    score = 0.4
+                    # relevant_notes() returns Note dataclasses (no __str__),
+                    # so str(n) injected the full repr — INCLUDING the embedding
+                    # vector — into the recall prompt. Pull the fields instead.
+                    text = (getattr(n, "text", "") or "").strip()
+                    score = float(getattr(n, "confidence", 0.4) or 0.4)
                 if text:
                     notes.append(MemoryNote(
                         text=text, source="reachy_user", score=score

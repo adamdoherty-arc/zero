@@ -160,8 +160,14 @@ class CouncilService:
                 position_counts[pos] += 1
             total_confidence += float(vote.get("confidence", 50))
 
-        # Decision = majority vote
-        final_decision = max(position_counts, key=position_counts.get)
+        # Decision = majority vote. If every role abstained or failed
+        # structured output in both rounds, all counts are 0 and max() would
+        # return the first key ("approve") by dict-insertion order — a
+        # degenerate deliberation must NOT silently auto-approve.
+        if sum(position_counts.values()) == 0:
+            final_decision = "needs_revision"
+        else:
+            final_decision = max(position_counts, key=position_counts.get)
         avg_confidence = total_confidence / max(len(round2), 1)
 
         # Save

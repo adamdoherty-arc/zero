@@ -308,7 +308,7 @@ async def router_node(state: OrchestratorState) -> dict:
         "route": route,
         "memories": memories,
         "context": {
-            "classified_at": datetime.utcnow().isoformat(),
+            "classified_at": datetime.now(timezone.utc).isoformat(),
             "route": route,
             "method": method,
             "keyword_confidence": confidence,
