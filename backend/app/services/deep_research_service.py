@@ -22,6 +22,8 @@ from app.services.searxng_service import get_searxng_service
 
 logger = structlog.get_logger()
 
+_PIPELINE_TASKS: dict = {}
+
 
 def _orm_to_report(row: DeepResearchReportModel) -> DeepResearchReport:
     return DeepResearchReport(
@@ -59,8 +61,10 @@ class DeepResearchService:
             await session.commit()
             await session.refresh(row)
 
-        # Run pipeline in background
-        asyncio.create_task(self._run_pipeline(report_id, req))
+        # Run pipeline in background — anchor the task so GC cannot cancel it mid-run.
+        _t = asyncio.create_task(self._run_pipeline(report_id, req))
+        _PIPELINE_TASKS[report_id] = _t
+        _t.add_done_callback(lambda _t: _PIPELINE_TASKS.pop(report_id, None))
 
         return _orm_to_report(row)
 
@@ -153,8 +157,8 @@ class DeepResearchService:
                     domain="research", action_type="deep_research",
                     action_id=report_id, strategy_used="storm_pipeline",
                     actual_score=min(100, len(all_sources) * 10),
-                    metrics={"sources": len(all_sources), "query": query},
-                    text_for_memory=f"Deep research on '{query}': {summary[:500] if summary else 'no summary'}",
+                    metrics={"sources": len(all_sources), "query": req.query},
+                    text_for_memory=f"Deep research on '{req.query}': {summary[:500] if summary else 'no summary'}",
                 )
             except Exception:
                 pass

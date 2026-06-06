@@ -14,7 +14,7 @@ Zero orchestrates when it runs and feeds it good tasks.
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
@@ -240,12 +240,12 @@ class AutonomousOrchestrationService:
         try:
             active = await legion.get_active_executions()
             stuck = []
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for exc in active:
                 started = exc.get("started_at")
                 if started:
                     try:
-                        started_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00")).replace(tzinfo=None)
+                        started_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
                         if (now - started_dt).total_seconds() > 3600:
                             stuck.append(exc)
                     except Exception:

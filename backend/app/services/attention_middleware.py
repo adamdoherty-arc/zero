@@ -16,11 +16,12 @@ send mechanism (Discord, email, push); this middleware is the decision layer.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 import structlog
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, text, update
 
 from app.db.models import AgentAlertModel
 from app.infrastructure.config import get_settings
@@ -29,10 +30,26 @@ from app.infrastructure.database import get_session
 logger = structlog.get_logger(__name__)
 
 
+# Stable xact-advisory-lock key guarding the per-day interrupt budget so the
+# check-then-mark in decide() can't be split by a concurrent call (TOCTOU).
+_INTERRUPT_BUDGET_LOCK_KEY = 778_899_001
+
+
+def _user_tz() -> tzinfo:
+    tz_name = (getattr(get_settings(), "user_timezone", "") or "").strip()
+    if not tz_name:
+        return timezone.utc
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return timezone.utc
+
+
 def _now_local() -> datetime:
-    # We don't yet have a user_timezone config. Use UTC for now; the DND comparison
-    # is still useful and easy to override when we wire that in.
-    return datetime.now(timezone.utc)
+    """Now in the user's configured timezone (ZERO_USER_TIMEZONE) so the DND
+    window and the daily interrupt-budget boundary track the user's real clock,
+    not UTC. Falls back to UTC when the tz is unset or invalid."""
+    return datetime.now(_user_tz())
 
 
 class AttentionMiddleware:
@@ -55,18 +72,24 @@ class AttentionMiddleware:
         mirrors the gate ``decide()`` applies per-alert."""
         return self._in_dnd_now()
 
-    async def interrupts_sent_today(self) -> int:
+    async def _count_interrupts_today(self, session: Any) -> int:
+        """Count interrupts already marked today, on the CALLER's session so the
+        count and the subsequent mark live in one transaction under one advisory
+        lock (see ``decide``)."""
         start = _now_local().replace(hour=0, minute=0, second=0, microsecond=0)
-        async with get_session() as session:
-            result = await session.execute(
-                select(func.count(AgentAlertModel.id)).where(
-                    and_(
-                        AgentAlertModel.interrupted_user.is_(True),
-                        AgentAlertModel.interrupted_at >= start,
-                    )
+        result = await session.execute(
+            select(func.count(AgentAlertModel.id)).where(
+                and_(
+                    AgentAlertModel.interrupted_user.is_(True),
+                    AgentAlertModel.interrupted_at >= start,
                 )
             )
-            return int(result.scalar() or 0)
+        )
+        return int(result.scalar() or 0)
+
+    async def interrupts_sent_today(self) -> int:
+        async with get_session() as session:
+            return await self._count_interrupts_today(session)
 
     async def decide(self, alert_id: str) -> dict[str, Any]:
         """Should this alert interrupt the user now? Returns a decision + rationale."""
@@ -87,7 +110,17 @@ class AttentionMiddleware:
                     "reason": f"below_salience_threshold({self._settings.min_interrupt_salience})",
                 }
 
-            sent_today = await self.interrupts_sent_today()
+            # Serialize the budget check + increment so two concurrent decide()
+            # calls can't both read sent_today < budget and both mark interrupted
+            # (TOCTOU over-spend). The xact-advisory lock auto-releases on
+            # commit/rollback; under the serial scheduler contention is ~zero,
+            # but this makes the gate correct under any concurrency.
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": _INTERRUPT_BUDGET_LOCK_KEY},
+            )
+
+            sent_today = await self._count_interrupts_today(session)
             if sent_today >= self._settings.max_interrupts_per_day:
                 return {
                     "decision": "queue",

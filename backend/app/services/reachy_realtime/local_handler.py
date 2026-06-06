@@ -1202,7 +1202,7 @@ class LocalRealtimeHandler:
                     self._pre_buffer = bytearray()
                     self._speech_started_emitted = False
                     self._consecutive_speech_frames = 0
-                    asyncio.create_task(self._maybe_listening_nod())
+                    self._spawn_bg(self._maybe_listening_nod())
                 continue
             # in_speech == True
             if not is_speech:
@@ -1232,7 +1232,7 @@ class LocalRealtimeHandler:
                 ):
                     self._speech_started_emitted = True
                     self._cancel_response.set()
-                    asyncio.create_task(self._emit({"type": "user.speech_started"}))
+                    self._spawn_bg(self._emit({"type": "user.speech_started"}))
             if self._silence_ms >= HANGOVER_MS:
                 # End of utterance.
                 segment = bytes(self._speech_buf)
@@ -1252,7 +1252,7 @@ class LocalRealtimeHandler:
                     ):
                         self._speech_started_emitted = True
                         self._cancel_response.set()
-                        asyncio.create_task(self._emit({"type": "user.speech_started"}))
+                        self._spawn_bg(self._emit({"type": "user.speech_started"}))
                 # Kick the turn handler. Use a task so we don't block
                 # the audio ingest path.
                 self._spawn_turn_task(segment)

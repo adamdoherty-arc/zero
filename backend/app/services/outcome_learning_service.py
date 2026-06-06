@@ -125,30 +125,44 @@ class OutcomeLearningService:
                 result = await session.execute(query)
                 rows = result.all()
 
+                # Calibration MAE per (strategy, domain) in ONE grouped query
+                # instead of an N+1 await per row inside the open session (that
+                # pinned a connection in-transaction across each iteration; see
+                # 60-database.md — don't hold a session across repeated awaits).
+                cal_query = (
+                    select(
+                        BrainOutcomeRecordModel.strategy_used,
+                        BrainOutcomeRecordModel.domain,
+                        sql_func.avg(
+                            sql_func.abs(
+                                BrainOutcomeRecordModel.predicted_score -
+                                BrainOutcomeRecordModel.actual_score
+                            )
+                        ).label("mae"),
+                    )
+                    .where(BrainOutcomeRecordModel.predicted_score.isnot(None))
+                    .where(BrainOutcomeRecordModel.actual_score.isnot(None))
+                    .where(BrainOutcomeRecordModel.created_at >= since)
+                    .group_by(
+                        BrainOutcomeRecordModel.strategy_used,
+                        BrainOutcomeRecordModel.domain,
+                    )
+                )
+                if domain:
+                    cal_query = cal_query.where(BrainOutcomeRecordModel.domain == domain)
+                if strategy:
+                    cal_query = cal_query.where(BrainOutcomeRecordModel.strategy_used == strategy)
+                cal_rows = (await session.execute(cal_query)).all()
+                cal_by_key = {
+                    (cr.strategy_used, cr.domain): float(cr.mae or 0) for cr in cal_rows
+                }
+
                 metrics = []
                 for row in rows:
                     total = row.total or 1
                     wins = row.wins or 0
                     avg = float(row.avg_score or 50)
-
-                    # Calculate calibration error (MAE) for this strategy
-                    cal_query = (
-                        select(
-                            sql_func.avg(
-                                sql_func.abs(
-                                    BrainOutcomeRecordModel.predicted_score -
-                                    BrainOutcomeRecordModel.actual_score
-                                )
-                            )
-                        )
-                        .where(BrainOutcomeRecordModel.strategy_used == row.strategy_used)
-                        .where(BrainOutcomeRecordModel.domain == row.domain)
-                        .where(BrainOutcomeRecordModel.predicted_score.isnot(None))
-                        .where(BrainOutcomeRecordModel.actual_score.isnot(None))
-                        .where(BrainOutcomeRecordModel.created_at >= since)
-                    )
-                    cal_result = await session.execute(cal_query)
-                    cal_error = float(cal_result.scalar() or 0)
+                    cal_error = cal_by_key.get((row.strategy_used, row.domain), 0.0)
 
                     metrics.append(StrategyMetrics(
                         strategy=row.strategy_used,

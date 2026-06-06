@@ -216,8 +216,10 @@ class VaultIndexerService:
         # Build a set of live paths for orphan detection.
         live_paths: set[str] = set()
 
+        capped = False
         for fp in _iter_markdown(self._root):
             if scanned >= max_files:
+                capped = True
                 break
             scanned += 1
             rel = fp.relative_to(self._root).as_posix()
@@ -245,16 +247,22 @@ class VaultIndexerService:
             chunks_written += written
 
         # Orphan sweep: remove chunks whose source file no longer exists.
-        async with get_session() as session:
-            result = await session.execute(select(VaultChunkModel.path).distinct())
-            db_paths = {p for (p,) in result.all()}
-            orphans = db_paths - live_paths
-            if orphans:
-                await session.execute(
-                    delete(VaultChunkModel).where(VaultChunkModel.path.in_(orphans))
-                )
-                await session.commit()
-                chunks_deleted = len(orphans)
+        # Only run when the scan was complete (the loop did NOT hit the cap) to
+        # avoid deleting chunks for files past the cap that still exist on disk.
+        # Keyed on the actual break, so a vault of exactly max_files still sweeps.
+        if not capped:
+            async with get_session() as session:
+                result = await session.execute(select(VaultChunkModel.path).distinct())
+                db_paths = {p for (p,) in result.all()}
+                orphans = db_paths - live_paths
+                if orphans:
+                    await session.execute(
+                        delete(VaultChunkModel).where(VaultChunkModel.path.in_(orphans))
+                    )
+                    await session.commit()
+                    chunks_deleted = len(orphans)
+        else:
+            logger.warning("orphan_sweep_skipped_scan_capped", scanned=scanned, max_files=max_files)
 
         logger.info(
             "vault_reindex",

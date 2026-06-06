@@ -333,10 +333,10 @@ class MeetingFollowupService:
                 if external:
                     try:
                         from app.services.approval_queue_service import (
-                            get_approval_queue_service,
+                            get_approval_queue,
                         )
 
-                        await get_approval_queue_service().request(
+                        await get_approval_queue().request(
                             tool_name="meeting_followup.create_task",
                             tier="write_local",
                             summary=f"Create task for {owner}: {desc[:120]}",
@@ -355,8 +355,21 @@ class MeetingFollowupService:
                         })
                         continue
                     except Exception as exc:
-                        logger.debug("approval_queue_request_failed", error=str(exc))
-                        # Fall through to direct create.
+                        # External-owner tasks MUST route through the approval
+                        # queue — do NOT fall through to a direct create, which
+                        # silently bypasses the trust boundary. Record the
+                        # failure and skip this item instead.
+                        logger.warning(
+                            "approval_queue_request_failed",
+                            owner=owner,
+                            error=str(exc),
+                        )
+                        skipped.append({
+                            "description": desc,
+                            "owner": owner,
+                            "reason": "approval_queue_failed",
+                        })
+                        continue
 
                 # F-61: enrich the owner with face/voice-named speakers
                 # when the LLM said "John will follow up" and the transcript

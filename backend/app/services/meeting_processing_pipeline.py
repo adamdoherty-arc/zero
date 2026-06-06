@@ -215,6 +215,12 @@ async def process_meeting_recording(meeting_id: str, db: AsyncSession) -> dict:
     # If host_agent captured camera frames during the meeting, cluster the
     # detected faces and rewrite SPEAKER_XX labels for diarized turns whose
     # midpoint falls within a frame timestamp range of a matched face cluster.
+
+    # Load meeting row so `meeting.participants` is available for auto-enroll
+    # on all paths (not only the early-return branch above).
+    meeting_result_for_face = await db.execute(select(MeetingModel).where(MeetingModel.id == meeting_id))
+    meeting = meeting_result_for_face.scalar_one_or_none()
+
     try:
         from app.services.meeting_face_service import (
             extract_faces_from_meeting,

@@ -78,6 +78,9 @@ class Settings(BaseSettings):
     dnd_end_hour: int = 7          # local hour: DND ends
     max_interrupts_per_day: int = 5
     min_interrupt_salience: float = 0.6  # alerts below this batch into morning digest
+    # DND/interrupt hours are evaluated in this IANA tz, not UTC, so the quiet
+    # window protects the user's real evening. Override via ZERO_USER_TIMEZONE.
+    user_timezone: str = "America/New_York"
 
     # SearXNG (Web Search)
     # Use container name for Docker, localhost:8888 for local development

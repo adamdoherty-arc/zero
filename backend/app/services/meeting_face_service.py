@@ -24,6 +24,7 @@ touching callers or the DB schema.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,9 +41,13 @@ logger = structlog.get_logger(__name__)
 
 
 EMBEDDING_DIM = 128
-DEFAULT_MATCH_THRESHOLD = 0.78  # bit-level cosine; tune as quality improves
-_CLUSTER_HAMMING_THRESHOLD = 14  # bits-different cap for same-cluster (out of 128)
-_CLUSTER_COSINE_THRESHOLD = 0.35  # cosine-distance cap for same-cluster (mesh descriptors)
+# Match/cluster thresholds are env-overridable so they can be tuned against a
+# real >=2-attendee recording WITHOUT a code change + redeploy. Defaults are the
+# pre-calibration values; tune via ZERO_FACE_* once empirical per-face attribution
+# data exists (see tests/test_fix106_gap_batch.py::test_face_cosine_clustering).
+DEFAULT_MATCH_THRESHOLD = float(os.getenv("ZERO_FACE_MATCH_THRESHOLD", "0.78"))  # centroid cosine match
+_CLUSTER_HAMMING_THRESHOLD = int(os.getenv("ZERO_FACE_CLUSTER_HAMMING_THRESHOLD", "14"))  # imagehash MVP path
+_CLUSTER_COSINE_THRESHOLD = float(os.getenv("ZERO_FACE_CLUSTER_COSINE_THRESHOLD", "0.35"))  # mesh-descriptor cluster cap
 
 
 @dataclass
