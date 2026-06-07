@@ -294,10 +294,15 @@ class ReachyUserMemoryService:
                 if n.category != cat or not n.embedding:
                     continue
                 if _cosine(emb, n.embedding) >= DEDUP_COSINE_THRESHOLD:
+                    prev_conf = n.confidence
                     n.confidence = max(n.confidence, confidence)
                     n.last_used_at = time.time()
-                    # Keep the newer, often richer wording when confidence was bumped.
-                    if confidence > n.confidence:
+                    # Adopt the newer (often richer) wording + fresh embedding
+                    # when the incoming note is MORE confident. Compare against
+                    # the pre-max value: after max() the condition is always
+                    # False, so this branch was dead and stale text/embedding
+                    # was never refreshed.
+                    if confidence > prev_conf:
                         n.text = text
                         n.embedding = emb
                     self._save_sync()

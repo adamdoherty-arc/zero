@@ -123,6 +123,16 @@ class VoiceLoopService:
         self._audio_service = get_audio_service()
         self._tts_service = get_tts_service()
         self._reachy_service = get_reachy_service()
+        # Strong refs for fire-and-forget gesture/emotion tasks. A bare
+        # asyncio.create_task(...) handle is only weakly held by the loop, so
+        # the GC can cancel the gesture mid-dispatch before the robot moves.
+        self._bg: set[asyncio.Task] = set()
+
+    def _spawn_bg(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+        return task
 
     # --- Persona management ---
 
@@ -361,7 +371,7 @@ class VoiceLoopService:
                     # Fall through to gesture parsing + TTS below.
                     result["llm_response"] = response_text
                     clean, actions = parse_and_strip(response_text)
-                    asyncio.create_task(self._dispatch_gestures(actions))
+                    self._spawn_bg(self._dispatch_gestures(actions))
                     result["audio_response"] = await self._safe_synthesize(clean, phase_log)
                     return result
             except Exception as e:
@@ -433,12 +443,12 @@ class VoiceLoopService:
             if robot_connected:
                 # Fire gestures in parallel; don't block TTS on them.
                 if motion_allowed:
-                    asyncio.create_task(self._dispatch_gestures(actions))
+                    self._spawn_bg(self._dispatch_gestures(actions))
                 # If the LLM didn't emit any gesture markers, play a subtle
                 # baseline sway so Reachy still looks alive while speaking.
                 # Keeps the robot from reading as a static speaker.
                 if motion_allowed and not actions:
-                    asyncio.create_task(
+                    self._spawn_bg(
                         self._reachy_service.play_emotion("attentive1")
                     )
                 # Reuse the audio bytes we already synthesized instead of

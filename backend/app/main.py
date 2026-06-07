@@ -971,49 +971,60 @@ async def health_ready():
     except Exception:
         checks["scheduler"] = "error"
 
-    # Check local LLM router (non-blocking, 5s timeout). Ollama was retired
-    # in favor of the shared Bifrost route, so keep the legacy key from
-    # reporting a false outage while probing Bifrost with its virtual key.
-    try:
-        import httpx
-        base = settings.vllm_chat_url.rstrip("/")
-        headers = {}
-        if settings.vllm_api_key:
-            headers["Authorization"] = f"Bearer {settings.vllm_api_key}"
-            headers["x-bf-vk"] = settings.vllm_api_key
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{base}/models", headers=headers)
-            checks["local_llm"] = "ok" if resp.status_code == 200 else "degraded"
-    except Exception:
-        checks["local_llm"] = "unavailable"
+    # Optional downstream probes (local_llm, legion, searxng) run CONCURRENTLY.
+    # Run sequentially they serialized to ~13s worst case; the local_llm probe
+    # in particular burned its full timeout whenever the robot/vLLM was OFF (a
+    # supported state), dragging readiness past the Docker healthcheck window and
+    # falsely marking the container unhealthy *because the robot is off* — a
+    # robot-off-safe regression. All three are non-blocking: they report
+    # degraded/unavailable but never flip is_ready.
+    import httpx
+
+    async def _check_local_llm() -> str:
+        # Ollama was retired in favor of the shared Bifrost route; probe Bifrost
+        # with its virtual key. 2s is plenty when up; when down the connect is
+        # refused fast, and the concurrent gather caps total latency regardless.
+        try:
+            base = settings.vllm_chat_url.rstrip("/")
+            headers = {}
+            if settings.vllm_api_key:
+                headers["Authorization"] = f"Bearer {settings.vllm_api_key}"
+                headers["x-bf-vk"] = settings.vllm_api_key
+            async with httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get(f"{base}/models", headers=headers)
+                return "ok" if resp.status_code == 200 else "degraded"
+        except Exception:
+            return "unavailable"
+
+    async def _check_legion() -> str:
+        try:
+            async with httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get(f"{settings.legion_api_url}/health")
+                return "ok" if resp.status_code == 200 else "degraded"
+        except Exception:
+            return "unavailable"
+
+    async def _check_searxng() -> str:
+        try:
+            async with httpx.AsyncClient(timeout=2) as client:
+                for path in ["/healthz", "/status"]:
+                    try:
+                        resp = await client.get(f"{settings.searxng_url}{path}")
+                        if resp.status_code == 200:
+                            return "ok"
+                    except Exception:
+                        continue
+            return "degraded"
+        except Exception:
+            return "unavailable"
+
+    llm_res, legion_res, searxng_res = await asyncio.gather(
+        _check_local_llm(), _check_legion(), _check_searxng()
+    )
+    checks["local_llm"] = llm_res
     checks["ollama"] = "retired"
-
-    # Check Legion (non-blocking, 2s timeout)
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=2) as client:
-            resp = await client.get(f"{settings.legion_api_url}/health")
-            checks["legion"] = "ok" if resp.status_code == 200 else "degraded"
-    except Exception:
-        checks["legion"] = "unavailable"
-
-    # Check SearXNG (non-blocking, 2s timeout â€” try both health endpoints)
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=2) as client:
-            # Try /healthz first, fall back to /status
-            for path in ["/healthz", "/status"]:
-                try:
-                    resp = await client.get(f"{settings.searxng_url}{path}")
-                    if resp.status_code == 200:
-                        checks["searxng"] = "ok"
-                        break
-                except Exception:
-                    continue
-            else:
-                checks["searxng"] = "degraded"
-    except Exception:
-        checks["searxng"] = "unavailable"
+    checks["legion"] = legion_res
+    checks["searxng"] = searxng_res
 
     status_code = 200 if is_ready else 503
     return JSONResponse(

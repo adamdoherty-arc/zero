@@ -167,7 +167,12 @@ class CouncilService:
         if sum(position_counts.values()) == 0:
             final_decision = "needs_revision"
         else:
-            final_decision = max(position_counts, key=position_counts.get)
+            _max_count = max(position_counts.values())
+            _leaders = [p for p, c in position_counts.items() if c == _max_count]
+            # A tie (e.g. 2 approve / 2 reject) must NOT silently auto-approve
+            # via dict-insertion order (max() returns the first key). A
+            # deadlocked council needs human revision, not an auto-pass.
+            final_decision = _leaders[0] if len(_leaders) == 1 else "needs_revision"
         avg_confidence = total_confidence / max(len(round2), 1)
 
         # Save

@@ -164,6 +164,7 @@ class AudioCapture:
         self._current_file: Path | None = None
         self._mixer_thread: threading.Thread | None = None
         self._system_stream = None
+        self._system_pa = None  # PyAudio instance backing the system stream
         self._mic_stream = None
         self._total_samples = 0
         self._device_sample_rate: int | None = None
@@ -210,6 +211,30 @@ class AudioCapture:
             self._start_system_capture()
         if source in ("mic", "mixed"):
             self._start_mic_capture()
+        # Fail loudly instead of silently producing an empty WAV. If NO capture
+        # stream opened for the requested source (device busy/missing and
+        # _start_*_capture swallowed the error), tear down and raise so the
+        # caller surfaces it (mirrors host_agent's mic_capture_failed contract)
+        # rather than "succeeding" with a zero-audio recording. In "mixed" mode a
+        # single working stream is enough — we only fail when both are down.
+        if self._system_stream is None and self._mic_stream is None:
+            self._is_recording = False
+            if self._wav_writer is not None:
+                try:
+                    self._wav_writer.close()
+                except Exception:
+                    pass
+                self._wav_writer = None
+            if self._system_pa is not None:
+                try:
+                    self._system_pa.terminate()
+                except Exception:
+                    pass
+                self._system_pa = None
+            self._current_file = None
+            raise RuntimeError(
+                f"audio_capture_failed: no capture stream could be opened for source={source!r}"
+            )
         self._mixer_thread = threading.Thread(
             target=self._mixer_loop, args=(source,), daemon=True, name="audio-mixer",
         )
@@ -227,6 +252,15 @@ class AudioCapture:
             except Exception:
                 pass
             self._system_stream = None
+        # Release the PyAudio/PortAudio instance too. Closing only the stream
+        # leaks the PyAudio() object on every recording, accumulating PortAudio
+        # host handles until the device can no longer be opened.
+        if self._system_pa is not None:
+            try:
+                self._system_pa.terminate()
+            except Exception:
+                pass
+            self._system_pa = None
         if self._mic_stream is not None:
             try:
                 self._mic_stream.stop()
@@ -250,6 +284,7 @@ class AudioCapture:
         try:
             import pyaudiowpatch as pyaudio
             p = pyaudio.PyAudio()
+            self._system_pa = p  # keep a ref so stop() can terminate() it
             if self.system_device_index is not None:
                 chosen = p.get_device_info_by_index(self.system_device_index)
             else:

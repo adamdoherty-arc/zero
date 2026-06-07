@@ -124,7 +124,16 @@ class MemoryFacade:
                 results = await asyncio.to_thread(
                     mem0.search, query=query, user_id=user_id, limit=k
                 )
-                for r in (results or {}).get("results", results or []):
+                # mem0.search returns {"results": [...]} on newer versions but a
+                # bare list on older ones. `(results or {}).get(...)` would call
+                # .get on that list -> AttributeError, swallowed below -> mem0
+                # silently contributes 0 notes. Normalize both shapes first.
+                res = (
+                    results.get("results", [])
+                    if isinstance(results, dict)
+                    else (results or [])
+                )
+                for r in res:
                     text = (r or {}).get("memory") or (r or {}).get("text") or ""
                     if not text:
                         continue

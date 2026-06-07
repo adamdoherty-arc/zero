@@ -159,12 +159,11 @@ class KnowledgeService:
     async def create_note(self, note_data: NoteCreate) -> Note:
         """Create a new note."""
         async with get_session() as session:
-            # Generate new note ID by counting existing notes + 1
-            count_result = await session.execute(
-                select(sa_func.count()).select_from(NoteModel)
-            )
-            next_id = count_result.scalar_one() + 1
-            note_id = f"note-{next_id}"
+            # Unique note ID. A count()+1 scheme races under concurrent creates
+            # (two callers read the same count -> duplicate "note-N" primary key
+            # -> IntegrityError/overwrite) and also collides after any delete.
+            # Use a uuid suffix, matching learn_fact's "fact-<uuid>" scheme.
+            note_id = f"note-{uuid.uuid4().hex[:12]}"
 
             now = datetime.utcnow()
 

@@ -1517,6 +1517,35 @@ class LocalRealtimeHandler:
             had_answer=bool(answer),
         )
 
+    def _trim_history(self, max_msgs: int = 40) -> None:
+        """Bound conversation history so it can't grow without limit over a long
+        session (each LLM turn re-sends the whole list). Keep the leading system
+        message(s) + the most recent window, snapping the window start to a safe
+        boundary so a 'tool' message is never orphaned from its assistant
+        tool_calls (the chat-completions API rejects an orphaned tool message)."""
+        msgs = self._messages
+        if len(msgs) <= max_msgs:
+            return
+        lead = 0
+        while lead < len(msgs) and msgs[lead].get("role") == "system":
+            lead += 1
+        start = max(lead, len(msgs) - max_msgs)
+        n = len(msgs)
+        # Don't begin the retained tail on a 'tool' message, nor right on an
+        # assistant message that issued tool_calls (its tool replies follow).
+        while start < n:
+            role = msgs[start].get("role")
+            if role == "tool" or (role == "assistant" and msgs[start].get("tool_calls")):
+                start += 1
+                continue
+            break
+        if start >= n or start <= lead:
+            return
+        self._messages = msgs[:lead] + msgs[start:]
+        logger.debug(
+            "reachy_history_trimmed", kept=len(self._messages), dropped=start - lead
+        )
+
     async def _maybe_summarize(self) -> None:
         """Trigger tier-3 summary every SUMMARY_TURN_INTERVAL turns. Cheap
         no-op until the threshold is crossed."""
@@ -1540,6 +1569,11 @@ class LocalRealtimeHandler:
                 self.profile_id,
                 [m for m in self._messages if m.get("role") in ("user", "assistant")],
             )
+            # The tier-3 summary now captures the older turns, so bound the live
+            # history here. self._messages is otherwise append-only and re-sent
+            # in full on every LLM turn -> unbounded latency/cost/context growth
+            # over a long continuous session.
+            self._trim_history()
         except Exception as e:
             logger.debug("reachy_summarize_skipped", error=str(e))
 
@@ -1909,6 +1943,13 @@ class LocalRealtimeHandler:
                                     call_id=slot["id"],
                                 )
         except httpx.HTTPError as e:
+            # Cancel any eager motion tasks already fired mid-stream. Returning
+            # the 2-tuple error signal makes the caller discard eager_tasks, so
+            # without this they'd be orphaned: unawaited ("Task exception was
+            # never retrieved") and firing robot motion on a turn that failed.
+            for _t in eager_tasks.values():
+                if not _t.done():
+                    _t.cancel()
             await self._emit({"type": "error", "message": f"Local backend stream failed: {e}"})
             return text_acc, []
 
