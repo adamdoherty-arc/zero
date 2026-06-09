@@ -172,7 +172,13 @@ class VaultIndexerService:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._root = Path(self._settings.vault_path)
-        self._embed_dim = 1024  # pgvector column dim; Matryoshka-truncate to 512 for journal below
+        # Fix-109: match the shared embedder's actual output dim
+        # (settings.embedding_dimension, default 768) and the vault_chunks.embedding
+        # Vector(768) column. Was hardcoded 1024 (Qwen3 full-dim), but the embedder
+        # truncates to 768 and the column was migrated to Vector(768) — so the 1024
+        # guard rejected EVERY 768-dim vector, storing NULL and silently degrading
+        # dense retrieval to BM25-only (324/1267 chunks already NULL).
+        self._embed_dim = self._settings.embedding_dimension
 
     def available(self) -> bool:
         return self._root.is_dir()
@@ -309,19 +315,19 @@ class VaultIndexerService:
             # file with no headings; treat as one chunk
             all_chunks = [_Chunk(idx=0, heading_path="", content=body.strip(), token_count=len(body) // 4)]
 
-        # Wipe prior chunks for this path (simpler + correct vs per-chunk upsert).
-        async with get_session() as session:
-            await session.execute(delete(VaultChunkModel).where(VaultChunkModel.path == rel))
-            await session.commit()
-
-        written = 0
+        # Fix-109: embed ALL chunks first (no session held across the embedder
+        # await — see 60-database.md), then write delete+insert in ONE transaction
+        # so a file is either fully reindexed or left untouched. The old per-chunk
+        # commit left a half-indexed file on a mid-loop process death, and the
+        # reindex-skip (any chunk row's hash) then treated it as complete forever.
+        rows: list[VaultChunkModel] = []
         for chunk in all_chunks:
             embedding = await self._embed(chunk.content)
             chunk_hash = _sha256_bytes(chunk.content.encode("utf-8"))
             # content_hash per chunk stores file_hash[:16] + chunk_hash[:16] so
             # reindex-skip in reindex() can check any chunk row for the file hash.
             content_hash = file_hash[:16] + chunk_hash[:16]
-            row = VaultChunkModel(
+            rows.append(VaultChunkModel(
                 id=uuid.uuid4().hex[:16] + str(chunk.idx).zfill(4),
                 path=rel,
                 partition=partition,
@@ -334,12 +340,13 @@ class VaultIndexerService:
                 frontmatter=fm if fm else None,
                 embedding=embedding,
                 file_mtime=mtime,
-            )
-            async with get_session() as session:
-                session.add(row)
-                await session.commit()
-            written += 1
-        return written
+            ))
+
+        async with get_session() as session:
+            await session.execute(delete(VaultChunkModel).where(VaultChunkModel.path == rel))
+            session.add_all(rows)
+            await session.commit()
+        return len(rows)
 
 
 _singleton: Optional[VaultIndexerService] = None

@@ -62,6 +62,11 @@ class AttentionMiddleware:
         end = self._settings.dnd_end_hour
         h = now.hour
         # DND spans midnight if start > end (e.g. 22 -> 7).
+        if start == end:
+            # Fix-109: zero-width window (e.g. 0/0) = "no DND". Without this guard
+            # the fall-through `h >= start or h < end` is True for every hour,
+            # pinning DND permanently ON and silently queuing every alert.
+            return False
         if start < end:
             return start <= h < end
         return h >= start or h < end

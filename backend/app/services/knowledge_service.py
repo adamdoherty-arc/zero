@@ -63,9 +63,11 @@ class KnowledgeService:
                     {"vec": str(query_embedding), "lim": limit},
                 )
                 rows = result.fetchall()
+                # Fix-109: include learned_at (already SELECTed at r[5]); the old
+                # dict dropped it, so callers couldn't surface fact recency.
                 return [
                     {"id": r[0], "fact": r[1], "category": r[2],
-                     "confidence": r[3], "source": r[4]}
+                     "confidence": r[3], "source": r[4], "learned_at": r[5]}
                     for r in rows
                 ]
             else:

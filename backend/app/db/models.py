@@ -2708,7 +2708,13 @@ class VaultChunkModel(Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0)
     tags: Mapped[list] = mapped_column(ARRAY(Text), default=list)
     frontmatter: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    embedding = mapped_column(Vector(1024), nullable=True)
+    # Fix-109: 1024 -> 768. The shared text embedder produces
+    # settings.embedding_dimension (768) and every sibling text-embedding table
+    # (notes, user_facts, episodic_memories, ...) is Vector(768). vault_chunks was
+    # a stale 1024 outlier, so every 768-dim embed was rejected by the dim guard
+    # and stored NULL -> dense vault retrieval silently degraded to BM25-only.
+    # See migration 055.
+    embedding = mapped_column(Vector(768), nullable=True)
     file_mtime: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

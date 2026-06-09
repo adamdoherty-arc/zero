@@ -51,6 +51,10 @@ logger = structlog.get_logger()
 
 POOL_PATH = Path("workspace") / "email" / "draft_pool.json"
 MAX_DRAFTS = 500
+# Fix-109: a draft claimed into "sending" but never finalized (process died
+# mid-_send) is re-claimable after this many seconds so approve() can retry it
+# instead of leaving it permanently un-sendable.
+_SENDING_STALE_S = 120.0
 
 
 def _now() -> float:
@@ -217,7 +221,22 @@ class EmailDraftPool:
             cur = target.get("status")
             # Only pending/approved/failed are (re)sendable. Anything already
             # sending/sent is a concurrent or completed approve — return as-is.
-            if cur not in ("pending", "approved", "failed"):
+            # Exception (Fix-109): a draft stuck in "sending" because the process
+            # died between the claim below and the finalize block would otherwise
+            # be un-retryable forever. Treat a "sending" claim older than
+            # _SENDING_STALE_S as a crashed send and allow re-claim so the user
+            # can retry rather than only reject + recreate.
+            stale_sending = (
+                cur == "sending"
+                and (_now() - float(target.get("updated_at") or 0)) > _SENDING_STALE_S
+            )
+            if stale_sending:
+                logger.warning(
+                    "draft_sending_stale_reclaim",
+                    draft_id=draft_id,
+                    age_s=round(_now() - float(target.get("updated_at") or 0), 1),
+                )
+            elif cur not in ("pending", "approved", "failed"):
                 return Draft(**{**target, "meta": target.get("meta") or {}})
             # Claim it so a racing approve can't also reach _send.
             target["status"] = "sending"
