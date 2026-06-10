@@ -214,10 +214,19 @@ class CouncilService:
             row = await session.get(CouncilDecisionModel, decision_id)
             return _orm_to_decision(row) if row else None
 
-    async def list_decisions(self, status: Optional[str] = None, limit: int = 20) -> List[CouncilDecision]:
+    async def list_decisions(
+        self, status: Optional[str] = None, pending_only: bool = False, limit: int = 20
+    ) -> List[CouncilDecision]:
         async with get_session() as session:
             q = select(CouncilDecisionModel).order_by(CouncilDecisionModel.created_at.desc()).limit(limit)
-            if status:
+            if pending_only:
+                # A freshly proposed decision keeps `decision=None` until
+                # conduct_vote() records an outcome (approve/reject/needs_revision).
+                # The old caller passed status="proposed", which filtered the
+                # `decision` column — a value it NEVER holds — so the voice/chat
+                # "council vote" path matched nothing and was permanently dead.
+                q = q.where(CouncilDecisionModel.decision.is_(None))
+            elif status:
                 q = q.where(CouncilDecisionModel.decision == status)
             result = await session.execute(q)
             return [_orm_to_decision(r) for r in result.scalars().all()]

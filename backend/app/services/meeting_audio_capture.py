@@ -315,6 +315,15 @@ class AudioCapture:
             logger.warning("pyaudiowpatch_not_available")
         except Exception as e:
             logger.error("system_audio_failed", error=str(e))
+            # Same as the mic path: a stream opened by p.open() but failed at
+            # start_stream() leaves self._system_stream non-None and defeats the
+            # empty-WAV guard. Close + null so start() can fail loudly.
+            if self._system_stream is not None:
+                try:
+                    self._system_stream.close()
+                except Exception:
+                    pass
+                self._system_stream = None
 
     def _start_mic_capture(self) -> None:
         try:
@@ -353,6 +362,16 @@ class AudioCapture:
                 error=str(e),
                 requested_device_index=self.mic_device_index,
             )
+            # Close + null the partially-opened stream. If InputStream() succeeded
+            # but .start() raised, self._mic_stream is non-None — which defeats the
+            # empty-WAV guard in start() (it sees a non-None handle and "succeeds"
+            # with a leaked, never-started PortAudio stream instead of failing loud).
+            if self._mic_stream is not None:
+                try:
+                    self._mic_stream.close()
+                except Exception:
+                    pass
+                self._mic_stream = None
 
     def _system_callback(self, in_data, frame_count, time_info, status):
         if not self._is_recording:

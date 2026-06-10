@@ -373,6 +373,21 @@ class VoiceLoopService:
                     clean, actions = parse_and_strip(response_text)
                     self._spawn_bg(self._dispatch_gestures(actions))
                     result["audio_response"] = await self._safe_synthesize(clean, phase_log)
+                    # A vision answer must also play out of Reachy (+ set
+                    # played_on_robot) like every other turn. The early return
+                    # here otherwise skips the Step-4 robot-playback block, so the
+                    # reply was audible in the browser but the robot stayed silent.
+                    try:
+                        if await self._reachy_service.is_connected():
+                            result["played_on_robot"] = False
+                            if result.get("audio_response"):
+                                _pr = await self._reachy_service.play_audio_bytes(
+                                    result["audio_response"], label="vision_turn"
+                                )
+                                if not _pr.get("error"):
+                                    result["played_on_robot"] = True
+                    except Exception as _e:
+                        logger.debug("vision_robot_skipped", error=str(_e))
                     return result
             except Exception as e:
                 logger.debug("vision_intercept_skipped", error=str(e))

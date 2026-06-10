@@ -1301,7 +1301,7 @@ async def council_node(state: OrchestratorState) -> dict:
             decision = await svc.propose(CouncilProposal(topic=topic))
             text = f"Council decision proposed: **{decision.topic}**\nID: {decision.id}\nRun vote with: council vote {decision.id}"
         elif any(kw in msg_lower for kw in ["vote", "run vote"]):
-            decisions = await svc.list_decisions(status="proposed", limit=1)
+            decisions = await svc.list_decisions(pending_only=True, limit=1)
             if decisions:
                 result = await svc.conduct_vote(decisions[0].id)
                 text = (f"Council voted on: **{result.topic}**\n"
