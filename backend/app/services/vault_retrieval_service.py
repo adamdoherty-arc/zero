@@ -3,7 +3,7 @@
 Each query:
   1. Embed the query via the shared LiteLLM embedder.
   2. BM25 over the tsvector column (Postgres `plainto_tsquery + ts_rank_cd`).
-  3. Dense cosine over the HNSW-indexed `embedding vector(1024)` column.
+  3. Dense cosine over the HNSW-indexed `embedding vector(768)` column.
   4. Reciprocal Rank Fusion: combine both rankings (k=60). Journal partition gets
      an additional time-decay multiplier (0.5 ** (age_days / 30)) per SecondBrain §4.
   5. Optional partition filter so 'what did I do Monday' queries don't retrieve
@@ -51,6 +51,111 @@ async def _embed_query(text_: str) -> Optional[list[float]]:
     except Exception as e:  # noqa: BLE001
         logger.warning("vault_query_embed_failed", error=str(e))
         return None
+
+
+# --- Search-infra invariant (Fix-110) --------------------------------------
+#
+# Migration 056 added the BM25 ``content_tsv`` generated column + GIN index and
+# the HNSW embedding index to ``vault_chunks``. But SQLAlchemy ``create_all``
+# (dev bring-ups, fresh envs, some tests) recreates the table from the ORM
+# model — which has NONE of these add-ons — while ``alembic_version`` stays at
+# 056 so the migration never re-runs. Result (the Fix-109 outage): ``content_tsv``
+# silently vanishes and EVERY vault search 500s on ``UndefinedColumn`` (the BM25
+# side runs first), undetected until a query fails at runtime.
+#
+# ``ensure_vault_search_infra()`` re-asserts the same idempotent DDL on EVERY
+# startup, healing the drift regardless of alembic state, and reports whether a
+# repair was actually needed so real drift is logged LOUDLY (not silently
+# fixed). Scope is the ONE actively-queried search table: dormant migration-only
+# objects (atomic_facts.content_tsv on the deprecated carousel_v2 path; empty
+# voiceprints/faceprints HNSW indexes) are intentionally excluded — re-adding
+# them would be churn on paths no live query touches.
+
+_SEARCH_INFRA_REPAIR_SQL: tuple[str, ...] = (
+    "CREATE EXTENSION IF NOT EXISTS vector",
+    # content_tsv: GENERATED ALWAYS … STORED auto-backfills from `content`.
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'vault_chunks' AND column_name = 'content_tsv'
+        ) THEN
+            ALTER TABLE vault_chunks
+            ADD COLUMN content_tsv tsvector
+            GENERATED ALWAYS AS (to_tsvector('english', coalesce(content, ''))) STORED;
+        END IF;
+    END $$;
+    """,
+    "CREATE INDEX IF NOT EXISTS ix_vault_chunks_content_tsv "
+    "ON vault_chunks USING gin (content_tsv)",
+    "CREATE INDEX IF NOT EXISTS ix_vault_chunks_embedding_hnsw "
+    "ON vault_chunks USING hnsw (embedding vector_cosine_ops) "
+    "WITH (m = 16, ef_construction = 128)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_chunks_path_idx "
+    "ON vault_chunks (path, chunk_idx)",
+)
+
+_SEARCH_INFRA_DETECT_SQL = text(
+    """
+    SELECT
+      (SELECT count(*) FROM information_schema.columns
+         WHERE table_name='vault_chunks' AND column_name='content_tsv') AS has_tsv,
+      (SELECT count(*) FROM pg_indexes
+         WHERE tablename='vault_chunks' AND indexname='ix_vault_chunks_content_tsv') AS has_gin,
+      (SELECT count(*) FROM pg_indexes
+         WHERE tablename='vault_chunks' AND indexname='ix_vault_chunks_embedding_hnsw') AS has_hnsw
+    """
+)
+
+
+async def search_infra_status() -> dict[str, Any]:
+    """Detect-only check of the actively-queried vault search objects.
+
+    Cheap (information_schema / pg_indexes lookups, no mutation). Used by
+    /health/ready to surface create_all drift WITHOUT requiring a restart.
+    ``status`` is ``critical`` when content_tsv is absent (BM25 hard-500s),
+    ``degraded`` when only an index is missing (perf), else ``ok``.
+    """
+    async with get_session() as session:
+        row = (await session.execute(_SEARCH_INFRA_DETECT_SQL)).mappings().first()
+    has_tsv = bool(row and row["has_tsv"])
+    missing: list[str] = []
+    if not has_tsv:
+        missing.append("vault_chunks.content_tsv")
+    if not (row and row["has_gin"]):
+        missing.append("ix_vault_chunks_content_tsv")
+    if not (row and row["has_hnsw"]):
+        missing.append("ix_vault_chunks_embedding_hnsw")
+    status = "ok" if not missing else ("critical" if not has_tsv else "degraded")
+    return {"status": status, "missing": missing, "content_tsv": has_tsv}
+
+
+async def ensure_vault_search_infra() -> dict[str, Any]:
+    """Idempotently (re-)assert vault_chunks BM25/HNSW search objects at startup.
+
+    Heals the Fix-109 silent-500 class regardless of ``alembic_version``. Logs
+    LOUDLY when a repair was actually needed (real drift), quietly otherwise.
+    Returns ``{"healed": bool, "missing_before": [...]}``.
+    """
+    before = await search_infra_status()
+    async with get_session() as session:
+        for stmt in _SEARCH_INFRA_REPAIR_SQL:
+            await session.execute(text(stmt))
+        await session.commit()
+    missing_before = before["missing"]
+    if "vault_chunks.content_tsv" in missing_before:
+        logger.error(
+            "vault_search_infra.CRITICAL_drift_healed",
+            missing=missing_before,
+            impact="content_tsv was absent -> BM25 vault search would 500 on UndefinedColumn",
+            root_cause="ORM create_all recreated vault_chunks without migration-only objects (alembic stayed at 056)",
+        )
+    elif missing_before:
+        logger.warning("vault_search_infra.drift_healed", missing=missing_before)
+    else:
+        logger.info("vault_search_infra.verified")
+    return {"healed": bool(missing_before), "missing_before": missing_before}
 
 
 class VaultRetrievalService:

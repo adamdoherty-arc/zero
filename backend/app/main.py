@@ -150,6 +150,22 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to verify personal work-item indexes", error=str(e))
 
+        # Fix-110: re-assert vault search-infra (content_tsv + GIN/HNSW) every
+        # startup so the Fix-109 silent-500 class (ORM create_all drops
+        # migration-only objects while alembic stays ahead) can never recur.
+        try:
+            from app.services.vault_retrieval_service import ensure_vault_search_infra
+            _vsi = await ensure_vault_search_infra()
+            if _vsi.get("healed"):
+                logger.warning(
+                    "vault_search_infra_healed_at_startup",
+                    missing=_vsi.get("missing_before"),
+                )
+            else:
+                logger.info("Vault search-infra verified")
+        except Exception as e:
+            logger.warning("Failed to verify vault search-infra", error=str(e))
+
         # Seed knowledge categories and research rules
         try:
             from app.services.knowledge_service import get_knowledge_service
@@ -1018,13 +1034,23 @@ async def health_ready():
         except Exception:
             return "unavailable"
 
-    llm_res, legion_res, searxng_res = await asyncio.gather(
-        _check_local_llm(), _check_legion(), _check_searxng()
+    async def _check_search_infra() -> str:
+        # Fix-110: surface vault search-infra drift (content_tsv dropped by
+        # create_all) without a restart. "critical" => BM25 vault search 500s.
+        try:
+            from app.services.vault_retrieval_service import search_infra_status
+            return (await search_infra_status())["status"]  # ok|degraded|critical
+        except Exception:
+            return "unavailable"
+
+    llm_res, legion_res, searxng_res, search_infra_res = await asyncio.gather(
+        _check_local_llm(), _check_legion(), _check_searxng(), _check_search_infra()
     )
     checks["local_llm"] = llm_res
     checks["ollama"] = "retired"
     checks["legion"] = legion_res
     checks["searxng"] = searxng_res
+    checks["search_infra"] = search_infra_res
 
     status_code = 200 if is_ready else 503
     return JSONResponse(
