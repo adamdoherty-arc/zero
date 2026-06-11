@@ -9,9 +9,11 @@ from __future__ import annotations
 
 # ---- Local LLM (chat) ----------------------------------------------------
 # Served by shared-infra/vllm-chat. Bifrost vllm-local provider routes to
-# http://vllm-chat:8000 — model must match what vLLM is actually serving.
-# Running model (2026-05-25 verified): Qwen3-32B-AWQ.
-LOCAL_CHAT = "vllm-local/Qwen3-32B-AWQ"
+# http://vllm-chat:8000. qwen3-chat is the STABLE gateway alias — Bifrost maps
+# it (and the legacy "Qwen3-32B-AWQ" name) to whatever vllm-chat currently
+# serves (Qwen3.5-35B-A3B GPTQ, 64K ctx, tools, since 2026-06-11), so local
+# model swaps never require a Zero code change again.
+LOCAL_CHAT = "vllm-local/qwen3-chat"
 
 # ---- Local embeddings -----------------------------------------------------
 LOCAL_EMBED = "embed-local/Qwen/Qwen3-Embedding-0.6B"
@@ -23,7 +25,20 @@ WHISPER_STT = "distil-large-v3"
 
 # ---- Kimi (cloud LLM) ----------------------------------------------------
 # Kimi K2.5/K2.6 require temperature=1 EXACTLY; bifrost_provider clamps it.
+# 2026-06-11: the paid Moonshot account was retired — Bifrost's `moonshot/`
+# provider is now a compat shim over NVIDIA NIM's FREE Kimi K2.6 serving, so
+# this string keeps working at $0. Per-project affinity: Zero's primary cloud
+# pool is Gemini Flash + Groq (see CLOUD_FAST/CLOUD_REASON below); Kimi is
+# ADA's lane — keep Zero's Kimi usage low-volume.
 KIMI_K2 = "moonshot/kimi-k2.6"
+
+# ---- Zero's cloud affinity pool (2026-06-11) ------------------------------
+# Per-project affinity so the three projects don't drain each other's free
+# rate limits: Legion→NVIDIA NIM (GLM-5.1/DeepSeek), ADA→Kimi K2.6 via NIM,
+# Zero→Gemini Flash (1,500 req/day free) + Groq gpt-oss-120b (200K tok/day).
+CLOUD_FAST = "gemini/gemini-3.5-flash"
+CLOUD_FAST_FALLBACK = "groq/openai/gpt-oss-120b"
+CLOUD_REASON = "gemini/gemini-3-flash-preview"
 
 # ---- Vision (VLM) --------------------------------------------------------
 # Primary: NVIDIA Build (free credits, 9 vision models incl Nemotron-Nano-12B-VL
