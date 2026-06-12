@@ -943,11 +943,13 @@ _PROVIDERS_STATUS_CACHE_TTL = 15.0
 # (first probe after container boot) can hit 5–7 s when 5 providers fire in
 # parallel and contend for HTTP clients / DNS. 20 s gives every reasonable
 # provider room to answer cold while still catching truly-down providers.
-# Bumped 2026-05-17: Qwen3-A3B in llama.cpp forces full-prompt re-processing
-# every turn (Gated Delta Net hybrid attention; llama.cpp PR #13194), so a
-# warm-but-not-cached probe regularly takes 6-12 s. 8 s was marking the
-# local-qwen provider permanently red.
-_PROVIDERS_STATUS_PROBE_TIMEOUT = 40.0
+# 2026-05-17 bumped to 40 s for llama.cpp Qwen3-A3B full-prompt re-processing;
+# 2026-06-12 restored to 20 s: Infra-60 moved the local lane to the vLLM
+# qwen3-chat gateway alias (no per-turn re-processing), and when the local
+# lane is saturated a >20 s probe means it is unusable for real calls anyway
+# (clients time out at 120 s) — red is the honest badge state, and 40 s was
+# pinning a uvicorn worker per uncached status poll.
+_PROVIDERS_STATUS_PROBE_TIMEOUT = 20.0
 # 1-token max so probes cost ~nothing even on paid providers. Bifrost routes
 # can spend the first few tokens on hidden reasoning, so status probes raise
 # their cap locally when probing Bifrost.

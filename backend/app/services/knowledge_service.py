@@ -375,6 +375,20 @@ class KnowledgeService:
             if profile is None:
                 session.add(UserProfileModel(id=1))
 
+            # Resolve the free-form category string to a knowledge_categories
+            # row so the category_id FK is populated (id is the slug today;
+            # the slug lookup covers any future id/slug divergence). Unknown
+            # categories keep the legacy string-only behavior (FK stays NULL).
+            cat_row = await session.get(KnowledgeCategoryModel, category)
+            if cat_row is None:
+                cat_row = (
+                    await session.execute(
+                        select(KnowledgeCategoryModel).where(
+                            KnowledgeCategoryModel.slug == category
+                        )
+                    )
+                ).scalar_one_or_none()
+
             # Generate embedding for semantic search
             embedding = await self._generate_embedding(fact)
 
@@ -382,6 +396,7 @@ class KnowledgeService:
                 id=fact_id,
                 fact=fact,
                 category=category,
+                category_id=cat_row.id if cat_row is not None else None,
                 confidence=1.0,
                 source=source,
                 embedding=embedding,

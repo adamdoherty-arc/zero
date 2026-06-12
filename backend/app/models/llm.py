@@ -83,186 +83,192 @@ class LlmRouterConfig(BaseModel):
 
     Models use 'provider/model' format. Plain model names default to ollama.
     """
-    default_model: str = "vllm/qwen3-chat"
+    default_model: str = "bifrost/vllm-local/qwen3-chat"
+    # These defaults mirror the Infra-60 (2026-06-11) runtime router_config.json:
+    # local vLLM via the Bifrost qwen3-chat gateway alias as primary, Zero's
+    # cloud affinity pool (Gemini Flash + Groq) as fallback. An empty fallbacks
+    # list inherits LLMRouter._DEFAULT_FALLBACKS (Gemini Flash) at resolution
+    # time. Kimi/MiniMax chains were removed — Kimi is ADA's lane and MiniMax
+    # rejects Bifrost-routed calls (400).
     task_assignments: Dict[str, ModelAssignment] = Field(default_factory=lambda: {
-        # -- Tier 1: Free (Ollama) --
+        # -- Tier 1: Local (vLLM via Bifrost gateway) --
         "coding": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["kimi/kimi-k2.6", "minimax/MiniMax-M2.7"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.2,
             num_predict=4096,
         ),
         "workflow": ModelAssignment(
-            model="vllm/qwen3-chat",
+            model="bifrost/vllm-local/qwen3-chat",
             temperature=0.7,
             num_predict=4096,
         ),
         # -- Tier 2: Local-first utility tasks with cloud fallback --
         "analysis": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.1,
             num_predict=2048,
         ),
         "chat": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.7,
             num_predict=2048,
         ),
         "classification": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.0,
             num_predict=200,
         ),
         "summarization": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.1,
             num_predict=1024,
         ),
         "prompt_grading": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.2,
             num_predict=1024,
         ),
-        # -- Tier 3: Planning & complex reasoning (Kimi K2.6 $0.95/$4.00, MiniMax M2.7 fallback) --
+        # -- Tier 3: Planning & complex reasoning (Gemini Flash primary, local + Groq fallback) --
         "research": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=2048,
         ),
         "planning": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=4096,
         ),
         "complexity_complex": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=4096,
         ),
         "prompt_grading_heavy": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.6,
             num_predict=2048,
         ),
-        # -- Tier 3b: Structured output (MiniMax M2.7 primary — cheaper than K2.6 for non-planning cloud work) --
+        # -- Tier 3b: Structured output (local primary, Groq fallback) --
         "structured_output": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2.6", "vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.1,
             num_predict=4096,
         ),
         "extraction": ModelAssignment(
-            model="minimax/MiniMax-M2.7",
-            fallbacks=["kimi/kimi-k2.6", "vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.2,
             num_predict=4096,
         ),
         # -- Character content pipeline --
         "character_content_review_final": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat", "minimax/MiniMax-M2.7"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=2048,
         ),
         "character_content_review_escalated": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["minimax/MiniMax-M2.7", "kimi/kimi-k2.6"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=2048,
         ),
         "character_hook_regen": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.7,
             num_predict=512,
         ),
         "character_research": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=4096,
         ),
         # -- Planner complexity tiers --
         "complexity_simple": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=2048,
         ),
         "complexity_moderate": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=2048,
         ),
         # -- Council of Agents (provider diversity per role) --
         "council_ceo": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=2048,
         ),
         "council_researcher": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=2048,
         ),
         "council_analyst": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=2048,
         ),
         "council_validator": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=2048,
         ),
-        # -- AI Company agents (K2.6 plans, vLLM executes) --
+        # -- AI Company agents (Gemini plans, local vLLM executes) --
         "agent_ceo": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_researcher_plan": ModelAssignment(
-            model="kimi/kimi-k2.6",
-            fallbacks=["minimax/MiniMax-M2.7", "vllm/qwen3-chat"],
+            model="bifrost/gemini/gemini-3-flash-preview",
+            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_researcher_execute": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_analyst": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=4096,
         ),
         "agent_engineer": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.2,
             num_predict=4096,
         ),
         "agent_validator": ModelAssignment(
-            model="vllm/qwen3-chat",
-            fallbacks=["vllm/qwen3-chat"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=[],
             temperature=0.3,
             num_predict=4096,
         ),

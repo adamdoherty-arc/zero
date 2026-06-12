@@ -30,7 +30,7 @@ Zero now routes via the **Bifrost client at `shared-bifrost:4445`** for cross-pr
 
 ## Local realtime (vLLM)
 
-- Default chat model: `qwen3-chat` served by vLLM on `:18801` (serves `Qwen3-32B-AWQ`).
+- Default chat model: `qwen3-chat` served by vLLM on `:18801`. `qwen3-chat` is the **stable gateway alias** — Bifrost maps it (and the legacy `Qwen3-32B-AWQ` name) to whatever vllm-chat currently serves (Qwen3.5-35B-A3B since 2026-06-11), so local model swaps don't require Zero code changes.
 - Default coder model: `qwen3-coder`.
 - Probe: `curl http://localhost:18801/v1/models`.
 
@@ -45,7 +45,7 @@ The vLLM provider was refactored to centralize realtime LLM routing config. Key 
 ## Provider quirks
 
 - **Kimi K2.5/K2.6 require `temperature=1` EXACTLY.** `kimi_provider.py` clamps this for any `kimi-k2*` model. Don't pass other temps.
-- **LLMStatusBadge** in the TopBar reflects `GET /api/reachy-intent/providers/status` (1-token probes, 15s cache, 5s per-provider timeout). Green/amber/red dot tells the user which brain is active.
+- **LLMStatusBadge** in the TopBar reflects `GET /api/reachy-intent/providers/status` (1-token probes, 15s cache, 20s per-provider timeout). Green/amber/red dot tells the user which brain is active.
 
 ## Whisper default
 
