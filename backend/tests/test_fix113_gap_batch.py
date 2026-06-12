@@ -78,6 +78,60 @@ async def test_auto_expire_writes_canonical_status(monkeypatch):
         assert row.decision_by == "auto_expire"
 
 
+@pytest.mark.asyncio
+async def test_content_outcomes_dedup_at_sink(monkeypatch):
+    """A record whose action_id already has a content_published brain outcome
+    must be skipped (idempotency across the 3 overlapping schedulers) — and
+    the dedup must NOT touch content_agent_service's feedback_processed flag."""
+    from app.services import content_learning_engine as cle
+    import app.services.outcome_learning_service as ols
+    import app.services.episodic_memory_service as ems
+
+    rec_done = MagicMock()
+    rec_done.id = "cp-already"
+    rec_done.engagement_rate = 0.05
+    rec_new = MagicMock()
+    rec_new.id = "cp-fresh"
+    rec_new.engagement_rate = 0.02
+    rec_new.content_type = "carousel"
+
+    calls = {"n": 0}
+
+    class _FakeSession:
+        async def execute(self, _stmt):
+            calls["n"] += 1
+            result = MagicMock()
+            if calls["n"] == 1:
+                result.scalars.return_value.all.return_value = [rec_done, rec_new]
+            else:
+                result.all.return_value = [("cp-already",)]
+            return result
+
+    class _Ctx:
+        async def __aenter__(self):
+            return _FakeSession()
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(cle, "get_session", lambda: _Ctx())
+
+    outcome_svc = MagicMock()
+    outcome_svc.record_outcome = AsyncMock(return_value="bo-test")
+    memory_svc = MagicMock()
+    memory_svc.store_direct = AsyncMock()
+    monkeypatch.setattr(ols, "get_outcome_learning_service", lambda: outcome_svc)
+    monkeypatch.setattr(ems, "get_episodic_memory_service", lambda: memory_svc)
+
+    result = await cle.ContentLearningEngine().process_content_outcomes()
+
+    assert result == {"processed": 1}
+    assert outcome_svc.record_outcome.await_count == 1
+    assert outcome_svc.record_outcome.await_args.kwargs["action_id"] == "cp-fresh"
+    # No third execute (the old fix issued an UPDATE on feedback_processed)
+    assert calls["n"] == 2
+
+
 def test_expire_sweep_wired_into_scheduler():
     """The hourly approvals_expire_stale job must sweep BOTH queues."""
     import inspect

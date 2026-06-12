@@ -17,7 +17,7 @@ from sqlalchemy import select, update, func as sql_func
 from app.infrastructure.database import get_session
 from app.db.models import (
     ContentPerformanceModel, ContentExperimentModel,
-    ContentTopicModel, TikTokProductModel,
+    ContentTopicModel, TikTokProductModel, BrainOutcomeRecordModel,
 )
 from app.models.brain import ContentExperiment
 
@@ -46,22 +46,34 @@ class ContentLearningEngine:
             async with get_session() as session:
                 query = (
                     select(ContentPerformanceModel)
-                    .where(
-                        ContentPerformanceModel.synced_at >= since,
-                        # Idempotency: three schedulers (hourly + 2x 4-hourly)
-                        # overlap this 2h window — without the flag each record
-                        # was re-recorded as a fresh brain outcome 2-4 times,
-                        # inflating every strategy win-rate.
-                        ContentPerformanceModel.feedback_processed.is_(False),
-                    )
+                    .where(ContentPerformanceModel.synced_at >= since)
                     .order_by(ContentPerformanceModel.synced_at.desc())
                     .limit(50)
                 )
                 result = await session.execute(query)
                 records = result.scalars().all()
 
+                # Idempotency: three schedulers (hourly + 2x 4-hourly) overlap
+                # this 2h window — without dedup each record was re-recorded as
+                # a fresh brain outcome 2-4 times, inflating every strategy
+                # win-rate. Dedup at the sink (existing brain outcome rows) —
+                # NOT via ContentPerformanceModel.feedback_processed, which is
+                # content_agent_service's claim-flag for metric re-sync + the
+                # daily rule-improvement cycle.
+                if records:
+                    seen_rows = await session.execute(
+                        select(BrainOutcomeRecordModel.action_id).where(
+                            BrainOutcomeRecordModel.domain == "content",
+                            BrainOutcomeRecordModel.action_type == "content_published",
+                            BrainOutcomeRecordModel.action_id.in_(
+                                [r.id for r in records]
+                            ),
+                        )
+                    )
+                    already_recorded = {row[0] for row in seen_rows.all()}
+                    records = [r for r in records if r.id not in already_recorded]
+
             processed = 0
-            processed_ids = []
             for record in records:
                 engagement = float(record.engagement_rate or 0)
                 # Map engagement to 0-100 score
@@ -81,15 +93,6 @@ class ContentLearningEngine:
                     },
                 )
                 processed += 1
-                processed_ids.append(record.id)
-
-            if processed_ids:
-                async with get_session() as session:
-                    await session.execute(
-                        update(ContentPerformanceModel)
-                        .where(ContentPerformanceModel.id.in_(processed_ids))
-                        .values(feedback_processed=True)
-                    )
 
             # Store summary as episodic memory
             if processed > 0:
