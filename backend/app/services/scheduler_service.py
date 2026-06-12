@@ -5081,7 +5081,7 @@ Have a great evening!"""
             logger.error("vault_task_sync_tick_failed", error=str(e))
 
     async def _run_approvals_expire_stale(self):
-        """Hourly: mark expired agent-approvals. Keeps the queue tight."""
+        """Hourly: mark expired approvals in BOTH queues. Keeps them tight."""
         try:
             from app.services.approval_queue_service import get_approval_queue
             n = await get_approval_queue().expire_stale()
@@ -5089,6 +5089,16 @@ Have a great evening!"""
                 logger.info("approvals_expire_stale", expired=n)
         except Exception as e:
             logger.error("approvals_expire_stale_failed", error=str(e))
+        # HITL ApprovalRequestModel queue (/api/approvals) — auto_expire_check
+        # previously had zero callers, so rows with expires_at sat pending
+        # forever and auto_action_on_expiry never fired.
+        try:
+            from app.services.approval_service import get_approval_service
+            n = await get_approval_service().auto_expire_check()
+            if n:
+                logger.info("hitl_approvals_expire_stale", expired=n)
+        except Exception as e:
+            logger.error("hitl_approvals_expire_stale_failed", error=str(e))
 
     async def _run_morning_digest_tick(self):
         """SecondBrain Phase 4: assemble + write the 7-section morning digest."""

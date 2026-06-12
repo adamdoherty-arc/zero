@@ -116,7 +116,16 @@ class ApprovalService:
             )
             rows = (await session.execute(stmt)).scalars().all()
             for row in rows:
-                row.status = row.auto_action_on_expiry or "rejected"
+                # auto_action_on_expiry holds an ACTION verb ("reject"/"approve");
+                # normalize to the canonical status taxonomy that get_stats()
+                # and list filters bucket on (rejected/approved/expired).
+                action = (row.auto_action_on_expiry or "").strip().lower()
+                row.status = {
+                    "reject": "rejected",
+                    "rejected": "rejected",
+                    "approve": "approved",
+                    "approved": "approved",
+                }.get(action, "expired")
                 row.decision_by = "auto_expire"
                 row.decision_reason = "Expired without decision"
                 row.decided_at = now

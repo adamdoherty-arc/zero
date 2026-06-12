@@ -161,7 +161,10 @@ class OutcomeLearningService:
                 for row in rows:
                     total = row.total or 1
                     wins = row.wins or 0
-                    avg = float(row.avg_score or 50)
+                    # `or` would coerce a legitimate all-zero average (uniformly
+                    # failing strategy) to the neutral 50 — only None means
+                    # "no data".
+                    avg = 50.0 if row.avg_score is None else float(row.avg_score)
                     cal_error = cal_by_key.get((row.strategy_used, row.domain), 0.0)
 
                     metrics.append(StrategyMetrics(

@@ -163,26 +163,28 @@ async def _propose_approval(provider_name: str, scene: dict) -> Optional[str]:
     lazily so a missing queue doesn't break the tick.
     """
     try:
-        from app.services.agent_approval_service import get_agent_approval_service
-    except Exception:
+        from app.services.approval_queue_service import get_approval_queue
+    except Exception as e:
+        logger.warning("ambient_vision_approval_queue_unavailable", error=str(e)[:160])
         return None
 
     caption = scene.get("caption", "")
     actionable = scene.get("actionable") or ""
     summary = f"Vision ({provider_name}): {actionable} — {caption[:120]}"
     try:
-        svc = get_agent_approval_service()
-        approval = await svc.submit(
-            kind="vision_observation",
+        approval = await get_approval_queue().request(
+            tool_name="vision_observation",
+            tier="write_local",
             summary=summary,
-            payload={
+            arguments={
                 "provider": provider_name,
                 "caption": caption,
                 "actionable": actionable,
                 "model": scene.get("model"),
             },
+            requested_by="ambient_vision",
         )
-        return getattr(approval, "id", None) or approval.get("id") if isinstance(approval, dict) else None
+        return approval.id
     except Exception as e:
-        logger.debug("ambient_vision_approval_skip", error=str(e)[:160])
+        logger.warning("ambient_vision_approval_failed", error=str(e)[:160])
         return None

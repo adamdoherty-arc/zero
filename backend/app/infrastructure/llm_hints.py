@@ -93,14 +93,16 @@ _PRESET_OVERRIDES: Dict[HintPreset, Dict[str, str]] = {
     HintPreset.DEFAULT: {},
     HintPreset.EMBEDDINGS_ONLY: {
         # Force every local-eligible hint to cloud — only embeddings stay local.
-        "reaction": "minimax/MiniMax-M2.7",
-        "classify": "minimax/MiniMax-M2.7",
-        "format": "minimax/MiniMax-M2.7",
-        "sentiment": "minimax/MiniMax-M2.7",
-        "summarize": "kimi/kimi-k2.6",
-        "medium": "kimi/kimi-k2.6",
-        "tool_lite": "minimax/MiniMax-M2.7",
-        "reflection": "kimi/kimi-k2.6",
+        # 2026-06-12: retired kimi/minimax lanes purged (Infra-60 affinity pool:
+        # Groq for micro-tasks, Gemini Flash for summarize/reasoning).
+        "reaction": "bifrost/groq/openai/gpt-oss-120b",
+        "classify": "bifrost/groq/openai/gpt-oss-120b",
+        "format": "bifrost/groq/openai/gpt-oss-120b",
+        "sentiment": "bifrost/groq/openai/gpt-oss-120b",
+        "summarize": "bifrost/gemini/gemini-3-flash-preview",
+        "medium": "bifrost/gemini/gemini-3-flash-preview",
+        "tool_lite": "bifrost/groq/openai/gpt-oss-120b",
+        "reflection": "bifrost/gemini/gemini-3-flash-preview",
     },
     HintPreset.MEMORY_REFLECTION: {
         # Memory + reflection workloads run local; others default.

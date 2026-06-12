@@ -468,6 +468,11 @@ class KnowledgeService:
                         category=f.get("category", "general"),
                         confidence=f.get("confidence", 1.0),
                         source=f.get("source", "manual"),
+                        # Preserve real recency — UserFact's default_factory
+                        # would otherwise stamp every recalled fact as learned
+                        # "now" (semantic_search supplies learned_at since
+                        # Fix-109).
+                        learned_at=f.get("learned_at") or datetime.utcnow(),
                     )
                     if isinstance(f, dict) else f
                     for f in fact_results

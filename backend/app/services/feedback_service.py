@@ -93,9 +93,19 @@ class FeedbackService:
             positive = [f for f in recent if f.rating > 0]
             negative = [f for f in recent if f.rating < 0]
 
-            # Learn response length preference
-            pos_lengths = [f.context.get("response_length", 0) for f in positive if f.context]
-            neg_lengths = [f.context.get("response_length", 0) for f in negative if f.context]
+            # Learn response length preference. Skip rows whose context lacks a
+            # numeric response_length — defaulting them to 0 dragged the
+            # averages toward "concise" on sentinel zeros, not real signal.
+            pos_lengths = [
+                f.context["response_length"]
+                for f in positive
+                if f.context and isinstance(f.context.get("response_length"), (int, float))
+            ]
+            neg_lengths = [
+                f.context["response_length"]
+                for f in negative
+                if f.context and isinstance(f.context.get("response_length"), (int, float))
+            ]
 
             if pos_lengths and neg_lengths:
                 avg_good = sum(pos_lengths) / len(pos_lengths)

@@ -46,7 +46,14 @@ class ContentLearningEngine:
             async with get_session() as session:
                 query = (
                     select(ContentPerformanceModel)
-                    .where(ContentPerformanceModel.synced_at >= since)
+                    .where(
+                        ContentPerformanceModel.synced_at >= since,
+                        # Idempotency: three schedulers (hourly + 2x 4-hourly)
+                        # overlap this 2h window — without the flag each record
+                        # was re-recorded as a fresh brain outcome 2-4 times,
+                        # inflating every strategy win-rate.
+                        ContentPerformanceModel.feedback_processed.is_(False),
+                    )
                     .order_by(ContentPerformanceModel.synced_at.desc())
                     .limit(50)
                 )
@@ -54,6 +61,7 @@ class ContentLearningEngine:
                 records = result.scalars().all()
 
             processed = 0
+            processed_ids = []
             for record in records:
                 engagement = float(record.engagement_rate or 0)
                 # Map engagement to 0-100 score
@@ -73,6 +81,15 @@ class ContentLearningEngine:
                     },
                 )
                 processed += 1
+                processed_ids.append(record.id)
+
+            if processed_ids:
+                async with get_session() as session:
+                    await session.execute(
+                        update(ContentPerformanceModel)
+                        .where(ContentPerformanceModel.id.in_(processed_ids))
+                        .values(feedback_processed=True)
+                    )
 
             # Store summary as episodic memory
             if processed > 0:
@@ -331,12 +348,31 @@ class ContentLearningEngine:
             async with get_session() as session:
                 query = (
                     select(
-                        sql_func.extract("hour", ContentPerformanceModel.synced_at).label("hour"),
+                        # Learn from when content was actually POSTED, not when
+                        # the metrics-sync cron happened to pull it (synced_at
+                        # clusters at the sync cadence and teaches the cron
+                        # schedule, not posting strategy). posted_at is nullable
+                        # so fall back to synced_at for legacy rows.
+                        sql_func.extract(
+                            "hour",
+                            sql_func.coalesce(
+                                ContentPerformanceModel.posted_at,
+                                ContentPerformanceModel.synced_at,
+                            ),
+                        ).label("hour"),
                         sql_func.count().label("count"),
                         sql_func.avg(ContentPerformanceModel.engagement_rate).label("avg_eng"),
                     )
                     .where(ContentPerformanceModel.synced_at >= since)
-                    .group_by(sql_func.extract("hour", ContentPerformanceModel.synced_at))
+                    .group_by(
+                        sql_func.extract(
+                            "hour",
+                            sql_func.coalesce(
+                                ContentPerformanceModel.posted_at,
+                                ContentPerformanceModel.synced_at,
+                            ),
+                        )
+                    )
                     .order_by(sql_func.avg(ContentPerformanceModel.engagement_rate).desc())
                 )
                 result = await session.execute(query)
