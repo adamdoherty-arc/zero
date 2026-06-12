@@ -13,6 +13,7 @@ from functools import lru_cache
 
 import structlog
 from sqlalchemy import select, update, func as sql_func
+from sqlalchemy.exc import IntegrityError
 
 from app.infrastructure.database import get_session
 from app.db.models import (
@@ -79,19 +80,28 @@ class ContentLearningEngine:
                 # Map engagement to 0-100 score
                 score = min(100, engagement * 1000)  # 0.10 engagement = 100
 
-                await outcome_svc.record_outcome(
-                    domain="content",
-                    action_type="content_published",
-                    action_id=record.id,
-                    strategy_used=record.content_type if hasattr(record, 'content_type') else "unknown",
-                    actual_score=score,
-                    metrics={
-                        "engagement_rate": engagement,
-                        "views": getattr(record, "views", 0),
-                        "likes": getattr(record, "likes", 0),
-                        "shares": getattr(record, "shares", 0),
-                    },
-                )
+                try:
+                    await outcome_svc.record_outcome(
+                        domain="content",
+                        action_type="content_published",
+                        action_id=record.id,
+                        strategy_used=record.content_type if hasattr(record, 'content_type') else "unknown",
+                        actual_score=score,
+                        metrics={
+                            "engagement_rate": engagement,
+                            "views": getattr(record, "views", 0),
+                            "likes": getattr(record, "likes", 0),
+                            "shares": getattr(record, "shares", 0),
+                        },
+                    )
+                except IntegrityError:
+                    # Lost the boundary-tick race to a concurrent scheduler —
+                    # the partial unique index (mig 057) already holds this
+                    # row's outcome. Skip, don't crash the batch.
+                    logger.debug(
+                        "content_outcome_race_skipped", record_id=record.id
+                    )
+                    continue
                 processed += 1
 
             # Store summary as episodic memory
