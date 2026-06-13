@@ -44,6 +44,10 @@ except Exception:  # pragma: no cover
 
 logger = structlog.get_logger(__name__)
 
+# Limit concurrent LLM calls per hunt_for_service to avoid Bifrost 429s when
+# multiple services fire in parallel during the morning scheduler burst.
+_LLM_CONCURRENCY = asyncio.Semaphore(3)
+
 
 # HTML aggregator sources extracted via the LLM. Each merchant-scoped page
 # has light cross-linking so the LLM reliably attributes codes correctly.
@@ -593,6 +597,12 @@ class MealPromoHunterService:
 
         Returns empty list on any error so the caller falls back to regex.
         """
+        async with _LLM_CONCURRENCY:
+            return await self._extract_codes_llm_inner(markdown, merchant_name, merchant_slug)
+
+    async def _extract_codes_llm_inner(
+        self, markdown: str, merchant_name: str, merchant_slug: str
+    ) -> list[dict]:
         if get_unified_llm_client is None or not markdown:
             return []
 

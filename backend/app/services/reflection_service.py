@@ -98,10 +98,26 @@ class ReflectionService:
                 scores.append({"iteration": iteration, "score": overall_score,
                               "scores": analysis.get("scores", {})})
 
-                # Stop if quality threshold met
+                # Stop if quality threshold met — validate first so the final
+                # score is calibrated before we exit the loop.
                 if overall_score >= quality_threshold and iteration > 0:
                     logger.info("reflection_threshold_met",
                               iteration=iteration, score=overall_score)
+                    try:
+                        validation = await llm.structured_chat(
+                            prompt=VALIDATE_PROMPT.format(
+                                content_type=content_type,
+                                criteria=criteria_str,
+                                content=current_content[:3000],
+                            ),
+                            task_type="analysis",
+                            temperature=0.1,
+                        )
+                        final_score = float(validation.get("overall", overall_score))
+                        scores.append({"iteration": iteration + 0.5,
+                                      "score": final_score, "validation": True})
+                    except Exception:
+                        pass
                     break
 
                 # 2. Critique
@@ -143,8 +159,8 @@ class ReflectionService:
                         "severity": critique.get("severity", "medium"),
                     })
 
-                # 4. Validate (on last iteration or if we improved)
-                if iteration == max_iterations - 1 or overall_score >= quality_threshold:
+                # 4. Validate (on last iteration only — threshold path validated above)
+                if iteration == max_iterations - 1:
                     validation = await llm.structured_chat(
                         prompt=VALIDATE_PROMPT.format(
                             content_type=content_type,

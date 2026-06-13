@@ -222,6 +222,12 @@ class MealShipmentTrackerService:
         )
         sid = "ship_" + hashlib.sha1(key.encode()).hexdigest()[:20]
 
+        # Tx-A: read + write shipment row; calendar sync runs AFTER session closes
+        # to avoid holding an idle-in-tx connection across a Google API call.
+        _sync_target = None
+        _sync_kwargs: dict = {}
+        was_new = False
+
         async with get_session() as session:
             existing = None
             if order_number:
@@ -254,34 +260,43 @@ class MealShipmentTrackerService:
                 if status == ShipmentStatus.DELIVERED and not existing.delivered_at:
                     existing.delivered_at = email.received_at or now
                 existing.updated_at = now
-                # Sync calendar event on meaningful changes
                 await session.flush()
-                await self._sync_calendar_event(
-                    session, existing, svc,
-                    was_new=False, prior_status=prior_status, prior_eta=prior_eta,
+                _sync_target = existing
+                _sync_kwargs = dict(was_new=False, prior_status=prior_status, prior_eta=prior_eta)
+            else:
+                row = MealShipmentModel(
+                    id=sid,
+                    service_id=svc.id,
+                    email_id=email.id,
+                    subject=subject[:500],
+                    order_number=order_number,
+                    carrier=carrier_m.group(1).upper() if carrier_m else None,
+                    tracking_number=tracking_m.group(1) if tracking_m else None,
+                    tracking_url=tracking_url_m.group(0) if tracking_url_m else None,
+                    status=status.value,
+                    expected_delivery=eta,
+                    meal_count=int(meal_count_m.group(1)) if meal_count_m else None,
+                    total_charged=float(total_m.group(1)) if total_m else None,
+                    delivered_at=(email.received_at or now) if status == ShipmentStatus.DELIVERED else None,
+                    raw_body=body[:10000],
                 )
-                return False
+                session.add(row)
+                await session.flush()
+                _sync_target = row
+                _sync_kwargs = dict(was_new=True)
+                was_new = True
 
-            row = MealShipmentModel(
-                id=sid,
-                service_id=svc.id,
-                email_id=email.id,
-                subject=subject[:500],
-                order_number=order_number,
-                carrier=carrier_m.group(1).upper() if carrier_m else None,
-                tracking_number=tracking_m.group(1) if tracking_m else None,
-                tracking_url=tracking_url_m.group(0) if tracking_url_m else None,
-                status=status.value,
-                expected_delivery=eta,
-                meal_count=int(meal_count_m.group(1)) if meal_count_m else None,
-                total_charged=float(total_m.group(1)) if total_m else None,
-                delivered_at=(email.received_at or now) if status == ShipmentStatus.DELIVERED else None,
-                raw_body=body[:10000],
-            )
-            session.add(row)
-            await session.flush()
-            await self._sync_calendar_event(session, row, svc, was_new=True)
-            return True
+        # Session committed and closed. Tx-C: calendar sync opens its own
+        # session if it needs to write back calendar_event_id.
+        if _sync_target is not None:
+            new_event_id = await self._sync_calendar_event(_sync_target, svc, **_sync_kwargs)
+            if new_event_id is not None:
+                async with get_session() as wb_session:
+                    s = await wb_session.get(MealShipmentModel, _sync_target.id)
+                    if s:
+                        s.calendar_event_id = new_event_id or None
+
+        return was_new
 
     # ------------------------------------------------------------------
     # Delivery-date extraction (regex fast path + LLM fallback)
@@ -382,27 +397,31 @@ Body:
 
     async def _sync_calendar_event(
         self,
-        session,
         shipment: MealShipmentModel,
         svc: MealServiceModel,
         *,
         was_new: bool,
         prior_status: Optional[str] = None,
         prior_eta: Optional[datetime] = None,
-    ) -> None:
+    ) -> Optional[str]:
         """Create / update / settle the Google Calendar event for a shipment.
+
+        Called AFTER the DB session closes (session-free network call). Returns
+        the new calendar_event_id value to write back, or None if no write-back
+        is needed. Return value semantics: None = no change, "" = clear the id,
+        "<id>" = set to this value. Caller handles Tx-C (write-back session).
 
         Respects the per-service toggle at ``MealServiceModel.metadata_.auto_calendar``
         (default ON). Skips quietly when calendar is not connected.
         """
         if get_calendar_service is None:
-            return
+            return None
         meta = dict(svc.metadata_ or {})
         auto = meta.get("auto_calendar")
         if auto is False:  # explicit opt-out only
-            return
+            return None
         if not shipment.expected_delivery:
-            return
+            return None
 
         calendar = get_calendar_service()
         event_id = shipment.calendar_event_id
@@ -414,15 +433,14 @@ Body:
                     await calendar.delete_event(event_id)
                 except Exception as e:
                     logger.debug("delivery_event_delete_failed", error=str(e), event_id=event_id)
-                shipment.calendar_event_id = None
-            return
+                return ""  # signal caller to clear calendar_event_id
+            return None
 
         event = self._build_delivery_event(shipment, svc)
 
         try:
             if not event_id:
                 created = await calendar.create_event(event)
-                shipment.calendar_event_id = created.id
                 logger.info(
                     "delivery_event_created",
                     shipment=shipment.id,
@@ -430,6 +448,7 @@ Body:
                     event_id=created.id,
                     date=event.start.date,
                 )
+                return created.id
             else:
                 # Only reissue if status changed OR ETA shifted
                 eta_changed = prior_eta != shipment.expected_delivery
@@ -442,7 +461,6 @@ Body:
                     except Exception:
                         pass
                     created = await calendar.create_event(event)
-                    shipment.calendar_event_id = created.id
                     logger.info(
                         "delivery_event_rebuilt",
                         shipment=shipment.id,
@@ -451,6 +469,7 @@ Body:
                         eta_changed=eta_changed,
                         status_changed=status_changed,
                     )
+                    return created.id
         except Exception as e:
             logger.warning(
                 "delivery_event_sync_failed",
@@ -458,6 +477,7 @@ Body:
                 service=svc.slug,
                 error=str(e),
             )
+        return None
 
     def _build_delivery_event(
         self, shipment: MealShipmentModel, svc: MealServiceModel
