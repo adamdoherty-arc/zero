@@ -1,44 +1,208 @@
-# Base requirements
-fastapi==0.68.0
-uvicorn==0.18.3
-sqlalchemy==1.4.46
-asyncmy==0.2.11
-jinja2==3.1.2
-python-dotenv==0.21.0
-pydantic==1.10.9
-httpx==0.23.3
-tenacity==8.2.3
-python-multipart==0.0.21
-starlette==0.25.2
-aiofiles==0.8.0
-cryptography==36.0.1
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-slugify==5.0.2
-pytz==2023.4
-python-magic==0.4.27
-Pillow==9.5.0
-ffmpeg-python==0.2.0
-pydub==0.25.1
-tiktoken==0.5.1
-sentence-transformers==2.2.2
-transformers==4.31.0
-torch==1.13.1+cu117
-protobuf==3.21.12
-grpcio==1.53.0
-grpcio-tools==1.53.0
-redis==4.5.4
-celery==5.3.1
-flower==1.2.1
-pytest==7.3.1
-pytest-asyncio==0.21.0
-pytest-cov==4.1.0
-coverage==7.2.7
-black==23.3.0
-isort==5.13.0
-flake8==6.1.0
-mypy==1.5.1
-types-Pillow==1.0.12
-types-requests==2.28.11.1
-types-setuptools==68.1.1.1
-types-urllib3==2.0.1.1
+# FastAPI Backend Requirements
+fastapi>=0.115.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.10.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Async file operations
+aiofiles>=23.2.0
+
+# NOTE: F-19 Superhuman virtual attendee (Playwright + pyvirtualcam) runs
+# on the Windows host_agent process (NOT here in the Linux container)
+# because it needs VB-Audio Cable + OBS Virtual Cam — both Windows-only
+# devices. See host_agent/requirements.txt for those deps + the
+# host_agent/superhuman.py driver.
+
+# CORS support
+python-multipart>=0.0.18
+
+# HTTP Client (Synchronous) for scripts
+requests>=2.31.0
+
+# Date/time handling
+python-dateutil>=2.8.2
+
+# LLM Integration (Ollama via OpenAI-compatible API)
+# Realtime API (AsyncOpenAI.realtime.connect, openai.types.realtime.*) requires >=2.30.
+openai>=2.30.0
+httpx>=0.28.0
+# Raw-websocket client, used by the Reachy realtime bridge.
+websockets>=13.0
+# Gradio client — used to claim a free OpenAI key from Pollen's HF Space so
+# realtime voice works out-of-the-box without a user-supplied key. Mirrors
+# upstream reachy_mini_conversation_app's first-boot bootstrap.
+gradio-client>=1.8.0
+
+# Logging
+structlog>=25.1.0
+
+# Audio Transcription (faster-whisper works in Docker via CTranslate2)
+faster-whisper>=1.1.0
+numpy>=1.24.0
+soundfile>=0.12.1
+
+# Meeting Intelligence
+# pyannote.audio for speaker diarization. CPU-only torch 2.5.1 wheels are pulled
+# in the Dockerfile via the PyTorch CPU index — bumps the image by ~600MB but
+# unlocks speaker labels + voiceprint matching.
+# Pin to 3.3.x: newer pyannote releases require torch>=2.8 which is much bigger
+# to download; 3.3.x is compatible with torch 2.5.1 and supports the
+# pyannote/speaker-diarization-3.1 model we use.
+# Requires ZERO_HF_TOKEN at runtime (pyannote/speaker-diarization-3.1 is gated).
+pyannote.audio>=3.3.0,<3.4
+# Pin pyannote.audio's PyTorch Lightning dep to match the 3.3.x torch 2.x line.
+pytorch-lightning>=2.0,<2.5
+# huggingface_hub: pyannote 3.3.x calls hf_hub_download(use_auth_token=...)
+# which was removed in hub >=0.27. Pin to the last version that accepted the
+# old kwarg so diarization can load gated models without a TypeError.
+huggingface_hub>=0.23,<0.27
+# PyAudioWPatch: Windows WASAPI loopback audio capture (Windows-only, stays on host_agent)
+# sounddevice: microphone input (stays on host_agent)
+
+# Google APIs (Gmail, Calendar)
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-api-python-client>=2.108.0
+
+# Legion Integration (HTTP client)
+aiohttp>=3.9.0
+
+# LangGraph Orchestration
+langgraph>=1.0.8
+langchain-core>=1.2.11
+langchain-ollama>=1.0.1
+
+# PostgreSQL Database
+langgraph-checkpoint-postgres>=1.0.0
+psycopg[binary]>=3.1.0
+sqlalchemy[asyncio]>=2.0.36
+alembic>=1.13.0
+pgvector>=0.3.0
+
+# Task Scheduling
+apscheduler>=3.10.0
+
+# Fuzzy string matching (research dedup)
+thefuzz>=0.22.1
+# Faster pure-Rust fuzzy matching used by wake-word service to tolerate
+# whisper mishearings of "hey zero".
+rapidfuzz>=3.9.0
+
+# Email Automation with LangChain
+langchain-google-community>=0.1.0
+
+# Notion Integration
+notion-client>=2.2.0
+
+# Structured LLM Outputs (Research Rules Engine)
+instructor>=1.0.0
+
+# Prediction Market APIs
+kalshi-python>=0.2.0
+
+# Multi-Provider LLM Support (unified google-genai SDK, replaces deprecated google-generativeai)
+google-genai>=1.0.0
+
+# Rate Limiting
+slowapi>=0.1.9
+
+# Retry with backoff
+tenacity>=9.0.0
+
+# Discord Bot (replaces OpenClaw gateway for Discord channel)
+discord.py>=2.7.0
+
+# Claude Agent SDK (messaging bridge — Claude as orchestrator brain)
+claude-agent-sdk>=0.1.48
+
+# MCP Server SDK (for zero-api and kimi-llm MCP servers)
+mcp>=1.26.0
+
+# Text-to-Speech
+edge-tts>=6.1.0
+piper-tts>=1.2.0  # Local TTS for Interactive Mode "Local" backend (host-resident, ~30MB ONNX voices)
+
+# Voice Activity Detection for the local realtime handler. webrtcvad-wheels
+# is a tiny (~50 KB) C-extension VAD with no Python deps. Picked over
+# silero-vad to avoid pulling torch (~500 MB) into the backend image — for
+# clear speech in a quiet room (Reachy's typical use case) webrtcvad is
+# more than sufficient.
+webrtcvad-wheels>=2.0.14
+
+# Image Compositing (carousel rendering)
+Pillow>=10.0.0
+
+# Perceptual image hashing for near-duplicate image detection
+imagehash>=4.3.1
+
+# OpenCV headless: face detection + saliency scoring (no GUI deps)
+opencv-python-headless>=4.10.0
+
+# Video download for TikTok reference videos (character content)
+yt-dlp>=2025.1.1
+
+# Reachy Mini Robot Integration
+# reachy-mini>=1.0.0  # Install when robot arrives
+
+# Reachy vision / audio (Waves 3 + 13).
+# Pin mediapipe below 0.10.20 — newer ARM/manylinux wheels on some indexes
+# ship only the `tasks` submodule and drop the legacy `mp.solutions`
+# namespace the vision service uses for HandLandmarker.
+mediapipe>=0.10.11,<0.10.20
+# Keep protobuf below v5 for mediapipe; later dependency passes must not
+# upgrade this to v6 or Reachy vision/audio imports become fragile.
+protobuf>=4.25.3,<5
+# Librosa for BPM detection in radio mode (Wave 13).
+librosa>=0.10.0
+# Pin numba+llvmlite so pip doesn't burn 15+ min backtracking through versions
+# once pyannote.audio's transitive deps push extra constraints. 0.60/0.43 is a
+# known-good cp311 combination compatible with current librosa + pyannote.
+numba==0.60.0
+llvmlite==0.43.0
+# Wake-word detection — used by /api/reachy/wake-word/status + /predict.
+# Pulls scikit-learn + onnxruntime as transitive deps. ~25 MB total.
+openwakeword>=0.6.0
+onnxruntime>=1.16.0
+
+# ---------------------------------------------------------------------------
+# Carousel V2 infrastructure plane (carosel.txt blueprint Phase 1)
+# ---------------------------------------------------------------------------
+
+# Temporal SDK — durable workflow orchestration. Workflow code is deterministic;
+# activities carry I/O. Runs against zero-temporal:7233 (auto-setup container).
+temporalio>=1.10.0
+
+# Langfuse — self-hosted LLM observability + prompt registry + judge scores.
+# Runs against zero-langfuse-web:3000; ClickHouse-backed traces.
+langfuse>=2.60.0
+
+# Qdrant — vector DB for image embeddings, exemplar memory, topic novelty filter.
+# pgvector stays as the primary; Qdrant is added for hybrid (dense + sparse +
+# multi-vector via BGE-M3) at higher recall than pgvector alone.
+qdrant-client>=1.13.0
+
+# Redis — rate-limit token buckets, transient cache, idempotency lookahead.
+# Async client for use inside FastAPI handlers.
+redis>=5.2.0
+
+# MinIO / S3 — generated carousels + master assets + image-source caches.
+# aioboto3 carries its own pinned aiobotocore + botocore — adding a
+# top-level ``boto3`` constraint sends pip's resolver into ResolutionTooDeep
+# at this requirement-set size.
+aioboto3>=13.0.0
+
+# aiometer — bounded concurrency for fan-out fetchers (Phase 2).
+aiometer>=0.5.0
+
+# stamina — production retry policy on top of tenacity. Bakes in jittered
+# exponential backoff, async, structlog/Prometheus instrumentation.
+stamina>=24.3.0
+
+# purgatory — async circuit breaker (Phase 6 production hardening).
+purgatory>=3.0.0
+
+# composio-core — 118+ third-party integrations with one-click OAuth.
+# Optional: the provider degrades gracefully when missing or when
+# COMPOSIO_API_KEY is unset (falls back to Zero's native code paths).
+composio-core>=0.7.21; python_version >= "3.10"
