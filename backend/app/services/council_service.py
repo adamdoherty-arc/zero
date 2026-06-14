@@ -154,11 +154,18 @@ class CouncilService:
         # Tally votes from Round 2
         position_counts = {"approve": 0, "reject": 0, "needs_revision": 0}
         total_confidence = 0.0
+        counted_votes = 0
         for role_id, vote in round2.items():
             pos = vote.get("position", "abstain")
             if pos in position_counts:
                 position_counts[pos] += 1
-            total_confidence += float(vote.get("confidence", 50))
+                # Fix-115: only roles that cast a real vote contribute to the
+                # confidence metric. Previously abstain/structured-output-failed
+                # roles' default confidence (50) were summed but the average
+                # still divided by the full role count, polluting the stored
+                # confidence_score with non-voters.
+                total_confidence += float(vote.get("confidence", 50))
+                counted_votes += 1
 
         # Decision = majority vote. If every role abstained or failed
         # structured output in both rounds, all counts are 0 and max() would
@@ -173,7 +180,7 @@ class CouncilService:
             # via dict-insertion order (max() returns the first key). A
             # deadlocked council needs human revision, not an auto-pass.
             final_decision = _leaders[0] if len(_leaders) == 1 else "needs_revision"
-        avg_confidence = total_confidence / max(len(round2), 1)
+        avg_confidence = total_confidence / max(counted_votes, 1)
 
         # Save
         async with get_session() as session:

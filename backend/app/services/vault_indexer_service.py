@@ -245,7 +245,29 @@ class VaultIndexerService:
                         .limit(1)
                     )
                     existing_hash = result.scalar_one_or_none()
-                if existing_hash and existing_hash.startswith(file_hash[:16]):
+                    # Fix-115: a tick that ran while the embedder was down wrote
+                    # chunks with a valid content_hash but embedding=NULL (see
+                    # _embed -> None). The unchanged-file skip then treated the
+                    # file as fully indexed FOREVER, so it stayed dense-blind
+                    # (BM25-only) until a manual force=True — the live
+                    # "324/1267 chunks already NULL" symptom. Re-index the file
+                    # when ANY of its chunks is still NULL-embedded so it
+                    # self-heals on the next tick once the embedder recovers.
+                    hash_matches = bool(
+                        existing_hash and existing_hash.startswith(file_hash[:16])
+                    )
+                    has_null_embedding = False
+                    if hash_matches:
+                        null_res = await session.execute(
+                            select(VaultChunkModel.id)
+                            .where(VaultChunkModel.path == rel)
+                            .where(VaultChunkModel.embedding.is_(None))
+                            .limit(1)
+                        )
+                        has_null_embedding = (
+                            null_res.scalar_one_or_none() is not None
+                        )
+                if hash_matches and not has_null_embedding:
                     continue
 
             files_changed += 1

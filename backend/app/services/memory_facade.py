@@ -153,17 +153,33 @@ class MemoryFacade:
             except AttributeError:
                 hits = await ep.semantic_search(query, namespace=namespace, limit=k)  # type: ignore[attr-defined]
             for h in hits or []:
-                content = getattr(h, "content", None) or (
-                    h.get("content") if isinstance(h, dict) else None
-                )
+                # Fix-115: ep.search() returns List[MemorySearchResult] =
+                # {memory: EpisodicMemory, similarity: float}. The old code read
+                # h.content / h.score, which exist on NEITHER that wrapper nor the
+                # nested EpisodicMemory (its score field is `similarity`), so
+                # getattr(...)==None and `if not content: continue` dropped EVERY
+                # episodic pgvector hit — the docstring claims episodic is "always
+                # queried" but it silently contributed zero notes. Unwrap the
+                # nested memory + similarity correctly; keep dict/bare fallbacks.
+                mem = getattr(h, "memory", None)
+                if mem is not None:
+                    content = getattr(mem, "content", None)
+                    score = float(getattr(h, "similarity", None) or 0.5)
+                    tags = list(getattr(mem, "tags", None) or [])
+                elif isinstance(h, dict):
+                    content = h.get("content") or (h.get("memory") or {}).get("content")
+                    score = float(h.get("similarity") or h.get("score") or 0.5)
+                    tags = list(h.get("tags") or [])
+                else:
+                    content = getattr(h, "content", None)
+                    score = float(
+                        getattr(h, "similarity", None)
+                        or getattr(h, "score", None)
+                        or 0.5
+                    )
+                    tags = list(getattr(h, "tags", None) or [])
                 if not content:
                     continue
-                score = float(getattr(h, "score", None) or (
-                    h.get("score") if isinstance(h, dict) else 0.5
-                ) or 0.5)
-                tags = list(getattr(h, "tags", None) or (
-                    h.get("tags") if isinstance(h, dict) else []
-                ) or [])
                 notes.append(MemoryNote(
                     text=content, source="episodic", score=score, tags=tags
                 ))
