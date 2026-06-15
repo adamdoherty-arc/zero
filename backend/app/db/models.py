@@ -2375,7 +2375,10 @@ class BrainOutcomeRecordModel(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     domain: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     action_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    action_id: Mapped[Optional[str]] = mapped_column(String(64))
+    # Fix-116 (LRN4): indexed — the thumbs feedback bridge UPDATEs
+    # WHERE action_id == turn_id; without this it full-scans the table on
+    # every rating (voice telemetry inflates the row count).
+    action_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     strategy_used: Mapped[Optional[str]] = mapped_column(String(100), index=True)
     predicted_score: Mapped[Optional[float]] = mapped_column(Float)
     actual_score: Mapped[Optional[float]] = mapped_column(Float)

@@ -461,20 +461,16 @@ async def lifespan(app: FastAPI):
             sched = get_scheduler_service().scheduler
 
             async def _weekly_reflection_job() -> None:
+                # Fix-116: ReflectionService exposes reflect()/reflect_on_decisions(),
+                # never run()/run_weekly() — so the old getattr probe always missed
+                # and this Sunday job was a permanent silent no-op. Drive the real
+                # closed-loop reflection entrypoint instead.
                 try:
-                    from app.services.reflection_service import (
-                        get_reflection_service,
-                    )
-                    svc = get_reflection_service()
-                    runner = (
-                        getattr(svc, "run_weekly", None)
-                        or getattr(svc, "run", None)
-                    )
-                    if runner is None:
-                        return
-                    await runner()
+                    from app.services.zero_brain_service import get_zero_brain_service
+                    result = await get_zero_brain_service().run_reflection()
+                    logger.info("weekly_reflection_ran", result_keys=list((result or {}).keys()))
                 except Exception as exc:
-                    logger.debug("weekly_reflection_failed", error=str(exc))
+                    logger.warning("weekly_reflection_failed", error=str(exc))
 
             sched.add_job(
                 _weekly_reflection_job,

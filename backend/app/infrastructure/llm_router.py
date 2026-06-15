@@ -156,12 +156,18 @@ class LlmRouter:
     # any caller / persisted task assignment that still emits the legacy
     # short name — the vllm provider in the registry now points at Bifrost
     # too, so the path is identical.
-    # 2026-06-11 affinity update: Zero's cloud lane is Gemini Flash (the
-    # moonshot/ name still works as a free NIM compat shim, but it's ADA's
-    # lane now); qwen3-chat is the stable gateway alias for the local model.
+    # 2026-06-15 affinity update (Fix-116): the GEMINI_API_KEY in shared-infra
+    # went 401 (malformed/expired credential), so a gemini-first fallback chain
+    # cascaded every saturated-local call into a hard failure (local 120s
+    # timeout under the Legion executor flood -> dead gemini -> "all providers
+    # failed"). Groq (gpt-oss-120b) is verified working at ~0.4s with healthy
+    # quota, so it leads the default chain; the local alias self-skips when it
+    # is the primary; gemini is PARKED last so it auto-resumes the moment the
+    # key is restored without another code change.
     _DEFAULT_FALLBACKS: List[str] = [
-        "bifrost/gemini/gemini-3-flash-preview",
+        "bifrost/groq/openai/gpt-oss-120b",
         "bifrost/vllm-local/qwen3-chat",
+        "bifrost/gemini/gemini-3-flash-preview",
     ]
 
     def resolve_provider_model(

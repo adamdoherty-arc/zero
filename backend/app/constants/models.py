@@ -36,9 +36,13 @@ KIMI_K2 = "moonshot/kimi-k2.6"
 # Per-project affinity so the three projects don't drain each other's free
 # rate limits: Legion→NVIDIA NIM (GLM-5.1/DeepSeek), ADA→Kimi K2.6 via NIM,
 # Zero→Gemini Flash (1,500 req/day free) + Groq gpt-oss-120b (200K tok/day).
-CLOUD_FAST = "gemini/gemini-3.5-flash"
-CLOUD_FAST_FALLBACK = "groq/openai/gpt-oss-120b"
-CLOUD_REASON = "gemini/gemini-3-flash-preview"
+# 2026-06-15 (Fix-116): GEMINI_API_KEY went 401 (malformed/expired), so Groq
+# is the working cloud primary until the key is restored. Gemini stays as the
+# documented fallback — flip these back to gemini-first once the key is valid
+# (gemini's 1,500 req/day free quota > groq's 1,000/day).
+CLOUD_FAST = "groq/openai/gpt-oss-120b"
+CLOUD_FAST_FALLBACK = "gemini/gemini-3.5-flash"
+CLOUD_REASON = "groq/openai/gpt-oss-120b"
 
 # ---- Vision (VLM) --------------------------------------------------------
 # Primary: NVIDIA Build (free credits, 9 vision models incl Nemotron-Nano-12B-VL

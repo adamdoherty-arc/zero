@@ -378,10 +378,50 @@ class EmailVoiceSessionService:
             if sent_id and self._ctx.email_id:
                 # Mark the original as read so it doesn't re-prompt.
                 await self._mark_read_active_email()
+            if sent_id:
+                await self._record_send_audit(sent_id)
             return sent_id
         except Exception as e:
             logger.error("voice_triage_send_failed", error=str(e))
             return None
+
+    async def _record_send_audit(self, sent_id: str) -> None:
+        # AP3 (Fix-116): the voice-triage send IS gated by a spoken
+        # confirmation, but it previously left no row in the approval audit
+        # trail (it bypasses the email draft pool). Record it as an executed
+        # write_external approval so the profile's "approval audit trail
+        # complete" safety gate holds for the voice channel too. Post-send +
+        # guarded so an audit-write failure can never break the actual send.
+        try:
+            from uuid import uuid4
+            from datetime import datetime, timezone
+            from app.infrastructure.database import get_session
+            from app.db.models import AgentApprovalModel
+
+            now = datetime.now(timezone.utc)
+            async with get_session() as session:
+                session.add(AgentApprovalModel(
+                    id=str(uuid4()),
+                    tool_name="email.send",
+                    tier="write_external",
+                    summary=f"Voice-approved email reply to {self._ctx.pending_reply_to}",
+                    arguments={
+                        "to": self._ctx.pending_reply_to,
+                        "subject": self._ctx.pending_subject or self._ctx.subject,
+                        "thread_id": self._ctx.thread_id,
+                        "email_id": self._ctx.email_id,
+                    },
+                    requested_by="voice_triage",
+                    status="executed",
+                    decided_by="voice",
+                    decision_reason="spoken send confirmation",
+                    result={"sent_id": sent_id},
+                    decided_at=now,
+                    executed_at=now,
+                ))
+                await session.commit()
+        except Exception as e:
+            logger.warning("voice_triage_send_audit_failed", error=str(e))
 
     # -- Helpers --
 

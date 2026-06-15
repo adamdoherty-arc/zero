@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import select, desc, and_, func
+from sqlalchemy import select, desc, and_, func, update as sql_update
 import structlog
 
 from app.db.models import ApprovalRequestModel
@@ -89,16 +89,31 @@ class ApprovalService:
         return await self._decide(request_id, "rejected", decision_by, reason)
 
     async def _decide(self, request_id: str, status: str, decision_by: str, reason: Optional[str]) -> Optional[Dict[str, Any]]:
+        # Atomic claim (Fix-116): UPDATE ... WHERE status='pending' so two
+        # concurrent decisions (UI double-submit, or an approve racing the
+        # hourly expiry job) cannot both pass a stale "pending" read and
+        # double-write the decision/audit fields. Mirrors the correct
+        # approval_queue_service.decide. Returns None when the row was already
+        # claimed by the winning caller.
         async with get_session() as session:
-            row = (await session.execute(
-                select(ApprovalRequestModel).where(ApprovalRequestModel.id == request_id)
-            )).scalar_one_or_none()
-            if not row or row.status != "pending":
-                return None
-            row.status = status
-            row.decision_by = decision_by
-            row.decision_reason = reason
-            row.decided_at = datetime.now(timezone.utc)
+            result = await session.execute(
+                sql_update(ApprovalRequestModel)
+                .where(
+                    ApprovalRequestModel.id == request_id,
+                    ApprovalRequestModel.status == "pending",
+                )
+                .values(
+                    status=status,
+                    decision_by=decision_by,
+                    decision_reason=reason,
+                    decided_at=datetime.now(timezone.utc),
+                )
+                .returning(ApprovalRequestModel.id)
+            )
+            claimed = result.scalar_one_or_none()
+            await session.commit()
+        if claimed is None:
+            return None
         logger.info("approval_decided", id=request_id, status=status, by=decision_by)
         return await self.get_request(request_id)
 
@@ -120,11 +135,15 @@ class ApprovalService:
                 # normalize to the canonical status taxonomy that get_stats()
                 # and list filters bucket on (rejected/approved/expired).
                 action = (row.auto_action_on_expiry or "").strip().lower()
+                # SECURITY (Fix-116): an approval gate MUST fail-safe on timeout.
+                # Never auto-APPROVE on expiry — that would let an unattended
+                # write_external / financial request execute with no human in
+                # the loop. Only an explicit "reject" is honored; everything
+                # else (including a mistakenly-configured "approve") collapses
+                # to the inert "expired" state.
                 row.status = {
                     "reject": "rejected",
                     "rejected": "rejected",
-                    "approve": "approved",
-                    "approved": "approved",
                 }.get(action, "expired")
                 row.decision_by = "auto_expire"
                 row.decision_reason = "Expired without decision"

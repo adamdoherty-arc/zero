@@ -424,6 +424,11 @@ class ZeroBrainService:
             }
             for r in recent
             if r.actual_score is not None
+            # Fix-116 (LRN5): skip pure-feedback rows (voice thumbs) that carry
+            # no decision context — they'd render as strategy='None'
+            # predicted='None' and dilute the decision-reflection prompt. Their
+            # signal flows via the learnings string + extract_learnings().
+            and (r.strategy_used is not None or r.predicted_score is not None)
         ]
 
         if not decisions:

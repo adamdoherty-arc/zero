@@ -45,7 +45,12 @@ class Settings(BaseSettings):
     # Bifrost gateway (shared-infra). All cloud + local LLM traffic exits here.
     bifrost_url: str = "http://host.docker.internal:4445/v1"
     bifrost_api_key: str = ""
-    bifrost_timeout: int = 120
+    # Fix-116: 120s was far too high for a flood-saturated shared lane — when
+    # the local vLLM lane backs up (Legion executor flood) a primary attempt
+    # would block the full 120s before the fallback chain (groq, ~0.4s) fired,
+    # so even resilient calls felt dead. 45s bounds the worst case; the
+    # fallback guarantees completion. Override with ZERO_BIFROST_TIMEOUT.
+    bifrost_timeout: int = 45
 
     # Legion Sprint Manager
     # Use host.docker.internal for Docker environments, localhost for local development

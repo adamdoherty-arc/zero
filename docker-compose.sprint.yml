@@ -345,27 +345,13 @@ services:
         limits:
           memory: 1G
 
-  # Qdrant: image embeddings, exemplar memory, topic novelty filter.
-  # pgvector stays for atomic-facts metadata; Qdrant handles hybrid (dense +
-  # sparse + multi-vector via BGE-M3) at higher recall than pgvector.
-  zero-qdrant:
-    image: qdrant/qdrant:v1.13.0
-    container_name: zero-qdrant
-    restart: unless-stopped
-    ports:
-      - "${ZERO_QDRANT_HTTP_PORT:-6333}:6333"
-      - "${ZERO_QDRANT_GRPC_PORT:-6334}:6334"
-    volumes:
-      - zero-qdrant-data:/qdrant/storage
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+  # Qdrant retired 2026-06-15: Zero uses the shared legion-qdrant:6333
+  # (see ZERO_QDRANT_URL above — repointed 2026-05-19, Quality-32). The local
+  # zero-qdrant service was removed because it published :6333/:6334 and
+  # collided with the already-running legion-qdrant on every `up -d`, leaving
+  # the stack with a recurring "Bind for 0.0.0.0:6333 failed" error while
+  # holding no data (collections were empty). Image embeddings / exemplar
+  # memory / topic-novelty all hit the shared instance now.
 
   # Temporal: durable workflow orchestration. Bundled Postgres for history
   # isolation (Temporal hammers its DB; we don't want it to contend with
@@ -526,8 +512,6 @@ volumes:
     name: zero-redis-data
   zero-minio-data:
     name: zero-minio-data
-  zero-qdrant-data:
-    name: zero-qdrant-data
   zero-temporal-postgres-data:
     name: zero-temporal-postgres-data
   zero-langfuse-clickhouse-data:

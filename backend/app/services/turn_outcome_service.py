@@ -158,7 +158,16 @@ class TurnOutcomeService:
         """Propagate a thumbs signal onto the matching structured outcome row
         (action_id == turn_id) as its actual_score, so it reaches the
         outcome-learning / reflection store instead of dying in the JSONL."""
-        score = 1.0 if signal == "thumbs_up" else 0.0
+        # Fix-116 (LRN2): score on the 0-100 scale the aggregates use. The
+        # outcome store counts a "win" as actual_score >= 60 and buckets
+        # calibration in 0-100 ranges, so the old 1.0/0.0 made every thumbs_up
+        # read as a near-total failure. (LRN3): also stamp a retrievable
+        # `learnings` string — voice turns are recorded with no predicted/actual
+        # score, so record_outcome never auto-extracts a learning for them and
+        # the single human feedback signal would otherwise never reach
+        # extract_learnings()/enrich_task_prompt().
+        score = 100.0 if signal == "thumbs_up" else 0.0
+        learning = f"User rated this turn {signal} (score {score:.0f}/100)."
         from app.infrastructure.database import get_session
         from app.db.models import BrainOutcomeRecordModel
         from sqlalchemy import update as _sql_update
@@ -166,7 +175,7 @@ class TurnOutcomeService:
             await session.execute(
                 _sql_update(BrainOutcomeRecordModel)
                 .where(BrainOutcomeRecordModel.action_id == turn_id)
-                .values(actual_score=score)
+                .values(actual_score=score, learnings=learning)
             )
             await session.commit()
 
