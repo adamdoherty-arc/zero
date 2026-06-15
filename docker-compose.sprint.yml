@@ -395,11 +395,16 @@ services:
     ports:
       - "${ZERO_TEMPORAL_PORT:-7233}:7233"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7233/health -o /dev/null || exit 1"]
+      # Fix-116: 7233 is the gRPC frontend port, not HTTP — the old
+      # `curl http://127.0.0.1:7233/health` could never pass (curl can't speak
+      # gRPC and temporal binds the container IP, not loopback), so the
+      # container sat permanently "unhealthy" while actually serving. Use the
+      # temporal CLI gRPC health probe against the service-name address.
+      test: ["CMD-SHELL", "temporal operator cluster health --address zero-temporal:7233 >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:
