@@ -172,11 +172,39 @@ class TurnOutcomeService:
         from app.db.models import BrainOutcomeRecordModel
         from sqlalchemy import update as _sql_update
         async with get_session() as session:
-            await session.execute(
+            result = await session.execute(
                 _sql_update(BrainOutcomeRecordModel)
                 .where(BrainOutcomeRecordModel.action_id == turn_id)
                 .values(actual_score=score, learnings=learning)
             )
+            # Fix-117 (RFL3): the voice bridge's record_outcome row write (in
+            # record_turn) is best-effort and swallowed on failure, so the row
+            # this UPDATE targets may never have been written. The UPDATE would
+            # then silently match 0 rows and the single human feedback signal —
+            # the rarest, most valuable training input — would be lost with no
+            # trace. Upsert: if nothing matched, insert the row so the thumbs
+            # signal still reaches the outcome-learning / reflection store.
+            if (result.rowcount or 0) == 0:
+                import uuid as _uuid
+                from datetime import datetime, timezone
+                session.add(
+                    BrainOutcomeRecordModel(
+                        id=f"bo-{_uuid.uuid4().hex[:12]}",
+                        domain="voice",
+                        action_type="turn",
+                        action_id=turn_id,
+                        actual_score=score,
+                        learnings=learning,
+                        metrics={},
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+                logger.info(
+                    "turn_feedback_bridge_upserted",
+                    turn_id=turn_id,
+                    score=score,
+                    note="structured outcome row was missing; inserted from thumbs signal",
+                )
             await session.commit()
 
     async def recent(self, *, limit: int = 50) -> list[TurnOutcome]:

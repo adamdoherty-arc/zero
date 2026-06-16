@@ -1437,6 +1437,13 @@ class RealtimeSession:
                     await self._wobbler.feed_pcm16(pcm_bytes, sample_rate=rate)
                 except Exception:
                     pass
+            # Fix-117 (RSP1): mirror _handle_start's _on_audio — re-arm the
+            # speaker sink every frame. Without this, a sink nullified by the
+            # backpressure timeout below never reconnected after a hot-swap, so
+            # all post-swap audio was synthesized but silently never reached
+            # Reachy's speaker. self.handler is the swapped-in handler by the
+            # time this fires.
+            self._ensure_speaker_sink_connecting(handler=self.handler)
             if self._speaker_sink is not None:
                 try:
                     await asyncio.wait_for(

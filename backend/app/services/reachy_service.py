@@ -198,6 +198,11 @@ class ReachyService:
         self._client: Optional[httpx.AsyncClient] = None
         self._active_move_uuid: Optional[str] = None
         self._tts_sound_prefix = "zero_tts_"
+        # Fix-117 (RSP6): strong refs for fire-and-forget cleanup tasks.
+        # CPython only weak-refs running tasks, so a bare create_task(...) for
+        # _deferred_delete could be GC-cancelled mid-flight, leaking TTS WAVs on
+        # the daemon. Anchor each task here and self-remove on completion.
+        self._bg_tasks: set[asyncio.Task] = set()
         self._daemon_status_cache: dict[str, Any] | None = None
         self._daemon_status_cache_at = 0.0
         self._daemon_status_cache_ttl_s = max(
@@ -840,14 +845,14 @@ class ReachyService:
         play_res = await self.play_sound(filename)
         if play_res.get("error"):
             if cleanup:
-                asyncio.create_task(self._deferred_delete(filename, delay_s=1.0))
+                self._spawn_deferred_delete(filename, delay_s=1.0)
             return {"error": play_res.get("error"), "label": label, "stage": "play"}
         if cleanup:
             # Best-effort cleanup. Heuristic based on audio size (16 kHz mono
             # 16-bit → 32 kB/s). Clamp [2, 30] s.
             approx_seconds = len(audio_bytes) / 32_000.0
             delay = max(2.0, min(30.0, approx_seconds + 1.0))
-            asyncio.create_task(self._deferred_delete(filename, delay_s=delay))
+            self._spawn_deferred_delete(filename, delay_s=delay)
         return {"label": label, "file": filename, "audio_size": len(audio_bytes)}
 
     async def say(
@@ -881,7 +886,7 @@ class ReachyService:
         play_res = await self.play_sound(filename)
         if play_res.get("error"):
             if cleanup:
-                asyncio.create_task(self._deferred_delete(filename, delay_s=1.0))
+                self._spawn_deferred_delete(filename, delay_s=1.0)
             return {"error": play_res.get("error"), "text": text, "stage": "play"}
 
         if cleanup:
@@ -889,9 +894,15 @@ class ReachyService:
             # 0.12s per character, clamped to [2, 30] seconds. The daemon does
             # not tell us playback duration, so this is a best-effort cleanup.
             delay = max(2.0, min(30.0, 0.12 * len(text) + 1.0))
-            asyncio.create_task(self._deferred_delete(filename, delay_s=delay))
+            self._spawn_deferred_delete(filename, delay_s=delay)
 
         return {"text": text, "file": filename, "audio_size": len(audio_bytes)}
+
+    def _spawn_deferred_delete(self, filename: str, *, delay_s: float) -> None:
+        """Fire-and-forget cleanup, anchored so the GC can't cancel it (RSP6)."""
+        task = asyncio.create_task(self._deferred_delete(filename, delay_s=delay_s))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def _deferred_delete(self, filename: str, *, delay_s: float) -> None:
         try:

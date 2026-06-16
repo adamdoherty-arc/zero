@@ -388,6 +388,38 @@ class VoiceLoopService:
                                     result["played_on_robot"] = True
                     except Exception as _e:
                         logger.debug("vision_robot_skipped", error=str(_e))
+                    # Fix-117 (RSP4): a vision turn must bump persona state and
+                    # log to cross-session memory like every other turn — the
+                    # early return below otherwise skipped the Step-4 tail, so
+                    # vision turns never rotated personas or reached user memory.
+                    result["persona"] = self._active_persona_id
+                    try:
+                        state = get_reachy_persona_state()
+                        n_emotions = sum(1 for a in actions if a.kind == "emotion")
+                        n_dances = sum(1 for a in actions if a.kind == "dance")
+                        suggested = state.record_interaction(
+                            self._active_persona_id, gestures=n_emotions, dances=n_dances
+                        )
+                        if suggested and suggested != self._active_persona_id:
+                            if self.set_persona(suggested):
+                                result["persona_rotated_to"] = suggested
+                    except Exception as _e:
+                        logger.debug("persona_state_update_failed", error=str(_e))
+                    try:
+                        from app.services.reachy_user_memory_service import (
+                            get_reachy_user_memory_service,
+                        )
+                        mem = get_reachy_user_memory_service()
+                        gestures_fired = [f"{a.kind}:{a.payload}" for a in actions]
+                        await mem.log_turn(
+                            persona_id=self._active_persona_id,
+                            user_text=user_text,
+                            reachy_text=clean,
+                            gestures=gestures_fired,
+                        )
+                        await mem.maybe_extract()
+                    except Exception as _e:
+                        logger.debug("memory_log_skipped", error=str(_e))
                     return result
             except Exception as e:
                 logger.debug("vision_intercept_skipped", error=str(e))
@@ -477,9 +509,14 @@ class VoiceLoopService:
                         result["played_on_robot"] = True
                 else:
                     # Fallback: no bytes (TTS timed out) — try say() which
-                    # will re-synthesize with the fallback line.
-                    await self._reachy_service.say(clean_text)
-                    result["played_on_robot"] = True
+                    # will re-synthesize with the fallback line. Fix-117 (RSP5):
+                    # say() returns {"error": ...} on upload/play failure; only
+                    # report played_on_robot when it actually succeeded (the
+                    # bytes path above already gates on this — this fallback used
+                    # to set it True unconditionally, falsely reporting playback).
+                    say_res = await self._reachy_service.say(clean_text)
+                    if not say_res.get("error"):
+                        result["played_on_robot"] = True
         except Exception as e:
             logger.debug("voice_robot_skipped", error=str(e))
 

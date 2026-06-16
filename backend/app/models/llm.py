@@ -84,12 +84,13 @@ class LlmRouterConfig(BaseModel):
     Models use 'provider/model' format. Plain model names default to ollama.
     """
     default_model: str = "bifrost/vllm-local/qwen3-chat"
-    # These defaults mirror the Infra-60 (2026-06-11) runtime router_config.json:
-    # local vLLM via the Bifrost qwen3-chat gateway alias as primary, Zero's
-    # cloud affinity pool (Gemini Flash + Groq) as fallback. An empty fallbacks
-    # list inherits LLMRouter._DEFAULT_FALLBACKS (Gemini Flash) at resolution
-    # time. Kimi/MiniMax chains were removed — Kimi is ADA's lane and MiniMax
-    # rejects Bifrost-routed calls (400).
+    # These defaults mirror the Fix-117 (2026-06-16) runtime router_config.json:
+    # local vLLM via the Bifrost qwen3-chat gateway alias as primary, Groq as a
+    # best-effort fallback. An empty fallbacks list inherits
+    # LLMRouter._DEFAULT_FALLBACKS ([vllm-local, groq]) at resolution time.
+    # Gemini was dropped (shared GEMINI_API_KEY is 401-dead) and Kimi/MiniMax
+    # chains were removed earlier — Kimi is ADA's lane and MiniMax rejects
+    # Bifrost-routed calls (400). Re-add gemini here once the key is restored.
     task_assignments: Dict[str, ModelAssignment] = Field(default_factory=lambda: {
         # -- Tier 1: Local (vLLM via Bifrost gateway) --
         "coding": ModelAssignment(
@@ -134,28 +135,30 @@ class LlmRouterConfig(BaseModel):
             temperature=0.2,
             num_predict=1024,
         ),
-        # -- Tier 3: Planning & complex reasoning (Gemini Flash primary, local + Groq fallback) --
+        # -- Tier 3: Planning & complex reasoning (local vLLM primary, Groq fallback;
+        #    Fix-117: was Gemini Flash primary, but the shared GEMINI_API_KEY is
+        #    401-dead — restore the key + re-point these here to re-enable it) --
         "research": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=2048,
         ),
         "planning": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=4096,
         ),
         "complexity_complex": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=4096,
         ),
         "prompt_grading_heavy": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.6,
             num_predict=2048,
         ),
@@ -212,14 +215,14 @@ class LlmRouterConfig(BaseModel):
         ),
         # -- Council of Agents (provider diversity per role) --
         "council_ceo": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.3,
             num_predict=2048,
         ),
         "council_researcher": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=2048,
         ),
@@ -235,16 +238,17 @@ class LlmRouterConfig(BaseModel):
             temperature=0.3,
             num_predict=2048,
         ),
-        # -- AI Company agents (Gemini plans, local vLLM executes) --
+        # -- AI Company agents (local vLLM plans + executes; Fix-117: CEO/researcher_plan
+        #    were Gemini-primary but the key is 401-dead — local carries it) --
         "agent_ceo": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=4096,
         ),
         "agent_researcher_plan": ModelAssignment(
-            model="bifrost/gemini/gemini-3-flash-preview",
-            fallbacks=["bifrost/vllm-local/qwen3-chat", "bifrost/groq/openai/gpt-oss-120b"],
+            model="bifrost/vllm-local/qwen3-chat",
+            fallbacks=["bifrost/groq/openai/gpt-oss-120b"],
             temperature=0.7,
             num_predict=4096,
         ),

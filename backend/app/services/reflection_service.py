@@ -116,8 +116,14 @@ class ReflectionService:
                         final_score = float(validation.get("overall", overall_score))
                         scores.append({"iteration": iteration + 0.5,
                                       "score": final_score, "validation": True})
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        # Fix-117 (RFL5): don't swallow silently. A failing
+                        # validate leaves no calibrated score appended, so the
+                        # reported final_score silently reverts to the pre-validate
+                        # analyze score — surface it so a systematic validation
+                        # failure is visible instead of masquerading as success.
+                        logger.warning("reflection_validation_failed",
+                                       iteration=iteration, error=str(_e))
                     break
 
                 # 2. Critique

@@ -993,17 +993,21 @@ async def health_ready():
     import httpx
 
     async def _check_local_llm() -> str:
-        # Ollama was retired in favor of the shared Bifrost route; probe Bifrost
-        # with its virtual key. 2s is plenty when up; when down the connect is
-        # refused fast, and the concurrent gather caps total latency regardless.
+        # Ollama was retired in favor of the shared Bifrost route; the brain path
+        # is "is the Bifrost gateway reachable" (every LLM call routes through it).
+        # Fix-117: the old probe GET {vllm_chat_url}/models WITH the virtual key,
+        # which makes Bifrost enumerate every upstream provider (incl. the dead
+        # gemini 401 / groq 429 lanes) and ReadTimeout at 2s -> the probe falsely
+        # reported "unavailable" while the brain was actually serving via
+        # vllm-local. Probe Bifrost's liveliness endpoint instead: 200 in ~10ms,
+        # no virtual key needed, same gateway-reachability granularity as
+        # _check_legion / _check_searxng.
         try:
             base = settings.vllm_chat_url.rstrip("/")
-            headers = {}
-            if settings.vllm_api_key:
-                headers["Authorization"] = f"Bearer {settings.vllm_api_key}"
-                headers["x-bf-vk"] = settings.vllm_api_key
+            if base.endswith("/v1"):
+                base = base[: -len("/v1")]  # /v1 -> gateway root
             async with httpx.AsyncClient(timeout=2) as client:
-                resp = await client.get(f"{base}/models", headers=headers)
+                resp = await client.get(f"{base}/health/liveliness")
                 return "ok" if resp.status_code == 200 else "degraded"
         except Exception:
             return "unavailable"

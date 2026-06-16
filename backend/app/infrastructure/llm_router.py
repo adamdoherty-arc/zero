@@ -156,18 +156,20 @@ class LlmRouter:
     # any caller / persisted task assignment that still emits the legacy
     # short name — the vllm provider in the registry now points at Bifrost
     # too, so the path is identical.
-    # 2026-06-15 affinity update (Fix-116): the GEMINI_API_KEY in shared-infra
-    # went 401 (malformed/expired credential), so a gemini-first fallback chain
-    # cascaded every saturated-local call into a hard failure (local 120s
-    # timeout under the Legion executor flood -> dead gemini -> "all providers
-    # failed"). Groq (gpt-oss-120b) is verified working at ~0.4s with healthy
-    # quota, so it leads the default chain; the local alias self-skips when it
-    # is the primary; gemini is PARKED last so it auto-resumes the moment the
-    # key is restored without another code change.
+    # 2026-06-16 affinity update (Fix-117): groq's free quota (~1000 req/day) is
+    # exhausted by Zero's ~4000 calls/day, so it returned HTTP 429 continuously
+    # for 23h straight after Fix-116 made it the default lead — every call burned
+    # a wasted 429 round-trip. GEMINI_API_KEY is STILL 401 (key not restored), so
+    # gemini contributed only wasted 401 round-trips (2578/24h) and is now removed
+    # from the default chain entirely (it auto-resumes only when an explicit task
+    # assignment re-adds it after a key restore). The local Bifrost->vLLM lane
+    # (qwen3-chat) is the only consistently-working brain (~90% success when the
+    # Legion executor flood eases), so it LEADS the default chain; groq stays as a
+    # best-effort second fallback for the moments its quota frees. The local alias
+    # self-skips when it is already the primary.
     _DEFAULT_FALLBACKS: List[str] = [
-        "bifrost/groq/openai/gpt-oss-120b",
         "bifrost/vllm-local/qwen3-chat",
-        "bifrost/gemini/gemini-3-flash-preview",
+        "bifrost/groq/openai/gpt-oss-120b",
     ]
 
     def resolve_provider_model(
