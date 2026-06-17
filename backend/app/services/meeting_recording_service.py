@@ -185,7 +185,23 @@ async def start_recording(
     db.add(recording)
     await db.commit()
 
-    capture.start(output_path, source=source)
+    # Fix-118 (CAP-3): the meeting (status="recording") and recording rows are
+    # already committed above. If capture.start() raises (empty-WAV guard,
+    # device-open failure), the old code let the exception propagate with NO
+    # rollback — leaving a phantom meeting stuck in "recording" forever and an
+    # orphan recording row pointing at a WAV that was never written. Roll both
+    # back before re-raising so the caller still sees the failure but the DB is
+    # consistent (mirrors the host_agent rollback path in main.py).
+    try:
+        capture.start(output_path, source=source)
+    except Exception:
+        try:
+            await db.delete(recording)
+            meeting.status = "failed"
+            await db.commit()
+        except Exception:
+            await db.rollback()
+        raise
 
     # Persist the device name AFTER capture.start populates it from the live stream.
     if capture.mic_device_name:

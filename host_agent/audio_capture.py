@@ -175,6 +175,7 @@ class AudioCapture:
         self._current_file: Path | None = None
         self._mixer_thread: threading.Thread | None = None
         self._system_stream = None
+        self._system_pa = None  # Fix-118 (CAP-1): own the PyAudio instance so stop() can terminate it
         self._mic_stream = None
         self._total_samples = 0
         self._device_sample_rate: int | None = None
@@ -228,6 +229,18 @@ class AudioCapture:
                 except Exception:
                     pass
                 self._system_stream = None
+            # Fix-118 (CAP-1, critic round-1): on a mixed recording the system
+            # loopback (and its PyAudio host instance) is opened BEFORE the mic;
+            # if _start_mic_capture() then raises, this teardown sets
+            # _is_recording=False so a later stop() early-returns and never
+            # terminates self._system_pa — leaking the PortAudio handle. Terminate
+            # it here too.
+            if self._system_pa is not None:
+                try:
+                    self._system_pa.terminate()
+                except Exception:
+                    pass
+                self._system_pa = None
             if self._mic_stream is not None:
                 try:
                     self._mic_stream.stop()
@@ -265,6 +278,16 @@ class AudioCapture:
             except Exception:
                 pass
             self._system_stream = None
+        # Fix-118 (CAP-1): terminate the PyAudio host instance opened for this
+        # recording. The old code never stored or terminated it, so every
+        # system/mixed (default) recording leaked one PortAudio host handle until
+        # the WASAPI device could no longer be opened and /record/start failed.
+        if self._system_pa is not None:
+            try:
+                self._system_pa.terminate()
+            except Exception:
+                pass
+            self._system_pa = None
         if self._mic_stream is not None:
             try:
                 self._mic_stream.stop()
@@ -285,9 +308,11 @@ class AudioCapture:
         return output
 
     def _start_system_capture(self) -> None:
+        p = None
         try:
             import pyaudiowpatch as pyaudio
             p = pyaudio.PyAudio()
+            self._system_pa = p  # Fix-118 (CAP-1): retained so stop() can terminate it
             if self.system_device_index is not None:
                 chosen = p.get_device_info_by_index(self.system_device_index)
             else:
@@ -316,8 +341,25 @@ class AudioCapture:
                         device_rate=self._device_sample_rate, target_rate=self.sample_rate)
         except ImportError:
             logger.warning("pyaudiowpatch_not_available")
+            self._system_pa = None
         except Exception as e:
             logger.error("system_audio_failed", error=str(e))
+            # Fix-118 (CAP-5): a stream opened by p.open() but failed at
+            # start_stream() leaves self._system_stream non-None; close + null it
+            # so the half-open stream isn't left registered. Then terminate the
+            # PyAudio host instance so it isn't leaked on the error path.
+            if self._system_stream is not None:
+                try:
+                    self._system_stream.close()
+                except Exception:
+                    pass
+                self._system_stream = None
+            if p is not None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            self._system_pa = None
 
     def _start_mic_capture(self) -> None:
         try:

@@ -140,7 +140,16 @@ class MeetingRAGService:
 
         scored: list[tuple[float, dict]] = []
         for r in results:
-            base = float(r.get("score") or 0.5)
+            # Fix-118 (RTV-2): meeting_vector_service.search_similar returns a
+            # "distance" key (lower = closer), NOT "score". The old `r.get("score")`
+            # was always None -> base==0.5 for EVERY hit, so the vector ranking was
+            # erased and topic-boost partitioned results into two flat buckets.
+            # Derive a 0-1 relevance from distance (same convention as
+            # meeting_search_service) and fall back to an explicit score if present.
+            if r.get("score") is not None:
+                base = float(r["score"])
+            else:
+                base = max(0.0, 1.0 - float(r.get("distance", 1.0)))
             bonus = 0.3 if _in_topic(r.get("meeting_id") or "", r.get("start_time")) else 0.0
             scored.append((0.7 * base + bonus, r))
         scored.sort(key=lambda kv: kv[0], reverse=True)

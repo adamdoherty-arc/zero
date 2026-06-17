@@ -3717,6 +3717,9 @@ Have a great evening!"""
                     start_time=start,
                     end_time=end,
                     title=meeting.title,
+                    # Fix-118 (CAP-2): carry attendees so the consent gate can
+                    # evaluate external/internal instead of fail-open "solo".
+                    attendees=ev.attendees,
                 )
                 promoted += 1
             await session.commit()
@@ -5062,7 +5065,11 @@ Have a great evening!"""
             indexer = get_vault_indexer()
             if not indexer.available():
                 return
-            result = await indexer.reindex(force=False, max_files=200)
+            # Fix-118 (IDX-A): max_files now caps files RE-EMBEDDED per tick, not
+            # files walked. The whole vault is scanned for change-detection every
+            # tick; 500 bounds the costly embed work while letting a large backlog
+            # (e.g. first full index of a 14k-file vault) drain over a few ticks.
+            result = await indexer.reindex(force=False, max_files=500)
             safe = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in result.items() if v is not None}
             logger.info("vault_reindex_tick", **safe)
         except Exception as e:

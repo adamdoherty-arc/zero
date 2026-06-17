@@ -33,7 +33,7 @@ from typing import Any, Iterable, Optional
 
 import structlog
 import yaml
-from sqlalchemy import and_, delete, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.models import VaultChunkModel
@@ -143,11 +143,10 @@ def _chunk_section(heading_path: str, body: str) -> list[_Chunk]:
     chunks: list[_Chunk] = []
     start = 0
     idx = 0
-    step = _MAX_CHUNK_CHARS - _OVERLAP_CHARS
     while start < len(body):
         end = min(start + _MAX_CHUNK_CHARS, len(body))
         slice_ = body[start:end]
-        # try to break at sentence boundary
+        # try to break at a paragraph boundary
         if end < len(body):
             last_nl = slice_.rfind("\n\n")
             if last_nl > _MAX_CHUNK_CHARS // 2:
@@ -157,7 +156,15 @@ def _chunk_section(heading_path: str, body: str) -> list[_Chunk]:
         idx += 1
         if end >= len(body):
             break
-        start += step
+        # Fix-118 (IDX-B): advance from the ACTUAL end (minus overlap), not a
+        # fixed step from `start`. When `end` was pulled back to a paragraph
+        # boundary (last_nl < _MAX_CHUNK_CHARS), the old `start += step`
+        # (step=_MAX-_OVERLAP) jumped PAST the boundary, leaving the bytes
+        # between the boundary and start+step in NO chunk — up to
+        # (_MAX_CHUNK_CHARS - _OVERLAP_CHARS - last_nl) chars silently dropped
+        # from the index for every large section. max(start+1, ...) guarantees
+        # forward progress.
+        start = max(start + 1, end - _OVERLAP_CHARS)
     return chunks
 
 
@@ -222,57 +229,65 @@ class VaultIndexerService:
         # Build a set of live paths for orphan detection.
         live_paths: set[str] = set()
 
+        # Fix-118 (IDX-A): the cap must bound the EXPENSIVE re-embed work, NOT
+        # the cheap directory walk. The old loop did `scanned += 1` for every
+        # file it touched and broke at `scanned >= max_files`, so on a 14.8k-file
+        # vault the every-2-min tick (max_files=200) re-walked the SAME first 200
+        # paths (deterministic rglob order) forever — ~96% of the vault was NEVER
+        # indexed and stayed BM25+dense blind. Now we walk the WHOLE tree every
+        # tick (change-detection is cheap), prefetch existing (hash, has-null) in
+        # ONE grouped query instead of two SELECTs per file, and cap only the
+        # number of files actually re-embedded.
+        existing: dict[str, tuple[str | None, bool]] = {}
+        if not force:
+            async with get_session() as session:
+                rows = await session.execute(
+                    select(
+                        VaultChunkModel.path,
+                        func.min(VaultChunkModel.content_hash),
+                        func.bool_or(VaultChunkModel.embedding.is_(None)),
+                    ).group_by(VaultChunkModel.path)
+                )
+                for path, chash, has_null in rows.all():
+                    existing[path] = (chash, bool(has_null))
+
+        reindexed = 0
         capped = False
         for fp in _iter_markdown(self._root):
-            if scanned >= max_files:
-                capped = True
-                break
-            scanned += 1
             rel = fp.relative_to(self._root).as_posix()
             live_paths.add(rel)
+            scanned += 1
             try:
                 raw = fp.read_bytes()
             except Exception:  # noqa: BLE001
                 continue
             file_hash = _sha256_bytes(raw)
 
-            # Skip unchanged files unless forced
+            # Skip unchanged files unless forced. Fix-115: a file whose chunks
+            # are still NULL-embedded (embedder was down on a prior tick) is
+            # re-indexed so it self-heals once the embedder recovers — the
+            # unchanged-file skip would otherwise strand it dense-blind forever.
             if not force:
-                async with get_session() as session:
-                    result = await session.execute(
-                        select(VaultChunkModel.content_hash)
-                        .where(VaultChunkModel.path == rel)
-                        .limit(1)
-                    )
-                    existing_hash = result.scalar_one_or_none()
-                    # Fix-115: a tick that ran while the embedder was down wrote
-                    # chunks with a valid content_hash but embedding=NULL (see
-                    # _embed -> None). The unchanged-file skip then treated the
-                    # file as fully indexed FOREVER, so it stayed dense-blind
-                    # (BM25-only) until a manual force=True — the live
-                    # "324/1267 chunks already NULL" symptom. Re-index the file
-                    # when ANY of its chunks is still NULL-embedded so it
-                    # self-heals on the next tick once the embedder recovers.
-                    hash_matches = bool(
-                        existing_hash and existing_hash.startswith(file_hash[:16])
-                    )
-                    has_null_embedding = False
-                    if hash_matches:
-                        null_res = await session.execute(
-                            select(VaultChunkModel.id)
-                            .where(VaultChunkModel.path == rel)
-                            .where(VaultChunkModel.embedding.is_(None))
-                            .limit(1)
-                        )
-                        has_null_embedding = (
-                            null_res.scalar_one_or_none() is not None
-                        )
+                existing_hash, has_null_embedding = existing.get(rel, (None, False))
+                hash_matches = bool(
+                    existing_hash and existing_hash.startswith(file_hash[:16])
+                )
                 if hash_matches and not has_null_embedding:
                     continue
+
+            # Throttle ONLY the costly embedding work. The walk above is
+            # unbounded so the entire vault is covered for change-detection on
+            # every tick; capping re-embeds spreads a large backlog (e.g. a
+            # first full index) across consecutive ticks instead of starving the
+            # tail of the tree.
+            if reindexed >= max_files:
+                capped = True
+                break
 
             files_changed += 1
             written = await self._index_file(fp, rel, raw, file_hash)
             chunks_written += written
+            reindexed += 1
 
         # Orphan sweep: remove chunks whose source file no longer exists.
         # Only run when the scan was complete (the loop did NOT hit the cap) to
@@ -290,7 +305,12 @@ class VaultIndexerService:
                     await session.commit()
                     chunks_deleted = len(orphans)
         else:
-            logger.warning("orphan_sweep_skipped_scan_capped", scanned=scanned, max_files=max_files)
+            logger.warning(
+                "orphan_sweep_skipped_reembed_capped",
+                scanned=scanned,
+                reindexed=reindexed,
+                max_files=max_files,
+            )
 
         logger.info(
             "vault_reindex",

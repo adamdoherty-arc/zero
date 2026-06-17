@@ -10,7 +10,7 @@ import structlog
 
 from app.db.models import (
     MeetingModel, MeetingRecordingModel, MeetingTranscriptSegmentModel,
-    MeetingSummaryModel, MeetingSpeakerMappingModel,
+    MeetingSummaryModel, MeetingSpeakerMappingModel, CalendarEventCacheModel,
 )
 from app.infrastructure.database import get_session
 from app.models.meeting import (
@@ -221,6 +221,17 @@ async def toggle_auto_record(meeting_id: str, body: AutoRecordToggle):
             raise HTTPException(
                 400, "Auto-record requires a calendar-linked meeting (use /from-event first)"
             )
+        # Fix-118 (CAP-2, critic round-1): carry the calendar event's attendees so
+        # the consent gate evaluates external/internal instead of fail-open "solo".
+        # MeetingModel has no attendees column; pull them from the cached event.
+        cal_ev = (
+            await db.execute(
+                select(CalendarEventCacheModel).where(
+                    CalendarEventCacheModel.id == meeting.calendar_event_id
+                )
+            )
+        ).scalar_one_or_none()
+        event_attendees = cal_ev.attendees if cal_ev else None
 
     svc = get_meeting_auto_recorder_service()
     if body.enabled:
@@ -230,6 +241,7 @@ async def toggle_auto_record(meeting_id: str, body: AutoRecordToggle):
             start_time=meeting.start_time,
             end_time=meeting.end_time,
             title=meeting.title,
+            attendees=event_attendees,
         )
     else:
         await svc.unmark(meeting.calendar_event_id)

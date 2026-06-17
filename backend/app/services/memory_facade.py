@@ -209,17 +209,27 @@ class MemoryFacade:
         except Exception as e:
             logger.debug("memory_facade_user_recall_failed", error=str(e))
 
-        # Reachy memory blocks (always-on context)
+        # Reachy memory blocks (always-on durable context).
+        # Fix-118 (RTV-1): the old code called blocks.summary_for_prompt(), which
+        # does NOT exist on ReachyMemoryBlockStore (it exposes get_block /
+        # list_blocks + a module-level compose_system_prompt). So line 1 raised
+        # AttributeError, the except ran hasattr(...)->False->summary=None, and
+        # the single most reliable recall contributor — the durable human +
+        # relationship profile blocks — was NEVER injected into any recall().
+        # Pull the durable block values directly from the store instead.
         try:
             from app.services.reachy_memory_blocks import get_reachy_memory_blocks
-            blocks = get_reachy_memory_blocks()
-            try:
-                summary = await blocks.summary_for_prompt()  # type: ignore[attr-defined]
-            except AttributeError:
-                summary = blocks.summary_for_prompt() if hasattr(blocks, "summary_for_prompt") else None
+            store = get_reachy_memory_blocks()
+            block_parts: list[str] = []
+            for label in ("human", "relationship"):
+                blk = store.get_block(label)
+                val = (getattr(blk, "value", "") or "").strip() if blk else ""
+                if val:
+                    block_parts.append(val)
+            summary = "\n".join(block_parts) if block_parts else None
             if summary:
                 notes.append(MemoryNote(
-                    text=str(summary), source="blocks", score=0.7,
+                    text=summary, source="blocks", score=0.7,
                     tags=["context", "always-on"],
                 ))
         except Exception as e:

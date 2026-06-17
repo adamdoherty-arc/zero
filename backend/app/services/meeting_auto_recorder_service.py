@@ -25,6 +25,23 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+def _normalize_attendee_emails(attendees) -> list[str]:
+    """Coerce a calendar event's attendees (JSONB list of email strings or
+    {email: ...} dicts) into a flat list of email strings the consent gate can
+    evaluate. Fix-118 (CAP-2)."""
+    out: list[str] = []
+    for a in attendees or []:
+        if isinstance(a, str):
+            email = a.strip()
+        elif isinstance(a, dict):
+            email = str(a.get("email") or a.get("emailAddress") or "").strip()
+        else:
+            email = str(getattr(a, "email", "") or "").strip()
+        if email:
+            out.append(email)
+    return out
+
+
 class MeetingAutoRecorderService:
     """Per-event opt-in auto-record registry."""
 
@@ -57,6 +74,7 @@ class MeetingAutoRecorderService:
         start_time: datetime,
         end_time: Optional[datetime] = None,
         title: Optional[str] = None,
+        attendees: Optional[list] = None,
     ) -> None:
         """Flag a calendar event for auto-record."""
         async with self._lock:
@@ -66,6 +84,14 @@ class MeetingAutoRecorderService:
                 "start_time": start_time.astimezone(timezone.utc).isoformat(),
                 "end_time": end_time.astimezone(timezone.utc).isoformat() if end_time else None,
                 "title": title,
+                # Fix-118 (CAP-2): persist attendee emails so the auto-record
+                # consent gate can actually evaluate external vs internal
+                # attendees. The state never carried attendees before, so the
+                # scheduler passed entry.get("attendees")=None to
+                # consent.evaluate() and EVERY auto-recorded meeting was judged
+                # "solo / no attendees" -> allow — a fail-open privacy gate that
+                # silently recorded external-attendee meetings.
+                "attendees": _normalize_attendee_emails(attendees),
                 "started": False,
                 "stopped": False,
             }
