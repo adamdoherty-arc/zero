@@ -139,6 +139,28 @@ class ReflectionService:
 
                 critiques = critique.get("critiques", [])
                 if not critiques:
+                    # Fix-119 (RFL-2): empty critiques == "good enough", but the
+                    # loop previously broke here WITHOUT validating, so on this
+                    # (common) exit the reported final_score reverted to the
+                    # pre-validate analyze score — an uncalibrated number
+                    # reported as the calibrated final. Validate before breaking,
+                    # mirroring the threshold path above.
+                    try:
+                        validation = await llm.structured_chat(
+                            prompt=VALIDATE_PROMPT.format(
+                                content_type=content_type,
+                                criteria=criteria_str,
+                                content=current_content[:3000],
+                            ),
+                            task_type="analysis",
+                            temperature=0.1,
+                        )
+                        final_score = float(validation.get("overall", overall_score))
+                        scores.append({"iteration": iteration + 0.5,
+                                      "score": final_score, "validation": True})
+                    except Exception as _e:
+                        logger.warning("reflection_validation_failed",
+                                       iteration=iteration, error=str(_e))
                     break
 
                 # 3. Improve

@@ -3012,12 +3012,40 @@ Have a great evening!"""
                             event_id, reason=f"consent: {consent.reason}"
                         )
                         continue
-                except AttributeError:
-                    # meeting_auto_recorder_service may not implement
-                    # mark_skipped yet — fall through to record.
-                    pass
                 except Exception as exc:
-                    logger.debug("consent_guard_skip", error=str(exc))
+                    # Fix-119 (ACT-1): a consent gate MUST fail CLOSED. The old
+                    # handlers swallowed any evaluate() error (e.g. a hand-edited
+                    # consent_policy.json with a non-string never_record_titles
+                    # entry, or a non-string attendee -> AttributeError in
+                    # _is_internal) and fell THROUGH to record — silently
+                    # capturing external / two-party-consent meetings with no
+                    # consent check. On ANY consent-evaluation failure: skip the
+                    # recording and surface a consent_needed toast so the user
+                    # can explicitly record this one if they want it.
+                    logger.warning(
+                        "consent_guard_failed_fail_closed",
+                        meeting_id=meeting_id,
+                        error=str(exc),
+                    )
+                    try:
+                        from app.services.notification_bus import (
+                            get_notification_bus,
+                        )
+
+                        await get_notification_bus().publish({
+                            "type": "meeting.consent_needed",
+                            "meeting_id": meeting_id,
+                            "event_id": event_id,
+                            "title": entry.get("title"),
+                            "reason": f"consent check failed: {exc}",
+                        })
+                    except Exception:
+                        pass
+                    try:
+                        await svc.mark_skipped(event_id, reason=f"consent_error: {exc}")
+                    except Exception:
+                        pass
+                    continue
                 # Superhuman opt-in: if the user clicked "Send Zero" for
                 # this event, skip passive loopback and let the meeting
                 # agent handle it (when REAL_DRIVER is on).

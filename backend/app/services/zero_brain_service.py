@@ -413,7 +413,14 @@ class ZeroBrainService:
 
     async def run_reflection(self, domain: Optional[str] = None) -> Dict[str, Any]:
         """Run reflection on recent decisions and outcomes."""
-        recent = await self._outcomes.get_recent(domain=domain, limit=20, scored_only=True)
+        # Fix-119 (LRN-1): decisions_only pushes the strategy/predicted filter
+        # into SQL so the LIMIT counts reflectable decision rows. Without it the
+        # Python filter below ran AFTER a limit=20 that could be fully consumed
+        # by voice-thumbs rows (scored but strategy/predicted=None), starving
+        # reflection to "no_decisions" while real decisions sat at position 21+.
+        recent = await self._outcomes.get_recent(
+            domain=domain, limit=20, scored_only=True, decisions_only=True
+        )
 
         decisions = [
             {

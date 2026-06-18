@@ -141,14 +141,34 @@ class ApprovalService:
                 # the loop. Only an explicit "reject" is honored; everything
                 # else (including a mistakenly-configured "approve") collapses
                 # to the inert "expired" state.
-                row.status = {
+                target_status = {
                     "reject": "rejected",
                     "rejected": "rejected",
                 }.get(action, "expired")
-                row.decision_by = "auto_expire"
-                row.decision_reason = "Expired without decision"
-                row.decided_at = now
-                expired_count += 1
+                # Fix-119 (ACT-2): use a guarded UPDATE ... WHERE status='pending'
+                # (mirroring _decide's atomic claim) instead of mutating the ORM
+                # object loaded above. The old path committed status='expired' via
+                # an UPDATE-by-PK with NO status re-check, so a user approve()/
+                # reject() that committed between this SELECT and its commit was
+                # silently clobbered back to 'expired' and its decision_by
+                # overwritten to 'auto_expire', destroying the human decision +
+                # audit record. The guard lets a concurrent decision win.
+                result = await session.execute(
+                    sql_update(ApprovalRequestModel)
+                    .where(
+                        ApprovalRequestModel.id == row.id,
+                        ApprovalRequestModel.status == "pending",
+                    )
+                    .values(
+                        status=target_status,
+                        decision_by="auto_expire",
+                        decision_reason="Expired without decision",
+                        decided_at=now,
+                    )
+                    .returning(ApprovalRequestModel.id)
+                )
+                if result.scalar_one_or_none() is not None:
+                    expired_count += 1
         if expired_count:
             logger.info("approvals_expired", count=expired_count)
         return expired_count

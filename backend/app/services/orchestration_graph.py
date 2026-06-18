@@ -625,7 +625,16 @@ async def task_node(state: OrchestratorState) -> dict:
             # Find the active sprint to add the task to
             sprints_text = await query_sprints.ainvoke({"status": "active", "limit": 1})
             sprint_match = re.search(r'S(\d+)', sprints_text)
-            sprint_id = int(sprint_match.group(1)) if sprint_match else 1
+            # Fix-119 (RSN-2): don't silently file into sprint 1 (an unrelated/
+            # closed/other-project sprint) when no active sprint id parses —
+            # surface it so the user starts or picks a sprint first.
+            if not sprint_match:
+                msg = (
+                    "No active sprint to attach that task to. Start a sprint "
+                    "first, then I'll add the task."
+                )
+                return {"result": msg, "messages": [AIMessage(content=msg)]}
+            sprint_id = int(sprint_match.group(1))
 
             result = await create_task.ainvoke({
                 "sprint_id": sprint_id,

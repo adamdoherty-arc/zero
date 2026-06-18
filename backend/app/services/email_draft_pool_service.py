@@ -193,6 +193,16 @@ class EmailDraftPool:
             store = self._read()
             for r in store.get("drafts") or []:
                 if r.get("id") == draft_id:
+                    # Fix-119 (ACT-4): guard the transition like approve() does.
+                    # reject() previously matched on id and unconditionally wrote
+                    # status='rejected', so a reject racing/after a send would
+                    # flip an already-'sent' draft to 'rejected', destroying the
+                    # sent/sent_message_id audit state and misrepresenting an
+                    # email the user actually sent as rejected. Only pending/
+                    # approved/failed are rejectable; sending/sent are left intact.
+                    cur = r.get("status")
+                    if cur not in ("pending", "approved", "failed"):
+                        return Draft(**{**r, "meta": r.get("meta") or {}})
                     r["status"] = "rejected"
                     r["rejection_reason"] = reason or None
                     r["updated_at"] = _now()

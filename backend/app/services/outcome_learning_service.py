@@ -11,7 +11,7 @@ from typing import List, Optional, Dict, Any
 from functools import lru_cache
 
 import structlog
-from sqlalchemy import select, func as sql_func
+from sqlalchemy import select, func as sql_func, or_
 
 from app.infrastructure.database import get_session
 from app.infrastructure.unified_llm_client import get_unified_llm_client
@@ -291,18 +291,37 @@ class OutcomeLearningService:
         try:
             since = datetime.now(timezone.utc) - timedelta(days=days)
             async with get_session() as session:
+                # Fix-119 (LRN-2): over-fetch then de-dupe by value. The voice
+                # feedback bridge stamps an IDENTICAL boilerplate string
+                # ("User rated this turn thumbs_up (score 100/100).") onto every
+                # thumbs row's `learnings`. With a bare LIMIT and no DISTINCT the
+                # `limit` most-recent voice learnings were near-always identical
+                # boilerplate, evicting every LLM-synthesized learning from the
+                # prompt-injection window. De-dupe (recency-preserving) so
+                # distinct learnings fill the limit.
                 query = (
                     select(BrainOutcomeRecordModel.learnings)
                     .where(BrainOutcomeRecordModel.created_at >= since)
                     .where(BrainOutcomeRecordModel.learnings.isnot(None))
-                    .order_by(BrainOutcomeRecordModel.created_at.desc())
-                    .limit(limit)
                 )
                 if domain:
                     query = query.where(BrainOutcomeRecordModel.domain == domain)
+                query = query.order_by(
+                    BrainOutcomeRecordModel.created_at.desc()
+                ).limit(max(limit * 10, 50))
 
                 result = await session.execute(query)
-                return [row[0] for row in result.all() if row[0]]
+                seen: set[str] = set()
+                out: List[str] = []
+                for row in result.all():
+                    val = row[0]
+                    if not val or val in seen:
+                        continue
+                    seen.add(val)
+                    out.append(val)
+                    if len(out) >= limit:
+                        break
+                return out
 
         except Exception as e:
             logger.error("extract_learnings_failed", error=str(e))
@@ -325,6 +344,7 @@ class OutcomeLearningService:
         domain: Optional[str] = None,
         limit: int = 20,
         scored_only: bool = False,
+        decisions_only: bool = False,
     ) -> List[OutcomeRecord]:
         """Get recent outcome records.
 
@@ -332,6 +352,14 @@ class OutcomeLearningService:
         the reflection job isn't starved to "no_decisions" when unscored
         voice-turn telemetry (actual_score=None) dominates the most-recent
         rows. Filters are applied before LIMIT so the cap counts scored rows.
+
+        ``decisions_only`` (Fix-119 LRN-1) additionally drops pure-feedback rows
+        (voice thumbs carry an actual_score but strategy_used/predicted_score
+        both NULL). run_reflection applied this filter in PYTHON *after*
+        get_recent(limit=20), so when >=20 of the most-recent scored rows were
+        voice thumbs the decisions list came back empty ("no_decisions") while
+        genuine decision rows sat at position 21+. Pushing it into SQL makes the
+        LIMIT count reflectable decision rows.
         """
         try:
             async with get_session() as session:
@@ -340,6 +368,13 @@ class OutcomeLearningService:
                     query = query.where(BrainOutcomeRecordModel.domain == domain)
                 if scored_only:
                     query = query.where(BrainOutcomeRecordModel.actual_score.isnot(None))
+                if decisions_only:
+                    query = query.where(
+                        or_(
+                            BrainOutcomeRecordModel.strategy_used.isnot(None),
+                            BrainOutcomeRecordModel.predicted_score.isnot(None),
+                        )
+                    )
                 query = query.order_by(
                     BrainOutcomeRecordModel.created_at.desc()
                 ).limit(limit)

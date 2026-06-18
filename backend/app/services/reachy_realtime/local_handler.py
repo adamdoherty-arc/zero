@@ -1554,15 +1554,19 @@ class LocalRealtimeHandler:
                 SUMMARY_TURN_INTERVAL,
                 get_reachy_memory_service,
             )
-            # Count user/assistant pairs we've seen this session. The system
-            # message at index 0 doesn't count.
-            convo_turns = sum(
-                1 for m in self._messages if m.get("role") in ("user", "assistant")
-            )
-            if convo_turns < SUMMARY_TURN_INTERVAL:
+            # Fix-119 (RFL-1): gate on a MONOTONIC per-turn counter, not
+            # `len(user/assistant msgs) % N == 0`. The message count grows a
+            # VARIABLE amount per turn (a tool-call turn appends an extra
+            # assistant message) and `_trim_history()` below shrinks the list, so
+            # the running count could jump past every multiple of N — the modulo
+            # equality would then never be hit and the tier-3 summary would never
+            # fire. `_maybe_summarize` is called exactly once per completed turn
+            # (text path :1297, voice path :1428, mutually exclusive), so a
+            # per-turn counter is the correct basis.
+            self._turns_since_summary = getattr(self, "_turns_since_summary", 0) + 1
+            if self._turns_since_summary < SUMMARY_TURN_INTERVAL:
                 return
-            if convo_turns % SUMMARY_TURN_INTERVAL != 0:
-                return
+            self._turns_since_summary = 0
             mem = get_reachy_memory_service()
             await mem.maybe_summarize(
                 "default",
@@ -1652,9 +1656,22 @@ class LocalRealtimeHandler:
             # history; otherwise the model's own prior chain-of-thought would
             # bias the next turn.
             cleaned_text = _clean_assistant_text(assistant_text)
+            # Fix-119 (RSP-1): if real (non-do_nothing) tool calls will dispatch
+            # this round, the spoken text must ride on the SAME assistant message
+            # as the tool_calls. The old code appended a content-only assistant
+            # message here AND a second assistant+tool_calls message below — two
+            # consecutive assistant turns, the spoken reply duplicated in history
+            # (biasing the next turn), and a malformed bare-content assistant
+            # wedged before the tool_calls message. It also persisted the RAW
+            # (un-think-stripped) text on the tool_calls message, leaking the
+            # model's chain-of-thought into the next turn's context.
+            real_tool_calls = bool(tool_calls) and not all(
+                tc.get("name") == "do_nothing" for tc in tool_calls
+            )
             if cleaned_text:
                 assistant_replied = True
-                self._messages.append({"role": "assistant", "content": cleaned_text})
+                if not real_tool_calls:
+                    self._messages.append({"role": "assistant", "content": cleaned_text})
             if cleaned_text and tool_calls and all(
                 tc.get("name") == "do_nothing" for tc in tool_calls
             ):
@@ -1666,10 +1683,11 @@ class LocalRealtimeHandler:
             if not tool_calls:
                 break
             # Dispatch each tool, append results, loop for the model's next
-            # response.
+            # response. The think-stripped spoken text (if any) rides on THIS
+            # single assistant+tool_calls message so history stays well-formed.
             self._messages.append({
                 "role": "assistant",
-                "content": assistant_text or None,
+                "content": cleaned_text or None,
                 "tool_calls": [
                     {
                         "id": tc["id"],
@@ -1726,7 +1744,21 @@ class LocalRealtimeHandler:
                     "content": json.dumps(result, default=str),
                 })
                 if tool_timed_out:
+                    # Fix-119 (RSP-2): the early return on tool-timeout would
+                    # otherwise leak any eager tasks not yet popped for later
+                    # tool_calls in this round (pre-existing). Cancel them first.
+                    for _orphan in eager_tasks.values():
+                        _orphan.cancel()
                     return
+
+            # Fix-119 (RSP-2): cancel eager motion tasks that fired mid-stream
+            # but weren't matched to a dispatched tool_call this round. The next
+            # round reassigns `eager_tasks`, so unmatched entries would be
+            # orphaned — never awaited, never cancelled — firing robot motion
+            # with a dangling "Task exception was never retrieved". The HTTPError
+            # path already cancels leftovers; the normal multi-round path didn't.
+            for _orphan in eager_tasks.values():
+                _orphan.cancel()
 
         if not assistant_replied and not self._cancel_response.is_set():
             fallback = "I heard you, but I couldn't complete that action."

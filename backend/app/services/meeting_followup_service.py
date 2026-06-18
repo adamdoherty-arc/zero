@@ -491,8 +491,33 @@ class MeetingFollowupService:
         except Exception as exc:
             return {"ok": False, "error": f"email_draft_pool unavailable: {exc}"}
 
+        # Fix-119 (ACT-3): the module contract claims followup drafts are
+        # idempotent ("the drafts already exist in the pool tagged
+        # source=meeting_followup"), but add_draft always appends a fresh draft.
+        # On force=true (which clears the ledger) or any ledger loss this
+        # re-created a full duplicate set per attendee, spamming the approval
+        # pool. De-dupe: skip recipients that already have a non-rejected
+        # meeting_followup draft for this meeting (a rejected one may legitimately
+        # be re-drafted).
+        already_drafted: set[str] = set()
+        try:
+            for d in await pool.list_drafts(limit=500):
+                m = getattr(d, "meta", None) or {}
+                if (
+                    m.get("source") == "meeting_followup"
+                    and str(m.get("meeting_id")) == str(meeting_id)
+                    and getattr(d, "status", None) != "rejected"
+                    and getattr(d, "to", None)
+                ):
+                    already_drafted.add(str(d.to).lower())
+        except Exception as exc:
+            logger.debug("meeting_followup_dedup_probe_failed", error=str(exc))
+
         for recipient in attendees:
             if "@" not in recipient:
+                continue
+            if recipient.lower() in already_drafted:
+                drafts.append({"to": recipient, "skipped": "already_drafted"})
                 continue
             body = self._compose_followup_body(
                 title=title,
