@@ -91,8 +91,22 @@ class VoiceCapture:
             )
             if self._mic_device_index is not None:
                 kwargs["device"] = self._mic_device_index
-            self._stream = sd.InputStream(**kwargs)
-            self._stream.start()
+            try:
+                self._stream = sd.InputStream(**kwargs)
+                self._stream.start()
+            except Exception:
+                # A stream object created before .start() raised (device busy,
+                # bad samplerate) still holds an open PortAudio handle. Close it
+                # and reset state so a failed start doesn't leak the device until
+                # process exit and a retry can re-open cleanly (CAP-4).
+                if self._stream is not None:
+                    try:
+                        self._stream.close()
+                    except Exception:
+                        pass
+                    self._stream = None
+                self._is_capturing = False
+                raise
             self._is_capturing = True
             self._started_at = time.time()
             # Safety cap: auto-stop after VOICE_MAX_SECONDS regardless of caller

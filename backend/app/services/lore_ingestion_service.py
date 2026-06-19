@@ -105,6 +105,21 @@ class LoreIngestionService:
                 batch_embeds = [None] * len(batch_texts)
             embeddings.extend(batch_embeds)
 
+        # Surface silent partial degradation: chunks whose embedding failed are
+        # still stored (text preserved for a future re-embed) but retrieve()
+        # filters embedding IS NOT NULL, so they are invisible to retrieval until
+        # the next successful re-ingest. Without this log the recall gap is silent
+        # (IDX-D).
+        null_embeds = sum(1 for e in embeddings if e is None)
+        if null_embeds:
+            logger.warning(
+                "lore_embeds_null",
+                character_id=character_id,
+                null_count=null_embeds,
+                total=len(embeddings),
+                note="stored chunks without embeddings are excluded from retrieval until re-ingest",
+            )
+
         # Replace existing rows for this character (idempotent ingestion).
         async with get_session() as session:
             await session.execute(

@@ -65,15 +65,52 @@ class MeetingSearchService:
             for r in results
         ]
 
+    @staticmethod
+    def _normalize_scores(rows: list[dict]) -> list[dict]:
+        """Min-max normalize one ranker's scores into [0,1].
+
+        Fulltext ``ts_rank`` (~0.0-0.1) and semantic ``1 - cosine_distance``
+        (~0.6-0.95) live on incompatible scales; normalizing each list
+        independently makes them comparable before the hybrid sort (RTV-3).
+        Degenerate lists (0/1 row, or all-equal scores) map to 1.0. Returns
+        copies so callers never mutate the source rows.
+        """
+        if not rows:
+            return []
+        scores = [r["score"] for r in rows]
+        lo, hi = min(scores), max(scores)
+        span = hi - lo
+        out = []
+        for r in rows:
+            rr = dict(r)
+            rr["score"] = 1.0 if span == 0 else (r["score"] - lo) / span
+            out.append(rr)
+        return out
+
     def _merge_results(self, ft: list[dict], sem: list[dict], limit: int) -> list[dict]:
-        seen = set()
-        merged = []
-        for r in ft + sem:
+        """Fuse fulltext + semantic hits into one ranking.
+
+        Each ranker's scores are min-max normalized to [0,1] first so the two
+        incompatible scales are comparable (fixes RTV-3, where raw ts_rank scores
+        were dwarfed by cosine similarities and fulltext relevance was ignored).
+        Dedup by (meeting_id, timestamp) keeps the HIGHER normalized score and
+        tags the segment ``hybrid`` when both rankers surfaced it, instead of
+        blindly keeping the first (fulltext) copy and burying a strong semantic
+        match (fixes RTV-4). ``score`` stays in [0,1] for the frontend's
+        "% match" display.
+        """
+        best: dict = {}
+        for r in self._normalize_scores(ft) + self._normalize_scores(sem):
             key = (r["meeting_id"], r.get("timestamp"))
-            if key not in seen:
-                seen.add(key)
-                merged.append(r)
-        merged.sort(key=lambda x: x["score"], reverse=True)
+            cur = best.get(key)
+            if cur is None:
+                best[key] = r
+            else:
+                winner = dict(r if r["score"] >= cur["score"] else cur)
+                winner["score"] = max(r["score"], cur["score"])
+                winner["source"] = "hybrid"
+                best[key] = winner
+        merged = sorted(best.values(), key=lambda x: x["score"], reverse=True)
         return merged[:limit]
 
 
