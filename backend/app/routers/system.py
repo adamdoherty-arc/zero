@@ -19,8 +19,9 @@ class SchedulerJobToggleRequest(BaseModel):
 
 
 class SchedulerJobsToggleRequest(BaseModel):
-    job_names: list[str] = Field(default_factory=list, min_length=1)
+    job_names: list[str] = Field(default_factory=list)
     enabled: bool
+    all_jobs: bool = False
 
 
 @router.get("/status")
@@ -197,10 +198,21 @@ async def set_scheduler_job_enabled(job_name: str, body: SchedulerJobToggleReque
 
 @router.patch("/scheduler/jobs")
 async def set_scheduler_jobs_enabled(body: SchedulerJobsToggleRequest) -> Dict[str, Any]:
-    """Enable or disable multiple scheduler jobs."""
+    """Enable or disable scheduler jobs.
+
+    Pass ``all_jobs=true`` to toggle EVERY known job (master switch). Otherwise
+    ``job_names`` must list the jobs to update.
+    """
     from app.services.scheduler_service import get_scheduler_service
 
-    result = await get_scheduler_service().set_jobs_enabled(body.job_names, body.enabled)
+    svc = get_scheduler_service()
+    if body.all_jobs:
+        return await svc.set_all_jobs_enabled(body.enabled)
+
+    if not body.job_names:
+        raise HTTPException(422, "job_names required unless all_jobs=true")
+
+    result = await svc.set_jobs_enabled(body.job_names, body.enabled)
     if not result.get("success"):
         raise HTTPException(404, result.get("error", "Unknown job"))
     return result

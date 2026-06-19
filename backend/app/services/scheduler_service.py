@@ -6977,6 +6977,71 @@ Have a great evening!"""
             "count": len(updated),
         }
 
+    async def set_all_jobs_enabled(self, enabled: bool) -> Dict[str, Any]:
+        """Master switch: persist and apply enabled-state for EVERY known job.
+
+        Used by the UI "Disable all" / "Enable all" control. Enumerates the full
+        job set server-side (DAILY_SCHEDULE union currently-registered jobs) so the
+        operation is authoritative and atomic rather than relying on the caller to
+        pass an exhaustive id list. Persists to the service_configs override row, so
+        the resulting state survives container restarts.
+        """
+        names = sorted(self._known_job_names())
+        for job_name in names:
+            self._enabled_overrides[job_name] = bool(enabled)
+        await self._save_enabled_overrides()
+
+        applied = 0
+        for job_name in names:
+            if self._apply_runtime_enabled(job_name, bool(enabled)):
+                applied += 1
+            if not enabled:
+                await self._after_disable_actions(job_name)
+
+        logger.info(
+            "scheduler_set_all_jobs",
+            enabled=bool(enabled),
+            count=len(names),
+            applied=applied,
+        )
+        return {
+            "success": True,
+            "enabled": bool(enabled),
+            "count": len(names),
+            "applied": applied,
+        }
+
+    def reconcile_enabled_state(self) -> Dict[str, int]:
+        """Re-apply each CURRENTLY-registered job's desired enabled-state.
+
+        Jobs added straight to the scheduler after ``start()`` returns (the
+        daily_brief / weekly_reflection / reachy_* ticks registered from
+        ``main.py`` and the presence service) skip the override gating applied
+        during ``start()``. Without a reconcile pass they always come up enabled
+        on boot, so a persisted disable — including the master "disable all" —
+        would silently leak those runtime jobs back on after a restart.
+
+        Call this once at the end of startup, after every ``add_job`` site has
+        run. It pauses jobs whose desired state is off and resumes jobs that
+        should be on, based on ``_desired_enabled`` (persisted override, else the
+        code default). Idempotent and safe to call repeatedly.
+        """
+        paused = 0
+        resumed = 0
+        for job in self.scheduler.get_jobs():
+            desired = self._desired_enabled(job.id)
+            currently_enabled = getattr(job, "next_run_time", None) is not None
+            if desired == currently_enabled:
+                continue
+            if self._apply_runtime_enabled(job.id, desired):
+                if desired:
+                    resumed += 1
+                else:
+                    paused += 1
+        if paused or resumed:
+            logger.info("scheduler_reconcile_enabled_state", paused=paused, resumed=resumed)
+        return {"paused": paused, "resumed": resumed}
+
     async def trigger_job(self, job_name: str) -> Dict[str, Any]:
         """Manually trigger a scheduled job (goes through audit log)."""
         handler = self._get_handler(job_name)

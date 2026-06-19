@@ -6,6 +6,7 @@ import type {
   HealthReadyResponse,
   SchedulerJobToggleResult,
   SchedulerJobsToggleResult,
+  SchedulerAllJobsToggleResult,
 } from '../types'
 
 const API_BASE = '/api'
@@ -89,6 +90,23 @@ export function useSetSchedulerJobsEnabled() {
       fetchApi<SchedulerJobsToggleResult>('/system/scheduler/jobs', {
         method: 'PATCH',
         body: JSON.stringify({ job_names: jobNames, enabled }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
+      queryClient.invalidateQueries({ queryKey: ['execution'] })
+      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
+    },
+  })
+}
+
+// Master switch: toggle EVERY known job at once (all_jobs=true server-side).
+export function useSetAllSchedulerJobsEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ enabled }: { enabled: boolean }) =>
+      fetchApi<SchedulerAllJobsToggleResult>('/system/scheduler/jobs', {
+        method: 'PATCH',
+        body: JSON.stringify({ all_jobs: true, enabled }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })

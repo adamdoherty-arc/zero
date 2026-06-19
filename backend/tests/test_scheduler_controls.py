@@ -97,6 +97,73 @@ async def test_persisted_override_can_enable_default_disabled_job_and_bulk_disab
 
 
 @pytest.mark.asyncio
+async def test_set_all_jobs_enabled_toggles_every_known_job(monkeypatch):
+    service, saves = await _started_service(monkeypatch)
+    try:
+        # Master OFF: every known job gets a persisted false override and is paused.
+        result = await service.set_all_jobs_enabled(False)
+        status = service.get_status()
+
+        assert result["success"] is True
+        assert result["count"] == 3
+        assert result["applied"] == 3
+        assert all(job["enabled"] is False for job in status["jobs"])
+        assert status["enabled_jobs"] == 0
+        assert status["disabled_jobs"] == status["total_jobs"] == 3
+        assert saves[-1] == {
+            "gmail_check": False,
+            "reachy_email_nudge": False,
+            "tiktok_niche_deep_dive": False,
+        }
+
+        # Master ON: every known job flips back on (explicit true override for all,
+        # including jobs that ship disabled-by-default).
+        result_on = await service.set_all_jobs_enabled(True)
+        status_on = service.get_status()
+
+        assert result_on["count"] == 3
+        assert status_on["enabled_jobs"] == 3
+        assert all(job["enabled"] is True for job in status_on["jobs"])
+        assert saves[-1] == {
+            "gmail_check": True,
+            "reachy_email_nudge": True,
+            "tiktok_niche_deep_dive": True,
+        }
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_pauses_runtime_jobs_added_after_start(monkeypatch):
+    """Regression: jobs registered directly on the scheduler AFTER start()
+    (e.g. daily_brief_morning from main.py) must honor a persisted disable.
+    Without reconcile they leak back on after a restart."""
+    service, _saves = await _started_service(monkeypatch, {"daily_brief_morning": False})
+    try:
+        # Simulate main.py adding a job straight to the live scheduler post-start,
+        # which therefore skips the override gating applied during start().
+        service.scheduler.add_job(
+            _noop_job,
+            trigger="interval",
+            minutes=30,
+            id="daily_brief_morning",
+            name="Daily brief composer",
+            replace_existing=True,
+        )
+        before = {job["id"]: job for job in service.get_status()["jobs"]}
+        assert before["daily_brief_morning"]["enabled"] is True  # leaked on
+
+        result = service.reconcile_enabled_state()
+        after = {job["id"]: job for job in service.get_status()["jobs"]}
+
+        assert result["paused"] >= 1
+        assert after["daily_brief_morning"]["enabled"] is False
+        assert after["daily_brief_morning"]["next_run"] is None
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
 async def test_unknown_scheduler_job_returns_error_without_saving(monkeypatch):
     service, saves = await _started_service(monkeypatch)
     try:
@@ -164,6 +231,53 @@ async def test_email_voice_suppresses_announced_ids_and_clears_silently():
     assert status["active_email_id"] is None
     assert status["suppressed_count"] == 2
     assert added_again == 0
+
+
+@pytest.mark.asyncio
+async def test_scheduler_jobs_endpoint_all_jobs_branch(monkeypatch):
+    """PATCH /scheduler/jobs with all_jobs=true routes to the master switch;
+    an empty job list without all_jobs is a 422."""
+    from fastapi import HTTPException
+
+    from app.routers import system as system_router
+    from app.services import scheduler_service as scheduler_module
+
+    class FakeScheduler:
+        def __init__(self) -> None:
+            self.all_calls: list[bool] = []
+            self.bulk_calls: list[tuple[list[str], bool]] = []
+
+        async def set_all_jobs_enabled(self, enabled: bool) -> dict:
+            self.all_calls.append(enabled)
+            return {"success": True, "enabled": enabled, "count": 161, "applied": 161}
+
+        async def set_jobs_enabled(self, job_names, enabled) -> dict:
+            self.bulk_calls.append((list(job_names), enabled))
+            return {"success": True, "enabled": enabled, "updated": [], "count": len(job_names)}
+
+    fake = FakeScheduler()
+    monkeypatch.setattr(scheduler_module, "get_scheduler_service", lambda: fake)
+
+    # all_jobs=true → master switch, ignores job_names
+    result = await system_router.set_scheduler_jobs_enabled(
+        system_router.SchedulerJobsToggleRequest(enabled=False, all_jobs=True)
+    )
+    assert result["count"] == 161
+    assert fake.all_calls == [False]
+    assert fake.bulk_calls == []
+
+    # explicit job list → bulk path
+    await system_router.set_scheduler_jobs_enabled(
+        system_router.SchedulerJobsToggleRequest(job_names=["gmail_check"], enabled=True)
+    )
+    assert fake.bulk_calls == [(["gmail_check"], True)]
+
+    # empty list without all_jobs → 422
+    with pytest.raises(HTTPException) as exc:
+        await system_router.set_scheduler_jobs_enabled(
+            system_router.SchedulerJobsToggleRequest(enabled=True)
+        )
+    assert exc.value.status_code == 422
 
 
 def test_scheduler_default_enabled_policy():

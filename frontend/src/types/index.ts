@@ -1162,6 +1162,14 @@ export interface SchedulerJobsToggleResult {
   updated: SchedulerJobToggleUpdate[]
 }
 
+// Master switch (all_jobs=true) — enumerates every job server-side.
+export interface SchedulerAllJobsToggleResult {
+  success: boolean
+  enabled: boolean
+  count: number
+  applied: number
+}
+
 export interface SchedulerAuditEntry {
   job_name: string
   started_at: string

@@ -5,6 +5,7 @@ import { SchedulerTab } from '@/components/settings/SchedulerTab'
 import { EmailPage } from '@/pages/EmailPage'
 import {
   useSchedulerStatus,
+  useSetAllSchedulerJobsEnabled,
   useSetSchedulerJobEnabled,
   useSetSchedulerJobsEnabled,
   useTriggerJob,
@@ -13,6 +14,7 @@ import type { SchedulerStatus } from '@/types'
 
 vi.mock('@/hooks/useSystemApi', () => ({
   useSchedulerStatus: vi.fn(),
+  useSetAllSchedulerJobsEnabled: vi.fn(),
   useSetSchedulerJobEnabled: vi.fn(),
   useSetSchedulerJobsEnabled: vi.fn(),
   useTriggerJob: vi.fn(),
@@ -105,6 +107,7 @@ const schedulerStatus: SchedulerStatus = {
 
 const jobMutate = vi.fn()
 const bulkMutate = vi.fn()
+const allMutate = vi.fn()
 const triggerMutate = vi.fn()
 
 function installSchedulerHookMocks(status: SchedulerStatus = schedulerStatus) {
@@ -121,6 +124,11 @@ function installSchedulerHookMocks(status: SchedulerStatus = schedulerStatus) {
     mutate: bulkMutate,
     isPending: false,
   } as unknown as ReturnType<typeof useSetSchedulerJobsEnabled>)
+  vi.mocked(useSetAllSchedulerJobsEnabled).mockReturnValue({
+    mutate: allMutate,
+    isPending: false,
+    variables: undefined,
+  } as unknown as ReturnType<typeof useSetAllSchedulerJobsEnabled>)
   vi.mocked(useTriggerJob).mockReturnValue({
     mutate: triggerMutate,
     isPending: false,
@@ -131,6 +139,7 @@ function installSchedulerHookMocks(status: SchedulerStatus = schedulerStatus) {
 beforeEach(() => {
   jobMutate.mockClear()
   bulkMutate.mockClear()
+  allMutate.mockClear()
   triggerMutate.mockClear()
   installSchedulerHookMocks()
 })
@@ -156,6 +165,26 @@ describe('SchedulerTab', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Run reachy_email_nudge now' }))
     expect(triggerMutate).toHaveBeenCalledWith('reachy_email_nudge')
+  })
+
+  it('enables every job immediately via the master "Enable all" control', () => {
+    render(<SchedulerTab />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enable all' }))
+    expect(allMutate).toHaveBeenCalledWith({ enabled: true })
+  })
+
+  it('requires confirmation before disabling all jobs', () => {
+    render(<SchedulerTab />)
+
+    // The master button only opens a confirm dialog; it does not toggle yet.
+    fireEvent.click(screen.getByRole('button', { name: 'Disable all' }))
+    expect(allMutate).not.toHaveBeenCalled()
+
+    // Confirming in the dialog fires the all_jobs disable mutation.
+    fireEvent.click(screen.getByRole('button', { name: 'Disable all jobs' }))
+    expect(allMutate).toHaveBeenCalledTimes(1)
+    expect(allMutate.mock.calls[0][0]).toEqual({ enabled: false })
   })
 })
 

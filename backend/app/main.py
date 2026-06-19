@@ -486,6 +486,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to schedule weekly reflection", error=str(e))
 
+        # Reconcile persisted enabled-state across every job now registered,
+        # including the ones added directly above (daily_brief_morning,
+        # weekly_reflection, reachy_memory_compact, reachy_personality_synthesis_tick)
+        # and the presence-service ticks. These register AFTER start_scheduler()
+        # applied overrides, so without this pass a persisted disable — notably
+        # the master "disable all" — would leak them back on after a restart.
+        try:
+            from app.services.scheduler_service import get_scheduler_service
+            reconciled = get_scheduler_service().reconcile_enabled_state()
+            if reconciled.get("paused") or reconciled.get("resumed"):
+                logger.info("scheduler_enabled_state_reconciled", **reconciled)
+        except Exception as e:
+            logger.warning("scheduler_reconcile_failed", error=str(e))
+
     # Auto-resume character research queue from persisted state
     class _ContentProductionStartupSkip(Exception):
         pass

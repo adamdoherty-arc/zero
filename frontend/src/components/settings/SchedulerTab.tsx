@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
+  AlertTriangle,
   CheckCircle,
   ChevronDown,
   ChevronRight,
@@ -15,6 +16,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -22,6 +31,7 @@ import {
 } from '@/components/ui/tooltip'
 import {
   useSchedulerStatus,
+  useSetAllSchedulerJobsEnabled,
   useSetSchedulerJobEnabled,
   useSetSchedulerJobsEnabled,
   useTriggerJob,
@@ -84,8 +94,10 @@ export function SchedulerTab() {
   const triggerJob = useTriggerJob()
   const setJobEnabled = useSetSchedulerJobEnabled()
   const setJobsEnabled = useSetSchedulerJobsEnabled()
+  const setAllJobs = useSetAllSchedulerJobsEnabled()
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState<string[]>([])
+  const [confirmDisableAll, setConfirmDisableAll] = useState(false)
 
   const jobs = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -132,6 +144,10 @@ export function SchedulerTab() {
     )
   }
 
+  const enabledCountAll = status.enabled_jobs ?? 0
+  const totalCountAll = status.total_jobs ?? status.job_count ?? 0
+  const masterBusy = setAllJobs.isPending
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -143,21 +159,115 @@ export function SchedulerTab() {
                 Scheduler: {status.running ? 'Running' : 'Stopped'}
               </p>
               <p className="text-xs text-muted-foreground">
-                {status.enabled_jobs ?? 0} on / {status.disabled_jobs ?? 0} off / {status.total_jobs ?? status.job_count} total
+                {enabledCountAll} on / {status.disabled_jobs ?? 0} off / {totalCountAll} total
               </p>
             </div>
           </div>
 
-          <div className="relative w-full lg:w-80">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search jobs"
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={masterBusy || enabledCountAll >= totalCountAll}
+                    onClick={() => setAllJobs.mutate({ enabled: true })}
+                  >
+                    {masterBusy && setAllJobs.variables?.enabled ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Power className="h-4 w-4 text-green-400" />
+                    )}
+                    Enable all
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Turns on every job. Writes an explicit override for all jobs, including
+                  ones disabled by default (e.g. tiktok_*, reachy_email_nudge).
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 border-red-500/40 text-red-400 hover:text-red-300"
+                    disabled={masterBusy || enabledCountAll === 0}
+                    onClick={() => setConfirmDisableAll(true)}
+                  >
+                    {masterBusy && !setAllJobs.variables?.enabled ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PowerOff className="h-4 w-4" />
+                    )}
+                    Disable all
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  Pauses every job, including health/alerting/metrics. The system stops all
+                  autonomous work until re-enabled.
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="relative w-full lg:w-80">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search jobs"
+                className="pl-9"
+              />
+            </div>
           </div>
         </div>
+
+        <Dialog open={confirmDisableAll} onOpenChange={setConfirmDisableAll}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-400" />
+                Disable all {totalCountAll} jobs?
+              </DialogTitle>
+              <DialogDescription>
+                This pauses every scheduled job, including health checks, alerting, and
+                metrics. Zero will stop all autonomous work (briefings, email, research,
+                content loops, monitoring) until you re-enable. The off-state persists
+                across restarts. You can re-enable individually, by category, or with
+                "Enable all".
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfirmDisableAll(false)}
+                disabled={masterBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="gap-1.5"
+                disabled={masterBusy}
+                onClick={() =>
+                  setAllJobs.mutate(
+                    { enabled: false },
+                    { onSuccess: () => setConfirmDisableAll(false) },
+                  )
+                }
+              >
+                {masterBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PowerOff className="h-4 w-4" />}
+                Disable all jobs
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <div className="space-y-3">
           {groupedJobs.map(([category, categoryJobs]) => {
