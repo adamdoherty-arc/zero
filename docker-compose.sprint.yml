@@ -395,12 +395,16 @@ services:
     ports:
       - "${ZERO_TEMPORAL_PORT:-7233}:7233"
     healthcheck:
-      # Fix-116: 7233 is the gRPC frontend port, not HTTP — the old
-      # `curl http://127.0.0.1:7233/health` could never pass (curl can't speak
-      # gRPC and temporal binds the container IP, not loopback), so the
-      # container sat permanently "unhealthy" while actually serving. Use the
-      # temporal CLI gRPC health probe against the service-name address.
-      test: ["CMD-SHELL", "temporal operator cluster health --address zero-temporal:7233 >/dev/null 2>&1 || exit 1"]
+      # Fix-116: 7233 is the gRPC frontend port, not HTTP — curl can't speak
+      # gRPC and temporal binds the container IP (not loopback), so the old
+      # `curl http://127.0.0.1:7233/health` never passed.
+      # Fix (2026-06-19): the gRPC probe correctly used the CLI, but addressing
+      # it by the `zero-temporal` service name made the bundled Temporal CLI hang
+      # on DNS/IPv6 resolution until the 5s timeout — the container sat
+      # "unhealthy" while WorkflowService was SERVING (verified: temporalio SDK
+      # connect + list_workflows both succeed; `--address $(hostname -i)` returns
+      # SERVING instantly). Probe the container's own IPv4 to avoid the hang.
+      test: ["CMD-SHELL", "temporal operator cluster health --address $(hostname -i):7233 >/dev/null 2>&1 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
