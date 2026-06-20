@@ -139,6 +139,10 @@ class ReachyUserMemoryService:
         self._turns: list[Turn] = []
         self._notes: list[Note] = []
         self._turn_counter: int = 0
+        # Strong refs to in-flight background extraction tasks. CPython only
+        # weak-refs running tasks, so a bare create_task can be GC-cancelled
+        # mid-flight — silently dropping durable-note extraction. Anchor here.
+        self._bg_tasks: set[asyncio.Task] = set()
         self._load()
 
     @classmethod
@@ -384,7 +388,11 @@ class ReachyUserMemoryService:
         recent = self._turns[-EXTRACT_EVERY_N_TURNS:]
         if not recent:
             return
-        asyncio.create_task(self._extract_and_save(recent))
+        # Anchor the task so it isn't GC-cancelled before it persists durable
+        # notes (sibling deep_research_service anchors the same way).
+        task = asyncio.create_task(self._extract_and_save(recent))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def compact(self) -> dict:
         """

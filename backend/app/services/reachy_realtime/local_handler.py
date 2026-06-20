@@ -1645,6 +1645,17 @@ class LocalRealtimeHandler:
             else:
                 assistant_text, tool_calls, eager_tasks = completion
             if self._last_error == "local LLM timed out":
+                # Fix-122 (RSP-LH-1): on a stream timeout, _stream_completion
+                # still returns the 3-tuple with live eager_tasks (the timeout
+                # breaks the read loop and falls through to the normal return,
+                # NOT the httpx-error path that cancels at line ~1982). This
+                # early return must cancel them too — the sibling tool-timeout
+                # (RSP-2) and normal-round returns already do. Otherwise an
+                # eagerly-fired motion task is orphaned: GC-cancellable, a
+                # dangling "Task exception was never retrieved", and robot
+                # motion firing on a turn that failed.
+                for _orphan in eager_tasks.values():
+                    _orphan.cancel()
                 await self._emit({
                     "type": "error",
                     "code": "llm_timeout",

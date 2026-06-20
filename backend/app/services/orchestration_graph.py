@@ -1324,7 +1324,17 @@ async def council_node(state: OrchestratorState) -> dict:
                 lines = ["Council Decisions:"]
                 for d in decisions:
                     status = d.decision or "pending"
-                    lines.append(f"- [{status}] {d.topic} (confidence: {d.confidence_score:.0f}%)")
+                    # confidence_score is None for freshly-proposed (un-voted)
+                    # decisions; list_decisions(limit=10) returns those too, so
+                    # `:.0f` on None raised TypeError -> swallowed by the except
+                    # below -> the whole "list council decisions" reply died
+                    # the moment any unvoted decision existed.
+                    conf = (
+                        f"{d.confidence_score:.0f}%"
+                        if d.confidence_score is not None
+                        else "pending"
+                    )
+                    lines.append(f"- [{status}] {d.topic} (confidence: {conf})")
                 text = "\n".join(lines)
             else:
                 text = "No council decisions yet. Say 'propose <topic>' to start a council vote!"
