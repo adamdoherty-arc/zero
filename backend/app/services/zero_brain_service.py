@@ -445,17 +445,33 @@ class ZeroBrainService:
             decisions=decisions, domain=domain or "general"
         )
 
-        # Store learnings as episodic memories
+        # Store learnings as episodic memories. Fix-123 (LRN): per-learning
+        # try/except. The list is the product of an LLM synthesis call (cost +
+        # latency); a bare loop meant one transient store_direct failure
+        # (pgvector / mem0 / connection blip) raised out of the whole method,
+        # discarding every remaining learning AND the synthesis work, with the
+        # caller seeing only a generic "brain_reflection_failed". Isolate each
+        # store so the rare, valuable meta-learnings survive a single blip.
+        stored = 0
         for learning in learnings:
-            await self._memory.store_direct(
-                content=learning,
-                source_type="reflection",
-                namespace=domain or "general",
-                importance=75,
-                tags=["reflection", "meta-learning"],
-            )
+            try:
+                await self._memory.store_direct(
+                    content=learning,
+                    source_type="reflection",
+                    namespace=domain or "general",
+                    importance=75,
+                    tags=["reflection", "meta-learning"],
+                )
+                stored += 1
+            except Exception as e:
+                logger.warning("reflection_store_failed",
+                               learning=str(learning)[:80], error=str(e))
 
-        return {"learnings": learnings, "decisions_analyzed": len(decisions)}
+        return {
+            "learnings": learnings,
+            "decisions_analyzed": len(decisions),
+            "learnings_stored": stored,
+        }
 
     # ========================================
     # LEARNING CYCLES

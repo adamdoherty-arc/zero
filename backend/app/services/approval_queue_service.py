@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from app.db.models import AgentApprovalModel
 from app.infrastructure.config import get_settings
@@ -130,13 +130,28 @@ class ApprovalQueueService:
     ) -> Optional[AgentApprovalModel]:
         if status not in ("approved", "rejected"):
             raise ValueError(f"invalid decision status: {status!r}")
+        # Fix-123 (A1): an "approve" must not green-light a logically-expired
+        # request. expire_stale() only runs hourly, so a financial approval
+        # (30-min TTL) can sit pending-but-expired for up to ~59 min; without
+        # this guard a human (or polling caller) could mark it approved,
+        # producing a phantom approval the gated_call waiter would then execute —
+        # defeating the whole point of the shorter financial expiry. Rejecting an
+        # expired request stays allowed (it's already effectively denied).
+        predicates = [
+            AgentApprovalModel.id == approval_id,
+            AgentApprovalModel.status == "pending",
+        ]
+        if status == "approved":
+            predicates.append(
+                or_(
+                    AgentApprovalModel.expires_at.is_(None),
+                    AgentApprovalModel.expires_at >= _now(),
+                )
+            )
         async with get_session() as session:
             result = await session.execute(
                 update(AgentApprovalModel)
-                .where(
-                    AgentApprovalModel.id == approval_id,
-                    AgentApprovalModel.status == "pending",
-                )
+                .where(*predicates)
                 .values(
                     status=status,
                     decided_by=decided_by,
@@ -149,6 +164,12 @@ class ApprovalQueueService:
             await session.commit()
         if row:
             logger.info("approval_decided", id=approval_id, status=status, decided_by=decided_by)
+        elif status == "approved":
+            logger.info(
+                "approval_decide_noop",
+                id=approval_id,
+                note="not pending or already expired; approve refused",
+            )
         return row
 
     async def list(
@@ -161,6 +182,20 @@ class ApprovalQueueService:
             q = select(AgentApprovalModel).order_by(AgentApprovalModel.created_at.desc()).limit(limit)
             if status:
                 q = q.where(AgentApprovalModel.status == status)
+            # Fix-123 (A2): a row that is `pending` but past expires_at is
+            # logically dead — expire_stale() just hasn't swept it yet (hourly).
+            # Returning it from the pending list made dedup callers
+            # (_pending_task_approval_exists) treat a stale, never-actioned
+            # approval as a live gate, leaving the task BLOCKED with a dead
+            # approval reference for up to ~59 min, and surfaced stale rows as
+            # actionable in the UI. Exclude expired-but-unswept from `pending`.
+            if status == "pending":
+                q = q.where(
+                    or_(
+                        AgentApprovalModel.expires_at.is_(None),
+                        AgentApprovalModel.expires_at >= _now(),
+                    )
+                )
             result = await session.execute(q)
             return list(result.scalars().all())
 

@@ -189,18 +189,31 @@ class ReflectionService:
 
                 # 4. Validate (on last iteration only — threshold path validated above)
                 if iteration == max_iterations - 1:
-                    validation = await llm.structured_chat(
-                        prompt=VALIDATE_PROMPT.format(
-                            content_type=content_type,
-                            criteria=criteria_str,
-                            content=current_content[:3000],
-                        ),
-                        task_type="analysis",
-                        temperature=0.1,
-                    )
-                    final_score = float(validation.get("overall", overall_score))
-                    scores.append({"iteration": iteration + 0.5,
-                                  "score": final_score, "validation": True})
+                    # Fix-123 (RFL): guard the final-iteration validate the same
+                    # way the threshold (line 106) and empty-critique (line 148)
+                    # paths were guarded in Fix-117/119. Without its own
+                    # try/except, a validate failure here fell to the outer
+                    # `except` and logged the generic "reflection_iteration_failed"
+                    # — masking a *validation* failure as a generic one and still
+                    # reverting the reported final_score to the pre-validate
+                    # analyze score. Surface it specifically, consistent with the
+                    # other two exits.
+                    try:
+                        validation = await llm.structured_chat(
+                            prompt=VALIDATE_PROMPT.format(
+                                content_type=content_type,
+                                criteria=criteria_str,
+                                content=current_content[:3000],
+                            ),
+                            task_type="analysis",
+                            temperature=0.1,
+                        )
+                        final_score = float(validation.get("overall", overall_score))
+                        scores.append({"iteration": iteration + 0.5,
+                                      "score": final_score, "validation": True})
+                    except Exception as _e:
+                        logger.warning("reflection_validation_failed",
+                                       iteration=iteration, error=str(_e))
 
             except Exception as e:
                 logger.warning("reflection_iteration_failed",

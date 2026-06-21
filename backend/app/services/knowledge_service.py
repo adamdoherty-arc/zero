@@ -160,6 +160,13 @@ class KnowledgeService:
 
     async def create_note(self, note_data: NoteCreate) -> Note:
         """Create a new note."""
+        # Generate the embedding BEFORE opening the session. _generate_embedding
+        # is a network call to the embedder; awaiting it inside the session block
+        # pins a Postgres connection idle-in-transaction for its whole duration
+        # (rule 60-database.md: never hold a session across a network await ->
+        # hourly idle-in-tx FATALs / pool starvation under concurrent creates).
+        embed_text = f"{note_data.title or ''} {note_data.content}"
+        embedding = await self._generate_embedding(embed_text)
         async with get_session() as session:
             # Unique note ID. A count()+1 scheme races under concurrent creates
             # (two callers read the same count -> duplicate "note-N" primary key
@@ -168,10 +175,6 @@ class KnowledgeService:
             note_id = f"note-{uuid.uuid4().hex[:12]}"
 
             now = datetime.utcnow()
-
-            # Generate embedding for semantic search (non-blocking)
-            embed_text = f"{note_data.title or ''} {note_data.content}"
-            embedding = await self._generate_embedding(embed_text)
 
             orm_obj = NoteModel(
                 id=note_id,
@@ -369,6 +372,12 @@ class KnowledgeService:
         fact_id = f"fact-{uuid.uuid4().hex[:8]}"
         now = datetime.utcnow()
 
+        # Generate the embedding BEFORE opening the session. _generate_embedding
+        # is a network call to the embedder; awaiting it while a Postgres
+        # connection is held in-transaction starves the pool (rule 60-database.md:
+        # never hold a session across a network await). Compute first, write after.
+        embedding = await self._generate_embedding(fact)
+
         async with get_session() as session:
             # Ensure profile row exists
             profile = await session.get(UserProfileModel, 1)
@@ -388,9 +397,6 @@ class KnowledgeService:
                         )
                     )
                 ).scalar_one_or_none()
-
-            # Generate embedding for semantic search
-            embedding = await self._generate_embedding(fact)
 
             orm_obj = UserFactModel(
                 id=fact_id,
