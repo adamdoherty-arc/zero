@@ -186,6 +186,12 @@ class VaultIndexerService:
         # guard rejected EVERY 768-dim vector, storing NULL and silently degrading
         # dense retrieval to BM25-only (324/1267 chunks already NULL).
         self._embed_dim = self._settings.embedding_dimension
+        # IDX-REINDEX-2: serialize reindex passes. The scheduler's
+        # _run_vault_reindex_tick and a manual POST /reindex (or two manual
+        # calls) otherwise run delete-then-insert per path concurrently, which
+        # either UniqueViolation-aborts on ux_vault_chunks_path_idx or writes
+        # duplicate chunk rows. Only one pass runs at a time.
+        self._reindex_lock = asyncio.Lock()
 
     def available(self) -> bool:
         return self._root.is_dir()
@@ -217,6 +223,16 @@ class VaultIndexerService:
             return None
 
     async def reindex(self, *, force: bool = False, max_files: int = 500) -> dict[str, Any]:
+        """Serialized entrypoint (IDX-REINDEX-2): only one reindex pass runs at
+        a time. A second concurrent call is skipped rather than queued so
+        every-2-min ticks can't pile up behind a slow embed pass."""
+        if self._reindex_lock.locked():
+            logger.info("vault_reindex_already_running_skipped")
+            return {"status": "skipped", "reason": "reindex_in_progress"}
+        async with self._reindex_lock:
+            return await self._reindex_impl(force=force, max_files=max_files)
+
+    async def _reindex_impl(self, *, force: bool = False, max_files: int = 500) -> dict[str, Any]:
         """Scan vault, upsert changed files, drop orphaned chunks."""
         if not self.available():
             return {"status": "skipped", "reason": "vault_unavailable", "path": str(self._root)}

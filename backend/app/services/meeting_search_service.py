@@ -22,7 +22,15 @@ class MeetingSearchService:
             return []
 
         if search_type == "semantic":
-            return await self._semantic_search(query, db, limit)
+            # RTV-5: the semantic-only path must degrade as gracefully as the
+            # hybrid branch below. _semantic_search -> embed_text raises when the
+            # embedder is down; without this guard a `search_type=semantic`
+            # request 500s. Fall back to full-text rather than erroring.
+            try:
+                return await self._semantic_search(query, db, limit)
+            except Exception as e:
+                logger.warning("semantic_search_fallback", error=str(e))
+                return await self._fulltext_search(query, db, limit)
         elif search_type == "fulltext":
             return await self._fulltext_search(query, db, limit)
         else:

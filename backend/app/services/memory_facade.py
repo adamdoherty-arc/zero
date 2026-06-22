@@ -192,7 +192,12 @@ class MemoryFacade:
                 get_reachy_user_memory_service,
             )
             ru = get_reachy_user_memory_service()
-            for n in ru.relevant_notes(query, k=k) or []:
+            # RTV-7: relevant_notes() is the SYNC keyword-only path — it never
+            # uses vectors because it receives no query_embedding, so
+            # semantically-similar (non-keyword-overlapping) durable notes were
+            # silently never recalled. relevant_notes_async() embeds the query
+            # first and falls back to keyword overlap when the embedder is down.
+            for n in await ru.relevant_notes_async(query, k=k) or []:
                 if isinstance(n, dict):
                     text = n.get("text") or n.get("content") or ""
                     score = float(n.get("score") or 0.4)

@@ -51,6 +51,12 @@ class MeetingVectorService:
     ) -> list[dict]:
         """Search for similar transcript segments using cosine distance."""
         query_embedding = await self.embed_text(query)
+        # RTV-6: embed_text is typed -> list[float], but any embed path that
+        # returns None/[] (e.g. a future swap to embed_safe) would make the
+        # join below raise TypeError and cast a malformed "[]" vector. Guard.
+        if not query_embedding:
+            logger.warning("meeting_search_embed_empty", query=query[:80])
+            return []
 
         # Build query with pgvector cosine distance
         emb_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
