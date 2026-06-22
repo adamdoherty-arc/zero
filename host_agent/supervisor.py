@@ -97,14 +97,27 @@ def _utcnow_iso() -> str:
 
 
 def _daemon_env_args() -> list[str]:
-    # Default to --no-preload only. `--no-media` was the historical default
-    # but it silently breaks `/say` and `/sounds/play` — the daemon happily
-    # 200-OKs uploads then emits to nowhere. Media-on is the right default
-    # for the assistant. Override with ZERO_REACHY_DAEMON_ARGS for testing
-    # (e.g. headless CI: "--no-preload --no-media").
+    # Default to --no-preload AND --no-media.
+    #
+    # Why --no-media is now the default (reversed from the earlier media-on
+    # default): Zero owns ALL robot media itself, so the daemon's media server
+    # only CONTENDS for the single USB camera and loses the race against
+    # host_agent — surfacing as "media_server ERROR: Internal data stream error
+    # → streaming stopped, reason error (-5)", which drags the control loop down
+    # and trips the desktop app's connection healthcheck (DAEMON_TIMEOUT). With
+    # media on, the camera is broken anyway (host_agent holds it) AND the daemon
+    # destabilizes; with media off the daemon is rock-solid and the connection
+    # completes. Zero's own paths are unaffected:
+    #   - camera  → host_agent :18796/camera/mjpeg (CameraFeed.tsx)
+    #   - voice/TTS → piper :17002 → cpal speaker (sidecars::tts_speak)
+    #   - mic     → host_agent / voice_native cpal
+    # The only thing this disables is the daemon's filename-based sound playback
+    # (/api/media/play_sound — the Sounds tab + Settings test sound). Those can
+    # be rerouted through cpal; a working robot beats unusable daemon sound files.
+    # Override with ZERO_REACHY_DAEMON_ARGS (e.g. "--no-preload" to re-enable media).
     raw = os.getenv("ZERO_REACHY_DAEMON_ARGS")
     if raw is None or not raw.strip():
-        return ["--no-preload"]
+        return ["--no-preload", "--no-media"]
     return raw.split()
 
 
@@ -333,6 +346,16 @@ class DaemonSupervisor:
         if not _LAUNCHER_SCRIPT.exists():
             raise RuntimeError(f"launcher script missing: {_LAUNCHER_SCRIPT}")
 
+        # NOTE: an earlier revision swept ALL run_reachy_daemon.py processes here
+        # before spawning, to clear COM3 orphans. That backfired badly: when the
+        # machine is under load and a daemon is slow to become healthy, two
+        # near-simultaneous supervisor starts each killed the OTHER's still-
+        # starting daemon as "stale", producing a respawn storm that pegged the
+        # CPU and made the robot jerk. Orphan cleanup must NOT live on the spawn
+        # path. The narrow :8000 port-orphan check in start() is enough; true
+        # COM3 orphans are handled out-of-band by the desktop app's job-object
+        # kill-on-close. (Helper _find_stale_daemon_pids retained for diagnostics
+        # only — intentionally not called here.)
         today = datetime.now().strftime("%Y%m%d")
         log_path = _LOG_DIR / f"reachy-daemon-{today}.log"
         try:
@@ -1018,6 +1041,42 @@ def _find_daemon_listen_pid() -> int | None:
     return None
 
 
+# Markers that reliably identify a Reachy daemon process regardless of which
+# launcher started it. There are TWO launch paths: the host_agent supervisor
+# (run_reachy_daemon.py) and the desktop app's own launcher
+# (scripts/avast_ssl_fix.py … --desktop-app-daemon). An orphan from EITHER can
+# hold the motor COM port, so we must match both.
+_DAEMON_CMDLINE_MARKERS = ("run_reachy_daemon.py", "--desktop-app-daemon")
+
+
+def _find_stale_daemon_pids(exclude_pid: int | None = None) -> list[int]:
+    """PIDs of any Reachy daemon processes other than ``exclude_pid``.
+
+    A daemon orphaned by a force-killed / crashed desktop app can keep holding
+    the motor **COM port** WITHOUT serving :8000 — so ``_find_daemon_listen_pid``
+    (which only inspects the HTTP port) misses it, and the next daemon start
+    fails to open the port and the SDK reports the *misleading*
+    "No motors detected. Check if the power supply is connected and turned on!"
+    Matching by daemon command-line markers catches these port-less orphans from
+    both launch paths, so a restart / "Try Again" always recovers.
+    """
+    try:
+        import psutil  # type: ignore[import-not-found]
+    except Exception:
+        return []
+    pids: list[int] = []
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            if exclude_pid is not None and proc.pid == exclude_pid:
+                continue
+            cmd = " ".join(proc.info.get("cmdline") or []).lower()
+            if any(marker in cmd for marker in _DAEMON_CMDLINE_MARKERS):
+                pids.append(proc.pid)
+        except Exception:
+            continue
+    return pids
+
+
 def _kill_process_tree(root_pid: int) -> None:
     """Best-effort kill of a process and all its descendants. Used after the
     daemon's own ``terminate()`` because reachy_mini spawns a uvicorn child
@@ -1111,7 +1170,38 @@ def _daemon_http_get_json_sync(
     return status, data if isinstance(data, dict) else None
 
 
+def _daemon_tcp_open(timeout_s: float = 0.2) -> bool:
+    """Fast TCP connect probe. Returns True iff the daemon port accepts a
+    SYN within ``timeout_s``. Avoids the ~1-2s Windows TCP RST wait per
+    HTTP-level call when nothing is bound.
+
+    Sprint #8266 — used to short-circuit ``_probe_daemon_up_sync`` so the
+    Diagnostics tab probe + ``ha_daemon_status`` return in <250 ms when no
+    Reachy hardware/daemon is present, instead of blocking for ~4 s on the
+    two sequential HTTP probes below.
+    """
+    import socket
+    from urllib.parse import urlparse
+
+    parsed = urlparse(DAEMON_URL)
+    host = parsed.hostname or "127.0.0.1"
+    if host in {"localhost", "::1"}:
+        host = "127.0.0.1"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=timeout_s):
+            return True
+    except OSError:
+        return False
+
+
 def _probe_daemon_up_sync() -> bool:
+    # Sprint #8266 — fast TCP gate. Without it, the two sequential HTTP
+    # probes below cost ~4s when the daemon isn't running (verified with
+    # curl --max-time 6 -> TIME 4.271s). With it, no-daemon takes ~200ms
+    # and the existing HTTP path only runs when something IS on :8000.
+    if not _daemon_tcp_open(0.2):
+        return False
     try:
         status_code, status_data = _daemon_http_get_json_sync(
             "/api/daemon/status",
