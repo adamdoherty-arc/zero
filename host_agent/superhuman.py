@@ -73,6 +73,11 @@ class HostMeetingSession:
     ended_at: Optional[str] = None
     spoken_chars: int = 0
     error: Optional[str] = None
+    # F-19 transcript follow-up — best-effort caption capture (Google Meet only
+    # for now; Zoom/Teams scraping is a documented follow-on). Lines accumulate
+    # here as the captions DOM is polled; `transcript` is the joined text the
+    # fork persists into `meeting_records` when Zero leaves the meeting.
+    transcript: str = ""
 
 
 class SuperhumanDriver:
@@ -89,6 +94,11 @@ class SuperhumanDriver:
         self._pages: dict[str, Any] = {}  # session_id -> Playwright page
         self._cam_writers: dict[str, Any] = {}  # session_id -> pyvirtualcam.Camera
         self._cam_tasks: dict[str, asyncio.Task] = {}
+        # F-19 transcript follow-up — per-session ordered caption lines (de-duped)
+        # and the background caption-poller task, both keyed by session id.
+        self._caption_lines: dict[str, list[str]] = {}
+        self._caption_seen: dict[str, set[str]] = {}
+        self._caption_tasks: dict[str, asyncio.Task] = {}
 
     def _load(self) -> dict[str, HostMeetingSession]:
         if not _SESSIONS_PATH.exists():
@@ -178,6 +188,19 @@ class SuperhumanDriver:
         session.status = "leaving"
         self._save()
         # Tear down per-session resources.
+        # F-19 transcript follow-up — stop the caption poller FIRST and flush its
+        # accumulated lines onto the session so the transcript survives leave.
+        cap_task = self._caption_tasks.pop(session_id, None)
+        if cap_task and not cap_task.done():
+            cap_task.cancel()
+            try:
+                await cap_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        cap_lines = self._caption_lines.pop(session_id, None)
+        self._caption_seen.pop(session_id, None)
+        if cap_lines:
+            session.transcript = "\n".join(cap_lines)
         task = self._cam_tasks.pop(session_id, None)
         if task and not task.done():
             task.cancel()
@@ -206,6 +229,29 @@ class SuperhumanDriver:
     def get(self, session_id: str) -> dict[str, Any] | None:
         s = self._sessions.get(session_id)
         return asdict(s) if s else None
+
+    def notes(self, session_id: str) -> dict[str, Any] | None:
+        """F-19 transcript follow-up — return whatever caption transcript was
+        captured for a session. Reads from the live caption buffer when the
+        poller is still running, else from the saved session row. Returns None
+        when the session id is unknown so the caller can 404. The transcript is
+        the empty string when nothing was captured (Zoom/Teams, captions off,
+        or a stub/dry-run join)."""
+        s = self._sessions.get(session_id)
+        if s is None:
+            return None
+        live = self._caption_lines.get(session_id)
+        transcript = "\n".join(live) if live else (s.transcript or "")
+        return {
+            "session_id": s.id,
+            "transcript": transcript,
+            "display_name": s.display_name,
+            "status": s.status,
+            "url": s.url,
+            "dry_run": s.dry_run,
+            "joined_at": s.joined_at,
+            "ended_at": s.ended_at,
+        }
 
     def list_sessions(self) -> list[dict[str, Any]]:
         return [asdict(s) for s in self._sessions.values()]
@@ -276,6 +322,13 @@ class SuperhumanDriver:
                     continue
             # Start the virtual camera avatar loop in the background.
             self._cam_tasks[session.id] = asyncio.create_task(self._cam_loop(session))
+            # F-19 transcript follow-up — start best-effort caption capture
+            # (Google Meet only; tolerant of failure, never blocks the join).
+            self._caption_lines.setdefault(session.id, [])
+            self._caption_seen.setdefault(session.id, set())
+            self._caption_tasks[session.id] = asyncio.create_task(
+                self._caption_loop(session, page)
+            )
             session.status = "active"
             self._save()
             logger.info("superhuman_active", session=session.id, url=session.url)
@@ -316,6 +369,96 @@ class SuperhumanDriver:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("superhuman_cam_loop_failed", session=session.id, error=str(exc))
+
+    async def _enable_meet_captions(self, page: Any) -> None:
+        """Best-effort: turn on Google Meet live captions so the captions DOM
+        region populates. Tries the toolbar button first, then the `c` keyboard
+        shortcut. Shrugs on any failure — capture just yields an empty transcript."""
+        for selector in (
+            'button[aria-label*="aptions" i]',          # "Turn on captions"
+            'button[aria-label*="ubtitle" i]',          # localized "subtitles"
+            'button[jsname][data-tooltip*="aptions" i]',
+        ):
+            try:
+                await page.click(selector, timeout=1500)
+                return
+            except Exception:
+                continue
+        # Fallback: Meet's keyboard shortcut for captions is `c`.
+        try:
+            await page.keyboard.press("c")
+        except Exception:
+            pass
+
+    async def _caption_loop(self, session: HostMeetingSession, page: Any) -> None:
+        """Poll the Google Meet captions DOM region into the session transcript
+        buffer on a timer. Best-effort and provider-specific: Meet exposes its
+        live captions as readable DOM text; Zoom/Teams render captions in ways
+        that need separate scraping (documented follow-on). Never raises out —
+        a capture failure must not affect the meeting or the leave path.
+
+        De-dupes by line so the rolling captions overlay (which keeps the last
+        few lines visible) doesn't multiply the transcript. Cancelled cleanly on
+        ``leave``."""
+        # Only Meet is supported for now; skip the poller entirely otherwise so we
+        # don't burn cycles scraping a DOM that has no readable captions.
+        if "meet.google.com" not in (session.url or "").lower():
+            logger.debug(
+                "superhuman_caption_skip_unsupported_provider", session=session.id
+            )
+            return
+        # Give the call a moment to connect, then switch captions on.
+        try:
+            await asyncio.sleep(4.0)
+            await self._enable_meet_captions(page)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("superhuman_caption_enable_failed", session=session.id, error=str(exc))
+
+        # Meet renders each caption as a speaker chip + a text span inside a
+        # captions region. We read the region's visible text and split into lines.
+        selectors = (
+            'div[role="region"][aria-label*="aptions" i]',
+            'div[aria-label*="aptions" i]',
+            "div.a4cQT",  # Meet captions container class (best-effort, may change)
+        )
+        seen = self._caption_seen.setdefault(session.id, set())
+        lines = self._caption_lines.setdefault(session.id, [])
+        try:
+            while True:
+                text = ""
+                for sel in selectors:
+                    try:
+                        el = await page.query_selector(sel)
+                        if el is not None:
+                            text = (await el.inner_text()) or ""
+                            if text.strip():
+                                break
+                    except Exception:
+                        continue
+                if text.strip():
+                    for raw in text.splitlines():
+                        line = raw.strip()
+                        # Skip empties and the standalone speaker-name chips that
+                        # Meet renders on their own line (short, no sentence text).
+                        if not line:
+                            continue
+                        if line in seen:
+                            continue
+                        seen.add(line)
+                        lines.append(line)
+                    # Persist the rolling transcript onto the session so a notes
+                    # fetch mid-meeting already sees what's been said.
+                    session.transcript = "\n".join(lines)
+                await asyncio.sleep(2.0)
+        except asyncio.CancelledError:
+            # Final flush on cancellation so leave() captures the last lines.
+            session.transcript = "\n".join(lines)
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("superhuman_caption_loop_failed", session=session.id, error=str(exc))
+            session.transcript = "\n".join(lines)
 
     async def _pipe_to_virtual_mic(self, wav_bytes: bytes) -> None:
         """Decode WAV → PCM and play through ``CABLE Input`` (VB-Audio

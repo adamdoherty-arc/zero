@@ -182,6 +182,19 @@ def _can_use_openwakeword() -> bool:
 _pool: Optional[asyncpg.Pool] = None
 _capture: Optional[AudioCapture] = None
 _active_meeting_id: Optional[str] = None
+# Strong refs for best-effort fire-and-forget tasks so CPython's GC can't
+# collect a running task mid-flight (e.g. the recording->processing handoff).
+_BG_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_anchored(coro) -> "asyncio.Task":
+    """create_task() with a strong ref held in _BG_TASKS. A bare create_task
+    handle is only weakly referenced by the loop, so a fire-and-forget task can
+    be GC'd mid-flight; anchor + discard-on-done avoids that."""
+    t = asyncio.create_task(coro)
+    _BG_TASKS.add(t)
+    t.add_done_callback(_BG_TASKS.discard)
+    return t
 _wake_loop: Optional[object] = None  # WakeLoop or WhisperWakeLoop
 _wake_mode_actual: str = "off"
 _wake_start_task: Optional[asyncio.Task] = None
@@ -329,7 +342,7 @@ async def lifespan(app: FastAPI):
             )
             _pool = None
 
-    asyncio.create_task(_db_startup_background(), name="db_pool_startup")
+    _spawn_anchored(_db_startup_background())  # anchored: a GC'd task leaves _pool=None
 
     # Decide which wake loop (if any) to start. Wake initialization touches
     # Windows audio APIs, so keep it off the startup path; host_agent should
@@ -357,7 +370,7 @@ async def lifespan(app: FastAPI):
             logger.warning("voice_capture_warmup_failed", error=str(e))
 
     if HOST_AGENT_WARMUP:
-        asyncio.create_task(_voice_warmup(), name="voice_warmup")
+        _spawn_anchored(_voice_warmup())  # anchored: GC'd warmup silently reinstates cold start
     else:
         logger.info("voice_capture_warmup_skipped")
 
@@ -373,7 +386,7 @@ async def lifespan(app: FastAPI):
             logger.warning("live_transcription_warmup_failed", error=str(e))
 
     if HOST_AGENT_WARMUP:
-        asyncio.create_task(_live_warmup(), name="live_warmup")
+        _spawn_anchored(_live_warmup())  # anchored: GC'd warmup silently reinstates cold start
     else:
         logger.info("live_transcription_warmup_skipped")
 
@@ -607,6 +620,26 @@ async def agent_sessions():
         return {"sessions": [], "error": str(exc)}
 
 
+@app.get("/agent/sessions/{session_id}/notes")
+async def agent_session_notes(session_id: str):
+    """F-19 transcript follow-up — return the caption transcript captured for a
+    Superhuman session. Best-effort: Google Meet captions are scraped into the
+    session buffer; Zoom/Teams caption capture is a documented follow-on, so the
+    transcript may be empty. Shape:
+    ``{session_id, transcript, display_name, status, url, dry_run, joined_at,
+    ended_at}``. 404-ish ``{ok: False}`` when the session id is unknown."""
+    try:
+        from superhuman import get_superhuman_driver
+
+        notes = get_superhuman_driver().notes(session_id)
+        if notes is None:
+            return {"ok": False, "error": "unknown_session", "session_id": session_id}
+        return notes
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("agent_session_notes_failed", error=str(exc))
+        return {"ok": False, "error": str(exc), "session_id": session_id}
+
+
 @app.post("/state/clear-active-recording")
 async def state_clear_active_recording():
     """F-86 — steward auto-remediation hook. Clears a stale
@@ -744,7 +777,7 @@ async def voice_stop():
 
     reply = (intent_data.get("response_text") or "").strip()
     if reply:
-        asyncio.create_task(_reachy_say_quiet(reply))
+        _spawn_anchored(_reachy_say_quiet(reply))
 
     return {
         "captured": True,
@@ -949,13 +982,21 @@ async def wake_set_mode(request: WakeModeRequest):
     mic_idx = await asyncio.to_thread(find_default_mic_index, PREFERRED_MIC)
     _wake_loop = _build_wake_loop(requested, mic_idx)
     await asyncio.to_thread(_wake_loop.start)
-    _wake_mode_actual = requested
+    # Give the background thread up to 2 seconds to fail fast (e.g. device busy).
+    for _ in range(20):
+        if not _wake_loop.is_running:
+            break
+        await asyncio.sleep(0.1)
+    _wake_mode_actual = requested if _wake_loop.is_running else "off"
     try:
         from state import get_state_store
         get_state_store().update({"wake_mode": _wake_mode_actual})
     except Exception:
         pass
-    return {"mode": _wake_mode_actual, **_wake_loop.status()}
+    result = {"mode": _wake_mode_actual, **_wake_loop.status()}
+    if not _wake_loop.is_running:
+        result["warning"] = "Wake loop started but exited — mic device may be busy or unavailable."
+    return result
 
 
 @app.post("/wake/pause")
@@ -1824,7 +1865,7 @@ async def record_start(request: StartRecordingRequest):
         logger.warning("live_transcription_start_failed", error=str(e))
 
     if TTS_CONFIRMATIONS:
-        asyncio.create_task(_reachy_say_quiet("Recording started"))
+        _spawn_anchored(_reachy_say_quiet("Recording started"))
 
     # Feature-52: optional camera frame capture during the meeting.
     global _camera_capture_task, _camera_capture_meeting_id
@@ -1916,7 +1957,9 @@ async def record_stop():
 
     # Hand off to Zero's processing pipeline (transcribe -> summarize -> embed).
     if meeting_id:
-        asyncio.create_task(_trigger_zero_pipeline(meeting_id))
+        _pipe_task = asyncio.create_task(_trigger_zero_pipeline(meeting_id))
+        _BG_TASKS.add(_pipe_task)
+        _pipe_task.add_done_callback(_BG_TASKS.discard)
 
     return {
         "meeting_id": meeting_id,
@@ -2207,7 +2250,7 @@ async def speaker_flush():
         except Exception as e:
             if _speaker_stream is s:
                 _speaker_stream = None
-            asyncio.create_task(_stop_speaker_off_loop(s, timeout_s=1.0))
+            _spawn_anchored(_stop_speaker_off_loop(s, timeout_s=1.0))
             return {
                 "ok": False,
                 "error": f"speaker_flush_timeout:{type(e).__name__}",
