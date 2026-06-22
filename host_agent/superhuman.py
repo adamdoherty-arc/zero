@@ -40,8 +40,14 @@ logger = structlog.get_logger(__name__)
 _DATA_DIR = Path(__file__).resolve().parent.parent / "workspace" / "superhuman"
 _SESSIONS_PATH = _DATA_DIR / "sessions.json"
 _AVATAR_PATH = _DATA_DIR / "avatar.png"
+# NOTE: the host label must not contain `/`, `\`, `@`, or whitespace — `\` and `@`
+# are authority-confusion characters (a browser normalizes `\`→`/` and treats
+# `user@host` as userinfo), so permitting them would let
+# `https://attacker.com\@zoom.us/...` pass this Zoom allow-list yet navigate to
+# attacker.com. Require a path/query/fragment delimiter (or end) after the host.
 _MEET_URL_RE = re.compile(
-    r"^https?://(?:[^/\s]*zoom\.us|meet\.google\.com|teams\.microsoft\.com)[^\s]*$",
+    r"^https?://(?:[^/\s\\@]*zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com)"
+    r"(?:[:/?#][^\s]*)?$",
     re.IGNORECASE,
 )
 
