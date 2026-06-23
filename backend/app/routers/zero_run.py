@@ -485,10 +485,21 @@ def _extract_ac_from_description(description: str) -> str:
     return description[:2000]
 
 
-def _diff_for_files(files_changed: list[str], base: str = "HEAD~1") -> str:
-    for repo in ("/c/code/zero", "/app"):
-        if os.path.isdir(repo):
-            cmd = ["git", "-C", repo, "diff", base, "--"] + (files_changed or [])
+def _diff_for_files(files_changed, base: str = "HEAD~1") -> str:
+    # files_changed may arrive as a list OR a comma/whitespace-separated string
+    # (callers vary; the run/critic body forwards body["files_changed"] verbatim).
+    # The old `[...] + files_changed` assumed a list and 500'd with
+    # "can only concatenate list (not str) to list" on a string payload.
+    if isinstance(files_changed, str):
+        files_changed = [f for f in re.split(r"[,\s]+", files_changed.strip()) if f]
+    files_changed = list(files_changed or [])
+    # Prefer a real git checkout. The host repo is bind-mounted at /projects/zero;
+    # /app is the COPY'd code (no .git). Require .git so we never shell `git -C`
+    # at a non-repo. (The container also lacks the git binary — the working path
+    # is a caller-supplied `diff`; this stays as a native-host dev fallback.)
+    for repo in ("/projects/zero", "/c/code/zero", "/app"):
+        if os.path.isdir(os.path.join(repo, ".git")):
+            cmd = ["git", "-C", repo, "diff", base, "--"] + files_changed
             try:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
                 if result.returncode == 0:

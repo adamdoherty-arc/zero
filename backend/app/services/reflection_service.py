@@ -93,6 +93,16 @@ class ReflectionService:
                     temperature=0.1,
                 )
 
+                # RFL-2 (fdbed9cf): structured_chat is typed Union[dict, list] and
+                # _try_recover_json can hand back a list when the model emits a JSON
+                # array instead of the object the prompt asked for. A list has no
+                # .get(), so the bare analysis.get() below raised AttributeError into
+                # the outer except, which `break`s and discards the whole loop. Coerce
+                # a non-dict shape to {} so the iteration degrades to defaults instead
+                # of aborting. (The validation.get() calls already sit inside their own
+                # try/except; critique is guarded the same way below.)
+                if not isinstance(analysis, dict):
+                    analysis = {}
                 overall_score = float(analysis.get("overall", 50))
                 issues = analysis.get("issues", [])
                 scores.append({"iteration": iteration, "score": overall_score,
@@ -137,6 +147,11 @@ class ReflectionService:
                     temperature=0.2,
                 )
 
+                # RFL-2 (fdbed9cf): same dict-shape guard as the analyze step — a
+                # list reply would make critique.get() raise into the outer except
+                # and abort the loop.
+                if not isinstance(critique, dict):
+                    critique = {}
                 critiques = critique.get("critiques", [])
                 if not critiques:
                     # Fix-119 (RFL-2): empty critiques == "good enough", but the

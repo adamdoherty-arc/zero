@@ -164,7 +164,20 @@ class CouncilService:
                 # roles' default confidence (50) were summed but the average
                 # still divided by the full role count, polluting the stored
                 # confidence_score with non-voters.
-                total_confidence += float(vote.get("confidence", 50))
+                # RSN-1: the `confidence` field comes straight from LLM JSON and
+                # is NOT guaranteed numeric — a model can emit null, "high", or
+                # "85%". A bare float() then raised TypeError/ValueError out of
+                # conduct_vote(), aborting the whole tally and leaving the
+                # decision permanently unsaved. Coerce defensively; an
+                # unparseable confidence falls back to the neutral 50.
+                raw_conf = vote.get("confidence", 50)
+                try:
+                    conf = float(raw_conf)
+                except (TypeError, ValueError):
+                    conf = 50.0
+                if conf != conf:  # NaN guard
+                    conf = 50.0
+                total_confidence += conf
                 counted_votes += 1
 
         # Decision = majority vote. If every role abstained or failed

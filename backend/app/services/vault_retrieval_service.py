@@ -66,10 +66,21 @@ async def _embed_query(text_: str) -> Optional[list[float]]:
 # ``ensure_vault_search_infra()`` re-asserts the same idempotent DDL on EVERY
 # startup, healing the drift regardless of alembic state, and reports whether a
 # repair was actually needed so real drift is logged LOUDLY (not silently
-# fixed). Scope is the ONE actively-queried search table: dormant migration-only
-# objects (atomic_facts.content_tsv on the deprecated carousel_v2 path; empty
-# voiceprints/faceprints HNSW indexes) are intentionally excluded — re-adding
-# them would be churn on paths no live query touches.
+# fixed). Scope is the actively-queried vector-search tables. Dormant
+# migration-only objects on paths no live query touches stay excluded
+# (atomic_facts.content_tsv on the deprecated carousel_v2 path; the still-empty
+# voiceprints/faceprints HNSW indexes — 0 rows as of 2026-06-23, KNN there is a
+# no-op).
+#
+# IDX-EPISODIC-HNSW (fdbed9cf): episodic_memories IS now included. It crossed
+# 0 -> ~1500 live rows and ``episodic_memory_service.search()`` runs an
+# ``ORDER BY embedding <=> q LIMIT k`` cosine KNN on every recall (brain,
+# reflection, memory_facade fan-in). No ANN index was EVER defined for it
+# (migration 018 only added a btree on ``importance``; 055 only touched
+# vault_chunks), so recall full-scanned + top-N-sorted all rows (verified:
+# Seq Scan on 1496 rows -> Index Scan using hnsw after the fix). The repair
+# below adds the missing ``ix_episodic_memories_embedding_hnsw`` so a create_all
+# fresh-env keeps fast recall too.
 
 _SEARCH_INFRA_REPAIR_SQL: tuple[str, ...] = (
     "CREATE EXTENSION IF NOT EXISTS vector",
@@ -94,6 +105,18 @@ _SEARCH_INFRA_REPAIR_SQL: tuple[str, ...] = (
     "WITH (m = 16, ef_construction = 128)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_chunks_path_idx "
     "ON vault_chunks (path, chunk_idx)",
+)
+
+# IDX-EPISODIC-HNSW (fdbed9cf): the missing ANN index on the live episodic store.
+# Gated by a detect so the build (and its log line) only fires on real drift.
+_EPISODIC_HNSW_DETECT_SQL = text(
+    "SELECT count(*) FROM pg_indexes WHERE tablename='episodic_memories' "
+    "AND indexname='ix_episodic_memories_embedding_hnsw'"
+)
+_EPISODIC_HNSW_REPAIR_SQL = text(
+    "CREATE INDEX IF NOT EXISTS ix_episodic_memories_embedding_hnsw "
+    "ON episodic_memories USING hnsw (embedding vector_cosine_ops) "
+    "WITH (m = 16, ef_construction = 128)"
 )
 
 _SEARCH_INFRA_DETECT_SQL = text(
@@ -139,10 +162,24 @@ async def ensure_vault_search_infra() -> dict[str, Any]:
     Returns ``{"healed": bool, "missing_before": [...]}``.
     """
     before = await search_infra_status()
+    episodic_hnsw_created = False
     async with get_session() as session:
         for stmt in _SEARCH_INFRA_REPAIR_SQL:
             await session.execute(text(stmt))
+        # IDX-EPISODIC-HNSW: detect-then-create so the (potentially slow) HNSW
+        # build only runs on real drift, and the log distinguishes healed vs
+        # verified. On a fresh/empty env the table has 0 rows -> instant build.
+        epi_has = (await session.execute(_EPISODIC_HNSW_DETECT_SQL)).scalar()
+        if not epi_has:
+            await session.execute(_EPISODIC_HNSW_REPAIR_SQL)
+            episodic_hnsw_created = True
         await session.commit()
+    if episodic_hnsw_created:
+        logger.warning(
+            "episodic_search_infra.hnsw_created",
+            impact="episodic_memories KNN recall was full-scanning embedding; "
+                   "ix_episodic_memories_embedding_hnsw added (never migration-defined)",
+        )
     missing_before = before["missing"]
     if "vault_chunks.content_tsv" in missing_before:
         logger.error(
@@ -155,7 +192,11 @@ async def ensure_vault_search_infra() -> dict[str, Any]:
         logger.warning("vault_search_infra.drift_healed", missing=missing_before)
     else:
         logger.info("vault_search_infra.verified")
-    return {"healed": bool(missing_before), "missing_before": missing_before}
+    return {
+        "healed": bool(missing_before) or episodic_hnsw_created,
+        "missing_before": missing_before,
+        "episodic_hnsw_created": episodic_hnsw_created,
+    }
 
 
 class VaultRetrievalService:

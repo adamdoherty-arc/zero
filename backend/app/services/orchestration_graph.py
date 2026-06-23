@@ -1505,9 +1505,21 @@ async def brain_node(state: OrchestratorState) -> dict:
                 text = "No matching memories found."
         elif any(kw in msg_lower for kw in ["improve", "self-improve"]):
             result = await svc.run_improvement()
-            text = (f"Improvement target: **{result['target_dimension']}** "
-                    f"(score: {result['current_score']:.1f})\n"
-                    f"Action: {result.get('improvement_action', 'None')}")
+            # RSN-2: run_improvement() short-circuits to
+            # {"status": "no_benchmark_yet", "action": ...} when no benchmark
+            # exists — that dict has neither target_dimension nor current_score,
+            # so result['target_dimension'] raised KeyError, which the node's
+            # except swallowed into a generic "Brain query failed". Surface the
+            # real "run a benchmark first" guidance instead.
+            if "target_dimension" not in result:
+                text = (f"No improvement target yet: {result.get('status', 'unknown')}. "
+                        f"{result.get('action', 'Run a benchmark first.')}")
+            else:
+                _score = result.get('current_score')
+                _score_str = f"{_score:.1f}" if isinstance(_score, (int, float)) else str(_score)
+                text = (f"Improvement target: **{result['target_dimension']}** "
+                        f"(score: {_score_str})\n"
+                        f"Action: {result.get('improvement_action', 'None')}")
         elif "calibration" in msg_lower:
             cal = await svc.get_calibration()
             buckets = cal.get("buckets", [])

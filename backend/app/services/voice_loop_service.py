@@ -466,6 +466,16 @@ class VoiceLoopService:
             result["llm_error"] = str(e)
 
         # Step 3: Synthesize response (TTS) — timed via helper
+        # RSP-4 (fdbed9cf): a successful-but-empty LLM response (empty content, no
+        # exception) left response_text == "" — only the timeout/exception paths
+        # substitute _FALLBACK_LLM. Empty text then drove edge-tts to
+        # raise RuntimeError("edge-tts returned empty audio") on every empty turn
+        # (logged as an error, user hears nothing). Substitute the canned fallback so
+        # there is always something to speak.
+        if not (response_text or "").strip():
+            logger.info("voice_empty_llm_response_fallback")
+            response_text = _FALLBACK_LLM
+            result["llm_response"] = response_text
         audio_response = await self._safe_synthesize(response_text, phase_log)
         if audio_response is not None:
             result["audio_response_size"] = len(audio_response)
@@ -704,6 +714,16 @@ class VoiceLoopService:
             except asyncio.CancelledError:
                 pass
         self._listen_task = None
+        # RSP-3 (fdbed9cf): stop_listening only cancelled _listen_task; the
+        # fire-and-forget _bg gesture/emotion tasks (spawned at _dispatch_gestures /
+        # play_emotion) kept running, so robot gestures continued after the loop was
+        # stopped. Cancel + drain them too.
+        if self._bg:
+            pending = list(self._bg)
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
         logger.info("voice_loop_stopped")
 
     def get_status(self) -> dict:

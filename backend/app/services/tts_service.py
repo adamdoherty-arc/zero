@@ -378,18 +378,24 @@ class TTSService:
             import soundfile as sf
             import numpy as np
 
-            # Write MP3 to temp file for soundfile to read
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-                tmp.write(mp3_bytes)
-                tmp_path = tmp.name
-
+            # Write MP3 to temp file for soundfile to read.
+            # RSP-5 (fdbed9cf): capture tmp_path BEFORE the write and unlink in a
+            # finally that wraps the whole block. Previously tmp_path was bound after
+            # tmp.write(), and unlink only ran in the inner try/finally — so a failure
+            # during write or before read (the file is created delete=False) leaked the
+            # temp .mp3.
+            tmp_path = None
             try:
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                    tmp_path = tmp.name
+                    tmp.write(mp3_bytes)
                 data, samplerate = sf.read(tmp_path)
                 wav_buffer = io.BytesIO()
                 sf.write(wav_buffer, data, samplerate, format="WAV")
                 return wav_buffer.getvalue()
             finally:
-                os.unlink(tmp_path)
+                if tmp_path and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
         except Exception:
             # If conversion fails, return raw MP3 bytes
             # (most audio players handle both)

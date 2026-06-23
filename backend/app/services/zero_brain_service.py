@@ -455,14 +455,24 @@ class ZeroBrainService:
         stored = 0
         for learning in learnings:
             try:
-                await self._memory.store_direct(
+                mem = await self._memory.store_direct(
                     content=learning,
                     source_type="reflection",
                     namespace=domain or "general",
                     importance=75,
                     tags=["reflection", "meta-learning"],
                 )
-                stored += 1
+                # RFL-1 (fdbed9cf): store_direct catches all its own exceptions
+                # and returns None (episodic_memory_service:174-176) — it never
+                # raises, so the Fix-123 try/except below was dead and `stored`
+                # was incremented even when the pgvector/connection write silently
+                # failed, inflating the reported learnings_stored. Gate on the
+                # truthy return so the count reflects real persisted memories.
+                if mem is not None:
+                    stored += 1
+                else:
+                    logger.warning("reflection_store_returned_none",
+                                   learning=str(learning)[:80])
             except Exception as e:
                 logger.warning("reflection_store_failed",
                                learning=str(learning)[:80], error=str(e))

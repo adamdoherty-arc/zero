@@ -1143,7 +1143,41 @@ class LocalRealtimeHandler:
             task.cancel()
         if self._active_turn_tasks:
             await asyncio.gather(*list(self._active_turn_tasks), return_exceptions=True)
+        # RSP-1 (fdbed9cf): _spawn_bg tasks (memory + turn-outcome DB writes,
+        # speech_started emits) are deliberately strong-ref'd so they FINISH rather
+        # than being GC-cancelled mid-write (Fix-122). But stop() never drained them,
+        # so on WS close they raced the run() finally that aclose()'s self._http and
+        # tore down the session. Give the valuable writes a bounded window to commit,
+        # then cancel any straggler so nothing runs against a dead session.
+        if self._bg_tasks:
+            pending = list(self._bg_tasks)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending, return_exceptions=True),
+                    timeout=3.0,
+                )
+            except asyncio.TimeoutError:
+                for task in pending:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
         await self._emit_phase("idle")
+
+    @staticmethod
+    async def _drain_eager(eager_tasks: dict) -> None:
+        """RSP-2 (fdbed9cf): cancel un-consumed eager motion tasks AND await them.
+        These are asyncio.create_task(tool_registry.dispatch(...)) handles fired
+        mid-stream so motion lands with audio; on a timeout / tool-timeout / unmatched
+        round / httpx error they must be discarded. The old code called .cancel()
+        without awaiting, so the dispatch coroutine could run on to its next await
+        (robot motion firing on a failed turn) and leave a dangling 'Task exception
+        was never retrieved'. Gather after cancel so cancellation actually lands."""
+        if not eager_tasks:
+            return
+        for _t in eager_tasks.values():
+            if not _t.done():
+                _t.cancel()
+        await asyncio.gather(*eager_tasks.values(), return_exceptions=True)
 
     # -------------------- inbound audio + VAD --------------------
 
@@ -1654,8 +1688,7 @@ class LocalRealtimeHandler:
                 # eagerly-fired motion task is orphaned: GC-cancellable, a
                 # dangling "Task exception was never retrieved", and robot
                 # motion firing on a turn that failed.
-                for _orphan in eager_tasks.values():
-                    _orphan.cancel()
+                await self._drain_eager(eager_tasks)
                 await self._emit({
                     "type": "error",
                     "code": "llm_timeout",
@@ -1758,8 +1791,7 @@ class LocalRealtimeHandler:
                     # Fix-119 (RSP-2): the early return on tool-timeout would
                     # otherwise leak any eager tasks not yet popped for later
                     # tool_calls in this round (pre-existing). Cancel them first.
-                    for _orphan in eager_tasks.values():
-                        _orphan.cancel()
+                    await self._drain_eager(eager_tasks)
                     return
 
             # Fix-119 (RSP-2): cancel eager motion tasks that fired mid-stream
@@ -1768,8 +1800,7 @@ class LocalRealtimeHandler:
             # orphaned — never awaited, never cancelled — firing robot motion
             # with a dangling "Task exception was never retrieved". The HTTPError
             # path already cancels leftovers; the normal multi-round path didn't.
-            for _orphan in eager_tasks.values():
-                _orphan.cancel()
+            await self._drain_eager(eager_tasks)
 
         if not assistant_replied and not self._cancel_response.is_set():
             fallback = "I heard you, but I couldn't complete that action."
@@ -1990,9 +2021,7 @@ class LocalRealtimeHandler:
             # the 2-tuple error signal makes the caller discard eager_tasks, so
             # without this they'd be orphaned: unawaited ("Task exception was
             # never retrieved") and firing robot motion on a turn that failed.
-            for _t in eager_tasks.values():
-                if not _t.done():
-                    _t.cancel()
+            await self._drain_eager(eager_tasks)
             await self._emit({"type": "error", "message": f"Local backend stream failed: {e}"})
             return text_acc, []
 
