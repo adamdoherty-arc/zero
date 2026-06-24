@@ -453,8 +453,23 @@ class ZeroBrainService:
         # caller seeing only a generic "brain_reflection_failed". Isolate each
         # store so the rare, valuable meta-learnings survive a single blip.
         stored = 0
+        skipped_dupe = 0
         for learning in learnings:
             try:
+                # RFL-3 (Fix-126): idempotency. A re-fired reflection (manual +
+                # scheduled, a retry, or two overlapping triggers) re-synthesizes
+                # near-identical learnings over the same recent-decisions window.
+                # Skip storing one whose content already exists in the window so the
+                # double-run doesn't pollute enrich_prompt retrieval with duplicates.
+                if await self._memory.exists_recent(
+                    content=learning,
+                    source_type="reflection",
+                    namespace=domain or "general",
+                ):
+                    skipped_dupe += 1
+                    logger.info("reflection_store_skipped_duplicate",
+                                learning=str(learning)[:80])
+                    continue
                 mem = await self._memory.store_direct(
                     content=learning,
                     source_type="reflection",
@@ -481,6 +496,7 @@ class ZeroBrainService:
             "learnings": learnings,
             "decisions_analyzed": len(decisions),
             "learnings_stored": stored,
+            "duplicates_skipped": skipped_dupe,
         }
 
     # ========================================

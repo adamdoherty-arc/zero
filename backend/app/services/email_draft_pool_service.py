@@ -182,6 +182,13 @@ class EmailDraftPool:
             drafts = store.get("drafts") or []
             for r in drafts:
                 if r.get("id") == draft_id:
+                    # Fix-126 (ACT-A3): guard the transition like reject()/approve().
+                    # Editing the body of an already sent/sending/rejected draft
+                    # corrupts the audit record (the displayed body no longer
+                    # matches what Gmail sent) or mutates an in-flight "sending"
+                    # claim. Only pending/approved/failed bodies are editable.
+                    if r.get("status") not in ("pending", "approved", "failed"):
+                        return Draft(**{**r, "meta": r.get("meta") or {}})
                     r["body"] = body or ""
                     r["updated_at"] = _now()
                     self._write(store)
@@ -318,13 +325,24 @@ class EmailDraftPool:
             if draft.thread_id and (has_kwargs or "thread_id" in accepted):
                 kwargs["thread_id"] = draft.thread_id
             msg = await send_fn(**kwargs)
+        except Exception as e:
+            # Failure BEFORE/DURING dispatch (service acquisition, signature, or
+            # the send call itself) — nothing was sent, so 'failed' (re-sendable)
+            # is correct and a later re-approve won't double-send.
+            logger.warning("draft_pool_send_failed", draft_id=draft.id, error=str(e))
+            return None, str(e)
+        # Fix-126 (ACT-A4): send_fn returned -> Gmail accepted the message. A
+        # failure to parse the response id must NOT be reported as 'failed'
+        # (failed drafts are re-sendable, so the already-accepted message would be
+        # sent a second time). Treat a parse error as a successful send.
+        try:
             msg_id = (
                 msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
             )
-            return str(msg_id) if msg_id else "sent", None
-        except Exception as e:
-            logger.warning("draft_pool_send_failed", draft_id=draft.id, error=str(e))
-            return None, str(e)
+        except Exception as parse_err:
+            logger.warning("draft_pool_send_parse_failed", draft_id=draft.id, error=str(parse_err))
+            return "sent", None
+        return str(msg_id) if msg_id else "sent", None
 
     async def stats(self) -> dict[str, Any]:
         async with self._lock:

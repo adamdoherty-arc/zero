@@ -263,52 +263,69 @@ class ContentLearningEngine:
                 result = await session.execute(query)
                 experiments = result.scalars().all()
 
+            def _avg_scores(rows) -> float:
+                # Fix-126 (LRN-C): control/variant_results are externally-appended
+                # JSONB; a single null/string "score" must not raise out of the
+                # whole sweep. Coerce per-element, skipping non-numeric values.
+                vals = []
+                for r in (rows or []):
+                    try:
+                        vals.append(float((r or {}).get("score") or 0))
+                    except (TypeError, ValueError, AttributeError):
+                        continue
+                return sum(vals) / len(vals) if vals else 0.0
+
             completed = []
             for exp in experiments:
-                control_n = len(exp.control_results or [])
-                variant_n = len(exp.variant_results or [])
-                target = exp.sample_size_target or 10
+                # Fix-126 (LRN-C): isolate each experiment so one malformed result
+                # row doesn't abort the entire active-experiment sweep (which would
+                # leave every experiment stuck "active" forever).
+                try:
+                    control_n = len(exp.control_results or [])
+                    variant_n = len(exp.variant_results or [])
+                    target = exp.sample_size_target or 10
 
-                if control_n >= target and variant_n >= target:
-                    # Enough data — determine winner
-                    control_scores = [r.get("score", 0) for r in (exp.control_results or [])]
-                    variant_scores = [r.get("score", 0) for r in (exp.variant_results or [])]
+                    if control_n >= target and variant_n >= target:
+                        # Enough data — determine winner
+                        control_avg = _avg_scores(exp.control_results)
+                        variant_avg = _avg_scores(exp.variant_results)
 
-                    control_avg = sum(control_scores) / len(control_scores) if control_scores else 0
-                    variant_avg = sum(variant_scores) / len(variant_scores) if variant_scores else 0
+                        diff = variant_avg - control_avg
+                        if abs(diff) < 5:
+                            winner = "inconclusive"
+                            conclusion = f"No significant difference (control: {control_avg:.1f}, variant: {variant_avg:.1f})"
+                        elif diff > 0:
+                            winner = "variant"
+                            conclusion = f"Variant wins by {diff:.1f} points (variant: {variant_avg:.1f} vs control: {control_avg:.1f})"
+                        else:
+                            winner = "control"
+                            conclusion = f"Control wins by {abs(diff):.1f} points (control: {control_avg:.1f} vs variant: {variant_avg:.1f})"
 
-                    diff = variant_avg - control_avg
-                    if abs(diff) < 5:
-                        winner = "inconclusive"
-                        conclusion = f"No significant difference (control: {control_avg:.1f}, variant: {variant_avg:.1f})"
-                    elif diff > 0:
-                        winner = "variant"
-                        conclusion = f"Variant wins by {diff:.1f} points (variant: {variant_avg:.1f} vs control: {control_avg:.1f})"
-                    else:
-                        winner = "control"
-                        conclusion = f"Control wins by {abs(diff):.1f} points (control: {control_avg:.1f} vs variant: {variant_avg:.1f})"
-
-                    now = datetime.now(timezone.utc)
-                    async with get_session() as session:
-                        await session.execute(
-                            update(ContentExperimentModel)
-                            .where(ContentExperimentModel.id == exp.id)
-                            .values(
-                                status="completed",
-                                winner=winner,
-                                conclusion=conclusion,
-                                completed_at=now,
+                        now = datetime.now(timezone.utc)
+                        async with get_session() as session:
+                            await session.execute(
+                                update(ContentExperimentModel)
+                                .where(ContentExperimentModel.id == exp.id)
+                                .values(
+                                    status="completed",
+                                    winner=winner,
+                                    conclusion=conclusion,
+                                    completed_at=now,
+                                )
                             )
-                        )
-                        await session.commit()
+                            await session.commit()
 
-                    completed.append({
-                        "id": exp.id, "name": exp.name,
-                        "winner": winner, "conclusion": conclusion,
-                    })
+                        completed.append({
+                            "id": exp.id, "name": exp.name,
+                            "winner": winner, "conclusion": conclusion,
+                        })
 
-                    logger.info("content_experiment_completed",
-                              id=exp.id, winner=winner)
+                        logger.info("content_experiment_completed",
+                                  id=exp.id, winner=winner)
+                except Exception as exp_err:
+                    logger.warning("content_experiment_eval_failed",
+                                   id=getattr(exp, "id", None), error=str(exp_err))
+                    continue
 
             return completed
 

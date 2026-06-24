@@ -51,14 +51,27 @@ async def normalize_tiktok_url(url: str, timeout: float = 3.0) -> tuple[str, Opt
 
     # Resolve shortlinks by following redirects
     if any(h in url for h in TIKTOK_SHORT_HOSTS) or "/t/" in url:
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
-                resp = await client.head(url)
-                final_url = str(resp.url)
-                if final_url:
-                    url = final_url
-        except Exception as e:
-            logger.info("tiktok_url_redirect_failed", url=url, error=str(e))
+        # Fix-126 (CAP-3): a transient HEAD failure previously left the short URL
+        # unresolved -> video_id=None -> create() dedup skipped -> a re-ingest of
+        # the same shared link spawns a duplicate row + re-download. Retry once,
+        # and surface a persistent failure at warning level (was a swallowed
+        # info log) so the dedup-defeating condition is visible.
+        for attempt in (1, 2):
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+                    resp = await client.head(url)
+                    final_url = str(resp.url)
+                    if final_url:
+                        url = final_url
+                break
+            except Exception as e:
+                if attempt == 2:
+                    logger.warning(
+                        "tiktok_url_redirect_failed",
+                        url=url,
+                        error=str(e),
+                        note="unresolved short link; dedup may miss -> possible duplicate ingest",
+                    )
 
     # Strip query string for dedup stability (keep URL readable)
     canonical = url.split("?", 1)[0].rstrip("/")

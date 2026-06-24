@@ -438,6 +438,14 @@ class CharacterReferenceVideoService:
             row.error_message = message
             row.retry_count = (row.retry_count or 0) + 1
             await session.flush()
+        # Fix-126 (CAP-2/CAP-4): cleanup_old_files only sweeps `ready` rows, so a
+        # download/extract/transcribe failure otherwise leaves video.*/audio.m4a/
+        # *.info.json orphaned on disk forever. Remove the per-ref working dir on
+        # failure — a retry re-downloads cleanly from the source URL.
+        try:
+            shutil.rmtree(_reference_dir(ref_id), ignore_errors=True)
+        except Exception as cleanup_err:
+            logger.warning("ref_video_failed_cleanup_error", ref_id=ref_id, error=str(cleanup_err))
 
     async def _run_pipeline(self, ref_id: str) -> None:
         """Download -> extract audio -> transcribe -> analyze."""

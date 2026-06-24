@@ -72,21 +72,54 @@ class EpisodicMemoryService:
             ollama = get_llm_client()
 
             for item in extracted[:10]:  # cap at 10 per extraction
-                content = item.get("content", "")
-                if not content or len(content) < 10:
-                    continue
+                # Fix-126 (LRN-A/CAP-1): one malformed LLM item must not abort the
+                # whole captured batch. Guard per-item: a non-dict element,
+                # null/"high" importance, or an empty embedding skips that item
+                # only — mirrors the Fix-123 reflection-store hardening.
+                try:
+                    if not isinstance(item, dict):
+                        continue
+                    content = item.get("content", "")
+                    if not content or len(content) < 10:
+                        continue
 
-                importance = float(item.get("importance", 50))
-                tags = item.get("tags", [])
-                ttl_days = HIGH_IMPORTANCE_TTL_DAYS if importance >= IMPORTANCE_THRESHOLD else DEFAULT_TTL_DAYS
+                    try:
+                        importance = float(item.get("importance") or 50)
+                    except (TypeError, ValueError):
+                        importance = 50.0
+                    tags = item.get("tags", [])
+                    ttl_days = HIGH_IMPORTANCE_TTL_DAYS if importance >= IMPORTANCE_THRESHOLD else DEFAULT_TTL_DAYS
 
-                embedding = await ollama.embed_safe(content)
+                    embedding = await ollama.embed_safe(content)
+                    if not embedding:
+                        # Fix-126 (LRN-B): search filters embedding IS NOT NULL, so a
+                        # null-vector row is unretrievable dead data — skip it rather
+                        # than persist + over-count it as a stored memory.
+                        logger.warning("episodic_embed_empty_skip",
+                                       namespace=namespace, source_type=source_type)
+                        continue
 
-                mem_id = self._gen_id()
-                now = datetime.now(timezone.utc)
+                    mem_id = self._gen_id()
+                    now = datetime.now(timezone.utc)
 
-                async with get_session() as session:
-                    model = EpisodicMemoryModel(
+                    async with get_session() as session:
+                        model = EpisodicMemoryModel(
+                            id=mem_id,
+                            namespace=namespace,
+                            content=content,
+                            source_type=source_type,
+                            source_id=source_id,
+                            importance=importance,
+                            tags=tags,
+                            context=context or {},
+                            embedding=embedding,
+                            expires_at=now + timedelta(days=ttl_days),
+                            created_at=now,
+                        )
+                        session.add(model)
+                        await session.commit()
+
+                    memories.append(EpisodicMemory(
                         id=mem_id,
                         namespace=namespace,
                         content=content,
@@ -95,25 +128,13 @@ class EpisodicMemoryService:
                         importance=importance,
                         tags=tags,
                         context=context or {},
-                        embedding=embedding,
                         expires_at=now + timedelta(days=ttl_days),
                         created_at=now,
-                    )
-                    session.add(model)
-                    await session.commit()
-
-                memories.append(EpisodicMemory(
-                    id=mem_id,
-                    namespace=namespace,
-                    content=content,
-                    source_type=source_type,
-                    source_id=source_id,
-                    importance=importance,
-                    tags=tags,
-                    context=context or {},
-                    expires_at=now + timedelta(days=ttl_days),
-                    created_at=now,
-                ))
+                    ))
+                except Exception as item_err:
+                    logger.warning("episodic_item_store_failed",
+                                   error=str(item_err), namespace=namespace)
+                    continue
 
             logger.info("episodic_memories_extracted",
                         count=len(memories), namespace=namespace, source_type=source_type)
@@ -137,6 +158,12 @@ class EpisodicMemoryService:
         try:
             ollama = get_llm_client()
             embedding = await ollama.embed_safe(content)
+            if not embedding:
+                # Fix-126 (LRN-B): a null embedding produces a row that semantic
+                # search can never return (it filters embedding IS NOT NULL).
+                # Refuse to store dead data rather than report a false success.
+                logger.warning("episodic_store_direct_embed_empty", source_type=source_type)
+                return None
 
             ttl_days = HIGH_IMPORTANCE_TTL_DAYS if importance >= IMPORTANCE_THRESHOLD else DEFAULT_TTL_DAYS
             now = datetime.now(timezone.utc)
@@ -174,6 +201,39 @@ class EpisodicMemoryService:
         except Exception as e:
             logger.error("episodic_store_direct_failed", error=str(e))
             return None
+
+    async def exists_recent(
+        self,
+        content: str,
+        source_type: str,
+        namespace: str = "general",
+        within_days: int = 7,
+    ) -> bool:
+        """True if an identical-content memory of this source_type already exists
+        in the recent window.
+
+        Fix-126 (RFL-3): lets re-runnable loops (weekly reflection, etc.) be
+        idempotent — a double-fire over the same decision window re-synthesizes
+        the same learnings, and storing them again pollutes retrieval with
+        duplicate meta-learnings. Callers skip the store when this returns True.
+        Fails OPEN (returns False on error) so a check blip never blocks a store.
+        """
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
+            async with get_session() as session:
+                stmt = (
+                    select(EpisodicMemoryModel.id)
+                    .where(EpisodicMemoryModel.content == content)
+                    .where(EpisodicMemoryModel.source_type == source_type)
+                    .where(EpisodicMemoryModel.namespace == namespace)
+                    .where(EpisodicMemoryModel.created_at >= cutoff)
+                    .limit(1)
+                )
+                result = await session.execute(stmt)
+                return result.first() is not None
+        except Exception as e:
+            logger.warning("episodic_exists_check_failed", error=str(e))
+            return False
 
     async def search(
         self,

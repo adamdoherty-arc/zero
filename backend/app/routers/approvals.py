@@ -1,10 +1,16 @@
 """Approval request endpoints — HITL workflows."""
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import structlog
 
-router = APIRouter()
+from app.infrastructure.auth import require_auth
+
+# Auth-gated: these endpoints approve write_external / financial requests, so
+# they sit on the human-approval trust boundary and must require the gateway
+# token — matching the sibling agent_approvals router. (Fix-126: the router was
+# previously mounted bare, leaving /approve + /reject reachable without auth.)
+router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger()
 
 

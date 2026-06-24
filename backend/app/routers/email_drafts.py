@@ -1,9 +1,16 @@
 """Smart email drafting + per-account approval pool API."""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
 
-router = APIRouter()
+from app.infrastructure.auth import require_auth
+
+# Auth-gated: the /pool/{id}/approve endpoint SENDS the email through Gmail, so
+# this is the "Reachy drafts, Adam approves" trust boundary. It must require the
+# gateway token (the React DraftsInbox already attaches it via getAuthHeaders()).
+# (Fix-126: the router was previously mounted bare — anyone reaching the backend
+# could approve-and-send any queued draft.)
+router = APIRouter(dependencies=[Depends(require_auth)])
 
 class DraftReply(BaseModel):
     email_id: str
