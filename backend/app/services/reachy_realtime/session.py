@@ -1185,6 +1185,7 @@ class RealtimeSession:
         for attempt in range(1, 4):
             if self.handler is not handler:
                 return
+            sink: Optional[ReachySpeakerSink] = None
             try:
                 sink = ReachySpeakerSink(host_agent_url)
                 # OpenAI realtime emits 24 kHz mono; Gemini Live also emits 24 kHz
@@ -1193,13 +1194,15 @@ class RealtimeSession:
                 if await sink.connect(rate=rate):
                     if self.handler is not handler:
                         await sink.close()
+                        sink = None
                         return
                     old_sink = self._speaker_sink
                     self._speaker_sink = sink
+                    sink = None  # adopted — exclude from the finally cleanup below
                     self._speaker_sink_retry_after = 0.0
                     if old_sink is not None:
                         await old_sink.close()
-                    sink_info = sink.info()
+                    sink_info = self._speaker_sink.info()
                     sink_info.pop("type", None)
                     self._output_health.update({
                         "sink": "reachy_speaker",
@@ -1223,6 +1226,16 @@ class RealtimeSession:
             except Exception as e:
                 last_error = str(e)
                 logger.warning("reachy_speaker_sink_init_failed", error=str(e))
+            finally:
+                # RSP-7 (supervise f8574c6d): close any sink NOT adopted above
+                # (connect()==False, a raised/cancelled error, or a break) so a
+                # half-open host_agent WS isn't leaked until TCP timeout. The
+                # adopted sink set `sink=None` and is skipped here.
+                if sink is not None:
+                    try:
+                        await sink.close()
+                    except Exception:
+                        pass
             if attempt < 3:
                 await asyncio.sleep(float(attempt))
         if self.handler is handler:

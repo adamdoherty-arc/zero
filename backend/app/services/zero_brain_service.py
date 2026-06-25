@@ -465,6 +465,11 @@ class ZeroBrainService:
                     content=learning,
                     source_type="reflection",
                     namespace=domain or "general",
+                    # RFL-6 (supervise f8574c6d): default within_days=7 is exactly
+                    # one weekly reflection cycle, so a manual re-run or a
+                    # restart-refire 8+ days after an outage re-stores the prior
+                    # cycle's near-identical learnings. 14 days spans two cycles.
+                    within_days=14,
                 ):
                     skipped_dupe += 1
                     logger.info("reflection_store_skipped_duplicate",

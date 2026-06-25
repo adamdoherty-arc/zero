@@ -2128,8 +2128,16 @@ class LocalRealtimeHandler:
         try:
             from app.services.tts_service import get_tts_service
             self._tts_service = self._tts_service or get_tts_service()
+            # RSP-6 (supervise f8574c6d): tts_service routes `kokoro:` and
+            # `sesame:` prefixes (defined as _KOKORO_PREFIX/_SESAME_PREFIX), but
+            # they were absent here, so a configured kokoro/sesame voice produced
+            # voice_override=None and synthesized on the session-default engine —
+            # silently ignoring the chosen voice for every chunk.
             voice_override = self.voice if (
-                self.voice.startswith("fish:") or _is_edge_tts_voice(self.voice)
+                self.voice.startswith("fish:")
+                or self.voice.startswith("kokoro:")
+                or self.voice.startswith("sesame:")
+                or _is_edge_tts_voice(self.voice)
             ) else None
             if _is_piper_voice(self.voice):
                 await self._tts_service.set_piper_voice(self.voice)

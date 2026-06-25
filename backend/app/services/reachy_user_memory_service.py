@@ -242,10 +242,15 @@ class ReachyUserMemoryService:
 
             return base + cat_weight + 0.3 * recency + 0.2 * usage * note.confidence
 
-        ranked = sorted(self._notes, key=score, reverse=True)
+        # RTV-10 (supervise f8574c6d): score() was called in BOTH the sort key and
+        # the filter comprehension, recomputing the O(D) cosine similarity twice
+        # per note on every recall. Compute once and reuse — identical result.
+        scored = sorted(
+            ((score(n), n) for n in self._notes), key=lambda sn: sn[0], reverse=True
+        )
         # Tighter threshold when using vectors since similarity is bounded.
         threshold = 0.7 if use_vectors else 0.5
-        top = [n for n in ranked if score(n) > threshold][:k]
+        top = [n for s, n in scored if s > threshold][:k]
 
         for n in top:
             n.uses += 1

@@ -198,6 +198,16 @@ class CouncilService:
         # Save
         async with get_session() as session:
             row = await session.get(CouncilDecisionModel, decision_id)
+            if row is None:
+                # RSN-3 (supervise f8574c6d): the row was read+guarded at the top
+                # of conduct_vote (line ~87), but a concurrent delete between that
+                # read and this write would make the bare `row.rounds = ...` below
+                # raise AttributeError, aborting the tally with the decision
+                # unsaved. Bail gracefully instead.
+                logger.warning(
+                    "council_decision_vanished_before_save", decision_id=decision_id
+                )
+                return None
             row.rounds = rounds
             row.votes = round2
             row.decision = final_decision

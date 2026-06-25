@@ -47,7 +47,12 @@ logger = structlog.get_logger(__name__)
 _SKIP_DIR_PARTS = {".obsidian", ".git", ".trash", "90_Archive", "node_modules"}
 _MAX_CHUNK_CHARS = 2000  # ~500 tokens with overlap
 _OVERLAP_CHARS = 240
-_FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
+# IDX-FM-NOEOL (supervise f8574c6d): the trailing `\n` after the closing `---`
+# was mandatory, so a pure-frontmatter note whose bytes end at `---` (no body,
+# no trailing newline) failed to match — its frontmatter (tags, partition
+# override) was silently dropped and a path-derived partition used instead.
+# Make the leading-newline + body group optional.
+_FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---(?:\n(.*))?$", re.DOTALL)
 
 
 def _partition_for(rel_path: Path) -> str:
@@ -99,7 +104,9 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         fm = yaml.safe_load(m.group(1)) or {}
         if not isinstance(fm, dict):
             fm = {}
-        return _json_safe(fm), m.group(2)
+        # group(2) is None when the note is frontmatter-only (no body) — coerce
+        # to "" so callers always get a str (IDX-FM-NOEOL).
+        return _json_safe(fm), (m.group(2) or "")
     except yaml.YAMLError:
         return {}, text
 
@@ -269,7 +276,13 @@ class VaultIndexerService:
 
         reindexed = 0
         capped = False
-        for fp in _iter_markdown(self._root):
+        # IDX-ASYNC-WALK (supervise f8574c6d): _iter_markdown drives a synchronous
+        # Path.rglob over the whole vault (~14.8k files); iterating it directly on
+        # the event loop stalls concurrent coroutines (voice path, HTTP handlers,
+        # scheduler) for the duration of the directory walk. Materialize the path
+        # list off-thread so only the embedding awaits run on the loop.
+        md_paths = await asyncio.to_thread(lambda: list(_iter_markdown(self._root)))
+        for fp in md_paths:
             rel = fp.relative_to(self._root).as_posix()
             live_paths.add(rel)
             scanned += 1

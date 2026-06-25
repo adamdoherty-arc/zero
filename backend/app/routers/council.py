@@ -32,9 +32,18 @@ async def conduct_vote(decision_id: str):
 
 
 @router.get("/decisions", response_model=list[CouncilDecision])
-async def list_decisions(status: Optional[str] = None, limit: int = 20):
+async def list_decisions(
+    status: Optional[str] = None, pending_only: bool = False, limit: int = 20
+):
+    # RSN-4 (supervise f8574c6d): the service supports pending_only (decision IS
+    # NULL = an undecided proposal), but the router never exposed it. A caller
+    # passing ?status=pending hit the `decision == "pending"` branch — a value
+    # never written (only approve/reject/needs_revision/None) — so it always
+    # returned []. Expose pending_only so undecided proposals are queryable.
     svc = get_council_service()
-    return await svc.list_decisions(status=status, limit=limit)
+    return await svc.list_decisions(
+        status=status, pending_only=pending_only, limit=limit
+    )
 
 
 @router.get("/decisions/{decision_id}", response_model=CouncilDecision)
