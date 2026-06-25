@@ -63,7 +63,7 @@ def _apply_local_backend_remap(provider: str, model: str) -> Tuple[str, str]:
         return provider, model
 
     if override == "vllm":
-        return "vllm", os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
+        return "vllm", os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")
     # override == "ollama" — not running in shared-infra since 2026-04-28; rollback only.
     return "ollama", os.getenv("OLLAMA_CHAT_MODEL", "")
 

@@ -158,10 +158,11 @@ class UnifiedLLMClient:
                         )
                 else:
                     provider_name = "vllm"
-                    # The vllm-chat container serves Qwen3-32B-AWQ; Bifrost routes
-                    # via `vllm-local/Qwen3-32B-AWQ`. The Qwen3.6-27B name in prior
-                    # comments was a stale legacy reference (Fix-61 audit confirmed).
-                    model_name = _os.getenv("VLLM_CHAT_MODEL", "Qwen3-32B-AWQ")
+                    # 2026-06-25 (model-agnostic): default to the stable Bifrost
+                    # alias `qwen3-chat`. The vllm-chat container declares the
+                    # alias regardless of which actual model is served, so future
+                    # shared-infra model swaps require no code changes here.
+                    model_name = _os.getenv("VLLM_CHAT_MODEL", "qwen3-chat")
                 fallbacks = []
 
         return await self._execute_with_fallbacks(
