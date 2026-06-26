@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import select, desc, and_, func, update as sql_update
+from sqlalchemy import select, desc, and_, or_, func, update as sql_update
 import structlog
 
 from app.db.models import ApprovalRequestModel
@@ -55,9 +55,22 @@ class ApprovalService:
 
     async def list_pending(self, limit: int = 50) -> List[Dict[str, Any]]:
         async with get_session() as session:
+            # Fix-128 (ACT-B2): exclude logically-expired-but-unswept rows.
+            # auto_expire_check only runs on a schedule, so a `pending` row can
+            # sit past its expires_at for up to a full sweep interval. The UI
+            # (and any dedup that feeds off this list) must not treat a dead
+            # approval as a live gate. Mirrors approval_queue_service.list()'s
+            # Fix-123 (A2) expiry filter on the pending bucket.
+            now = datetime.now(timezone.utc)
             stmt = (
                 select(ApprovalRequestModel)
-                .where(ApprovalRequestModel.status == "pending")
+                .where(
+                    ApprovalRequestModel.status == "pending",
+                    or_(
+                        ApprovalRequestModel.expires_at.is_(None),
+                        ApprovalRequestModel.expires_at >= now,
+                    ),
+                )
                 .order_by(desc(ApprovalRequestModel.created_at))
                 .limit(limit)
             )
@@ -95,24 +108,42 @@ class ApprovalService:
         # double-write the decision/audit fields. Mirrors the correct
         # approval_queue_service.decide. Returns None when the row was already
         # claimed by the winning caller.
+        # Fix-128 (ACT-B1): an "approve" must not green-light a logically-
+        # expired request. auto_expire_check() only runs on a schedule, so a
+        # pending-but-expired row can survive up to a full sweep interval;
+        # without this guard a human (or polling caller) could mark it approved,
+        # producing a phantom approval a downstream gated waiter would execute.
+        # Rejecting an expired request stays allowed (it is already effectively
+        # denied). Exact mirror of approval_queue_service.decide's Fix-123 (A1).
+        now = datetime.now(timezone.utc)
+        predicates = [
+            ApprovalRequestModel.id == request_id,
+            ApprovalRequestModel.status == "pending",
+        ]
+        if status == "approved":
+            predicates.append(
+                or_(
+                    ApprovalRequestModel.expires_at.is_(None),
+                    ApprovalRequestModel.expires_at >= now,
+                )
+            )
         async with get_session() as session:
             result = await session.execute(
                 sql_update(ApprovalRequestModel)
-                .where(
-                    ApprovalRequestModel.id == request_id,
-                    ApprovalRequestModel.status == "pending",
-                )
+                .where(*predicates)
                 .values(
                     status=status,
                     decision_by=decision_by,
                     decision_reason=reason,
-                    decided_at=datetime.now(timezone.utc),
+                    decided_at=now,
                 )
                 .returning(ApprovalRequestModel.id)
             )
             claimed = result.scalar_one_or_none()
             await session.commit()
         if claimed is None:
+            if status == "approved":
+                logger.info("approval_approve_refused_expired", id=request_id)
             return None
         logger.info("approval_decided", id=request_id, status=status, by=decision_by)
         return await self.get_request(request_id)

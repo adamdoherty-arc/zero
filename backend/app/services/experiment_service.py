@@ -154,6 +154,13 @@ class ExperimentService:
 
             async with get_session() as session:
                 row = await session.get(ExperimentModel, exp_id)
+                # Fix-128 (LRN-X1): the row can be deleted between the
+                # status="running" commit and this completion write; an
+                # unguarded `row.status = ...` would AttributeError on None,
+                # losing the results and leaving the experiment stuck "running".
+                if row is None:
+                    logger.warning("experiment_vanished_before_completion", exp_id=exp_id)
+                    return await self.get_experiment(exp_id)
                 row.status = "completed"
                 row.results = results if isinstance(results, dict) else {"raw": str(results)}
                 row.conclusion = analysis.get("conclusion", "") if isinstance(analysis, dict) else str(analysis)
@@ -166,6 +173,12 @@ class ExperimentService:
             logger.error("experiment_failed", exp_id=exp_id, error=str(e))
             async with get_session() as session:
                 row = await session.get(ExperimentModel, exp_id)
+                # Same concurrent-delete guard on the failure path — without it
+                # an experiment deleted mid-run raises a second AttributeError
+                # here that escapes run_experiment entirely.
+                if row is None:
+                    logger.warning("experiment_vanished_before_failure_write", exp_id=exp_id)
+                    return await self.get_experiment(exp_id)
                 row.status = "failed"
                 row.results = {"error": str(e)}
                 await session.commit()

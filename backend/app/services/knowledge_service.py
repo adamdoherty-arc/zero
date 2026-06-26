@@ -247,24 +247,47 @@ class KnowledgeService:
 
     async def update_note(self, note_id: str, updates: NoteUpdate) -> Optional[Note]:
         """Update a note."""
+        update_dict = updates.model_dump(exclude_unset=True)
+
+        # Fix-128 (LRN-X2): when an edit changes title/content the stored
+        # embedding goes stale, and semantic_search()/search_knowledge() (which
+        # rank notes by this vector) keep matching the note against its
+        # pre-edit text. Regenerate the embedding from the post-update
+        # title+content. Compute it BEFORE the write session — _generate_embedding
+        # is a network call and rule 60 forbids holding a DB session across it.
+        new_embedding = None
+        if any(update_dict.get(k) is not None for k in ("title", "content")):
+            async with get_session() as session:
+                cur = await session.get(NoteModel, note_id)
+                if cur is None:
+                    return None
+                new_title = update_dict.get("title") if update_dict.get("title") is not None else cur.title
+                new_content = update_dict.get("content") if update_dict.get("content") is not None else cur.content
+            new_embedding = await self._generate_embedding(f"{new_title or ''} {new_content or ''}")
+
         async with get_session() as session:
             row = await session.get(NoteModel, note_id)
             if row is None:
                 return None
 
-            update_dict = updates.model_dump(exclude_unset=True)
             for key, value in update_dict.items():
                 if value is not None:
                     if hasattr(value, 'value'):
                         value = value.value
                     setattr(row, key, value)
 
+            # Only overwrite the vector when regeneration succeeded; a transient
+            # embedder outage leaves the prior (slightly stale) vector rather
+            # than nulling it and dropping the note out of semantic recall.
+            if new_embedding is not None:
+                row.embedding = new_embedding
+
             row.updated_at = datetime.utcnow()
             await session.flush()
 
             note = self._orm_to_note(row)
 
-        logger.info("Note updated", note_id=note_id)
+        logger.info("Note updated", note_id=note_id, embedding_regenerated=bool(new_embedding))
         return note
 
     async def delete_note(self, note_id: str) -> bool:

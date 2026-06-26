@@ -102,6 +102,21 @@ class ContentLearningEngine:
                         "content_outcome_race_skipped", record_id=record.id
                     )
                     continue
+                except Exception as record_err:
+                    # Fix-128 (LRN-X3): record_outcome re-raises EVERY exception
+                    # (outcome_learning_service: `except Exception: ...; raise`),
+                    # not just IntegrityError. A transient OperationalError /
+                    # TimeoutError on one record previously escaped this narrow
+                    # guard AND the outer (ValueError,KeyError,TypeError,
+                    # ImportError) guard, aborting the whole batch and skipping
+                    # every remaining record. Isolate per-record like the
+                    # episodic/experiment loops do.
+                    logger.warning(
+                        "content_outcome_record_failed",
+                        record_id=record.id,
+                        error=str(record_err),
+                    )
+                    continue
                 processed += 1
 
             # Store summary as episodic memory
