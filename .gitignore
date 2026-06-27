@@ -103,3 +103,20 @@ backend/app/data/triggers/
 
 # Migration archives (bifrost migration 2026-05-14)
 .deleted-2026-05-14/
+
+# Generated code-intelligence indexes + caches (never checked in)
+.codegraph/
+.serena/
+
+# Claude Code runtime logs + lock (tracked config under .claude/ stays tracked)
+.claude/logs/
+.claude/.cozempic-init.lock
+
+# Playwright MCP page captures
+.playwright-mcp/
+
+# Loose diagnostic screenshots (cockpit captures)
+zero-cockpit-*.png
+
+# Attic meeting recordings — user audio, not checked in
+attic/dailymeetings-2026-05-20/recordings/
