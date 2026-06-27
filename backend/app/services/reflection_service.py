@@ -284,12 +284,21 @@ class ReflectionService:
             # (e.g. {"learnings": [...]}); unwrap the dict so meta-learnings
             # aren't silently dropped for the learn loop.
             if isinstance(result, dict):
-                result = (
+                unwrapped = (
                     result.get("learnings")
                     or result.get("results")
                     or result.get("items")
-                    or []
                 )
+                if unwrapped is None and result:
+                    # RFL-8 (supervise 3c3ade8e): structured_chat handed back a dict
+                    # whose wrapper key isn't one we recognize, so every meta-learning
+                    # is silently dropped to []. Surface the actual keys so the drop is
+                    # diagnosable instead of an invisible learnings_stored=0.
+                    logger.warning(
+                        "reflection_dict_wrapper_unrecognized",
+                        keys=list(result.keys()),
+                    )
+                result = unwrapped or []
             if isinstance(result, list):
                 return [
                     item.get("learning", "")

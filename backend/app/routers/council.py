@@ -28,7 +28,15 @@ async def conduct_vote(decision_id: str):
     decision = await svc.get_decision(decision_id)
     if not decision:
         raise HTTPException(404, f"Decision {decision_id} not found")
-    return await svc.conduct_vote(decision_id)
+    result = await svc.conduct_vote(decision_id)
+    # RSN-5 (supervise 3c3ade8e): conduct_vote returns None when the decision is
+    # concurrently deleted between the guard above and the tally write (RSN-3's
+    # graceful bail). Without this check the None propagates into
+    # response_model=CouncilDecision and FastAPI raises a 500 ResponseValidation
+    # error instead of a clean 404.
+    if result is None:
+        raise HTTPException(404, f"Decision {decision_id} was deleted during the vote")
+    return result
 
 
 @router.get("/decisions", response_model=list[CouncilDecision])

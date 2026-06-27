@@ -73,6 +73,30 @@ def _partition_for(rel_path: Path) -> str:
     return "reference"
 
 
+_VALID_PARTITIONS = frozenset({"reference", "projects", "journal", "inbox"})
+
+
+def _resolve_partition(partition_override: object, rel: str) -> str:
+    """Resolve the *retrieval* partition for a chunk.
+
+    IDX-PARTITION (supervise 3c3ade8e): a note's frontmatter ``partition`` is the
+    *privacy/domain* taxonomy (``personal | trading | zero-dev``, with ``work``
+    hard-dropped per the vault constitution). ``vault_chunks.partition`` is the
+    distinct *retrieval* taxonomy (``reference | projects | journal | inbox``)
+    that ``vault_retrieval_service.search()`` filters on (and ``journal`` alone
+    receives the time-decay boost). IDX-FM-NOEOL made the frontmatter override
+    take effect, which then leaked the privacy taxonomy into the retrieval column
+    (~83% of chunks were stored as ``personal``), so partition-filtered retrieval
+    and the journal time-decay silently missed those notes. Only honour an
+    override that is already a valid retrieval partition; otherwise derive it from
+    the path (which also enforces the constitution's ``work`` hard-drop, since
+    ``work`` is not a valid retrieval partition).
+    """
+    if isinstance(partition_override, str) and partition_override in _VALID_PARTITIONS:
+        return partition_override
+    return _partition_for(Path(rel))
+
+
 def _sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -362,8 +386,7 @@ class VaultIndexerService:
         except Exception:  # noqa: BLE001
             return 0
         fm, body = _parse_frontmatter(text)
-        partition_override = (fm or {}).get("partition")
-        partition = partition_override if isinstance(partition_override, str) else _partition_for(Path(rel))
+        partition = _resolve_partition((fm or {}).get("partition"), rel)
         tags = []
         raw_tags = (fm or {}).get("tags")
         if isinstance(raw_tags, list):
@@ -371,7 +394,12 @@ class VaultIndexerService:
         elif isinstance(raw_tags, str):
             tags = [raw_tags]
 
-        mtime = datetime.fromtimestamp(fp.stat().st_mtime, tz=timezone.utc)
+        # IDX-STAT-BLOCK (supervise 3c3ade8e): fp.stat() is a synchronous syscall
+        # run up to max_files times per reindex tick inside this async method;
+        # like the _iter_markdown walk (IDX-ASYNC-WALK) it must not block the loop
+        # — push it off-thread so only the embedding awaits run on the event loop.
+        mtime_ts = await asyncio.to_thread(lambda: fp.stat().st_mtime)
+        mtime = datetime.fromtimestamp(mtime_ts, tz=timezone.utc)
 
         # Split + chunk
         sections = _split_by_headings(body)

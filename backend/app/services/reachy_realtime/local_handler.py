@@ -1457,9 +1457,20 @@ class LocalRealtimeHandler:
                 self.deps.extra["latest_user_text"] = transcript
             self._record_user_memory(transcript)
             await self._emit_phase("thinking")
-            await self._inject_scene_context(transcript)
-            await self._run_llm_turn()
-            await self._maybe_summarize()
+            try:
+                await self._inject_scene_context(transcript)
+                await self._run_llm_turn()
+                await self._maybe_summarize()
+            except Exception as e:  # noqa: BLE001
+                # RSP-9 (supervise 3c3ade8e): an unexpected exception here (e.g. an
+                # AssertionError on a closed _http, or a scene/summary failure)
+                # would otherwise leave the phase stuck at "thinking" forever — the
+                # turn task's done-callback only discards, so nothing resets it and
+                # the user sees Reachy thinking with no recovery affordance.
+                # Surface it as "stalled" (which the UI exposes "Recover Voice" for)
+                # and log instead of hanging silently.
+                logger.error("local_handle_turn_failed", error=str(e), exc_info=True)
+                await self._emit_phase("stalled", reason="unexpected_error")
             if self._phase != "stalled":
                 await self._emit_phase("listening")
 
