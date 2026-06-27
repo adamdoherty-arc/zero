@@ -58,7 +58,11 @@ export function useUpsertCompanyFact() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: companyFactsKeys.all })
+      // companyWorkItems cascade also covers the home-office summary query.
       qc.invalidateQueries({ queryKey: ['companyWorkItems'] })
+      // Cell-phone / vehicle / tax.* worksheet writes feed these.
+      qc.invalidateQueries({ queryKey: ['taxSummary'] })
+      qc.invalidateQueries({ queryKey: ['deductionsSummary'] })
     },
   })
 }

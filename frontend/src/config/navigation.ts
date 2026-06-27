@@ -9,8 +9,8 @@ import {
   BrainCircuit,
   Briefcase,
   Building2,
+  Calculator,
   Calendar,
-  CalendarClock,
   ClipboardCheck,
   Clapperboard,
   Cog,
@@ -29,7 +29,6 @@ import {
   Mail,
   Megaphone,
   MessageCircle,
-  Mic,
   Network,
   PackageCheck,
   Plug,
@@ -90,12 +89,9 @@ export const navSections: NavSection[] = [
       { label: 'Email', href: '/email', icon: Mail },
       { label: 'Drafts Inbox', href: '/email/drafts', icon: Inbox },
       { label: 'Approvals', href: '/approvals', icon: ShieldCheck },
-      { label: 'Meetings', href: '/meetings', icon: Mic },
-      { label: 'Meeting Search', href: '/meeting-search', icon: AudioLines },
       { label: 'Meals', href: '/meals', icon: Utensils },
       { label: 'Integrations', href: '/integrations', icon: Plug },
       { label: 'Memory Vault', href: '/memory-vault', icon: FolderGit2 },
-      { label: 'Meeting Agent', href: '/meeting-agent', icon: Megaphone },
       { label: 'OpenHands', href: '/openhands', icon: Cpu },
     ],
   },
@@ -110,6 +106,7 @@ export const navSections: NavSection[] = [
       { label: 'Agent Inbox', href: '/company/inbox', icon: Inbox },
       { label: 'Approvals', href: '/company/approvals', icon: ShieldCheck },
       { label: 'Finance', href: '/company/finance', icon: Banknote },
+      { label: 'Tax & Deductions', href: '/company/tax', icon: Calculator },
       { label: 'Legal / LLC', href: '/company/legal', icon: Gavel },
       { label: 'Consulting / CRM', href: '/company/revenue', icon: Briefcase },
       { label: 'Product Studio', href: '/company/product', icon: PackageCheck },
@@ -136,7 +133,6 @@ export const navSections: NavSection[] = [
       { label: 'Memory', href: '/zero/memory', icon: Brain, aliases: ['reachy memory'] },
       { label: 'Radio', href: '/zero/radio', icon: Radio, aliases: ['reachy radio'] },
       { label: 'Teleop', href: '/zero/teleop', icon: Gamepad2, aliases: ['reachy teleop'] },
-      { label: 'Meetings', href: '/zero/meetings', icon: CalendarClock, aliases: ['reachy meetings'] },
       { label: 'Home Assistant', href: '/zero/home-assistant', icon: Home, aliases: ['reachy home assistant'] },
       { label: 'Voice Settings', href: '/zero/voice-settings', icon: AudioLines, aliases: ['reachy voice settings'] },
     ],
@@ -148,7 +144,6 @@ export const navSections: NavSection[] = [
       { label: 'Operations', href: '/operations', icon: Activity },
       { label: 'Ecosystem', href: '/ecosystem', icon: Globe },
       { label: 'System Health', href: '/system-health', icon: HeartPulse },
-      { label: 'Meeting Steward', href: '/meeting-steward', icon: AudioLines },
       { label: 'Notifications', href: '/notifications/history', icon: Megaphone },
       { label: 'Architecture', href: '/architecture', icon: Network },
       { label: 'QA', href: '/qa', icon: ShieldCheck },
@@ -213,7 +208,6 @@ export function getRouteLabel(pathname: string): string {
     .find((item) => item.href !== '/' && pathname.startsWith(`${item.href}/`))
   if (nested) return nested.label
   if (pathname.startsWith('/tiktok-shop/product/')) return 'Product Detail'
-  if (pathname.startsWith('/meetings/')) return 'Meeting Detail'
   if (pathname.startsWith('/characters/')) return 'Character Detail'
   return 'Zero'
 }

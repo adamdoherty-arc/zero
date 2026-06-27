@@ -100,6 +100,8 @@ export const bookkeeperKeys = {
 
 function invalidate(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: bookkeeperKeys.all })
+  // Recurring/draft changes feed the consolidated tax-savings summary.
+  qc.invalidateQueries({ queryKey: ['taxSummary'] })
 }
 
 export function useBookkeeperSnapshot(period: 'YTD' | 'MTD' | 'QTD' = 'YTD') {

@@ -2,10 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { NotificationListener } from '@/components/NotificationListener'
-import { MeetingPrepPopup } from '@/components/MeetingPrepPopup'
-import { LiveCaptionsOverlay } from '@/components/meetings/LiveCaptionsOverlay'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
-import { SystemStatusPage } from '@/pages/SystemStatusPage'
 import { NotificationsHistoryPage } from '@/pages/NotificationsHistoryPage'
 import { DashboardLayout } from '@/layouts/DashboardLayout'
 import { MobileLayout } from '@/layouts/MobileLayout'
@@ -33,7 +30,6 @@ import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import IntegrationsPage from '@/pages/IntegrationsPage'
 import MemoryVaultPage from '@/pages/MemoryVaultPage'
-import MeetingAgentPage from '@/pages/MeetingAgentPage'
 import MeshPage from '@/pages/MeshPage'
 import OpenHandsTasksPage from '@/pages/OpenHandsTasksPage'
 import { EcosystemPage } from '@/pages/EcosystemPage'
@@ -52,10 +48,6 @@ import { ExecutionDashboardPage } from '@/pages/ExecutionDashboardPage'
 import { VisualWorkflowPage } from '@/pages/VisualWorkflowPage'
 import { OutcomeDashboardPage } from '@/pages/OutcomeDashboardPage'
 import { OperationsDashboardPage } from '@/pages/OperationsDashboardPage'
-import { MeetingsPage } from '@/pages/MeetingsPage'
-import { MeetingDetailPage } from '@/pages/MeetingDetailPage'
-import { MeetingSearchPage } from '@/pages/MeetingSearchPage'
-import { IdentitiesPage } from '@/pages/IdentitiesPage'
 import { AiCompanyPage } from '@/pages/AiCompanyPage'
 import { DeepResearchPage } from '@/pages/DeepResearchPage'
 import { CompanyOsPage } from '@/pages/CompanyOsPage'
@@ -80,7 +72,6 @@ import { ReachyMotionLibraryPage } from '@/pages/ReachyMotionLibraryPage'
 import { ReachyLegacyConsolePage } from '@/pages/ReachyLegacyConsolePage'
 import { ReachyTeleopPage } from '@/pages/ReachyTeleopPage'
 import { ReachyHomeAssistantPage } from '@/pages/ReachyHomeAssistantPage'
-import { ReachyMeetingsPage } from '@/pages/ReachyMeetingsPage'
 import { ReachyVoiceSettingsPage } from '@/pages/ReachyVoiceSettingsPage'
 import { ReachyRadioPage } from '@/pages/ReachyRadioPage'
 import { ReachyMemoryPage } from '@/pages/ReachyMemoryPage'
@@ -113,8 +104,6 @@ function App() {
     <BrowserRouter>
       <div className="dark">
         <NotificationListener />
-        <MeetingPrepPopup />
-        <LiveCaptionsOverlay />
         <Toaster />
         <Routes>
           {/* Mobile / PWA routes */}
@@ -141,7 +130,6 @@ function App() {
             <Route path="/email" element={<EmailPage />} />
             <Route path="/email/drafts" element={<DraftsInbox />} />
             <Route path="/approvals" element={<ApprovalsPage />} />
-            <Route path="/meeting-steward" element={<SystemStatusPage />} />
             <Route path="/notifications/history" element={<NotificationsHistoryPage />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/knowledge" element={<KnowledgePage />} />
@@ -152,7 +140,6 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/integrations" element={<IntegrationsPage />} />
             <Route path="/memory-vault" element={<MemoryVaultPage />} />
-            <Route path="/meeting-agent" element={<MeetingAgentPage />} />
             <Route path="/mesh" element={<MeshPage />} />
             <Route path="/openhands" element={<OpenHandsTasksPage />} />
             <Route path="/architecture" element={<ArchitecturePage />} />
@@ -169,10 +156,6 @@ function App() {
             <Route path="/execution-dashboard" element={<ExecutionDashboardPage />} />
             <Route path="/visual-workflows" element={<VisualWorkflowPage />} />
             <Route path="/outcomes" element={<OutcomeDashboardPage />} />
-            <Route path="/meetings" element={<MeetingsPage />} />
-            <Route path="/meetings/:id" element={<MeetingDetailPage />} />
-            <Route path="/meeting-search" element={<MeetingSearchPage />} />
-            <Route path="/identities" element={<IdentitiesPage />} />
             <Route path="/ai-company" element={<AiCompanyPage />} />
             <Route path="/deep-research" element={<DeepResearchPage />} />
             <Route path="/personal/board" element={<PersonalBoardPage />} />
@@ -183,6 +166,7 @@ function App() {
             <Route path="/company/inbox" element={<CompanyOsPage section="inbox" />} />
             <Route path="/company/approvals" element={<CompanyOsPage section="approvals" />} />
             <Route path="/company/finance" element={<CompanyOsPage section="finance" />} />
+            <Route path="/company/tax" element={<CompanyOsPage section="tax" />} />
             <Route path="/company/legal" element={<CompanyOsPage section="legal" />} />
             <Route path="/company/revenue" element={<CompanyOsPage section="revenue" />} />
             <Route path="/company/product" element={<CompanyOsPage section="product" />} />
@@ -203,14 +187,12 @@ function App() {
             <Route path="/zero" element={<ReachyMotionLibraryPage />} />
             <Route path="/zero/legacy" element={<ReachyLegacyConsolePage />} />
             <Route path="/zero/teleop" element={<ReachyTeleopPage />} />
-            <Route path="/zero/meetings" element={<ReachyMeetingsPage />} />
             <Route path="/zero/home-assistant" element={<ReachyHomeAssistantPage />} />
             <Route path="/zero/voice-settings" element={<ReachyVoiceSettingsPage />} />
             <Route path="/zero/radio" element={<ReachyRadioPage />} />
             <Route path="/zero/memory" element={<ReachyMemoryPage />} />
             <Route path="/reachy" element={<Navigate to="/zero" replace />} />
             <Route path="/reachy/teleop" element={<Navigate to="/zero/teleop" replace />} />
-            <Route path="/reachy/meetings" element={<Navigate to="/zero/meetings" replace />} />
             <Route path="/reachy/home-assistant" element={<Navigate to="/zero/home-assistant" replace />} />
             <Route path="/reachy/voice-settings" element={<Navigate to="/zero/voice-settings" replace />} />
             <Route path="/reachy/radio" element={<Navigate to="/zero/radio" replace />} />

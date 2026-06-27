@@ -94,14 +94,17 @@ class CompanyFactsService:
 
         rent = _num("rent_or_mortgage_monthly", lo=0)
         utilities = _num("utilities_monthly", lo=0)
+        electricity = _num("electricity_monthly", lo=0)
         insurance = _num("insurance_monthly", lo=0)
         repairs = _num("repairs_ytd", lo=0) or 0.0
         internet = _num("internet_monthly", lo=0)
         internet_pct = _num("internet_business_pct", lo=0, hi=100)
 
         actual_estimate_annual: Optional[float] = None
-        if business_use_pct is not None and any(v is not None for v in (rent, utilities, insurance)):
-            indirect_annual = (((rent or 0.0) + (utilities or 0.0) + (insurance or 0.0)) * 12) + repairs
+        if business_use_pct is not None and any(v is not None for v in (rent, utilities, electricity, insurance)):
+            indirect_annual = (
+                ((rent or 0.0) + (utilities or 0.0) + (electricity or 0.0) + (insurance or 0.0)) * 12
+            ) + repairs
             actual = indirect_annual * (business_use_pct / 100.0)
             if internet is not None and internet_pct is not None:
                 actual += internet * 12 * (internet_pct / 100.0)
@@ -126,6 +129,73 @@ class CompanyFactsService:
             "inputs": values,
             "missing_fields": missing_fields,
             "facts_count": len(rows),
+        }
+
+    # IRS 2026 business standard mileage rate (Notice 2026-10). Stored as the
+    # `tax.mileage_rate` fact so it's editable in the UI and updatable each year.
+    DEFAULT_MILEAGE_RATE = 0.725
+
+    async def deductions_summary(self) -> dict[str, Any]:
+        """Annualized deductible estimate for the mixed-use worksheets.
+
+        Reads `cell_phone.*` (monthly bill x business-use %), `vehicle.*`
+        (business miles YTD x standard mileage rate), and the editable
+        `tax.mileage_rate` fact. Internet stays in the home-office worksheet to
+        avoid double counting; it is NOT included here. Nothing is tax advice.
+        """
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(CompanyFactModel).where(
+                        or_(
+                            CompanyFactModel.key.like("cell_phone.%"),
+                            CompanyFactModel.key.like("vehicle.%"),
+                            CompanyFactModel.key == "tax.mileage_rate",
+                        )
+                    )
+                )
+            ).scalars().all()
+        values: dict[str, str] = {row.key: (row.value or "") for row in rows}
+
+        def _num(key: str, *, lo: Optional[float] = None, hi: Optional[float] = None) -> Optional[float]:
+            raw = values.get(key)
+            if raw is None or str(raw).strip() == "":
+                return None
+            try:
+                v = float(str(raw).replace("$", "").replace(",", "").replace("%", "").strip())
+            except Exception:
+                return None
+            if lo is not None:
+                v = max(lo, v)
+            if hi is not None:
+                v = min(hi, v)
+            return v
+
+        cell_monthly = _num("cell_phone.monthly", lo=0)
+        cell_pct = _num("cell_phone.business_pct", lo=0, hi=100)
+        cell_annual: Optional[float] = None
+        if cell_monthly is not None and cell_pct is not None:
+            cell_annual = round(cell_monthly * 12 * (cell_pct / 100.0), 2)
+
+        miles = _num("vehicle.business_miles_ytd", lo=0)
+        mileage_rate = _num("tax.mileage_rate", lo=0) or self.DEFAULT_MILEAGE_RATE
+        vehicle_annual: Optional[float] = None
+        if miles is not None:
+            vehicle_annual = round(miles * mileage_rate, 2)
+
+        return {
+            "cell_phone": {
+                "monthly": cell_monthly,
+                "business_pct": cell_pct,
+                "annual_deductible": cell_annual,
+            },
+            "vehicle": {
+                "business_miles_ytd": miles,
+                "mileage_rate": mileage_rate,
+                "annual_deductible": vehicle_annual,
+                "rate_note": f"IRS standard mileage rate (default {self.DEFAULT_MILEAGE_RATE}/mi, 2026).",
+            },
+            "total_annual_deductible": round((cell_annual or 0.0) + (vehicle_annual or 0.0), 2),
         }
 
     async def get_fact(self, key: str) -> Optional[CompanyFact]:

@@ -48,6 +48,23 @@ AI_EXPENSE_ACCOUNT = "Expenses:Software:AI"
 DEFAULT_CURRENCY = os.getenv("ADA_AI_CURRENCY", "USD")
 QUARTERLY_TAX_RATE = float(os.getenv("ADA_AI_TAX_RATE_EST", "0.22"))
 
+# First-class expense categories the recurring-expense form offers as presets.
+# Each posts to the matching Beancount account; `_ensure_account_open` opens any
+# account lazily on first accepted draft, so adding here is purely UX surfacing.
+RECURRING_CATEGORY_PRESETS: list[dict[str, str]] = [
+    {"account": "Expenses:Software:AI", "label": "AI / LLM subscriptions"},
+    {"account": "Expenses:Software", "label": "Software / SaaS (non-AI)"},
+    {"account": "Expenses:Cloud", "label": "Cloud / hosting"},
+    {"account": "Expenses:Phone", "label": "Phone / mobile"},
+    {"account": "Expenses:Office", "label": "Office / supplies"},
+    {"account": "Expenses:Insurance", "label": "Business insurance"},
+    {"account": "Expenses:Professional", "label": "Professional services"},
+    {"account": "Expenses:Education", "label": "Education / training"},
+    {"account": "Expenses:Fees:Bank", "label": "Bank / merchant fees"},
+    {"account": "Expenses:Travel", "label": "Travel"},
+    {"account": "Expenses:Meals", "label": "Meals (50%)"},
+]
+
 
 @dataclass
 class LedgerSnapshot:
@@ -180,8 +197,14 @@ class BookkeeperService:
             f"1970-01-01 open Expenses:Cloud                {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Hardware             {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Office               {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Phone                {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Travel               {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Meals                {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Auto                 {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Education            {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Insurance            {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Professional         {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Expenses:Fees:Bank            {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Legal                {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Tax:Federal          {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Tax:State            {DEFAULT_CURRENCY}\n"

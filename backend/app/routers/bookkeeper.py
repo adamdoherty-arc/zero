@@ -44,6 +44,13 @@ class RecurringUpdateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
 
 
+@router.get("/categories")
+async def categories():
+    """First-class expense-category presets for the recurring-expense form."""
+    from app.services.bookkeeper_service import RECURRING_CATEGORY_PRESETS
+    return {"categories": RECURRING_CATEGORY_PRESETS}
+
+
 @router.get("/snapshot")
 async def snapshot(period: str = Query("YTD", pattern="^(YTD|MTD|QTD)$")):
     from app.services.bookkeeper_service import get_bookkeeper_service

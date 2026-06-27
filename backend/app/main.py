@@ -24,10 +24,6 @@ from app.routers import (
     # prediction_markets — REMOVED 2026-05-18 (S2.5). ADA's Unusual Whales
     # pipeline is the sole SoT for whale / options-flow / prediction data.
     llc_guidance, approvals, visual_workflows,
-    meetings, meeting_recordings, meeting_transcriptions, meeting_summaries,
-    meeting_chat, meeting_search, meeting_speakers, meeting_ws, voiceprints,
-    faceprints,
-    meeting_preferences,
     ecosystem_health,
     tts, reachy, reachy_intent, reachy_email, reachy_realtime, reachy_memory, reachy_companion, home_assistant, oauth_accounts, sight,
     feedback, goals, memory,
@@ -36,6 +32,7 @@ from app.routers import (
     habits, journal,
     agent_company, deep_research, experiments, council,
     autonomous_research, vault, agent_approvals, voice_bridge, company_operator, company_work_items, company_facts,
+    assets, tax_summary,
     personal_work_items,
     character_content, brain,
     character_reference_videos,
@@ -54,13 +51,11 @@ from app.routers import (
     integrations,
     triggers,
     subconscious,
-    meeting_agent,
     skill_registry,
     browser_control,
     telegram_channel,
     openhands,
     notifications,
-    meeting_steward_status,
     zero_run,
 )
 from app.infrastructure.config import get_settings
@@ -843,18 +838,7 @@ app.include_router(reachy_companion.router, prefix="/api/reachy/companion", tags
 app.include_router(home_assistant.router, prefix="/api/home-assistant", tags=["Home Assistant"])
 app.include_router(sight.router, prefix="/api/sight", tags=["Sight (wearable-agnostic vision)"])
 
-# Meeting Intelligence (DailyMemory)
-app.include_router(meetings.router, prefix="/api/meetings", tags=["Meetings"])
-app.include_router(meeting_recordings.router, prefix="/api/meeting-recordings", tags=["Meeting Recordings"])
-app.include_router(meeting_transcriptions.router, prefix="/api/meeting-transcriptions", tags=["Meeting Transcriptions"])
-app.include_router(meeting_summaries.router, prefix="/api/meeting-summaries", tags=["Meeting Summaries"])
-app.include_router(meeting_chat.router, prefix="/api/meeting-chat", tags=["Meeting Chat"])
-app.include_router(meeting_search.router, prefix="/api/meeting-search", tags=["Meeting Search"])
-app.include_router(meeting_speakers.router, prefix="/api/meetings", tags=["Meeting Speakers"])
-app.include_router(meeting_ws.router, tags=["Meeting WebSockets"])
-app.include_router(voiceprints.router, prefix="/api/voiceprints", tags=["Voiceprints"])
-app.include_router(faceprints.router, prefix="/api/faceprints", tags=["Faceprints"])
-app.include_router(meeting_preferences.router, prefix="/api/meeting-preferences", tags=["Meeting Preferences"])
+# Meeting Intelligence removed from product 2026-06-20 (routers unmounted; code/tables kept dormant)
 
 # Personal Assistant (feedback, goals, memory)
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
@@ -891,6 +875,8 @@ app.include_router(agent_company.router)  # prefix in router
 app.include_router(company_operator.router)  # prefix in router
 app.include_router(company_work_items.router)  # prefix in router
 app.include_router(company_facts.router)  # prefix in router
+app.include_router(assets.router)  # prefix in router
+app.include_router(tax_summary.router)  # prefix in router
 app.include_router(personal_work_items.router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
 app.include_router(autonomous_research.router)  # prefix in router
@@ -914,13 +900,11 @@ app.include_router(memory_tree.router, prefix="/api/memory-tree", tags=["Memory 
 app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
 app.include_router(triggers.router, prefix="/api/triggers", tags=["Triggers"])
 app.include_router(subconscious.router, prefix="/api/subconscious", tags=["Subconscious"])
-app.include_router(meeting_agent.router, prefix="/api/meeting-agent", tags=["Meeting Agent"])
 app.include_router(skill_registry.router, prefix="/api/skills", tags=["Skills"])
 app.include_router(browser_control.router, prefix="/api/browser-control", tags=["Browser Control"])
 app.include_router(telegram_channel.router, prefix="/api/telegram", tags=["Telegram"])
 app.include_router(openhands.router, prefix="/api", tags=["OpenHands"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
-app.include_router(meeting_steward_status.router, prefix="/api/meeting-steward", tags=["Meeting Steward Status"])
 # Zero Supervisor — /api/zero/run + /critic + /stack-facts (Migration 053)
 app.include_router(zero_run.router)
 

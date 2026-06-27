@@ -209,6 +209,31 @@ class CompanyFactModel(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
 
 
+class BusinessAssetModel(Base):
+    """ADA AI LLC capital-asset register (hardware / equipment / Section 179).
+
+    Each row is a piece of equipment in service for the business. The asset
+    service derives a current-year deduction estimate (method-dependent) for the
+    consolidated tax-savings summary. Replaces the old static `assets` array.
+    """
+    __tablename__ = "business_assets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    asset_type: Mapped[Optional[str]] = mapped_column(String(80))
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    business_use_pct: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
+    placed_in_service: Mapped[Optional[date]] = mapped_column(Date, index=True)
+    # section_179 | de_minimis | macrs_5yr | none
+    method: Mapped[str] = mapped_column(String(40), nullable=False, default="section_179")
+    disposed_at: Mapped[Optional[date]] = mapped_column(Date)
+    evidence_url: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=func.now())
+
+
 # ---------------------------------------------------------------------------
 # Knowledge - Categories (hierarchical taxonomy)
 # ---------------------------------------------------------------------------

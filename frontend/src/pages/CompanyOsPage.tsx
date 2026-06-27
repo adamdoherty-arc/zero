@@ -5,9 +5,10 @@ import {
   Activity,
   AlertTriangle,
   Ban,
-  Banknote,
   Bot,
   Briefcase,
+  Calculator,
+  Car,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
@@ -33,11 +34,14 @@ import {
   PauseCircle,
   Play,
   PlayCircle,
+  Plus,
+  Receipt,
   RefreshCw,
   RotateCcw,
   Search,
   Send,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   Table2,
   Target,
@@ -48,7 +52,6 @@ import {
 import {
   agentProfiles,
   approvals,
-  assets,
   companyDocs,
   financeEvidencePackets,
   financeSetupRails,
@@ -56,7 +59,6 @@ import {
   labJobs,
   opportunities,
   productIdeas,
-  subscriptions,
   tasks as seedTasks,
   taxEvents,
   type CompanyTask,
@@ -124,6 +126,18 @@ import {
   usePatchCompanyFact,
   useUpsertCompanyFact,
 } from '@/hooks/useCompanyFactsApi'
+import {
+  useTaxSummary,
+  useDeductionsSummary,
+  useExpenseCategories,
+} from '@/hooks/useTaxSummaryApi'
+import {
+  useBusinessAssets,
+  useCreateBusinessAsset,
+  useDeleteBusinessAsset,
+  type AssetMethod,
+} from '@/hooks/useBusinessAssetsApi'
+import { deductionCatalog, type DeductionGroup } from '@/data/deduction-catalog'
 import { toast } from '@/hooks/use-toast'
 import { maskSensitive } from '@/lib/masking'
 import { cn } from '@/lib/utils'
@@ -145,6 +159,7 @@ export type CompanySection =
   | 'inbox'
   | 'approvals'
   | 'finance'
+  | 'tax'
   | 'legal'
   | 'revenue'
   | 'product'
@@ -162,6 +177,7 @@ const sectionLabels: Record<CompanySection, string> = {
   inbox: 'Agent Inbox',
   approvals: 'Approvals',
   finance: 'Finance',
+  tax: 'Tax & Deductions',
   legal: 'Legal / LLC',
   revenue: 'Consulting / CRM',
   product: 'Product Studio',
@@ -3511,10 +3527,13 @@ function AiSpendPanel() {
   const runRecurring = useRunRecurring()
   const acceptDraft = useAcceptDraft()
   const rejectDraft = useRejectDraft()
+  const { data: categoryData } = useExpenseCategories()
   const [vendor, setVendor] = useState('')
   const [amount, setAmount] = useState('')
   const [billingDay, setBillingDay] = useState('1')
+  const [category, setCategory] = useState('Expenses:Software:AI')
 
+  const categories = categoryData?.categories ?? []
   const recurring = data?.recurring ?? []
   const summary = data?.summary
   const recurringDrafts = (draftsData?.drafts ?? []).filter((d) => d.source === 'recurring')
@@ -3526,13 +3545,14 @@ function AiSpendPanel() {
       return
     }
     addRecurring.mutate(
-      { vendor: vendor.trim(), amount_monthly: amt, billing_day: parseInt(billingDay, 10) || 1 },
+      { vendor: vendor.trim(), amount_monthly: amt, billing_day: parseInt(billingDay, 10) || 1, category },
       {
         onSuccess: () => {
           setVendor('')
           setAmount('')
           setBillingDay('1')
-          toast({ title: 'Subscription added' })
+          setCategory('Expenses:Software:AI')
+          toast({ title: 'Recurring expense added' })
         },
         onError: (e) => toast({ title: 'Add failed', description: e.message }),
       },
@@ -3560,8 +3580,9 @@ function AiSpendPanel() {
       }
     >
       <p className="mb-3 text-xs text-gray-400">
-        Flat-rate AI subscriptions you pay (Claude Max, ChatGPT, Cursor, ...). Each posts a reviewable monthly
-        draft under <code className="text-gray-300">Expenses:Software:AI</code>.
+        Recurring business expenses you pay monthly — AI subscriptions (Claude Max, ChatGPT, Cursor), plus
+        SaaS, cloud, phone, insurance, and fees. Pick the category; each posts a reviewable monthly draft to
+        the books.
       </p>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
@@ -3585,6 +3606,22 @@ function AiSpendPanel() {
           title="Billing day of month (1-28)"
           className="h-8 w-14 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
         />
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          title="Expense category"
+          className="h-8 min-w-[150px] rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+        >
+          {categories.length === 0 ? (
+            <option value="Expenses:Software:AI">AI / LLM subscriptions</option>
+          ) : (
+            categories.map((c) => (
+              <option key={c.account} value={c.account}>
+                {c.label}
+              </option>
+            ))
+          )}
+        </select>
         <button
           type="button"
           onClick={handleAdd}
@@ -3763,7 +3800,8 @@ const HOME_OFFICE_FIELDS: Array<{ key: string; label: string; placeholder: strin
   { key: 'exclusive_sqft', label: 'Exclusive business sq ft', placeholder: 'e.g. 150' },
   { key: 'total_sqft', label: 'Total home sq ft', placeholder: 'e.g. 1200' },
   { key: 'rent_or_mortgage_monthly', label: 'Rent / mortgage interest (monthly $)', placeholder: 'e.g. 1800' },
-  { key: 'utilities_monthly', label: 'Utilities (monthly $)', placeholder: 'e.g. 200' },
+  { key: 'electricity_monthly', label: 'Electricity (monthly $)', placeholder: 'e.g. 120' },
+  { key: 'utilities_monthly', label: 'Other utilities — water/gas/trash (monthly $)', placeholder: 'e.g. 80' },
   { key: 'internet_monthly', label: 'Internet (monthly $)', placeholder: 'e.g. 80' },
   { key: 'internet_business_pct', label: 'Internet business use (%)', placeholder: 'e.g. 60' },
   { key: 'insurance_monthly', label: 'Insurance (monthly $)', placeholder: 'e.g. 40' },
@@ -3875,8 +3913,6 @@ function HomeOfficePanel() {
 }
 
 function FinanceSection() {
-  const monthly = subscriptions.reduce((sum, item) => sum + item.monthlyCost, 0)
-  const assetTotal = assets.reduce((sum, item) => sum + item.cost, 0)
   const { tasks } = useCompanyTaskCards()
   const drawer = useTaskDrawer()
   const findTaskByRail = (rail: string) => {
@@ -3947,30 +3983,20 @@ function FinanceSection() {
           ))}
         </div>
       </Panel>
-      <Panel title={`Subscriptions - ${currency.format(monthly)}/mo tracked`} icon={Banknote}>
-        <div className="space-y-2">
-          {subscriptions.map((item) => (
-            <div key={item.vendor} className="flex items-center justify-between rounded-lg bg-gray-950/60 p-3 text-sm">
-              <div><span className="text-gray-100">{item.vendor}</span><span className="ml-2 text-xs text-gray-500">{item.category}</span></div>
-              <Badge className="border-gray-700 text-gray-300">{item.evidence}</Badge>
-            </div>
-          ))}
-        </div>
-      </Panel>
-      <Panel title={`Assets - ${assetTotal > 0 ? `${currency.format(assetTotal)} tracked` : 'FMV pending'}`} icon={PackageCheck}>
-        <div className="space-y-2">
-          {assets.map((item) => (
-            <div key={item.name} className="rounded-lg bg-gray-950/60 p-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-100">{item.name}</span>
-                <span className="text-gray-400">{item.cost > 0 ? currency.format(item.cost) : 'FMV TBD'}</span>
-              </div>
-              <div className="mt-1 text-xs text-gray-500">{item.type} - {item.businessUse}% business use - evidence {item.evidence}</div>
-            </div>
-          ))}
-        </div>
+      <Panel title="Tax & Deductions" icon={Calculator}>
+        <p className="text-sm text-gray-400">
+          AI/recurring spend, home office (sq ft + electricity), cell phone, vehicle, hardware (§179), and the
+          consolidated tax-savings estimate now live on a dedicated page.
+        </p>
+        <Link
+          to="/company/tax"
+          className="mt-3 inline-flex h-8 items-center gap-1 rounded-md border border-blue-500/40 bg-blue-500/10 px-3 text-xs text-blue-200 hover:bg-blue-500/20"
+        >
+          Open Tax &amp; Deductions <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
       </Panel>
       </div>
+      <EquipmentAssetsPanel />
     </div>
   )
 }
@@ -4128,6 +4154,474 @@ function DocsSection() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Tax & Deductions section — the single home for the tax-savings side of ADA AI.
+// ---------------------------------------------------------------------------
+
+const ASSET_METHOD_LABELS: Record<AssetMethod, string> = {
+  section_179: '§179 (full expense)',
+  de_minimis: 'De minimis (full)',
+  macrs_5yr: 'MACRS 5-yr (depreciate)',
+  none: 'Track only (no deduction)',
+}
+
+function TaxSavingsSummaryPanel() {
+  const { data: summary, isLoading } = useTaxSummary()
+  const upsertFact = useUpsertCompanyFact()
+  const [rate, setRate] = useState('')
+
+  useEffect(() => {
+    if (summary?.marginal_federal_pct != null) setRate(String(summary.marginal_federal_pct))
+  }, [summary?.marginal_federal_pct])
+
+  const saveRate = () => {
+    const v = parseFloat(rate)
+    if (!Number.isFinite(v) || v < 0 || v > 60) return
+    if (summary && v === summary.marginal_federal_pct) return
+    upsertFact.mutate(
+      { key: 'tax.marginal_federal_pct', label: 'Marginal federal income tax %', value: String(v), domain: 'Tax' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+
+  const toggleSe = () => {
+    if (!summary) return
+    upsertFact.mutate(
+      { key: 'tax.include_se', label: 'Include self-employment tax', value: summary.include_se ? 'false' : 'true', domain: 'Tax' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+
+  return (
+    <Panel title={summary ? `Tax Savings Summary — ${summary.year}` : 'Tax Savings Summary'} icon={Calculator}>
+      {isLoading || !summary ? (
+        <div className="text-xs text-gray-500">Loading summary...</div>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-[11px] text-gray-500">Total deductible (YTD)</div>
+              <div className="mt-1 text-2xl font-bold text-white">{currency.format(summary.total_deductible)}</div>
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-[11px] text-gray-500">Est. income tax saved</div>
+              <div className="mt-1 text-2xl font-bold text-emerald-300">{currency.format(summary.est_income_tax_saved)}</div>
+            </div>
+            <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+              <div className="text-[11px] text-gray-500">Est. SE tax saved</div>
+              <div className="mt-1 text-2xl font-bold text-emerald-300">{currency.format(summary.est_se_tax_saved)}</div>
+            </div>
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+              <div className="text-[11px] text-emerald-200">Est. total tax saved</div>
+              <div className="mt-1 text-2xl font-bold text-emerald-200">{currency.format(summary.est_total_tax_saved)}</div>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-xs text-gray-400">
+              Marginal federal rate
+              <input
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                onBlur={saveRate}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                inputMode="decimal"
+                className="h-7 w-16 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+              />
+              %
+            </label>
+            <button
+              type="button"
+              onClick={toggleSe}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-md border px-3 text-xs',
+                summary.include_se
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                  : 'border-gray-700 text-gray-400 hover:text-white',
+              )}
+            >
+              {summary.include_se ? 'SE tax included' : 'SE tax excluded'}
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-1.5">
+            {summary.line_items.map((li) => (
+              <div key={li.key} className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <span className="text-gray-100">{li.label}</span>
+                  <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-600">{li.source}</span>
+                  {li.note && <div className="mt-0.5 text-[10px] text-gray-500">{li.note}</div>}
+                </div>
+                <span className="shrink-0 font-medium text-gray-200">{currency.format(li.amount)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200">
+            {summary.disclaimer}
+          </div>
+        </>
+      )}
+    </Panel>
+  )
+}
+
+const CELL_PHONE_FIELDS: Array<{ key: string; label: string; placeholder: string }> = [
+  { key: 'cell_phone.monthly', label: 'Monthly bill ($)', placeholder: 'e.g. 90' },
+  { key: 'cell_phone.business_pct', label: 'Business use (%)', placeholder: 'e.g. 60' },
+]
+
+function CellPhonePanel() {
+  const { data: deds } = useDeductionsSummary()
+  const { data: facts } = useCompanyFacts({ search: 'cell_phone.' })
+  const upsertFact = useUpsertCompanyFact()
+  const [draft, setDraft] = useState<Record<string, string>>({})
+
+  const factValue = (key: string) => facts?.find((f) => f.key === key)?.value ?? ''
+  const saveField = (key: string, label: string) => {
+    const value = (draft[key] ?? '').trim()
+    if (!value || value === factValue(key)) return
+    upsertFact.mutate(
+      { key, label, value, domain: 'Tax' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+
+  return (
+    <Panel title="Cell Phone (business %)" icon={Smartphone}>
+      <p className="mb-3 text-xs text-gray-400">
+        Your monthly bill × the share you use for business. Deductible ={' '}
+        <span className="text-gray-200">{currency.format(deds?.cell_phone.annual_deductible ?? 0)}</span>/yr.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {CELL_PHONE_FIELDS.map((field) => (
+          <label key={field.key} className="block">
+            <span className="text-[11px] text-gray-400">{field.label}</span>
+            <input
+              value={draft[field.key] ?? factValue(field.key)}
+              placeholder={field.placeholder}
+              inputMode="decimal"
+              onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              onBlur={() => saveField(field.key, field.label)}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+              className="mt-1 h-8 w-full rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+            />
+          </label>
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
+function VehiclePanel() {
+  const { data: deds } = useDeductionsSummary()
+  const { data: facts } = useCompanyFacts({ search: 'vehicle.' })
+  const { data: rateFacts } = useCompanyFacts({ search: 'tax.mileage_rate' })
+  const upsertFact = useUpsertCompanyFact()
+  const [miles, setMiles] = useState('')
+  const [rate, setRate] = useState('')
+
+  const milesFact = facts?.find((f) => f.key === 'vehicle.business_miles_ytd')?.value ?? ''
+  const rateFact = rateFacts?.find((f) => f.key === 'tax.mileage_rate')?.value ?? ''
+
+  const saveMiles = () => {
+    const v = (miles || '').trim()
+    if (!v || v === milesFact) return
+    upsertFact.mutate(
+      { key: 'vehicle.business_miles_ytd', label: 'Business miles YTD', value: v, domain: 'Tax' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+  const saveRate = () => {
+    const v = (rate || '').trim()
+    if (!v || v === rateFact) return
+    upsertFact.mutate(
+      { key: 'tax.mileage_rate', label: 'IRS standard mileage rate ($/mi)', value: v, domain: 'Tax' },
+      { onError: (e) => toast({ title: 'Save failed', description: e.message }) },
+    )
+  }
+
+  return (
+    <Panel title="Vehicle (mileage)" icon={Car}>
+      <p className="mb-3 text-xs text-gray-400">
+        Business miles × the IRS standard rate. Deductible ={' '}
+        <span className="text-gray-200">{currency.format(deds?.vehicle.annual_deductible ?? 0)}</span>/yr.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-[11px] text-gray-400">Business miles (YTD)</span>
+          <input
+            value={miles || milesFact}
+            placeholder="e.g. 1200"
+            inputMode="decimal"
+            onChange={(e) => setMiles(e.target.value)}
+            onBlur={saveMiles}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            className="mt-1 h-8 w-full rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[11px] text-gray-400">Rate ($/mi)</span>
+          <input
+            value={rate || rateFact || (deds ? String(deds.vehicle.mileage_rate) : '')}
+            placeholder="0.725"
+            inputMode="decimal"
+            onChange={(e) => setRate(e.target.value)}
+            onBlur={saveRate}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            className="mt-1 h-8 w-full rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+          />
+        </label>
+      </div>
+      {deds?.vehicle.rate_note && <div className="mt-2 text-[10px] text-gray-600">{deds.vehicle.rate_note}</div>}
+    </Panel>
+  )
+}
+
+function EquipmentAssetsPanel() {
+  const { data: assetsLive, isLoading } = useBusinessAssets()
+  const createAsset = useCreateBusinessAsset()
+  const deleteAsset = useDeleteBusinessAsset()
+  const [name, setName] = useState('')
+  const [cost, setCost] = useState('')
+  const [pct, setPct] = useState('100')
+  const [method, setMethod] = useState<AssetMethod>('section_179')
+  const [placed, setPlaced] = useState('')
+
+  const rows = assetsLive ?? []
+  const totalDeduction = rows.reduce((sum, a) => sum + (a.current_year_deduction ?? 0), 0)
+
+  const handleAdd = () => {
+    const c = parseFloat(cost)
+    if (!name.trim() || !Number.isFinite(c) || c <= 0) {
+      toast({ title: 'Enter a name and a cost' })
+      return
+    }
+    createAsset.mutate(
+      {
+        name: name.trim(),
+        cost: c,
+        business_use_pct: parseFloat(pct) || 100,
+        method,
+        placed_in_service: placed || null,
+      },
+      {
+        onSuccess: () => {
+          setName(''); setCost(''); setPct('100'); setMethod('section_179'); setPlaced('')
+          toast({ title: 'Asset added' })
+        },
+        onError: (e) => toast({ title: 'Add failed', description: e.message }),
+      },
+    )
+  }
+
+  return (
+    <Panel title={`Equipment & Hardware${totalDeduction > 0 ? ` — ${currency.format(totalDeduction)} deduction` : ''}`} icon={Cpu}>
+      <p className="mb-3 text-xs text-gray-400">
+        Computers, monitors, robot, peripherals. §179 expenses the business-use share in the year placed in
+        service; MACRS depreciates it. The CPA confirms the method. Not tax advice.
+      </p>
+      <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Item (e.g. Workstation)" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500 lg:col-span-2" />
+        <input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="Cost $" inputMode="decimal" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder="% biz" inputMode="numeric" title="Business-use %" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        <select value={method} onChange={(e) => setMethod(e.target.value as AssetMethod)} className="h-8 rounded-md border border-gray-800 bg-gray-950 px-1 text-xs text-gray-200 outline-none focus:border-blue-500">
+          {(Object.keys(ASSET_METHOD_LABELS) as AssetMethod[]).map((m) => (
+            <option key={m} value={m}>{ASSET_METHOD_LABELS[m]}</option>
+          ))}
+        </select>
+        <input value={placed} onChange={(e) => setPlaced(e.target.value)} type="date" title="Placed in service" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+      </div>
+      <div className="mb-3 flex justify-end">
+        <button type="button" onClick={handleAdd} disabled={createAsset.isPending} className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50">
+          <Plus className="h-3.5 w-3.5" /> Add asset
+        </button>
+      </div>
+      {isLoading ? (
+        <div className="text-xs text-gray-500">Loading assets...</div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-800 p-4 text-xs text-gray-400">
+          No equipment tracked yet. Add the computers, monitors, and robot you use for the business.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((a) => (
+            <div key={a.id} className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-3 text-sm">
+              <div className="min-w-0">
+                <div className="truncate text-gray-100">{a.name}</div>
+                <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-600">
+                  {currency.format(a.cost)} · {a.business_use_pct}% biz · {ASSET_METHOD_LABELS[a.method]}
+                  {a.placed_in_service ? ` · ${a.placed_in_service}` : ''}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-300">{currency.format(a.current_year_deduction ?? 0)}</span>
+                <button
+                  type="button"
+                  title="Delete"
+                  onClick={() => { if (window.confirm(`Remove ${a.name}?`)) deleteAsset.mutate(a.id) }}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-700 text-gray-400 hover:border-red-500/40 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function OtherDeductionsPanel() {
+  const { data: recurringData } = useRecurringExpenses()
+  const { data: summary } = useTaxSummary()
+
+  const seen = useMemo(() => {
+    const set = new Set<string>()
+    Object.keys(recurringData?.summary?.by_category ?? {}).forEach((a) => set.add(a))
+    const ledger = summary?.line_items.find((li) => li.key === 'ledger')
+    Object.keys(ledger?.detail ?? {}).forEach((a) => set.add(a))
+    return set
+  }, [recurringData, summary])
+
+  const isSetUp = (accounts?: string[], summaryKey?: string): boolean => {
+    if (summaryKey) {
+      const li = summary?.line_items.find((x) => x.key === summaryKey)
+      if (li && li.amount > 0) return true
+    }
+    if (accounts) {
+      for (const acct of accounts) {
+        for (const s of seen) {
+          if (s === acct || s.startsWith(acct)) return true
+        }
+      }
+    }
+    return false
+  }
+
+  const groups = ['Software, cloud & fees', 'Vehicle, travel & meals', 'Education & professional services'] as DeductionGroup[]
+
+  return (
+    <Panel title="Other Deductions You Can Claim" icon={ListChecks}>
+      <p className="mb-3 text-xs text-gray-400">
+        Ordinary-and-necessary business costs that lower your Schedule C. Green = already being tracked here.
+        Not tax advice — your CPA confirms eligibility.
+      </p>
+      <div className="space-y-4">
+        {groups.map((group) => (
+          <div key={group}>
+            <div className="mb-1.5 text-[11px] uppercase tracking-wider text-blue-300">{group}</div>
+            <div className="space-y-1.5">
+              {deductionCatalog.filter((d) => d.group === group).map((d) => {
+                const setUp = isSetUp(d.accounts, d.summaryKey)
+                return (
+                  <div key={d.key} className="rounded-md border border-gray-800 bg-gray-950/60 p-2.5 text-sm">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-gray-100">{d.label}</span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-600">{d.irs}</span>
+                        <div className="mt-0.5 text-xs text-gray-500">{d.howTo}</div>
+                      </div>
+                      <Badge className={setUp ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-gray-700 text-gray-400'}>
+                        {setUp ? 'tracking' : 'not yet'}
+                      </Badge>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
+function MonthlyClosePanel() {
+  const { data: recurring } = useRecurringExpenses()
+  const { data: tasks } = useCompanyWorkItems({ domain: 'Finance', limit: 100 })
+  const seedCeo = useSeedCompanyCeo()
+  const drawer = useTaskDrawer()
+
+  const closeTasks = (tasks ?? []).filter(
+    (t) => t.status !== 'archived' && (t.title.toLowerCase().includes('reconcile') || t.title.toLowerCase().includes('bookkeeping') || (t.tags ?? []).includes('monthly-close')),
+  )
+  const recordedThisMonth = recurring?.summary?.all_generated ?? false
+
+  return (
+    <Panel
+      title="Monthly Close"
+      icon={Receipt}
+      action={
+        <button
+          type="button"
+          disabled={seedCeo.isPending}
+          onClick={() =>
+            seedCeo.mutate(undefined, {
+              onSuccess: (r) => toast({ title: `Seeded ${r.created} task(s), skipped ${r.skipped}` }),
+              onError: (e) => toast({ title: 'Seed failed', description: e.message }),
+            })
+          }
+          className="inline-flex items-center gap-1 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-xs text-blue-200 hover:bg-blue-500/20 disabled:opacity-50"
+        >
+          Set up my checklist
+        </button>
+      }
+    >
+      <div className="mb-3 flex items-center gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-3 text-sm">
+        <span className={cn('inline-block h-2.5 w-2.5 rounded-full', recordedThisMonth ? 'bg-emerald-400' : 'bg-amber-400')} />
+        <span className="text-gray-200">
+          {recordedThisMonth ? "This month's recurring expenses are recorded." : "This month's recurring expenses aren't recorded yet — use AI/recurring spend → Record."}
+        </span>
+      </div>
+      {closeTasks.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-800 p-3 text-xs text-gray-400">
+          No bookkeeping-cadence tasks yet. Use "Set up my checklist" to seed the monthly close + deduction tracker.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {closeTasks.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => drawer?.openTaskById(t.id)}
+              className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 p-2 text-left text-sm hover:bg-gray-900"
+            >
+              <span className="truncate text-gray-100">{t.title}</span>
+              <Badge className={statusBadgeClass(t.status)}>{t.status}</Badge>
+            </button>
+          ))}
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function TaxSection() {
+  return (
+    <div className="space-y-6">
+      <TaxSavingsSummaryPanel />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <AiSpendPanel />
+        <div className="space-y-4">
+          <CellPhonePanel />
+          <VehiclePanel />
+        </div>
+      </div>
+      <HomeOfficePanel />
+      <EquipmentAssetsPanel />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <OtherDeductionsPanel />
+        <div className="space-y-4">
+          <MonthlyClosePanel />
+          <TaxCalendarPanel />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function renderSection(section: CompanySection) {
   switch (section) {
     case 'operator': return <OperatorSection />
@@ -4136,6 +4630,7 @@ function renderSection(section: CompanySection) {
     case 'inbox': return <InboxSection />
     case 'approvals': return <ApprovalsSection />
     case 'finance': return <FinanceSection />
+    case 'tax': return <TaxSection />
     case 'legal': return <LegalSection />
     case 'revenue': return <RevenueSection />
     case 'product': return <ProductSection />

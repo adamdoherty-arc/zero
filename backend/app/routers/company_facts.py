@@ -50,6 +50,12 @@ async def home_office_summary():
     return await get_company_facts_service().home_office_summary()
 
 
+@router.get("/deductions/summary")
+async def deductions_summary():
+    """Annualized mixed-use deductions (cell phone + vehicle) from cell_phone.*/vehicle.* facts."""
+    return await get_company_facts_service().deductions_summary()
+
+
 @router.post("", response_model=CompanyFact)
 async def upsert_fact(req: CompanyFactCreateRequest):
     payload = CompanyFactCreate(

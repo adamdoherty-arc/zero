@@ -38,7 +38,7 @@ DEFAULT_DISABLED_PREFIXES = ("tiktok_",)
 JOB_CATEGORIES = {
     "Briefing": ["morning_briefing", "midday_check", "evening_review", "morning_digest_tick", "weekly_review_tick"],
     "Email": ["gmail_check", "gmail_digest", "reachy_email_nudge", "email_automation_check", "email_to_tasks"],
-    "Calendar": ["calendar_check", "meeting_prep", "reachy_calendar_nudge", "reachy_meeting_auto_record", "reachy_meeting_auto_stop"],
+    "Calendar": ["calendar_check", "reachy_calendar_nudge"],
     "TikTok": [
         "tiktok_shop_research",
         "tiktok_shop_deep_research",
@@ -290,44 +290,11 @@ DAILY_SCHEDULE = {
         "description": "Per-email voice triage: announce new arrivals through Reachy and drive read/ignore/delete/respond loop",
         "enabled": True
     },
-    "reachy_meeting_auto_record": {
-        "cron": "* * * * *",  # Every minute
-        "description": "Auto-start a recording when a flagged calendar event begins",
-        "enabled": True
-    },
-    "reachy_meeting_auto_stop": {
-        "cron": "* * * * *",  # Every minute
-        "description": "Auto-stop a recording when its calendar event ends",
-        "enabled": True
-    },
-    "reachy_meeting_prep_brief": {
-        "cron": "* * * * *",  # Every minute — fires at T-5min once per event
-        "description": "Compose and publish a prep brief for each event ~5 minutes before it starts",
-        "enabled": True
-    },
-    "meeting_recordings_janitor": {
-        "cron": "30 3 * * *",  # 3:30 AM daily — quiet hours
-        "description": "Delete meeting WAV files older than N days once the meeting has a transcript + summary",
-        "enabled": True
-    },
-    "meeting_audio_watchdog": {
-        "cron": "* * * * *",  # Every minute
-        "description": "If auto-recorder thinks a meeting is recording but host_agent says it isn't, publish meeting.audio_lost",
-        "enabled": True
-    },
-    "meeting_pipeline_health": {
-        "cron": "*/15 * * * *",  # Every 15 minutes
-        "description": "Audit meeting pipeline (recording capability, host_agent reachable, transcript backlog, wake-word fired in 24h, notification bus alive) and publish meeting.health.alarm on failures",
-        "enabled": True
-    },
+    # Meeting auto-record / auto-stop / prep-brief / janitor / watchdog / pipeline-health
+    # jobs removed from product 2026-06-20 (meetings concept retired; handlers kept dormant).
     "notification_events_janitor": {
         "cron": "0 4 * * *",  # 4:00 AM daily
         "description": "Prune notification_events older than ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS (default 30) so the table doesn't grow unbounded",
-        "enabled": True
-    },
-    "meeting_conflict_pre_flight": {
-        "cron": "*/30 * * * *",  # Every 30 minutes
-        "description": "F-72: scan upcoming 24h for overlapping calendar events; publish meeting.conflict.preflight on first detection per pair so user can decline before T-0",
         "enabled": True
     },
     "reachy_morning_briefing": {
@@ -363,11 +330,6 @@ DAILY_SCHEDULE = {
     "email_to_tasks": {
         "cron": "0 10 * * *",  # 10:00 AM daily
         "description": "Convert email action items to Legion tasks",
-        "enabled": True
-    },
-    "meeting_prep": {
-        "cron": "0 7 * * *",  # 7:00 AM daily (with briefing)
-        "description": "Create prep tasks for upcoming meetings",
         "enabled": True
     },
     "blocked_task_escalation": {
@@ -1475,21 +1437,13 @@ class SchedulerService:
             "gmail_digest": self._run_gmail_digest,
             "reachy_calendar_nudge": self._run_reachy_calendar_nudge,
             "reachy_email_nudge": self._run_reachy_email_nudge,
-            "reachy_meeting_auto_record": self._run_reachy_meeting_auto_record,
-            "reachy_meeting_auto_stop": self._run_reachy_meeting_auto_stop,
-            "reachy_meeting_prep_brief": self._run_reachy_meeting_prep_brief,
-            "meeting_recordings_janitor": self._run_meeting_recordings_janitor,
-            "meeting_audio_watchdog": self._run_meeting_audio_watchdog,
-            "meeting_pipeline_health": self._run_meeting_pipeline_health,
             "notification_events_janitor": self._run_notification_events_janitor,
-            "meeting_conflict_pre_flight": self._run_meeting_conflict_pre_flight,
             "reachy_morning_briefing": self._run_reachy_morning_briefing,
             "reachy_evening_journal": self._run_reachy_evening_journal,
             "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
             "email_automation_check": self._run_email_automation_check,
             "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
-            "meeting_prep": self._run_meeting_prep,
             "blocked_task_escalation": self._run_blocked_task_escalation,
             "smart_suggestions": self._run_smart_suggestions,
             "research_daily": self._run_research_daily,
@@ -1921,8 +1875,50 @@ Have a great evening!"""
                 period=period,
                 created=result.get("created_count", 0),
             )
+            await self._ensure_monthly_close_task(svc._current_period())
         except Exception as e:
             logger.error("recurring_expense_monthly_failed", error=str(e))
+
+    async def _ensure_monthly_close_task(self, period: str) -> None:
+        """Idempotently ensure an open 'monthly close' company work item exists.
+
+        Self-replenishes the monthly bookkeeping discipline so the task list never
+        runs dry. Dedupes by title (one per YYYY-MM), matching the seed-ceo pattern.
+        """
+        try:
+            from app.models.task import TaskCategory, TaskCreate, TaskPriority, TaskSource
+            from app.services.company_work_item_service import get_company_work_item_service
+
+            wsvc = get_company_work_item_service()
+            title = f"Record + reconcile ADA AI books — {period}"
+            existing = await wsvc.list_work_items(limit=1000)
+            if any(t.title.strip().lower() == title.strip().lower() for t in existing):
+                return
+            await wsvc.create_work_item(
+                TaskCreate(
+                    title=title,
+                    description=(
+                        f"**Monthly close for {period}.**\n\n"
+                        "- [ ] Generate + accept recurring expense drafts (Tax & Deductions → AI/recurring spend).\n"
+                        "- [ ] Reconcile business checking; categorize every charge.\n"
+                        "- [ ] Update cell-phone / vehicle / home-office worksheets if anything changed.\n"
+                        "- [ ] Log any hardware purchased this month in the asset register.\n"
+                        "- [ ] Review the Tax Savings Summary.\n\n"
+                        "Auto-created by the monthly scheduler. Not tax advice."
+                    ),
+                    category=TaskCategory.CHORE,
+                    priority=TaskPriority.MEDIUM,
+                    source=TaskSource.MANUAL,
+                    source_reference=f"monthly-close-{period}",
+                    domain="Finance",
+                    owner_agent="finance_cpa",
+                    tags=["finance", "monthly-close", "narrative"],
+                ),
+                actor="scheduler",
+            )
+            logger.info("monthly_close_task_ensured", period=period)
+        except Exception as e:
+            logger.warning("monthly_close_task_failed", error=str(e))
 
     async def _run_money_maker_weekly_report(self):
         """
