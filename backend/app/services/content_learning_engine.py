@@ -133,7 +133,15 @@ class ContentLearningEngine:
             logger.info("content_outcomes_processed", count=processed)
             return {"processed": processed}
 
-        except (ValueError, KeyError, TypeError, ImportError) as e:
+        except Exception as e:
+            # LRN-N5 (supervise cb0befc3): the per-record loop already widened to
+            # `except Exception` (Fix-128 LRN-X3), but the OUTER guard was left
+            # narrow. The initial batch-fetch (ContentPerformanceModel query +
+            # BrainOutcomeRecordModel dedup) and the trailing store_direct run
+            # OUTSIDE the per-record try, so a transient OperationalError /
+            # TimeoutError there escaped (ValueError,KeyError,TypeError,
+            # ImportError) and propagated uncaught, breaking the Dict return
+            # contract. Match the per-record guard.
             logger.error("content_outcome_processing_failed", error=str(e))
             return {"processed": 0, "error": str(e)}
 

@@ -136,6 +136,13 @@ class ReachyUserMemoryService:
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
+        # CAP-5 (supervise cb0befc3): a DEDICATED lock for the add_note
+        # read-embed-dedup-append critical section. It must NOT be self._lock:
+        # compact() holds self._lock while calling add_note(), and asyncio.Lock
+        # is non-reentrant, so reusing self._lock would deadlock the compact
+        # path. add_note only ever takes _add_lock (never _lock), so the lock
+        # ordering is one-way (_lock -> _add_lock) and cannot deadlock.
+        self._add_lock = asyncio.Lock()
         self._turns: list[Turn] = []
         self._notes: list[Note] = []
         self._turn_counter: int = 0
@@ -285,55 +292,64 @@ class ReachyUserMemoryService:
         if not text:
             raise ValueError("note text is empty")
 
-        # Exact-match fast path (no embedding needed for identical text).
-        existing = next(
-            (n for n in self._notes if n.text.lower() == text.lower() and n.category == cat),
-            None,
-        )
-        if existing:
-            existing.confidence = max(existing.confidence, confidence)
-            existing.last_used_at = time.time()
+        # CAP-5 (supervise cb0befc3): hold _add_lock across the whole
+        # read -> embed -> dedup -> append region. The dedup checks read
+        # self._notes, then `await _safe_embed` yields the event loop; two
+        # concurrent add_note callers (the HTTP route, the maybe_extract
+        # background task, and compact()'s replays) could both pass the dedup
+        # guard before either appended, double-storing a semantically-identical
+        # note and racing _enforce_cap past MAX_NOTES. Serializing this section
+        # makes dedup + cap enforcement atomic for a single-user store.
+        async with self._add_lock:
+            # Exact-match fast path (no embedding needed for identical text).
+            existing = next(
+                (n for n in self._notes if n.text.lower() == text.lower() and n.category == cat),
+                None,
+            )
+            if existing:
+                existing.confidence = max(existing.confidence, confidence)
+                existing.last_used_at = time.time()
+                self._save_sync()
+                return existing
+
+            # Semantic dedupe via embedding.
+            emb = await _safe_embed(text)
+            if emb:
+                for n in self._notes:
+                    if n.category != cat or not n.embedding:
+                        continue
+                    if _cosine(emb, n.embedding) >= DEDUP_COSINE_THRESHOLD:
+                        prev_conf = n.confidence
+                        n.confidence = max(n.confidence, confidence)
+                        n.last_used_at = time.time()
+                        # Adopt the newer (often richer) wording + fresh embedding
+                        # when the incoming note is MORE confident. Compare against
+                        # the pre-max value: after max() the condition is always
+                        # False, so this branch was dead and stale text/embedding
+                        # was never refreshed.
+                        if confidence > prev_conf:
+                            n.text = text
+                            n.embedding = emb
+                        self._save_sync()
+                        logger.debug(
+                            "memory_dedup_merged",
+                            merged_into=n.id,
+                            new_text=text[:50],
+                        )
+                        return n
+
+            note = Note(
+                id=uuid.uuid4().hex[:8],
+                category=cat,
+                text=text,
+                confidence=float(confidence),
+                learned_at=time.time(),
+                embedding=emb,
+            )
+            self._notes.append(note)
+            self._enforce_cap()
             self._save_sync()
-            return existing
-
-        # Semantic dedupe via embedding.
-        emb = await _safe_embed(text)
-        if emb:
-            for n in self._notes:
-                if n.category != cat or not n.embedding:
-                    continue
-                if _cosine(emb, n.embedding) >= DEDUP_COSINE_THRESHOLD:
-                    prev_conf = n.confidence
-                    n.confidence = max(n.confidence, confidence)
-                    n.last_used_at = time.time()
-                    # Adopt the newer (often richer) wording + fresh embedding
-                    # when the incoming note is MORE confident. Compare against
-                    # the pre-max value: after max() the condition is always
-                    # False, so this branch was dead and stale text/embedding
-                    # was never refreshed.
-                    if confidence > prev_conf:
-                        n.text = text
-                        n.embedding = emb
-                    self._save_sync()
-                    logger.debug(
-                        "memory_dedup_merged",
-                        merged_into=n.id,
-                        new_text=text[:50],
-                    )
-                    return n
-
-        note = Note(
-            id=uuid.uuid4().hex[:8],
-            category=cat,
-            text=text,
-            confidence=float(confidence),
-            learned_at=time.time(),
-            embedding=emb,
-        )
-        self._notes.append(note)
-        self._enforce_cap()
-        self._save_sync()
-        return note
+            return note
 
     def delete_note(self, note_id: str) -> bool:
         before = len(self._notes)

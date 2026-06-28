@@ -16,16 +16,25 @@ POST /reset                   Force the session back to idle. Drops any pending 
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 import structlog
 
+from app.infrastructure.auth import require_auth
 from app.services.email_voice_session_service import (
     get_email_voice_session_service,
 )
 from app.services.voice_intent_router import classify_intent
 
-router = APIRouter()
+# ACT-C2 (supervise cb0befc3): gate the whole router behind the gateway token,
+# mirroring email_drafts/approvals (ACT-A1/A2). The FSM /text-input + /voice-input
+# transitions can reach `awaiting_send_confirmation` -> _send_pending_reply() ->
+# gmail.send_email() DIRECTLY (bypassing the draft-pool approval boundary), so a
+# bare APIRouter() let any unauthenticated local process POST {"text":"send"} and
+# fire a real email. The in-process voice loop drives the session singleton
+# directly (not over HTTP) so it is unaffected; the only HTTP caller is the
+# frontend EmailPage /session read, which already sends getAuthHeaders().
+router = APIRouter(dependencies=[Depends(require_auth)])
 logger = structlog.get_logger(__name__)
 
 
