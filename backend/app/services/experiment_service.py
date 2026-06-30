@@ -73,6 +73,19 @@ class ExperimentService:
             )
         except StructuredOutputError:
             design = {"methodology": "Manual evaluation required", "metrics": {}, "success_criteria": "TBD"}
+        except Exception as e:
+            # RSN-8: structured_chat raises StructuredOutputError only on a JSON
+            # PARSE failure. A network / timeout / gateway failure (e.g. the
+            # shared brain wedged and all provider fallbacks exhausted — a real,
+            # recurring condition) raises the raw provider exception, which
+            # previously escaped design_experiment entirely: no row was written
+            # and the caller got a raw 500. The sibling run_experiment guards
+            # every LLM failure with `except Exception` (below); mirror that here
+            # by degrading to the same manual-evaluation default so the
+            # experiment is still persisted and can be re-run once the brain
+            # recovers, instead of failing the whole request.
+            logger.warning("experiment_design_llm_failed", exp_id=exp_id, error=str(e))
+            design = {"methodology": "Manual evaluation required", "metrics": {}, "success_criteria": "TBD"}
 
         async with get_session() as session:
             row = ExperimentModel(
@@ -97,7 +110,16 @@ class ExperimentService:
     async def run_experiment(self, exp_id: str) -> Experiment:
         """Execute an experiment and generate results."""
         async with get_session() as session:
-            row = await session.get(ExperimentModel, exp_id)
+            # RSN-7: the status check-then-set below is a TOCTOU race. Two
+            # concurrent run_experiment(exp_id) calls would both read
+            # status="designed", both pass the guard, and both transition to
+            # "running" -> the experiment executes (and writes results) twice.
+            # Lock the row FOR UPDATE so the guard + transition are atomic: the
+            # second caller blocks here until the first commits status="running",
+            # then re-reads, sees "running", and correctly raises "cannot run".
+            row = await session.get(
+                ExperimentModel, exp_id, with_for_update=True
+            )
             if not row:
                 raise ValueError(f"Experiment {exp_id} not found")
             if row.status not in ("designed", "failed"):
