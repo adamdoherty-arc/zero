@@ -177,7 +177,7 @@ class ContentLearningEngine:
                     importance=70,
                     tags=["winning_prompt", "carousel", f"score_{int(ai_score)}"],
                 )
-            except (ValueError, KeyError, TypeError, ImportError) as e:
+            except Exception as e:  # best-effort memory store — a DB/embedding-network blip must not lose the already-registered result
                 logger.debug("prompt_evolution_memory_failed", error=str(e))
 
         return {"carousel_id": carousel_id, "category": category, "score": ai_score}
@@ -212,7 +212,7 @@ class ContentLearningEngine:
                 "period_days": 30,
             }
 
-        except (ValueError, KeyError, TypeError) as e:
+        except Exception as e:  # defensive DB fallback — OperationalError/TimeoutError must return the safe shape, not raise
             logger.error("product_insights_failed", error=str(e))
             return {"by_niche": [], "error": str(e)}
 
@@ -231,7 +231,7 @@ class ContentLearningEngine:
                 }
                 for m in metrics
             ]
-        except (ValueError, KeyError, TypeError, ImportError) as e:
+        except Exception as e:  # defensive DB/import fallback — transient DB/network errors must return [], not raise
             logger.error("strategy_leaderboard_failed", error=str(e))
             return []
 
@@ -352,7 +352,7 @@ class ContentLearningEngine:
 
             return completed
 
-        except (ValueError, KeyError, TypeError) as e:
+        except Exception as e:  # LRN — the initial batch-SELECT is outside the per-exp guard; a DB error must honor the List[Dict] contract (return [])
             logger.error("check_experiments_failed", error=str(e))
             return []
 
@@ -390,7 +390,7 @@ class ContentLearningEngine:
                     )
                     for r in rows
                 ]
-        except (ValueError, KeyError, TypeError) as e:
+        except Exception as e:  # defensive DB fallback — transient DB error must return [], not raise
             logger.error("get_experiments_failed", error=str(e))
             return []
 
@@ -437,7 +437,7 @@ class ContentLearningEngine:
 
             return {"by_hour": by_hour, "period_days": 30}
 
-        except (ValueError, KeyError, TypeError) as e:
+        except Exception as e:  # defensive DB fallback — transient DB error must return the safe shape, not raise
             logger.error("posting_time_analysis_failed", error=str(e))
             return {"by_hour": [], "error": str(e)}
 
@@ -449,7 +449,7 @@ class ContentLearningEngine:
                     ContentExperimentModel.status == "active"
                 )
                 return (await session.execute(q)).scalar() or 0
-        except (ValueError, KeyError, TypeError):
+        except Exception:  # defensive DB fallback — transient DB error must return 0, not raise
             return 0
 
 
