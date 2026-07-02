@@ -28,7 +28,15 @@ async def run_experiment(exp_id: str):
     exp = await svc.get_experiment(exp_id)
     if not exp:
         raise HTTPException(404, f"Experiment {exp_id} not found")
-    return await svc.run_experiment(exp_id)
+    result = await svc.run_experiment(exp_id)
+    if result is None:
+        # RSN-NEW1: the row can be deleted while the run is in flight; every
+        # terminal path of run_experiment re-reads it and returns None in that
+        # case. Serializing None under response_model=Experiment is a 500
+        # ResponseValidationError — surface the vanished row as a 404 instead,
+        # mirroring the RSN-5 council guard and the GET route below.
+        raise HTTPException(404, f"Experiment {exp_id} deleted while running")
+    return result
 
 
 @router.get("", response_model=list[Experiment])

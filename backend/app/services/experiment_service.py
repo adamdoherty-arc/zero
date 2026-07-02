@@ -107,7 +107,7 @@ class ExperimentService:
         logger.info("experiment_designed", exp_id=exp_id, type=req.experiment_type)
         return _orm_to_experiment(row)
 
-    async def run_experiment(self, exp_id: str) -> Experiment:
+    async def run_experiment(self, exp_id: str) -> Optional[Experiment]:
         """Execute an experiment and generate results."""
         async with get_session() as session:
             # RSN-7: the status check-then-set below is a TOCTOU race. Two
