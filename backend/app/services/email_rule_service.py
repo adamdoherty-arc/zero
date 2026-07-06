@@ -457,8 +457,10 @@ RULES:
         if not content:
             return {"message": "LLM returned empty response, skipping calendar event"}
 
-        # Parse JSON from LLM response
-        event_info = self._parse_json_from_llm(content)
+        # Parse JSON from LLM response. Use the brace-balanced + fence-stripping
+        # parser (Fix-135): the old flat-only `_parse_json_from_llm` relied on a
+        # `\{[^{}]*\}` regex that could not survive a fenced or nested response.
+        event_info = self._parse_nested_json_from_llm(content)
         if not event_info or not event_info.get("title") or not event_info.get("date"):
             return {"message": "Could not extract event date from email", "llm_response": content[:200]}
 
@@ -602,23 +604,6 @@ RULES:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-
-    def _parse_json_from_llm(self, text: str) -> Optional[dict]:
-        """Extract JSON object from LLM response text."""
-        # Try direct parse first
-        text = text.strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-        # Try to find JSON in response
-        match = re.search(r'\{[^{}]*\}', text)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        return None
 
 
 def get_email_rule_service() -> EmailRuleService:
