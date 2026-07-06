@@ -1,0 +1,41 @@
+# Pre-commit hooks for Zero.
+#
+# Introduced by the supervise loop to close the recurring plan-grader gaps
+# "Add secret scanning to pre-commit and CI" / "Enforce Secret Management in CI"
+# / "Configure pre-commit hooks for type checking and formatting".
+#
+# Activate locally with:  pre-commit install
+# Run against all files:  pre-commit run --all-files
+#
+# Kept intentionally light so it does not fight the existing sprint-policy
+# commit-msg hook. Secret detection is the load-bearing gate; ruff runs
+# lint+format checks on the backend only.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: detect-private-key
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        name: ruff (lint) — backend
+        args: ['--fix', '--exit-non-zero-on-fix']
+        files: ^backend/app/
+      - id: ruff-format
+        name: ruff (format check) — backend
+        files: ^backend/app/
