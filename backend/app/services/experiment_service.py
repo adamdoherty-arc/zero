@@ -87,6 +87,16 @@ class ExperimentService:
             logger.warning("experiment_design_llm_failed", exp_id=exp_id, error=str(e))
             design = {"methodology": "Manual evaluation required", "metrics": {}, "success_criteria": "TBD"}
 
+        # RSN-9: structured_chat is typed Union[dict, list] — a model emitting a
+        # JSON array parses successfully (no exception), so the excepts above
+        # never fire and design.get() below would raise AttributeError outside
+        # any guard: raw 500, no row persisted, defeating RSN-8's degrade-and-
+        # persist intent. Coerce to the same manual-evaluation default (mirrors
+        # reflection_service RFL-2).
+        if not isinstance(design, dict):
+            logger.warning("experiment_design_non_dict", exp_id=exp_id, got=type(design).__name__)
+            design = {"methodology": "Manual evaluation required", "metrics": {}, "success_criteria": "TBD"}
+
         async with get_session() as session:
             row = ExperimentModel(
                 id=exp_id,
