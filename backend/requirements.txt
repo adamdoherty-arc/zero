@@ -26,7 +26,7 @@ python-dateutil>=2.8.2
 # LLM Integration (Ollama via OpenAI-compatible API)
 # Realtime API (AsyncOpenAI.realtime.connect, openai.types.realtime.*) requires >=2.30.
 openai>=2.30.0
-httpx>=0.28.0
+httpx>=0.28.1
 # Raw-websocket client, used by the Reachy realtime bridge.
 websockets>=13.0
 # Gradio client — used to claim a free OpenAI key from Pollen's HF Space so
