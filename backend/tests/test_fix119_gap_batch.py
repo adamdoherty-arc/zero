@@ -131,16 +131,33 @@ async def test_act2_auto_expire_expires_pending_regression():
 
 
 async def test_act2_auto_expire_does_not_touch_decided_row():
-    """A row already decided (approved) before the sweep must not be clobbered."""
+    """A row already decided (approved) before the sweep must not be clobbered.
+
+    Fix-128 (ACT-B1) refuses to APPROVE an already-expired request, so the row is
+    created with a FUTURE expiry, approved (succeeds), then aged into the past to
+    simulate the real decided-then-expired race (approve commits, time passes, the
+    sweep runs). The pending-guarded UPDATE must skip the non-pending row."""
     from app.services.approval_service import ApprovalService
+    from app.infrastructure.database import get_session
+    from app.db.models import ApprovalRequestModel
+    from sqlalchemy import update as _sql_update
+
     svc = ApprovalService()
     req = await svc.create_approval_request(
         request_type="write_external", title="t119act2b",
-        expires_in_hours=-1, auto_action_on_expiry="reject",
+        expires_in_hours=1, auto_action_on_expiry="reject",
     )
     rid = req["id"]
     decided = await svc.approve(rid, decision_by="user")
-    assert decided["status"] == "approved"
+    assert decided is not None and decided["status"] == "approved"
+    # Age the already-approved row into the past: the decided-then-expired race.
+    async with get_session() as s:
+        await s.execute(
+            _sql_update(ApprovalRequestModel)
+            .where(ApprovalRequestModel.id == rid)
+            .values(expires_at=datetime.now(timezone.utc) - timedelta(hours=1))
+        )
+        await s.commit()
     await svc.auto_expire_check()
     after = await svc.get_request(rid)
     assert after["status"] == "approved", "expiry sweep must not overwrite a human decision"

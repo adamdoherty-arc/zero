@@ -42,22 +42,44 @@ async def test_ambient_vision_propose_approval_reaches_queue(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auto_expire_writes_canonical_status(monkeypatch):
+    # Fix-119 (ACT-2) rewrote auto_expire_check from an ORM-object mutation loop
+    # to a guarded ``UPDATE ... WHERE status='pending' ... RETURNING id`` issued
+    # once per expired row, so the canonical status now lands in the UPDATE's
+    # bound values, not on the loaded row object (asserting row.status no longer
+    # works). Fix-116 fail-safe: an "approve" auto-action MUST collapse to
+    # "expired" — never auto-approve an unattended gated request. Capture each
+    # UPDATE's SET values and assert reject->rejected / approve->expired /
+    # none->expired, all stamped decision_by="auto_expire".
     from app.services import approval_service as aps
+    from sqlalchemy.sql.dml import Update
 
     expired_reject = MagicMock()
     expired_reject.auto_action_on_expiry = "reject"
+    expired_reject.id = "r-reject"
     expired_approve = MagicMock()
     expired_approve.auto_action_on_expiry = "approve"
+    expired_approve.id = "r-approve"
     expired_none = MagicMock()
     expired_none.auto_action_on_expiry = None
+    expired_none.id = "r-none"
 
     rows = [expired_reject, expired_approve, expired_none]
+    captured: list = []
 
     class _FakeSession:
-        async def execute(self, _stmt):
+        async def execute(self, stmt):
             result = MagicMock()
-            result.scalars.return_value.all.return_value = rows
+            if isinstance(stmt, Update):
+                params = stmt.compile().params
+                captured.append((params.get("status"), params.get("decision_by")))
+                # non-None -> the guarded claim succeeded, so the row counts.
+                result.scalar_one_or_none.return_value = "claimed-id"
+            else:
+                result.scalars.return_value.all.return_value = rows
             return result
+
+        async def commit(self):
+            pass
 
     class _Ctx:
         async def __aenter__(self):
@@ -71,11 +93,8 @@ async def test_auto_expire_writes_canonical_status(monkeypatch):
     count = await aps.ApprovalService().auto_expire_check()
 
     assert count == 3
-    assert expired_reject.status == "rejected"
-    assert expired_approve.status == "approved"
-    assert expired_none.status == "expired"
-    for row in rows:
-        assert row.decision_by == "auto_expire"
+    assert [status for status, _ in captured] == ["rejected", "expired", "expired"], captured
+    assert all(decision_by == "auto_expire" for _, decision_by in captured)
 
 
 @pytest.mark.asyncio

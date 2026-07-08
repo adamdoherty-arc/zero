@@ -331,17 +331,32 @@ class EmailDraftPool:
             # is correct and a later re-approve won't double-send.
             logger.warning("draft_pool_send_failed", draft_id=draft.id, error=str(e))
             return None, str(e)
-        # Fix-126 (ACT-A4): send_fn returned -> Gmail accepted the message. A
-        # failure to parse the response id must NOT be reported as 'failed'
-        # (failed drafts are re-sendable, so the already-accepted message would be
-        # sent a second time). Treat a parse error as a successful send.
+        # Fix-137 (ACT-A5): GmailService.send_email is `-> Optional[str]` — it
+        # returns the new message id (a str) on success and None on failure (it
+        # catches its own exceptions and NEVER raises). The prior parse used
+        # getattr(msg, "id", None) for the non-dict branch, which for a str id
+        # returns None WITHOUT raising, so the parse-error except never fired and
+        # the trailing `return "sent", None` reported BOTH a real id-string send
+        # AND a None-return FAILURE as a terminal "sent" draft — every failed
+        # Gmail send (auth expiry, network, 4xx/5xx) was silently recorded as sent
+        # on the approve trust boundary, un-retryable and un-surfaced. Fix-126's
+        # intent (a parse error on an ACCEPTED message must not become 'failed',
+        # or the already-sent message would be re-sent) is preserved ONLY for a
+        # truthy-but-unparseable response; a None/empty return is send_email's
+        # explicit failure signal and MUST move the draft to 'failed' (re-sendable)
+        # so the operator can retry.
+        if msg is None or msg == "":
+            return None, "gmail send returned no message id (send failed)"
+        if isinstance(msg, str):
+            # send_email's real contract: the str IS the message id.
+            return msg, None
         try:
-            msg_id = (
-                msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
-            )
+            msg_id = msg.get("id") if isinstance(msg, dict) else getattr(msg, "id", None)
         except Exception as parse_err:
             logger.warning("draft_pool_send_parse_failed", draft_id=draft.id, error=str(parse_err))
             return "sent", None
+        # A dict/object that came back (Gmail accepted the message) but with no id
+        # we could read: keep Fix-126 behavior — report sent, never risk a re-send.
         return str(msg_id) if msg_id else "sent", None
 
     async def stats(self) -> dict[str, Any]:
