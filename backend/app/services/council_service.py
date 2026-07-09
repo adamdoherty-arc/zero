@@ -116,6 +116,15 @@ class CouncilService:
                 round1[role_id] = vote if isinstance(vote, dict) else {"position": "abstain", "reasoning": str(vote), "confidence": 50}
             except StructuredOutputError:
                 round1[role_id] = {"position": "abstain", "reasoning": "Failed to evaluate", "confidence": 30}
+            except Exception as e:
+                # F7 (mirrors RSN-8 in experiment_service.design_experiment): a
+                # raw provider/network/timeout exception is not a
+                # StructuredOutputError and was previously uncaught here,
+                # aborting the whole conduct_vote call and losing every
+                # already-computed Round-1 vote. Degrade this role to abstain
+                # like the StructuredOutputError path, rather than raising.
+                logger.warning("council_vote_provider_error", role=role_id, round=1, error=str(e))
+                round1[role_id] = {"position": "abstain", "reasoning": "Provider error during evaluation", "confidence": 30}
 
         rounds.append({"round": 1, "votes": round1})
 
@@ -148,6 +157,11 @@ class CouncilService:
                 round2[role_id] = vote if isinstance(vote, dict) else {"position": "abstain", "reasoning": str(vote), "confidence": 50}
             except StructuredOutputError:
                 round2[role_id] = round1[role_id]  # Keep round 1 vote
+            except Exception as e:
+                # F7 (same class as round 1 above): degrade to the round-1
+                # vote rather than raising and losing the whole decision.
+                logger.warning("council_vote_provider_error", role=role_id, round=2, error=str(e))
+                round2[role_id] = round1[role_id]
 
         rounds.append({"round": 2, "votes": round2})
 

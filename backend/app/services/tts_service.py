@@ -195,6 +195,18 @@ class TTSService:
                         reason="edge-tts not installed",
                     )
                     # fall through to default engine
+                except Exception as e:
+                    # F5: a real synth failure (network, edge-tts service down,
+                    # empty-audio RuntimeError) is not an ImportError and was
+                    # previously unguarded here, breaking the "voice loop never
+                    # silently dies" invariant that fish/kokoro/sesame already
+                    # honor. Fall through to the default engine instead of
+                    # propagating a raw 500.
+                    logger.warning(
+                        "edge_tts_voice_override_failed_falling_back",
+                        voice=voice_override,
+                        error=str(e),
+                    )
             elif _is_piper_voice(voice_override):
                 try:
                     audio = await self._synthesize_piper_voice(text, voice_override)
@@ -237,8 +249,19 @@ class TTSService:
                 except ImportError:
                     raise
         elif self._engine == ENGINE_EDGE:
-            audio = await self._synthesize_edge(text)
-            return audio, {"engine": ENGINE_EDGE, "voice": self._edge_voice}
+            # F6: the default (no voice_override) ENGINE_EDGE path had zero
+            # exception handling, unlike the ENGINE_PIPER branch above which
+            # falls back to edge-tts on failure. When edge-tts is itself the
+            # active default engine and synthesis fails (network blip,
+            # service restart), this used to 500 with no fallback and no
+            # context. Surface a clear, logged error instead of a raw
+            # traceback bubbling out of the voice loop.
+            try:
+                audio = await self._synthesize_edge(text)
+                return audio, {"engine": ENGINE_EDGE, "voice": self._edge_voice}
+            except Exception as e:
+                logger.warning("edge_tts_default_synth_failed", error=str(e))
+                raise RuntimeError(f"edge-tts synthesis failed: {e}") from e
         else:
             raise RuntimeError(
                 "No TTS engine available. Install edge-tts: pip install edge-tts"
