@@ -336,7 +336,17 @@ class DailyImprovementService:
                     item["status"] = ImprovementStatus.EXECUTED.value if result.get("applied") else ImprovementStatus.SKIPPED.value
                 elif strategy == ExecutionStrategy.LEGION_TASK.value:
                     result = await self._execute_legion_task(item)
-                    item["status"] = ImprovementStatus.EXECUTED.value
+                    # Fix-139 BUG-A: _execute_legion_task returns created=False on
+                    # Legion-down / no-active-sprint / any exception. Do NOT stamp
+                    # EXECUTED for a task that was never created (same trust-boundary
+                    # class as Fix-137 F1) — verify_daily_plan only processes
+                    # status==EXECUTED and would otherwise carry a failed creation
+                    # as a real pending task forever.
+                    if result.get("created"):
+                        item["status"] = ImprovementStatus.EXECUTED.value
+                    else:
+                        item["status"] = ImprovementStatus.FAILED.value
+                        item["error"] = result.get("reason", "Legion task not created")
                 elif strategy == ExecutionStrategy.CLAUDE_PROMPT.value:
                     result = await self._execute_claude_prompt(item)
                     item["status"] = ImprovementStatus.EXECUTED.value
@@ -461,12 +471,24 @@ Rules:
         new_lines = lines[:start] + fixed_lines + lines[end:]
         new_content = '\n'.join(new_lines)
 
-        # Validate syntax for Python files
+        # Validate syntax before writing. Fix-139 BUG-B: this path advertises
+        # "syntax validated" (see docstring safety bounds), but only .py can be
+        # cheaply verified via ast.parse. scan_extensions also admits
+        # .ts/.tsx/.js/.jsx/.yaml/.yml and _determine_execution_strategy can route
+        # those to AUTO_FIX — writing an unvalidated non-.py file straight to disk
+        # risks silently breaking the next build. Refuse to auto-write anything we
+        # cannot syntax-check; those signals stay in the plan for human review
+        # instead of a blind overwrite.
         if source_file.endswith('.py'):
             try:
                 ast.parse(new_content)
             except SyntaxError as e:
                 return {"applied": False, "reason": f"Syntax error in fix: {e}"}
+        else:
+            return {
+                "applied": False,
+                "reason": "non-Python auto-fix refused (syntax cannot be validated); routed to human review",
+            }
 
         # Create backup
         backup_path = file_path.with_suffix(file_path.suffix + '.bak')

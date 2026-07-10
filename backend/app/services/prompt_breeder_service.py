@@ -191,7 +191,19 @@ class PromptBreederService:
                 task_types = [r[0] for r in res.all()]
         results = []
         for tt in task_types:
-            results.append(await self.breed_task_type(tt))
+            # Fix-139 BUG-C: guard each task_type so one transient DB/LLM failure
+            # does not abort the whole batch and starve the sibling task_types.
+            # The scheduler wraps the entire breed_all call in a single
+            # try/except, so an unguarded raise here kills every remaining tt.
+            try:
+                results.append(await self.breed_task_type(tt))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "prompt_breeder_task_type_failed", task_type=tt, error=str(exc)
+                )
+                results.append(
+                    {"task_type": tt, "children_created": 0, "retired": 0, "error": str(exc)}
+                )
         return {"results": results}
 
 
