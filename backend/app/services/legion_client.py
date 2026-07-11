@@ -167,6 +167,18 @@ class LegionClient:
                     json=json
                 ) as response:
                     if response.status == 404:
+                        # Fix-140: 404 -> None is only a valid contract for
+                        # reads (missing resource). For POST/PATCH/DELETE it
+                        # silently converted a failed write into a None the
+                        # caller treats as benign — Legion v2's route drift
+                        # shipped exactly this: POST /sprints (no trailing
+                        # slash) 404'd and create_sprint returned None while
+                        # callers recorded success. Writes fail loud, no retry.
+                        if method.upper() != "GET":
+                            raise LegionAPIError(
+                                f"Legion API error 404: {method} {url} — "
+                                "endpoint or resource not found"
+                            )
                         return None
                     response.raise_for_status()
                     return await response.json()
@@ -315,7 +327,12 @@ class LegionClient:
         if status:
             params["status"] = status
 
-        result = await self._get("/sprints", params)
+        # Fix-140: Legion v2 serves the sprints collection at "/sprints/"
+        # ONLY (trailing slash, no redirect — the bare path hard-404s), and a
+        # 404->None here crashed the isinstance fallback with AttributeError.
+        result = await self._get("/sprints/", params)
+        if result is None:
+            return []
         return result if isinstance(result, list) else result.get("sprints", [])
 
     async def get_sprint(self, sprint_id: int) -> Optional[Dict]:
@@ -333,7 +350,10 @@ class LegionClient:
 
     async def create_sprint(self, sprint_data: Dict) -> Dict:
         """Create a new sprint."""
-        return await self._post("/sprints", sprint_data)
+        # Fix-140: trailing slash required — Legion v2 404s the bare
+        # "/sprints" path and the old silent 404->None made every proxy
+        # sprint-create report null while no row (or a lost row) landed.
+        return await self._post("/sprints/", sprint_data)
 
     async def create_sprint_with_tasks(self, payload: Dict) -> Dict:
         """S52 (2026-05-19): atomic sprint + tasks creation against Legion's
