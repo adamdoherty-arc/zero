@@ -56,8 +56,12 @@ _KEYWORD_MAP: dict[Intent, list[str]] = {
         "read it", "read", "yes read", "go ahead", "yeah", "yes", "yep",
         "sure", "okay", "ok", "please", "let's hear it", "tell me",
     ],
+    # Fix-141 F5: "skip"/"skip it" moved OUT of ignore and INTO skip — they were
+    # shadowed here (dict order checks ignore first), so the skip intent was
+    # unreachable by its own name. Current handlers alias ignore/skip, so this
+    # is behavior-preserving today but correct for any future distinct caller.
     "ignore": [
-        "ignore", "skip it", "skip", "not now", "later", "no thanks",
+        "ignore", "not now", "later", "no thanks",
         "pass", "move on",
     ],
     "delete": [
@@ -76,7 +80,7 @@ _KEYWORD_MAP: dict[Intent, list[str]] = {
         "cancel", "no", "nope", "don't send", "do not send", "abort",
         "scrap it", "wait",
     ],
-    "skip": ["next", "next email", "skip this one", "move along"],
+    "skip": ["next", "next email", "skip this one", "skip it", "skip", "move along"],
     "stop": ["stop", "shut up", "quiet", "be quiet", "enough"],
 }
 

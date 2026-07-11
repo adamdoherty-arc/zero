@@ -7697,7 +7697,10 @@ Return JSON:
         """Generate N variants across multiple providers, let the council rank
         them, return the winner. Does NOT auto-apply.
         """
-        from app.infrastructure.unified_llm_client import get_unified_llm_client
+        from app.infrastructure.unified_llm_client import (
+            StructuredOutputError,
+            get_unified_llm_client,
+        )
         from app.services.council_service import get_council_service, COUNCIL_ROLES
         from app.models.agent_company import CouncilProposal
         from app.db.models import CouncilDecisionModel
@@ -7782,7 +7785,11 @@ Return JSON:
                     role_rankings[role_id] = result
                 else:
                     role_rankings[role_id] = {"best_index": 0, "ranking": list(range(len(variants))), "reasoning": str(result)[:200], "confidence": 50}
-            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError) as exc:
+            # Fix-141 F3: StructuredOutputError was missing from the tuple, so
+            # one role's exhausted-retries failure escaped the per-role loop and
+            # aborted the whole council vote instead of degrading that role to
+            # the "vote_failed" placeholder below.
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, AttributeError, RuntimeError, TypeError, SQLAlchemyError, StructuredOutputError) as exc:
                 logger.warning(
                     "council_role_rank_failed",
                     carousel_id=carousel_id,

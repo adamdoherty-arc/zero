@@ -11,12 +11,13 @@ the Ask Zero chat with the user reviewing + picking next week's top_3.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import structlog
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 
 from app.db.models import (
     AgentAlertModel,
@@ -54,7 +55,8 @@ class WeeklyReviewService:
         target = target_dir / f"{label}.md"
 
         body = await self._render(label, today)
-        target.write_text(body, encoding="utf-8")
+        # Fix-141 F7: blocking file write off the event loop.
+        await asyncio.to_thread(target.write_text, body, encoding="utf-8")
         logger.info("weekly_review_written", path=str(target), bytes=len(body))
         return {
             "status": "ok",
@@ -98,7 +100,10 @@ class WeeklyReviewService:
                     await session.execute(
                         select(TaskModel)
                         .where(TaskModel.status == "in_progress")
-                        .order_by(TaskModel.updated_at.desc() if hasattr(TaskModel, "updated_at") else TaskModel.created_at.desc())
+                        # Fix-141 F6: updated_at is nullable (onupdate only, no
+                        # insert default) and Postgres DESC puts NULLS FIRST —
+                        # never-touched rows sorted ABOVE genuinely recent work.
+                        .order_by(func.coalesce(TaskModel.updated_at, TaskModel.created_at).desc())
                         .limit(20)
                     )
                 ).scalars().all()

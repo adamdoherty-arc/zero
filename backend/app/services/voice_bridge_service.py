@@ -27,6 +27,7 @@ runs on the host.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -101,7 +102,9 @@ class VoiceBridgeService:
             # will create it on its first tick.
             if not abs_path.exists():
                 return {"status": "skipped", "reason": "daily_not_created_yet"}
-            existing = abs_path.read_text(encoding="utf-8")
+            # Fix-141 F7: whole-daily-note read/rewrite ran as blocking sync
+            # I/O inside the event loop on EVERY voice turn.
+            existing = await asyncio.to_thread(abs_path.read_text, encoding="utf-8")
             marker = "## Mic"
             ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
             new_entry_lines = [
@@ -120,7 +123,7 @@ class VoiceBridgeService:
             else:
                 existing = existing.rstrip() + f"\n\n{marker}\n{entry_block}"
 
-            abs_path.write_text(existing, encoding="utf-8")
+            await asyncio.to_thread(abs_path.write_text, existing, encoding="utf-8")
             return {"status": "ok", "path": str(entry_path)}
         except Exception as e:  # noqa: BLE001
             logger.warning("voice_bridge_log_turn_failed", error=str(e))

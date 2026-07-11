@@ -163,10 +163,12 @@ class ChatService:
         return session
 
     @staticmethod
-    def list_sessions() -> List[Dict[str, Any]]:
+    async def list_sessions() -> List[Dict[str, Any]]:
         ChatService._cleanup_expired()
         results = []
+        seen: set = set()
         for s in sorted(_sessions.values(), key=lambda x: x.last_active, reverse=True):
+            seen.add(s.session_id)
             results.append({
                 "session_id": s.session_id,
                 "title": s.title,
@@ -175,13 +177,53 @@ class ChatService:
                 "created_at": datetime.fromtimestamp(s.created_at).isoformat(),
                 "last_active": datetime.fromtimestamp(s.last_active).isoformat(),
             })
+        # Fix-141 F1: merge DB-persisted sessions. Every turn is persisted via
+        # memory_service, and get_or_create_session rehydrates a KNOWN id on
+        # miss — but this listing only read the in-memory cache, so a zero-api
+        # restart blanked the Ask Zero sidebar until new messages were sent.
+        try:
+            from app.services.memory_service import get_memory_service
+            mem = get_memory_service()
+            for row in await mem.list_sessions(limit=50):
+                sid = row.get("session_id")
+                if not sid or sid in seen:
+                    continue
+                results.append({
+                    "session_id": sid,
+                    "title": row.get("title"),
+                    "project_id": str(row["project_id"]) if row.get("project_id") is not None else None,
+                    "message_count": row.get("message_count") or 0,
+                    "created_at": row.get("created_at") or "",
+                    "last_active": row.get("last_active") or "",
+                })
+        except Exception as e:
+            logger.warning("chat.list_sessions_db_merge_failed", error=str(e))
         return results
 
     @staticmethod
-    def get_session_history(session_id: str) -> Optional[List[Dict[str, str]]]:
-        if session_id not in _sessions:
-            return None
-        session = _sessions[session_id]
+    async def get_session_history(session_id: str) -> Optional[List[Dict[str, str]]]:
+        session = _sessions.get(session_id)
+        if session is None:
+            # Fix-141 F1: rehydrate from DB on cache miss — the chat path
+            # already did this in get_or_create_session, but the history
+            # endpoint 404'd every persisted session after a restart.
+            try:
+                from app.services.memory_service import get_memory_service
+                mem = get_memory_service()
+                history = await mem.get_messages(session_id, limit=50)
+            except Exception as e:
+                logger.warning("chat.history_rehydrate_failed",
+                               session_id=session_id, error=str(e))
+                history = []
+            if not history:
+                return None
+            db_role_map = {"human": "user", "ai": "assistant"}
+            return [
+                {"role": db_role_map.get(m.get("role"), "user"),
+                 "content": m.get("content") or ""}
+                for m in history
+                if m.get("role") != "system"
+            ]
         return [
             {"role": _msg_role(m), "content": m.content}
             for m in session.messages
@@ -434,6 +476,14 @@ class ChatService:
             entry = {"role": _msg_role(msg), "content": msg.content}
             cost = len(msg.content)
             if budget - cost < 0:
+                # Fix-141 F2: never drop the newest message (the current user
+                # turn). With a near-cap system prompt the first iteration
+                # broke with an EMPTY window, so the LLM answered without ever
+                # seeing the question. Truncate it to fit instead.
+                if not window:
+                    keep = max(budget, 1024)
+                    entry["content"] = msg.content[:keep]
+                    window.insert(0, entry)
                 break
             window.insert(0, entry)
             budget -= cost
@@ -471,7 +521,9 @@ class ChatService:
             )
         except Exception as e:
             logger.error("ask_zero_chat_failed", error=str(e))
-            content = f"Sorry, I couldn't generate a response. Error: {e}"
+            # Fix-141 F8: never leak raw exception detail (provider URLs,
+            # upstream errors) into the user-facing reply / TTS output.
+            content = "Sorry, I couldn't generate a response. Please try again in a moment."
             model = "error"
 
         session.messages.append(AIMessage(content=content))
@@ -530,7 +582,8 @@ class ChatService:
                 yield f'data: {json.dumps({"type": "chunk", "content": chunk})}\n\n'
         except Exception as e:
             logger.error("ask_zero_stream_failed", error=str(e))
-            error_msg = f"Sorry, I couldn't generate a response. Error: {e}"
+            # Fix-141 F8: generic fallback only — detail stays server-side.
+            error_msg = "Sorry, I couldn't generate a response. Please try again in a moment."
             yield f'data: {json.dumps({"type": "chunk", "content": error_msg})}\n\n'
             full_content = error_msg
 

@@ -107,15 +107,15 @@ async def send_message(request: ChatMessageRequest):
 
 @router.get("/sessions", response_model=List[SessionInfo])
 async def list_sessions():
-    """List all active chat sessions."""
-    sessions = ChatService.list_sessions()
+    """List all active chat sessions (in-memory merged with DB-persisted)."""
+    sessions = await ChatService.list_sessions()
     return [SessionInfo(**s) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=SessionHistory)
 async def get_session_history(session_id: str):
-    """Get conversation history for a session."""
-    history = ChatService.get_session_history(session_id)
+    """Get conversation history for a session (rehydrates from DB on miss)."""
+    history = await ChatService.get_session_history(session_id)
     if history is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return SessionHistory(session_id=session_id, messages=history)

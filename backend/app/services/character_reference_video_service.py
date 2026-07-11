@@ -37,7 +37,10 @@ from app.db.models import (
 from app.infrastructure.config import get_workspace_path
 from app.infrastructure.database import get_session
 from app.infrastructure.json_utils import llm_retry, sanitize_for_prompt
-from app.infrastructure.unified_llm_client import get_unified_llm_client
+from app.infrastructure.unified_llm_client import (
+    StructuredOutputError,
+    get_unified_llm_client,
+)
 from app.models.character_reference_video import (
     AssignCharacterRequest,
     ApplyFactsResponse,
@@ -388,6 +391,11 @@ class CharacterReferenceVideoService:
                 TypeError,
                 SQLAlchemyError,
                 OSError,
+                # Fix-141 F4: StructuredOutputError extends Exception directly,
+                # so it escaped this handler — _mark_failed never ran and the
+                # row froze in a non-terminal status (downloading/transcribing/
+                # analyzing) that _claim_one_pending can never re-select.
+                StructuredOutputError,
             ) as e:
                 logger.exception("cref_pipeline_error", id=ref_id, error=str(e))
                 await self._mark_failed(ref_id, str(e)[:500])
@@ -537,6 +545,9 @@ class CharacterReferenceVideoService:
             TypeError,
             SQLAlchemyError,
             OSError,
+            # Fix-141 F4: same escape as process_pending — a structured-analysis
+            # failure must degrade to "ready without analysis", not abort.
+            StructuredOutputError,
         ) as e:
             logger.warning("cref_analysis_failed", id=ref_id, intent=str(intent), error=str(e))
 
