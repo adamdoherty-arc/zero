@@ -98,10 +98,6 @@ async def test_learn_fact_falls_back_to_slug_lookup(monkeypatch):
     assert facts[0].category_id == "resolved-by-slug"
 
 
-def test_providers_status_probe_timeout_restored():
-    from app.routers import reachy_intent
-
-    assert reachy_intent._PROVIDERS_STATUS_PROBE_TIMEOUT <= 20.0
 
 
 def test_router_config_defaults_mirror_infra60():

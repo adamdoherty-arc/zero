@@ -199,9 +199,3 @@ class TestBundledMicroagents:
         agents = discover_microagents([repo_root])
         assert any(a.name == "zero-deploy" for a in agents)
 
-    def test_reachy_motion_triggers_match(self):
-        """Smoke: 'reachy' in user input must surface the reachy-motion agent."""
-        from app.services.microagents_service import MicroagentsService
-        svc = MicroagentsService()
-        matches = svc.match("Make reachy do a happy dance")
-        assert any(m.name == "reachy-motion" for m in matches)

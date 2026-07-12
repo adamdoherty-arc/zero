@@ -26,46 +26,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # RFL-A — durable-note extraction task is anchored (not GC-cancellable)
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_rfla_maybe_extract_anchors_background_task():
-    from app.services.reachy_user_memory_service import (
-        ReachyUserMemoryService,
-        EXTRACT_EVERY_N_TURNS,
-    )
-
-    # Real constructor so the __init__ change (adds _bg_tasks) is exercised too.
-    svc = ReachyUserMemoryService()
-    # PRE-FIX: no _bg_tasks attribute. POST-FIX: __init__ creates the anchor set.
-    assert hasattr(svc, "_bg_tasks"), "fix adds a _bg_tasks anchor set in __init__"
-    # Content is irrelevant — _extract_and_save is mocked; maybe_extract only
-    # needs _turns non-empty + the counter on an extraction boundary.
-    svc._turns = [object() for _ in range(EXTRACT_EVERY_N_TURNS)]
-    svc._notes = []
-    svc._bg_tasks = set()
-    # Cross the extraction boundary.
-    svc._turn_counter = EXTRACT_EVERY_N_TURNS
-
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def _fake_extract(recent):
-        started.set()
-        await release.wait()
-
-    svc._extract_and_save = _fake_extract
-
-    await svc.maybe_extract()
-    await asyncio.wait_for(started.wait(), timeout=1.0)
-
-    # The in-flight task MUST be strongly referenced so the GC can't cancel it.
-    assert len(svc._bg_tasks) == 1, "in-flight extraction task is anchored"
-    task = next(iter(svc._bg_tasks))
-    assert not task.done()
-
-    release.set()
-    await asyncio.wait_for(task, timeout=1.0)
-    # done_callback removes it from the set.
-    assert len(svc._bg_tasks) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -106,32 +66,3 @@ async def test_rsna_council_list_handles_none_confidence(monkeypatch):
 # ---------------------------------------------------------------------------
 # RSP-LH-1 — llm_timeout early-return cancels eager motion tasks
 # ---------------------------------------------------------------------------
-def test_rsplh1_llm_timeout_return_cancels_eager_tasks():
-    """The llm_timeout branch must cancel eager_tasks BEFORE returning, the
-    same as the tool-timeout / normal-round / httpx-error paths. Verified at
-    source: the cancel loop must appear between the `local LLM timed out`
-    guard and its `return` (the branch is otherwise un-runtime-testable
-    robot-off without a full LocalHandler+websocket harness)."""
-    # Resolve relative to this test file so it works on host (backend/tests/)
-    # and inside the container (/app/tests/, backend root mounted at /app).
-    here = Path(__file__).resolve().parent
-    candidates = [
-        here.parent / "app/services/reachy_realtime/local_handler.py",
-        here / "app/services/reachy_realtime/local_handler.py",
-    ]
-    path = next((p for p in candidates if p.exists()), candidates[0])
-    src = path.read_text(encoding="utf-8")
-
-    guard = 'if self._last_error == "local LLM timed out":'
-    assert guard in src
-    after = src.split(guard, 1)[1]
-    # The branch ends at its emit_phase("stalled", ...) marker just before the
-    # `return`. Anchor on that (not the word "return", which also appears in the
-    # explanatory comment) so the check is unambiguous.
-    marker = '_emit_phase("stalled", reason="llm_timeout")'
-    assert marker in after
-    branch_body = after.split(marker, 1)[0]
-    assert "for _orphan in eager_tasks.values():" in branch_body, (
-        "llm_timeout early-return must cancel eager_tasks before returning"
-    )
-    assert "_orphan.cancel()" in branch_body

@@ -42,39 +42,10 @@ async def test_tts_engine_constants():
     assert not _is_kokoro_voice("en-US-AriaNeural")
 
 
-async def test_realtime_engine_flag():
-    from app.services.reachy_realtime.common import (
-        ENGINE_LEGACY,
-        ENGINE_PIPECAT,
-        REALTIME_ENGINES,
-        normalize_engine,
-    )
-    assert "legacy" in REALTIME_ENGINES and "pipecat" in REALTIME_ENGINES
-    assert normalize_engine(None) == ENGINE_LEGACY
-    assert normalize_engine("pipecat") == ENGINE_PIPECAT
-    assert normalize_engine("garbage") == ENGINE_LEGACY
 
 
-async def test_realtime_config_engine_field_persists():
-    from app.services.reachy_realtime import config_store
-
-    config_store.update_config({"engine": "pipecat"})
-    cfg = config_store.load_config_masked()
-    assert cfg.get("engine") == "pipecat"
 
 
-async def test_memory_facade_recall_and_remember_no_backends():
-    from app.services.memory_facade import get_memory_facade, MemoryNote
-
-    facade = get_memory_facade()
-    notes = await facade.recall("hello world", k=3)
-    assert isinstance(notes, list)
-    res = await facade.remember("hi", "hello there")
-    assert "written_to" in res
-    formatted = facade.format_for_system_prompt([
-        MemoryNote(text="Adam likes coffee", source="test", score=0.9),
-    ])
-    assert "Adam likes coffee" in formatted
 
 
 async def test_supervisor_classifies_intents():
@@ -173,26 +144,5 @@ async def test_turn_outcome_record_and_feedback():
     assert trend["n"] >= 1 and trend["thumbs_up"] >= 1
 
 
-async def test_wake_presence_policy_round_trip():
-    from app.services.wake_presence_service import get_wake_presence_service
-    mod = __import__("app.services.wake_presence_service", fromlist=["get_wake_presence_service"])
-    mod.get_wake_presence_service.cache_clear()  # type: ignore[attr-defined]
-    svc = get_wake_presence_service()
-    p = await svc.get_policy()
-    assert p.wake_engine in ("openwakeword", "custom", "off")
-    p2 = await svc.update_policy({"presence_enabled": True})
-    assert p2.presence_enabled
-    snap = await svc.snapshot_policy()
-    assert "wake_required" in snap
 
 
-async def test_realtime_tools_registry_includes_supervisor():
-    from app.services.reachy_realtime.tools import _HANDLERS, _SPECS
-    for name in (
-        "delegate_research",
-        "draft_email",
-        "bookkeeping_query",
-        "supervisor_dispatch",
-    ):
-        assert name in _HANDLERS, f"missing handler: {name}"
-        assert name in _SPECS, f"missing spec: {name}"

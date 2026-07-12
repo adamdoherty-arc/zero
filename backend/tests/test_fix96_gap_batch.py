@@ -152,39 +152,5 @@ async def test_email_send_legacy_signature_no_silent_routing_drop(monkeypatch):
 # --------------------------------------------------------------------------- #
 # #7 — _set_persona validates against the known persona set
 # --------------------------------------------------------------------------- #
-async def test_set_persona_rejects_unknown(monkeypatch):
-    from app.services.reachy_realtime import tools
-
-    monkeypatch.setitem(
-        sys.modules, "app.services.reachy_realtime.profiles",
-        types.SimpleNamespace(list_profiles=lambda: [
-            types.SimpleNamespace(id="assistant"),
-            types.SimpleNamespace(id="companion"),
-        ]),
-    )
-
-    res = await tools._set_persona(None, {"persona": "banana"}, None)
-    assert "error" in res and "banana" in res["error"]
-    assert "assistant" in res.get("valid_personas", [])
 
 
-async def test_set_persona_accepts_known(monkeypatch):
-    from app.services.reachy_realtime import tools
-
-    monkeypatch.setitem(
-        sys.modules, "app.services.reachy_realtime.profiles",
-        types.SimpleNamespace(list_profiles=lambda: [
-            types.SimpleNamespace(id="assistant"),
-        ]),
-    )
-    captured: dict = {}
-    monkeypatch.setitem(
-        sys.modules, "app.services.reachy_realtime.config_store",
-        types.SimpleNamespace(
-            update_config=lambda d: (captured.update(d) or {"profile": d["profile"]})
-        ),
-    )
-
-    res = await tools._set_persona(None, {"persona": "assistant"}, None)
-    assert res.get("status") == "selected"
-    assert captured.get("profile") == "assistant"

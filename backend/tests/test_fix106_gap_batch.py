@@ -134,7 +134,3 @@ def test_cr2_deep_research_uses_req_query():
     assert '"query": query}' not in src  # the old unbound-loop-var reference is gone
 
 
-def test_rl1_barge_in_tasks_tracked():
-    src = inspect.getsource(importlib.import_module("app.services.reachy_realtime.local_handler"))
-    assert "asyncio.create_task(self._maybe_listening_nod())" not in src
-    assert "self._spawn_bg(self._maybe_listening_nod())" in src

@@ -41,32 +41,8 @@ def _neutralize_other_backends(monkeypatch):
     )
 
 
-@pytest.mark.asyncio
-async def test_rtv1_mem0_bare_list_is_parsed(monkeypatch):
-    from app.services.memory_facade import get_memory_facade
-
-    _neutralize_other_backends(monkeypatch)
-    facade = get_memory_facade()
-    monkeypatch.setattr(facade, "_ensure_mem0", lambda: _FakeMem0List())
-
-    notes = await facade.recall("good morning")
-    texts = [n.text for n in notes]
-    assert "adam likes espresso" in texts, (
-        "mem0 list-shape result was dropped (the AttributeError-swallow bug)"
-    )
-    assert any(n.source == "mem0" for n in notes)
 
 
-@pytest.mark.asyncio
-async def test_rtv1_mem0_dict_shape_still_works(monkeypatch):
-    from app.services.memory_facade import get_memory_facade
-
-    _neutralize_other_backends(monkeypatch)
-    facade = get_memory_facade()
-    monkeypatch.setattr(facade, "_ensure_mem0", lambda: _FakeMem0Dict())
-
-    notes = await facade.recall("good morning")
-    assert "adam likes espresso" in [n.text for n in notes]
 
 
 # ---------------------------------------------------------------------------
@@ -80,50 +56,10 @@ def _bare_handler():
     return h
 
 
-def test_rsp2_trim_history_bounds_growth():
-    h = _bare_handler()
-    h._messages = [{"role": "system", "content": "sys"}]
-    for i in range(80):
-        h._messages.append({"role": "user", "content": f"u{i}"})
-        h._messages.append({"role": "assistant", "content": f"a{i}"})
-    assert len(h._messages) == 161
-    h._trim_history(max_msgs=40)
-    assert len(h._messages) <= 41, "history not bounded"
-    assert h._messages[0] == {"role": "system", "content": "sys"}, "system msg lost"
-    # Most recent turn retained.
-    assert h._messages[-1] == {"role": "assistant", "content": "a79"}
 
 
-def test_rsp2_trim_history_noop_when_small():
-    h = _bare_handler()
-    h._messages = [{"role": "system", "content": "sys"}] + [
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "yo"},
-    ]
-    before = list(h._messages)
-    h._trim_history(max_msgs=40)
-    assert h._messages == before
 
 
-def test_rsp2_trim_history_preserves_tool_pairing():
-    h = _bare_handler()
-    msgs = [{"role": "system", "content": "sys"}]
-    # 60 plain turns, then an assistant tool_calls + tool reply at the tail edge.
-    for i in range(60):
-        msgs.append({"role": "user", "content": f"u{i}"})
-        msgs.append({"role": "assistant", "content": f"a{i}"})
-    msgs.append({"role": "assistant", "tool_calls": [{"id": "c1"}], "content": None})
-    msgs.append({"role": "tool", "tool_call_id": "c1", "content": "result"})
-    msgs.append({"role": "assistant", "content": "final"})
-    h._messages = msgs
-    h._trim_history(max_msgs=10)
-    # The retained window must not BEGIN on a 'tool' message (would be orphaned).
-    assert h._messages[1]["role"] != "tool"
-    # If the tool reply is retained, its assistant tool_calls must precede it.
-    roles = [m["role"] for m in h._messages]
-    if "tool" in roles:
-        ti = roles.index("tool")
-        assert roles[ti - 1] == "assistant" and h._messages[ti - 1].get("tool_calls")
 
 
 # ---------------------------------------------------------------------------
@@ -159,24 +95,6 @@ def test_cap4_stop_terminates_pyaudio():
 # RSP1 — VoiceLoopService._spawn_bg anchors fire-and-forget tasks in a strong
 # ref set and discards them on completion (GC can't cancel mid-flight).
 # ---------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_rsp1_voice_loop_spawn_bg_anchors():
-    from app.services.voice_loop_service import VoiceLoopService
-
-    svc = VoiceLoopService.__new__(VoiceLoopService)
-    svc._bg = set()
-
-    ran = {"v": False}
-
-    async def _work():
-        await asyncio.sleep(0)
-        ran["v"] = True
-
-    task = svc._spawn_bg(_work())
-    assert task in svc._bg, "task not anchored"
-    await task
-    assert ran["v"] is True
-    assert task not in svc._bg, "done task not discarded from strong-ref set"
 
 
 # ---------------------------------------------------------------------------

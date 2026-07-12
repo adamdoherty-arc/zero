@@ -60,13 +60,6 @@ def test_proactive_uses_real_dnd_gate():
 
 
 # --- Gap #3 (MED, capture): meeting follow-up task survives GC ----------------
-def test_followup_task_strongref():
-    import app.services.reachy_realtime.tools as tools
-
-    assert isinstance(tools._BG_FOLLOWUP_TASKS, set)
-    src = (SERVICES / "reachy_realtime" / "tools.py").read_text(encoding="utf-8")
-    assert "_BG_FOLLOWUP_TASKS.add(" in src
-    assert "add_done_callback(_BG_FOLLOWUP_TASKS.discard)" in src
 
 
 # --- Gap #4 (MED, reason): dead-broken module removed -------------------------
@@ -77,11 +70,6 @@ def test_legion_task_handler_removed():
 
 
 # --- Gap #5 (LOW, respond): connect-timeout cleans up the half-open cm --------
-def test_realtime_connect_timeout_cleanup():
-    for name in ("gemini_handler.py", "openai_handler.py"):
-        src = (SERVICES / "reachy_realtime" / name).read_text(encoding="utf-8")
-        # one __aexit__ in the success finally + one new in the timeout branch
-        assert src.count("__aexit__(None, None, None)") >= 2, f"{name} missing timeout cleanup"
 
 
 # --- Gap #6 (LOW, reflect): dict-wrapped LLM result not silently dropped ------

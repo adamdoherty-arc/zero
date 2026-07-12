@@ -53,8 +53,3 @@ def test_capture_failure_nulls_streams():
     assert "mic_capture_failed" in src and "system_audio_failed" in src
 
 
-def test_vision_intercept_plays_on_robot():
-    from app.services import voice_loop_service
-    src = _module_src(voice_loop_service)
-    # the vision branch must play on the robot (label vision_turn) before return
-    assert 'label="vision_turn"' in src

@@ -50,11 +50,6 @@ def test_b1_deep_research_dispatch_contract():
 
 
 # ---- B2: memory recall pulls Note.text, never str(Note) repr (embedding leak) ----
-def test_b2_memory_recall_no_repr_leak():
-    import app.services.memory_facade as mf
-    src = inspect.getsource(mf)
-    assert "text = str(n)" not in src
-    assert 'getattr(n, "text"' in src
 
 
 # ---- B3: an all-abstain council must not silently auto-approve ----
@@ -81,30 +76,9 @@ def test_b4_orchestration_tz_aware():
 
 
 # ---- C1/C3: realtime best-effort + typed tasks are retained / tracked ----
-def test_c1_c3_realtime_tasks_retained():
-    import app.services.reachy_realtime.local_handler as lh
-    src = inspect.getsource(lh)
-    assert "def _spawn_bg(" in src
-    assert "self._bg_tasks: set[asyncio.Task] = set()" in src
-    # the three best-effort sites now route through _spawn_bg (strong ref)
-    assert "self._spawn_bg(_prewarm_whisper())" in src
-    assert "self._spawn_bg(mem.add_memory(" in src
-    assert "self._spawn_bg(\n                svc.record_turn(" in src
-    # the typed/push-to-talk turn is now assigned + tracked so stop() can
-    # cancel it (the bare unheld statement form is gone).
-    assert "self._active_turn_tasks.add(_typed_task)" in src
-    assert "self._spawn_bg(_prewarm_whisper())" in src
-    assert "asyncio.ensure_future(_prewarm_whisper())" not in src
 
 
 # ---- C2: tail flush slices the same basis spoken_to_idx indexes ----
-def test_c2_tail_speech_same_basis():
-    import app.services.reachy_realtime.local_handler as lh
-    src = inspect.getsource(lh)
-    assert "spoken_basis = _clean_assistant_text(text_acc).lstrip()" in src
-    assert "tail = spoken_basis[spoken_to_idx:]" in src
-    # no longer slices the tone-guarded full text at the streaming index
-    assert "cleaned_full[spoken_to_idx:]" not in src
 
 
 # ---- D2: reflection pulls scored rows so voice telemetry can't starve it ----

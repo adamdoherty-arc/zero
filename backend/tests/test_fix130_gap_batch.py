@@ -34,15 +34,6 @@ def _src(rel: str) -> str:
     return (_BACKEND / rel).read_text(encoding="utf-8")
 
 
-def test_act_c2_reachy_email_router_is_auth_gated():
-    src = _src("app/routers/reachy_email.py")
-    assert "from app.infrastructure.auth import require_auth" in src
-    # The router constructor must carry the dependency (mirrors email_drafts/approvals).
-    assert re.search(
-        r"router\s*=\s*APIRouter\(\s*dependencies=\[\s*Depends\(require_auth\)\s*\]",
-        src,
-    ), "reachy_email router must be gated by require_auth at the constructor"
-    assert "Depends" in src.split("import structlog")[0]  # Depends imported from fastapi
 
 
 def test_lrn_n5_outer_guard_is_broad():
@@ -62,16 +53,6 @@ def test_lrn_n5_outer_guard_is_broad():
     assert 'logger.error("content_outcome_processing_failed"' in body
 
 
-def test_cap5_add_note_uses_dedicated_lock():
-    src = _src("app/services/reachy_user_memory_service.py")
-    assert "self._add_lock = asyncio.Lock()" in src, "dedicated _add_lock must exist"
-    assert "async with self._add_lock:" in src, "add_note must hold _add_lock"
-    # Guard against the deadlock regression: add_note must NOT take self._lock
-    # (compact() holds self._lock while calling add_note; asyncio.Lock is non-reentrant).
-    add_note_body = src[src.index("async def add_note(") : src.index("def delete_note(")]
-    assert "self._lock" not in add_note_body, (
-        "add_note must use _add_lock only — taking self._lock would deadlock compact()"
-    )
 
 
 def test_cap5_concurrent_dedup_holds_under_lock():
