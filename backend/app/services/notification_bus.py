@@ -41,6 +41,10 @@ class NotificationBus:
             "persist_fail_total": 0,
         }
         self._counters_by_type: dict[str, int] = {}
+        # Fix-142 F4: strong refs for fire-and-forget persist tasks - the
+        # event loop only holds a weak reference, so an unreferenced task can
+        # be garbage-collected mid-write (silent drop, no persist_fail bump).
+        self._bg_tasks: set[asyncio.Task] = set()
 
     async def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
@@ -86,7 +90,9 @@ class NotificationBus:
         self._counters_by_type[ev_type] = self._counters_by_type.get(ev_type, 0) + 1
         # Fire-and-forget persistence so a slow / blocked DB does not
         # back-pressure the publisher chain.
-        asyncio.create_task(self._persist(event))
+        persist_task = asyncio.create_task(self._persist(event))
+        self._bg_tasks.add(persist_task)
+        persist_task.add_done_callback(self._bg_tasks.discard)
         logger.debug(
             "notification_bus_publish",
             event_type=event.get("type"),

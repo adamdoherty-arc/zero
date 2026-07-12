@@ -380,6 +380,15 @@ class CalendarService:
     # Event datetime helpers (unchanged logic, work with dicts)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _event_dt_payload(edt) -> Dict[str, Optional[str]]:
+        """Serialize an EventDateTime for _event_start/_end_datetime,
+        preserving the all-day `date` field (Fix-142 F5)."""
+        return {
+            "date_time": edt.date_time.isoformat() if edt.date_time else None,
+            "date": edt.date,
+        }
+
     def _event_start_datetime(self, event: Dict) -> datetime:
         """Get event start as datetime."""
         start = event.get("start", {})
@@ -926,8 +935,11 @@ class CalendarService:
             return [{"error": f"Event {event_id} not found"}]
 
         # Calculate event duration
-        start = self._event_start_datetime({"start": {"date_time": event.start.date_time.isoformat() if event.start.date_time else None}})
-        end = self._event_end_datetime({"end": {"date_time": event.end.date_time.isoformat() if event.end.date_time else None}})
+        # Fix-142 F5: keep the all-day `date` field - dropping it made both
+        # parsers fall through to utcnow(), so all-day events rescheduled with
+        # a fabricated ~0-minute duration.
+        start = self._event_start_datetime({"start": self._event_dt_payload(event.start)})
+        end = self._event_end_datetime({"end": self._event_dt_payload(event.end)})
         duration_minutes = int((end - start).total_seconds() / 60)
 
         # Find alternative slots

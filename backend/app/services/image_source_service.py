@@ -317,11 +317,16 @@ class ImageSourceService:
             tasks.append(self._safe_source(
                 self.source_superhero_api_images, name, universe, franchise,
             ))
-        results = await asyncio.gather(*tasks)
+        # Fix-142 F1: return_exceptions so a stray exception from any source
+        # task degrades to that source being skipped, never aborting discovery.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_images: List[Dict[str, Any]] = []
         seen_urls: set = set()
         for source_images in results:
+            if isinstance(source_images, BaseException):
+                logger.warning("image_source_task_failed", error=str(source_images))
+                continue
             for img in source_images[:max_per_source]:
                 if img["url"] not in seen_urls:
                     seen_urls.add(img["url"])
@@ -476,8 +481,12 @@ class ImageSourceService:
             else:
                 bucket["empty"] += 1
             return results
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError,
-                ConnectionError, OSError, KeyError, TypeError) as e:
+        except Exception as e:
+            # Fix-142 F1: catch-all, matching the documented contract
+            # ("returning empty list on error"). The old narrow tuple let an
+            # AttributeError from a malformed provider payload (e.g. an
+            # explicit null where a dict was expected) escape and abort the
+            # ENTIRE discover_images gather - one bad source killed all ~20.
             bucket["failure"] += 1
             logger.warning(
                 "image_source_failed",

@@ -466,20 +466,27 @@ class MediaContentService:
                     )
                     session.add(frag_row)
 
-                # Save images
-                for img_data in images[:15]:
-                    try:
-                        img_row = MediaImageModel(
-                            id=generate_id("mi"),
-                            media_title_id=media_title_id,
-                            url=img_data["url"],
-                            source="tmdb",
-                            width=img_data.get("width"),
-                            height=img_data.get("height"),
+                # Save images. Fix-142 F2: uq_media_image_url fires at the
+                # shared commit below, OUTSIDE any per-row try/except - one
+                # duplicate URL (normal on re-research) rolled back the whole
+                # run and flipped research_status to "failed". Pre-filter
+                # against stored + intra-batch URLs instead.
+                existing_urls = set(
+                    (await session.execute(
+                        select(MediaImageModel.url).where(
+                            MediaImageModel.media_title_id == media_title_id
                         )
-                        session.add(img_row)
-                    except Exception:
-                        pass  # Skip duplicate URLs
+                    )).scalars()
+                )
+                for img_data in self._filter_new_images(images[:15], existing_urls):
+                    session.add(MediaImageModel(
+                        id=generate_id("mi"),
+                        media_title_id=media_title_id,
+                        url=img_data["url"],
+                        source="tmdb",
+                        width=img_data.get("width"),
+                        height=img_data.get("height"),
+                    ))
 
                 # Set poster/backdrop from TMDB images
                 posters = [i for i in images if i.get("type") == "poster"]
@@ -520,6 +527,22 @@ class MediaContentService:
                     row.research_data = {"error": str(e)}
                     await session.commit()
             raise
+
+    @staticmethod
+    def _filter_new_images(
+        images: list, existing_urls: set
+    ) -> list:
+        """Drop image candidates whose URL is already stored for the title
+        or repeats within the batch (Fix-142 F2)."""
+        seen = set(existing_urls)
+        fresh = []
+        for img in images:
+            url = img.get("url")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            fresh.append(img)
+        return fresh
 
     async def _synthesize_facts(
         self,

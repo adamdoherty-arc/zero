@@ -863,6 +863,12 @@ Return only JSON, no prose.'''
             )
             if code:
                 stmt = stmt.where(MealPromoCodeModel.code == code)
+            else:
+                # Fix-142 F3: codeless (auto-apply) offers are their own
+                # identity - mirror the insert key's `code or ''` so they
+                # never silently merge into a coded row that happens to share
+                # service/source/discount shape.
+                stmt = stmt.where(MealPromoCodeModel.code.is_(None))
             existing = (await session.execute(stmt)).scalar_one_or_none()
             now = datetime.utcnow()
             if existing:

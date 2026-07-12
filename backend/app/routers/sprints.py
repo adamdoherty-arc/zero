@@ -272,6 +272,24 @@ async def move_task(task_id: int, data: TaskMoveRequest):
     return legion_task
 
 
+@router.post("/{sprint_id}/start")
+async def start_sprint(sprint_id: int):
+    """Start a Zero sprint (Legion /start transition).
+
+    Fix-142 F6: the proxy covered create/tasks/move/complete but not start,
+    forcing direct :8005 calls for the one lifecycle write between create
+    and complete.
+    """
+    client = get_legion_client()
+    try:
+        result = await client.start_sprint(sprint_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("zero_sprint_start_failed", error=str(exc), sprint_id=sprint_id)
+        raise HTTPException(status_code=502, detail=f"Legion unreachable: {exc}")
+    sprint_vault_renderer.fire_render(sprint_id)
+    return result
+
+
 @router.post("/{sprint_id}/complete")
 async def complete_sprint(sprint_id: int, body: Optional[CompleteSprintRequest] = None,
                           force: bool = Query(False, description="Bypass retro gate (audited)")):

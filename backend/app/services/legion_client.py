@@ -364,6 +364,10 @@ class LegionClient:
         """
         return await self._post("/sprints/with-tasks", payload)
 
+    async def start_sprint(self, sprint_id: int) -> Dict:
+        """Mark a sprint active via Legion /start transition (sets actual_start). Fix-142 F6."""
+        return await self._post(f"/sprints/{sprint_id}/start")
+
     async def update_sprint(self, sprint_id: int, update_data: Dict) -> Dict:
         """Update a sprint."""
         return await self._patch(f"/sprints/{sprint_id}", update_data)
