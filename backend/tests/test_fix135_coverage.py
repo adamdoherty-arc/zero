@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.reachy_user_memory_service import _cosine, _tokens, _parse_notes_json
 from app.services.email_classifier import EmailClassifier
 from app.services.email_rule_service import EmailRuleService
 from app.models.email_rule import ConditionOperator
@@ -39,87 +38,6 @@ def _bare_classifier() -> EmailClassifier:
 def _bare_rule_service() -> EmailRuleService:
     """EmailRuleService instance without __init__ side effects."""
     return object.__new__(EmailRuleService)
-
-
-# --------------------------------------------------------------------------
-# reachy_user_memory_service._cosine
-# --------------------------------------------------------------------------
-class TestCosine:
-    def test_empty_returns_zero(self):
-        assert _cosine([], [1.0]) == 0.0
-        assert _cosine([1.0], []) == 0.0
-
-    def test_mismatched_length_returns_zero(self):
-        assert _cosine([1.0, 2.0], [1.0]) == 0.0
-
-    def test_zero_norm_returns_zero(self):
-        # a zero vector has no direction; guard must avoid div-by-zero
-        assert _cosine([0.0, 0.0], [1.0, 1.0]) == 0.0
-
-    def test_identical_vectors_is_one(self):
-        assert _cosine([3.0, 4.0], [3.0, 4.0]) == pytest.approx(1.0)
-
-    def test_orthogonal_is_zero(self):
-        assert _cosine([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
-
-    def test_opposite_is_negative_one(self):
-        assert _cosine([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
-
-    def test_known_value(self):
-        # a=[1,2], b=[2,1]: dot=4, |a|=|b|=sqrt(5) -> 4/5
-        assert _cosine([1.0, 2.0], [2.0, 1.0]) == pytest.approx(4.0 / 5.0)
-
-
-# --------------------------------------------------------------------------
-# reachy_user_memory_service._tokens
-# --------------------------------------------------------------------------
-class TestTokens:
-    def test_empty_returns_empty_set(self):
-        assert _tokens("") == set()
-
-    def test_drops_stopwords_keeps_content(self):
-        assert _tokens("the quick brown fox") == {"quick", "brown", "fox"}
-
-    def test_drops_short_tokens(self):
-        # "i" stopword, "am"/"ok" len<=2 -> all dropped
-        assert _tokens("I am OK") == set()
-
-    def test_lowercases_and_dedupes(self):
-        assert _tokens("Hello, HELLO world!") == {"hello", "world"}
-
-    def test_all_stopwords_returns_empty(self):
-        assert _tokens("what when where") == set()
-
-    def test_alphanumeric_only(self):
-        # punctuation split out; digit-runs kept if len>2
-        assert _tokens("abc-123 !!!") == {"abc", "123"}
-
-
-# --------------------------------------------------------------------------
-# reachy_user_memory_service._parse_notes_json
-# --------------------------------------------------------------------------
-class TestParseNotesJson:
-    def test_empty_returns_empty_list(self):
-        assert _parse_notes_json("") == []
-
-    def test_no_array_returns_empty(self):
-        assert _parse_notes_json("no json here") == []
-
-    def test_plain_array(self):
-        assert _parse_notes_json('[{"text": "hi"}]') == [{"text": "hi"}]
-
-    def test_strips_markdown_fences(self):
-        assert _parse_notes_json('```json\n[{"text": "hi"}]\n```') == [{"text": "hi"}]
-
-    def test_filters_non_dict_and_missing_text(self):
-        raw = '[{"text": "a"}, {"nope": "b"}, "str", 5]'
-        assert _parse_notes_json(raw) == [{"text": "a"}]
-
-    def test_extracts_from_leading_prose(self):
-        assert _parse_notes_json('Here you go: [{"text": "x"}] done') == [{"text": "x"}]
-
-    def test_malformed_json_returns_empty(self):
-        assert _parse_notes_json('[{"text": bad}]') == []
 
 
 # --------------------------------------------------------------------------

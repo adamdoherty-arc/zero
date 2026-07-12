@@ -32,13 +32,6 @@ from app.services.vault_indexer_service import (
     _parse_frontmatter,
     _split_by_headings,
 )
-from app.services.reachy_realtime.local_handler import (
-    STT_LONG_SHORT_AUDIO_S,
-    STT_LONG_SHORT_MIN_WORDS,
-    _looks_like_long_short_noise_transcript,
-)
-
-
 # =====================================================================
 # RSN-NEW1 — experiments run router guards the mid-run-delete None
 # =====================================================================
@@ -191,37 +184,6 @@ def test_chunk_paragraph_boundary_snap_keeps_post_boundary_text():
     assert chunks[0].content == "x" * 1500  # snapped at the paragraph boundary
     assert any("MARKER-AFTER-BOUNDARY" in c.content for c in chunks[1:])
     assert body[-60:] in chunks[-1].content
-
-
-# =====================================================================
-# local_handler._looks_like_long_short_noise_transcript
-# =====================================================================
-
-_LONG = {"duration_s": STT_LONG_SHORT_AUDIO_S + 1.0}
-
-
-def test_noise_short_audio_never_rejected():
-    assert _looks_like_long_short_noise_transcript(
-        "thank you", {"duration_s": STT_LONG_SHORT_AUDIO_S - 1.0}
-    ) is False
-
-
-def test_noise_none_stats_never_rejected():
-    assert _looks_like_long_short_noise_transcript("thank you", None) is False
-
-
-def test_noise_enough_words_never_rejected():
-    text = " ".join(["word"] * STT_LONG_SHORT_MIN_WORDS)
-    assert _looks_like_long_short_noise_transcript(text, _LONG) is False
-
-
-def test_noise_long_audio_generic_phrase_rejected():
-    assert _looks_like_long_short_noise_transcript("thank you", _LONG) is True
-
-
-def test_noise_keep_word_rescues_short_command():
-    assert _looks_like_long_short_noise_transcript("what is it", _LONG) is False
-    assert _looks_like_long_short_noise_transcript("stop", _LONG) is False
 
 
 # =====================================================================

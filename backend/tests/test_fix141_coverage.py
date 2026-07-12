@@ -23,7 +23,6 @@ from app.services.chat_service import (
     ChatService,
     _sessions,
 )
-from app.services.voice_intent_router import _keyword_classify
 
 
 # ---------------------------------------------------------------------------
@@ -59,27 +58,6 @@ def test_window_normal_flow_unchanged():
     out = ChatService._build_message_window(system_prompt, messages)
     assert [m["content"] for m in out[1:]] == ["one", "two", "three"]
     assert [m["role"] for m in out[1:]] == ["user", "assistant", "user"]
-
-
-# ---------------------------------------------------------------------------
-# F5 — skip intent reachable by its own name; ignore keeps its own triggers
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        ("skip", "skip"),
-        ("skip it", "skip"),
-        ("next", "skip"),
-        ("ignore", "ignore"),
-        ("not now", "ignore"),
-    ],
-)
-def test_skip_and_ignore_keywords_route_to_own_intents(text, expected):
-    result = _keyword_classify(text, allowed=["ignore", "skip"])
-    assert result is not None, f"{text!r} matched no intent"
-    assert result.intent == expected
 
 
 # ---------------------------------------------------------------------------

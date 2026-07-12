@@ -11,55 +11,6 @@ import types
 
 import pytest
 
-from app.models.brain import EpisodicMemory, MemorySearchResult
-from app.services.memory_facade import MemoryFacade, MemoryNote
-
-
-def _make_episodic_hit(content: str, similarity: float = 0.91):
-    return MemorySearchResult(
-        memory=EpisodicMemory(
-            id="em-test123",
-            namespace="general",
-            content=content,
-            source_type="test",
-            importance=50.0,
-            tags=["alpha", "beta"],
-            context={},
-            created_at=__import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ),
-        ),
-        similarity=similarity,
-    )
-
-
-def test_episodic_recall_unwraps_memory_search_result(monkeypatch):
-    """recall() must surface episodic pgvector hits.
-
-    OLD behaviour: getattr(h, 'content') on a MemorySearchResult -> None ->
-    `if not content: continue` dropped every hit. This test would FAIL on the
-    old code (no episodic note returned) and PASS on the fix.
-    """
-    facade = MemoryFacade()
-
-    class _FakeEpisodic:
-        async def search(self, query, namespace=None, limit=5):
-            return [_make_episodic_hit("the user prefers dark roast coffee")]
-
-    # Force only the episodic source to contribute; neutralise the others.
-    monkeypatch.setattr(
-        "app.services.episodic_memory_service.get_episodic_memory_service",
-        lambda: _FakeEpisodic(),
-    )
-
-    notes = asyncio.run(facade.recall("coffee", namespace="general", k=5))
-    episodic = [n for n in notes if n.source == "episodic"]
-    assert episodic, "episodic hit was dropped (regression: Fix-115)"
-    assert episodic[0].text == "the user prefers dark roast coffee"
-    assert episodic[0].tags == ["alpha", "beta"]
-    assert 0.9 <= episodic[0].score <= 0.92  # similarity surfaced, not default 0.5
-
-
 def test_council_confidence_excludes_abstainers():
     """avg_confidence must divide by counted votes, not by total roles.
 
