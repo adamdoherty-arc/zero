@@ -134,6 +134,7 @@ import {
   useUpsertCompanyFact,
 } from '@/hooks/useCompanyFactsApi'
 import {
+  downloadTaxPackage,
   useTaxSummary,
   useDeductionsSummary,
   useExpenseCategories,
@@ -4265,6 +4266,20 @@ function TaxSavingsSummaryPanel() {
   const { data: summary, isLoading } = useTaxSummary()
   const upsertFact = useUpsertCompanyFact()
   const [rate, setRate] = useState('')
+  const [scheduleCView, setScheduleCView] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  const downloadPackage = async (format: 'md' | 'csv') => {
+    if (!summary) return
+    setDownloading(true)
+    try {
+      await downloadTaxPackage(summary.year, format)
+    } catch (e) {
+      toast({ title: 'Download failed', description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   useEffect(() => {
     if (summary?.marginal_federal_pct != null) setRate(String(summary.marginal_federal_pct))
@@ -4338,20 +4353,76 @@ function TaxSavingsSummaryPanel() {
             >
               {summary.include_se ? 'SE tax included' : 'SE tax excluded'}
             </button>
+            <button
+              type="button"
+              onClick={() => setScheduleCView((v) => !v)}
+              className={cn(
+                'inline-flex h-7 items-center gap-1 rounded-md border px-3 text-xs',
+                scheduleCView
+                  ? 'border-blue-500/40 bg-blue-500/10 text-blue-200'
+                  : 'border-gray-700 text-gray-400 hover:text-white',
+              )}
+            >
+              Schedule C view
+            </button>
+            <button
+              type="button"
+              disabled={downloading}
+              onClick={() => downloadPackage('md')}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-300 hover:text-white disabled:opacity-50"
+            >
+              {downloading ? 'Preparing…' : 'Download CPA package'}
+            </button>
+            <button
+              type="button"
+              disabled={downloading}
+              onClick={() => downloadPackage('csv')}
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-gray-700 px-2 text-xs text-gray-400 hover:text-white disabled:opacity-50"
+              title="Flat Schedule C rollup for spreadsheets"
+            >
+              CSV
+            </button>
           </div>
 
-          <div className="mt-4 space-y-1.5">
-            {summary.line_items.map((li) => (
-              <div key={li.key} className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <span className="text-gray-100">{li.label}</span>
-                  <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-600">{li.source}</span>
-                  {li.note && <div className="mt-0.5 text-[10px] text-gray-500">{li.note}</div>}
+          {scheduleCView && summary.schedule_c_rollup ? (
+            <div className="mt-4 space-y-1.5">
+              {summary.schedule_c_rollup.map((row) => (
+                <div key={row.line} className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <span className="mr-2 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                      Line {row.line}
+                    </span>
+                    <span className="text-gray-100">{row.label}</span>
+                    <div className="mt-0.5 truncate text-[10px] text-gray-500">{row.categories.join(', ')}</div>
+                  </div>
+                  <span className="shrink-0 font-medium text-gray-200">{currency.format(row.amount)}</span>
                 </div>
-                <span className="shrink-0 font-medium text-gray-200">{currency.format(li.amount)}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+              {summary.schedule_c_rollup.length === 0 && (
+                <div className="rounded-md border border-dashed border-gray-800 p-3 text-xs text-gray-500">
+                  Nothing mapped yet — deductions appear here as the books fill in.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 space-y-1.5">
+              {summary.line_items.map((li) => (
+                <div key={li.key} className="flex items-center justify-between gap-2 rounded-md border border-gray-800 bg-gray-950/60 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <span className="text-gray-100">{li.label}</span>
+                    {li.schedule_c && li.schedule_c.line !== 'various' && (
+                      <span className="ml-2 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-blue-300">
+                        Sch C {li.schedule_c.line}
+                      </span>
+                    )}
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-600">{li.source}</span>
+                    {li.note && <div className="mt-0.5 text-[10px] text-gray-500">{li.note}</div>}
+                  </div>
+                  <span className="shrink-0 font-medium text-gray-200">{currency.format(li.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-200">
             {summary.disclaimer}

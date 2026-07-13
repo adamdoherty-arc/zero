@@ -32,6 +32,7 @@ from typing import Any
 from app.services.asset_service import get_asset_service
 from app.services.bookkeeper_service import get_bookkeeper_service
 from app.services.company_facts_service import get_company_facts_service
+from app.services.schedule_c_map import build_rollup, map_category, map_worksheet
 
 # Categories whose deduction is owned by a dedicated worksheet/register, so they
 # must NOT also be summed from the ledger.
@@ -160,6 +161,23 @@ class TaxSummaryService:
             "source": "asset register (§179/depreciation est.)",
         })
 
+        # ---- Schedule C annotation + rollup ------------------------------
+        sc_entries: list[dict[str, Any]] = []
+        for li in line_items:
+            if li["key"] == "ledger":
+                for category, amount in (li.get("detail") or {}).items():
+                    if not amount:
+                        continue
+                    mapped = map_category(category)
+                    sc_entries.append({**mapped, "amount": amount, "category": category})
+                li["schedule_c"] = {"line": "various", "label": "Mapped per category (see schedule_c_rollup)"}
+            else:
+                mapped = map_worksheet(li["key"])
+                li["schedule_c"] = mapped
+                if li["amount"]:
+                    sc_entries.append({**mapped, "amount": li["amount"], "category": li["key"]})
+        schedule_c_rollup = build_rollup(sc_entries)
+
         # ---- Totals + estimated tax saved -------------------------------
         total_deductible = round(sum(li["amount"] for li in line_items), 2)
 
@@ -174,6 +192,7 @@ class TaxSummaryService:
             "year": year,
             "entity": snapshot.entity,
             "line_items": line_items,
+            "schedule_c_rollup": schedule_c_rollup,
             "total_deductible": total_deductible,
             "marginal_federal_pct": marginal_pct,
             "include_se": include_se,
@@ -192,6 +211,104 @@ class TaxSummaryService:
                 "Your CPA confirms categories, methods, and amounts at filing."
             ),
         }
+
+
+    async def tax_package(self, *, year: int | None = None, fmt: str = "md") -> tuple[str, str, str]:
+        """CPA handoff package: (content, media_type, filename).
+
+        Markdown is the human/CPA-readable narrative; CSV is the flat
+        Schedule-C rollup for spreadsheet import.
+        """
+        year = year or date.today().year
+        summary = await self.summary(year=year)
+        assets = await get_asset_service().list_assets(year=year)
+        ho = await get_company_facts_service().home_office_summary()
+        deds = await get_company_facts_service().deductions_summary()
+
+        if fmt == "csv":
+            lines = ["schedule_c_line,label,amount,categories"]
+            for row in summary["schedule_c_rollup"]:
+                cats = ";".join(row["categories"])
+                label = row["label"].replace('"', "'")
+                lines.append(f'{row["line"]},"{label}",{row["amount"]:.2f},"{cats}"')
+            lines.append(f',TOTAL,{summary["total_deductible"]:.2f},')
+            return "\n".join(lines) + "\n", "text/csv", f"ada-ai-tax-package-{year}.csv"
+
+        contributed = [a for a in assets if a.acquisition_type == "contributed"]
+        owner_contrib_total = round(
+            sum(float(a.fmv_at_contribution or a.cost or 0.0) for a in contributed), 2
+        )
+
+        md: list[str] = [
+            f"# {summary['entity']} — Tax Package {year}",
+            "",
+            f"_Generated {date.today().isoformat()} by Zero's bookkeeper. Estimates only — not tax advice; "
+            "the CPA confirms categories, methods, and amounts at filing. Disregarded-entity SMLLC → Schedule C._",
+            "",
+            "## Schedule C rollup (Part II)",
+            "",
+            "| Line | Label | Amount | Source categories |",
+            "|---|---|---:|---|",
+        ]
+        for row in summary["schedule_c_rollup"]:
+            md.append(
+                f"| {row['line']} | {row['label']} | ${row['amount']:,.2f} | {', '.join(row['categories'])} |"
+            )
+        md += [
+            f"| | **Total deductible** | **${summary['total_deductible']:,.2f}** | |",
+            "",
+            "## Estimated tax impact",
+            "",
+            f"- Marginal federal rate used: {summary['marginal_federal_pct']}%",
+            f"- Est. income tax saved: ${summary['est_income_tax_saved']:,.2f}",
+            f"- Est. SE tax saved: ${summary['est_se_tax_saved']:,.2f}"
+            + ("" if summary["include_se"] else " (SE excluded)"),
+            f"- **Est. total tax saved: ${summary['est_total_tax_saved']:,.2f}**",
+            "",
+            "## Asset register",
+            "",
+        ]
+        if assets:
+            md += [
+                "| Asset | Acquired | Basis inputs | Biz % | Method | Placed in service | {yr} deduction |".replace("{yr}", str(year)),
+                "|---|---|---|---:|---|---|---:|",
+            ]
+            for a in assets:
+                if a.acquisition_type == "contributed":
+                    basis = (
+                        f"FMV ${a.fmv_at_contribution or 0:,.2f}"
+                        + (f" / orig ${a.original_cost:,.2f}" if a.original_cost else " / orig n/a")
+                        + " (lesser-of)"
+                    )
+                else:
+                    basis = f"cost ${a.cost:,.2f}"
+                md.append(
+                    f"| {a.name} | {a.acquisition_type} | {basis} | {a.business_use_pct:g}% | "
+                    f"{a.method} | {a.placed_in_service or '—'} | ${a.current_year_deduction or 0:,.2f} |"
+                )
+        else:
+            md.append("_No assets registered._")
+        md += [
+            "",
+            "## Owner capital contributions (personal property → LLC)",
+            "",
+            f"- Items: {len(contributed)} — total FMV ${owner_contrib_total:,.2f}",
+            "- Journal: Assets:Equipment / Equity:Owner:Contributions (see ledger.beancount)",
+            "",
+            "## Worksheets",
+            "",
+            f"- **Home office** — method elected: {ho.get('method')}; business-use {ho.get('business_use_pct') or '—'}%; "
+            f"simplified ${ho.get('simplified_estimate') or 0:,.2f}/yr; actual ${ho.get('actual_estimate_annual') or 0:,.2f}/yr; "
+            f"missing fields: {', '.join(ho.get('missing_fields') or []) or 'none'}",
+            f"- **Cell phone** — ${deds['cell_phone'].get('monthly') or 0:,.2f}/mo × {deds['cell_phone'].get('business_pct') or 0:g}% biz "
+            f"= ${deds['cell_phone'].get('annual_deductible') or 0:,.2f}/yr",
+            f"- **Vehicle** — {deds['vehicle'].get('business_miles_ytd') or 0:g} business miles × "
+            f"${deds['vehicle'].get('mileage_rate'):,.3f}/mi = ${deds['vehicle'].get('annual_deductible') or 0:,.2f}",
+            "",
+            "---",
+            summary["disclaimer"],
+        ]
+        return "\n".join(md) + "\n", "text/markdown", f"ada-ai-tax-package-{year}.md"
 
 
 @lru_cache(maxsize=1)

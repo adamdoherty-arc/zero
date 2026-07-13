@@ -10,12 +10,21 @@ export interface TaxSummaryLineItem {
   detail?: Record<string, number>
   note?: string | null
   missing_fields?: string[]
+  schedule_c?: { line: string; label: string }
+}
+
+export interface ScheduleCRollupRow {
+  line: string
+  label: string
+  amount: number
+  categories: string[]
 }
 
 export interface TaxSummary {
   year: number
   entity: string
   line_items: TaxSummaryLineItem[]
+  schedule_c_rollup?: ScheduleCRollupRow[]
   total_deductible: number
   marginal_federal_pct: number
   include_se: boolean
@@ -51,6 +60,23 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(String(detail.detail || response.statusText || `HTTP ${response.status}`))
   }
   return response.json()
+}
+
+export async function downloadTaxPackage(year: number, format: 'md' | 'csv' = 'md'): Promise<void> {
+  // Auth header rules out a bare <a href>: fetch → blob → anchor click.
+  const response = await fetch(`/api/company/tax-summary/export?year=${year}&format=${format}`, {
+    headers: { ...getAuthHeaders() },
+  })
+  if (!response.ok) throw new Error(`Export failed: HTTP ${response.status}`)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `ada-ai-tax-package-${year}.${format}`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
 }
 
 export const taxSummaryKeys = {

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.infrastructure.auth import require_auth
 from app.services.tax_summary_service import get_tax_summary_service
@@ -29,3 +29,17 @@ def _default_year() -> int:
 @router.get("")
 async def tax_summary(year: int = Query(default_factory=_default_year, ge=2000, le=2100)):
     return await get_tax_summary_service().summary(year=year)
+
+
+@router.get("/export")
+async def tax_package_export(
+    year: int = Query(default_factory=_default_year, ge=2000, le=2100),
+    format: str = Query(default="md", pattern="^(md|csv)$"),
+):
+    """Download the CPA tax package (Schedule C rollup, assets, worksheets)."""
+    content, media_type, filename = await get_tax_summary_service().tax_package(year=year, fmt=format)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
