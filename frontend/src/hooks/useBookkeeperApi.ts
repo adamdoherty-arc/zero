@@ -235,6 +235,40 @@ export function useIngestReceipt() {
   })
 }
 
+export interface RecurringSuggestion {
+  vendor: string
+  amount_monthly: number
+  category: string
+  billing_day: number
+  occurrences: number
+  months: string[]
+}
+
+export function useRecurringSuggestions() {
+  return useQuery({
+    queryKey: [...bookkeeperKeys.all, 'recurringSuggestions'] as const,
+    queryFn: () => fetchJson<{ suggestions: RecurringSuggestion[] }>('/api/bookkeeper/recurring/suggestions'),
+    refetchInterval: 120000,
+  })
+}
+
+export function useAcceptRecurringSuggestion() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (s: RecurringSuggestion) =>
+      fetchJson<RecurringExpense>('/api/bookkeeper/recurring/suggestions/accept', {
+        method: 'POST',
+        body: JSON.stringify({
+          vendor: s.vendor,
+          amount_monthly: s.amount_monthly,
+          category: s.category,
+          billing_day: s.billing_day,
+        }),
+      }),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
 export function useCategorizationRules() {
   return useQuery({
     queryKey: bookkeeperKeys.rules(),

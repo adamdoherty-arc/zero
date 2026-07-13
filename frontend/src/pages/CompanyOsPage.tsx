@@ -112,6 +112,7 @@ import {
 import {
   useAcceptDraft,
   useAddRecurring,
+  useAcceptRecurringSuggestion,
   useBookkeeperDrafts,
   useBookkeeperSnapshot,
   useCategorizationRules,
@@ -120,6 +121,7 @@ import {
   useImportStatement,
   useIngestReceipt,
   useRecurringExpenses,
+  useRecurringSuggestions,
   useRejectDraft,
   useRunRecurring,
   useRunMetered,
@@ -3644,6 +3646,7 @@ function AiSpendPanel() {
         SaaS, cloud, phone, insurance, and fees. Pick the category; each posts a reviewable monthly draft to
         the books.
       </p>
+      <DetectedSubscriptionsStrip />
       {metered && (
         <div className="mb-3 flex items-center justify-between rounded-md border border-gray-800 bg-gray-950/60 p-3 text-xs">
           <div>
@@ -4737,6 +4740,40 @@ function MonthlyClosePanel() {
         </div>
       )}
     </Panel>
+  )
+}
+
+function DetectedSubscriptionsStrip() {
+  const { data } = useRecurringSuggestions()
+  const acceptSuggestion = useAcceptRecurringSuggestion()
+  const suggestions = data?.suggestions ?? []
+  if (suggestions.length === 0) return null
+  return (
+    <div className="mb-3 rounded-md border border-indigo-500/25 bg-indigo-500/10 p-3">
+      <div className="mb-2 text-xs font-semibold text-indigo-200">
+        Detected subscriptions — recurring charges in your ledger not tracked yet
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((s) => (
+          <button
+            key={s.vendor}
+            type="button"
+            disabled={acceptSuggestion.isPending}
+            title={`Seen ${s.occurrences}x across ${s.months.length} months`}
+            onClick={() =>
+              acceptSuggestion.mutate(s, {
+                onSuccess: () => toast({ title: `Now tracking ${s.vendor} (${currency.format(s.amount_monthly)}/mo)` }),
+                onError: (e) => toast({ title: 'Track failed', description: e.message }),
+              })
+            }
+            className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/40 bg-indigo-500/15 px-3 py-1 text-xs text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-50"
+          >
+            <Plus className="h-3 w-3" />
+            {s.vendor} · {currency.format(s.amount_monthly)}/mo
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

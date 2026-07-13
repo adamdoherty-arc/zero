@@ -219,6 +219,36 @@ async def delete_recurring(recurring_id: str):
     return {"status": "deleted", "id": recurring_id}
 
 
+@router.get("/recurring/suggestions")
+async def recurring_suggestions():
+    """Subscription-like spend detected in the ledger but not yet tracked."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    return {"suggestions": await get_bookkeeper_service().suggest_recurring()}
+
+
+class SuggestionAcceptRequest(BaseModel):
+    vendor: str = Field(..., min_length=1, max_length=120)
+    amount_monthly: float = Field(..., ge=0)
+    category: str = Field(default="Expenses:Software:AI")
+    billing_day: int = Field(default=1, ge=1, le=31)
+    paid_from: str = Field(default="business", max_length=120)
+
+
+@router.post("/recurring/suggestions/accept")
+async def accept_recurring_suggestion(req: SuggestionAcceptRequest):
+    """One-click 'Track' on a detected subscription → recurring registry entry."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    entry = await get_bookkeeper_service().add_recurring(
+        vendor=req.vendor,
+        amount_monthly=req.amount_monthly,
+        category=req.category,
+        billing_day=req.billing_day,
+        paid_from=req.paid_from,
+        notes="Detected by the bookkeeper (find-schedules)",
+    )
+    return entry.to_dict()
+
+
 @router.post("/recurring/run")
 async def run_recurring(period: str | None = Query(default=None, pattern="^[0-9]{4}-[0-9]{2}$")):
     """Generate this month's (or `period` YYYY-MM) expense drafts. Idempotent."""

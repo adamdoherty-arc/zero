@@ -645,6 +645,59 @@ class BookkeeperService:
         logger.info("bookkeeper_metered_ai_draft", period=period, spend=spend)
         return {"period": period, "created": draft.to_dict(), "reason": "created"}
 
+    async def suggest_recurring(self) -> list[dict[str, Any]]:
+        """Detect subscription-like spend the registry doesn't track yet.
+
+        Clean-room port of Actual Budget's "Find schedules" heuristic (MIT):
+        group non-recurring expense drafts by normalized payee; propose a
+        registry entry when a payee recurs in ≥2 distinct months with amount
+        spread ≤15% of the median. Payees already in the registry (normalized
+        vendor match) are excluded.
+        """
+        from collections import Counter
+
+        async with self._lock:
+            drafts = self._read_drafts()
+            recurring = self._read_recurring()
+        known = {self._normalize_payee(r.vendor) for r in recurring}
+
+        groups: dict[str, list[DraftEntry]] = {}
+        for d in drafts:
+            if d.status == "rejected" or d.source in ("recurring", "llm_metered"):
+                continue
+            if d.amount >= 0:  # expenses only
+                continue
+            payee = self._normalize_payee(d.description)
+            if not payee or payee in known:
+                continue
+            groups.setdefault(payee, []).append(d)
+
+        suggestions: list[dict[str, Any]] = []
+        for payee, items in groups.items():
+            months = {d.date[:7] for d in items if len(d.date) >= 7}
+            if len(months) < 2:
+                continue
+            amounts = sorted(abs(d.amount) for d in items)
+            median = amounts[len(amounts) // 2]
+            if median <= 0:
+                continue
+            if (amounts[-1] - amounts[0]) / median > 0.15:
+                continue
+            category = Counter(d.suggested_category for d in items).most_common(1)[0][0]
+            day = Counter(
+                int(d.date[8:10]) for d in items if len(d.date) >= 10
+            ).most_common(1)[0][0]
+            suggestions.append({
+                "vendor": payee.title(),
+                "amount_monthly": round(median, 2),
+                "category": category,
+                "billing_day": self._clamp_billing_day(day),
+                "occurrences": len(items),
+                "months": sorted(months),
+            })
+        suggestions.sort(key=lambda s: (-s["occurrences"], -s["amount_monthly"]))
+        return suggestions
+
     async def recurring_summary(self, *, period: Optional[str] = None) -> dict[str, Any]:
         """Totals + this-period generation status for the AI-spend widget."""
         period = period or self._current_period()
