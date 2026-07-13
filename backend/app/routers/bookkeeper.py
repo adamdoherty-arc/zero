@@ -148,6 +148,13 @@ async def run_recurring(period: str | None = Query(default=None, pattern="^[0-9]
     return await get_bookkeeper_service().generate_recurring_drafts(period=period)
 
 
+@router.post("/metered/run")
+async def run_metered(period: str | None = Query(default=None, pattern="^[0-9]{4}-[0-9]{2}$")):
+    """Draft the month's metered LLM API spend from llm_usage (default: previous month). Idempotent."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    return await get_bookkeeper_service().generate_metered_ai_draft(period=period)
+
+
 @router.get("/voice")
 async def voice_question(q: str = Query(..., min_length=2, max_length=400)):
     from app.services.bookkeeper_service import get_bookkeeper_service

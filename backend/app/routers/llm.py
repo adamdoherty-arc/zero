@@ -181,6 +181,14 @@ async def usage_today():
     }
 
 
+@router.get("/usage/monthly")
+async def usage_monthly(months: int = 12):
+    """Per-month metered LLM spend history (feeds the bookkeeper AI-spend line)."""
+    from app.services.llm_spend_service import get_llm_spend_service
+
+    return {"months": await get_llm_spend_service().monthly_spend(months=months)}
+
+
 @router.post("/test-structured")
 async def test_structured(prompt: str = "List 3 programming languages with name and year_created", task_type: str = "structured_output"):
     """Test the structured_chat() method. Returns parsed JSON or error details."""

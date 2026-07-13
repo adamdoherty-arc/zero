@@ -31,14 +31,14 @@ logger = structlog.get_logger(__name__)
 
 SCHEDULER_CONFIG_KEY = "scheduler_jobs"
 SCHEDULER_OVERRIDES_KEY = "enabled_overrides"
-DEFAULT_DISABLED_JOB_IDS = {"reachy_email_nudge"}
+DEFAULT_DISABLED_JOB_IDS: set[str] = set()
 DEFAULT_DISABLED_PREFIXES = ("tiktok_",)
 
 
 JOB_CATEGORIES = {
     "Briefing": ["morning_briefing", "midday_check", "evening_review", "morning_digest_tick", "weekly_review_tick"],
-    "Email": ["gmail_check", "gmail_digest", "reachy_email_nudge", "email_automation_check", "email_to_tasks"],
-    "Calendar": ["calendar_check", "reachy_calendar_nudge"],
+    "Email": ["gmail_check", "gmail_digest", "email_automation_check", "email_to_tasks"],
+    "Calendar": ["calendar_check"],
     "TikTok": [
         "tiktok_shop_research",
         "tiktok_shop_deep_research",
@@ -173,7 +173,6 @@ JOB_CATEGORY_PREFIXES = (
     ("media_", "Media Content"),
     ("trend_", "Trend Intelligence"),
     ("brain_", "Zero Brain"),
-    ("reachy_", "Reachy"),
     ("vault_", "Second Brain"),
     ("ai_company_", "Revenue"),
     ("autonomous_", "Autonomous"),
@@ -280,36 +279,15 @@ DAILY_SCHEDULE = {
         "description": "Sync calendar events across all connected accounts",
         "enabled": True
     },
-    "reachy_calendar_nudge": {
-        "cron": "* * * * *",  # Every minute
-        "description": "Speak an upcoming-event warning through Reachy at 10/5/1 minute marks",
-        "enabled": True
-    },
-    "reachy_email_nudge": {
-        "cron": "*/5 * * * *",  # Every 5 minutes â€” aligned with gmail_check incremental sync
-        "description": "Per-email voice triage: announce new arrivals through Reachy and drive read/ignore/delete/respond loop",
-        "enabled": True
-    },
     # Meeting auto-record / auto-stop / prep-brief / janitor / watchdog / pipeline-health
     # jobs removed from product 2026-06-20 (meetings concept retired; handlers kept dormant).
+    # reachy_calendar_nudge / reachy_email_nudge / reachy_morning_briefing /
+    # reachy_evening_journal / reachy_ambient_heartbeat removed — robot/Reachy
+    # hardware control moved to a separate app (Zero Studio) and voice chat
+    # was dropped from Zero entirely.
     "notification_events_janitor": {
         "cron": "0 4 * * *",  # 4:00 AM daily
         "description": "Prune notification_events older than ZERO_NOTIFICATION_EVENTS_RETENTION_DAYS (default 30) so the table doesn't grow unbounded",
-        "enabled": True
-    },
-    "reachy_morning_briefing": {
-        "cron": "0 8 * * *",  # 8:00 AM daily
-        "description": "Speak the day's calendar + top tasks + inbox load through Reachy in the narrator persona",
-        "enabled": True
-    },
-    "reachy_evening_journal": {
-        "cron": "0 18 * * *",  # 6:00 PM daily
-        "description": "Wellness persona prompts a 3-question end-of-day reflection through Reachy and writes it to the vault",
-        "enabled": True
-    },
-    "reachy_ambient_heartbeat": {
-        "cron": "*/2 * * * *",  # Every 2 minutes â€” frequent enough to feel alive without being annoying
-        "description": "In ambient mode and only when idle, play a small low-key emotion (attentive/curious/thoughtful) so Reachy doesn't sit perfectly still",
         "enabled": True
     },
     "gmail_digest": {
@@ -1190,15 +1168,13 @@ class SchedulerService:
             return False
 
     async def _after_disable_actions(self, job_name: str) -> None:
-        """Run side effects that should happen immediately when a job is stopped."""
-        if job_name != "reachy_email_nudge":
-            return
-        try:
-            from app.services.email_voice_session_service import get_email_voice_session_service
+        """Run side effects that should happen immediately when a job is stopped.
 
-            await get_email_voice_session_service().clear_silently(reason="scheduler_disabled")
-        except Exception as e:
-            logger.debug("email_voice_clear_on_disable_failed", error=str(e))
+        No job currently registers a side effect here (the reachy_email_nudge
+        case was removed with the Reachy voice surface). Kept as a hook for
+        future job-specific disable actions.
+        """
+        return
 
     def _known_job_names(self) -> set[str]:
         return set(DAILY_SCHEDULE) | {job.id for job in self.scheduler.get_jobs()}
@@ -1435,12 +1411,7 @@ class SchedulerService:
             "gmail_check": self._run_gmail_check,
             "calendar_check": self._run_calendar_check,
             "gmail_digest": self._run_gmail_digest,
-            "reachy_calendar_nudge": self._run_reachy_calendar_nudge,
-            "reachy_email_nudge": self._run_reachy_email_nudge,
             "notification_events_janitor": self._run_notification_events_janitor,
-            "reachy_morning_briefing": self._run_reachy_morning_briefing,
-            "reachy_evening_journal": self._run_reachy_evening_journal,
-            "reachy_ambient_heartbeat": self._run_reachy_ambient_heartbeat,
             "email_automation_check": self._run_email_automation_check,
             "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
@@ -1870,10 +1841,12 @@ Have a great evening!"""
             svc = get_bookkeeper_service()
             period = svc._previous_period()
             result = await svc.generate_recurring_drafts(period=period)
+            metered = await svc.generate_metered_ai_draft(period=period)
             logger.info(
                 "recurring_expense_monthly_complete",
                 period=period,
                 created=result.get("created_count", 0),
+                metered=metered.get("reason"),
             )
             await self._ensure_monthly_close_task(svc._current_period())
         except Exception as e:
@@ -1970,221 +1943,11 @@ Have a great evening!"""
             logger.error("money_maker_weekly_report_failed", error=str(e))
 
     # ------------------------------------------------------------------
-    # Reachy voice nudges (M2.3 / M2.4)
+    # Reachy voice nudges (M2.3 / M2.4) — removed. Robot/Reachy hardware
+    # control moved to a separate app (Zero Studio) and voice chat was
+    # dropped from Zero entirely, so calendar/email voice announcements
+    # through Reachy no longer apply.
     # ------------------------------------------------------------------
-
-    # State kept on the scheduler instance so each nudge doesn't repeat within
-    # a single event's warning window. Maps (event_id, bucket) -> announced_at.
-    _reachy_nudged_events: dict[tuple[str, int], float] = {}
-    _reachy_last_email_nudge: float = 0.0
-    _reachy_last_email_count: int = 0
-
-    def _reachy_realtime_session_active(self) -> bool:
-        """Avoid autonomous Reachy speech while the user has a live session."""
-        try:
-            from app.services.reachy_realtime.session import realtime_motion_snapshot
-            snap = realtime_motion_snapshot()
-            return int(snap.get("active_sessions") or 0) > 0
-        except Exception:
-            return False
-
-    async def _run_reachy_calendar_nudge(self):
-        """
-        Every minute, look at the next hour of events. When an event is 10, 5, or
-        1 minute away (and we haven't already announced that bucket), speak it
-        through the Reachy speaker. Also publishes a toast/Windows notification
-        regardless of whether speech is gated by companion policy.
-        """
-        import time as _time
-        if self._reachy_realtime_session_active():
-            logger.debug("reachy_calendar_nudge_skipped", reason="realtime_session_active")
-            return
-        # Respect silent-listen gate. If proactive speech is off (e.g. user
-        # is in a meeting already), still publish the notification but skip
-        # the Reachy voice line.
-        try:
-            from app.services.reachy_companion_service import (
-                get_reachy_companion_service,
-            )
-            _can_speak = bool(
-                get_reachy_companion_service()
-                .action_allowed("proactive_nudge")
-                .get("allowed")
-            )
-        except Exception:
-            _can_speak = True
-        try:
-            from app.services.reachy_service import get_reachy_service
-            reachy = get_reachy_service()
-            if not await reachy.is_connected():
-                return
-            from app.services.calendar_service import get_calendar_service
-            svc = get_calendar_service()
-            from datetime import datetime, timezone
-            now = datetime.now(tz=timezone.utc)
-            # F-36: use the shared 55s cache so all four every-minute
-            # scheduler jobs (nudge, auto_record, auto_stop, prep_brief)
-            # share one DB read per minute instead of four.
-            events = await svc.cached_next_60min(limit=10)
-        except Exception as e:
-            logger.debug("reachy_calendar_nudge_skipped", error=str(e))
-            return
-
-        if not events:
-            return
-
-        now_s = _time.time()
-        # Drop old nudges so the dict doesn't grow unbounded.
-        self._reachy_nudged_events = {
-            k: v for k, v in self._reachy_nudged_events.items() if now_s - v < 3600
-        }
-
-        for ev in events:
-            event_id = str(getattr(ev, "id", None) or getattr(ev, "event_id", None) or "")
-            title = str(getattr(ev, "summary", None) or getattr(ev, "title", None) or "an event")
-            start = getattr(ev, "start_time", None) or getattr(ev, "start", None)
-            if not start:
-                continue
-            try:
-                if isinstance(start, str):
-                    from datetime import datetime as _dt
-                    start_dt = _dt.fromisoformat(start.replace("Z", "+00:00"))
-                else:
-                    start_dt = start
-                if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=timezone.utc)
-            except Exception:
-                continue
-            mins_until = (start_dt - datetime.now(tz=timezone.utc)).total_seconds() / 60.0
-            bucket = None
-            if 9.0 <= mins_until <= 10.5:
-                bucket = 10
-            elif 4.0 <= mins_until <= 5.5:
-                bucket = 5
-            elif 0.5 <= mins_until <= 1.5:
-                bucket = 1
-            if bucket is None:
-                continue
-            key = (event_id, bucket)
-            if key in self._reachy_nudged_events:
-                continue
-            self._reachy_nudged_events[key] = now_s
-            if bucket == 1:
-                text = f"Heads up â€” {title} starts in one minute."
-            elif bucket == 5:
-                text = f"Reminder â€” {title} starts in five minutes."
-            else:
-                text = f"Coming up â€” {title} starts in ten minutes."
-            if _can_speak:
-                try:
-                    import asyncio as _asyncio
-                    _asyncio.create_task(reachy.say(text))
-                    logger.info("reachy_calendar_nudge_spoken", event=title, bucket_min=bucket)
-                except Exception as e:
-                    logger.debug("reachy_calendar_nudge_say_failed", error=str(e))
-            else:
-                logger.info("reachy_calendar_nudge_speech_gated", event=title, bucket_min=bucket)
-            # Fan out a toast/Windows-notification too so the user sees the
-            # nudge even when they aren't near the robot. Fires regardless
-            # of the speech gate so silent meetings still get the popup.
-            try:
-                from app.services.notification_bus import get_notification_bus
-                from app.services.meeting_kind import detect_kind
-
-                desc = (
-                    getattr(ev, "description", None)
-                    or getattr(ev, "details", None)
-                    or ""
-                )
-                loc = getattr(ev, "location", None)
-                kind, join_url = detect_kind(description=desc, location=loc)
-                await get_notification_bus().publish({
-                    "type": "meeting.nudge",
-                    "event_id": event_id,
-                    "title": title,
-                    "bucket_min": bucket,
-                    "starts_at": start_dt.isoformat(),
-                    "text": text,
-                    "meeting_kind": kind,
-                    "join_url": join_url,
-                })
-            except Exception as exc:
-                logger.debug("notification_publish_skip", error=str(exc))
-
-    async def _run_reachy_email_nudge(self):
-        """Per-email voice triage across ALL connected accounts.
-
-        Iterates accounts, skips ones currently in their configured quiet-hours
-        window, and enqueues unread emails from the rest into the voice session.
-        """
-        if self._reachy_realtime_session_active():
-            logger.debug("reachy_email_nudge_skipped", reason="realtime_session_active")
-            return
-        try:
-            from app.services.reachy_service import get_reachy_service
-            from app.services.gmail_service import get_gmail_service
-            from app.services.gmail_oauth_service import get_gmail_oauth_service
-            from app.services.email_voice_session_service import (
-                get_email_voice_session_service,
-            )
-            from app.models.email import EmailStatus
-
-            reachy = get_reachy_service()
-            if not await reachy.is_connected():
-                return
-
-            oauth_svc = get_gmail_oauth_service()
-            gmail = get_gmail_service()
-            accounts = await oauth_svc.list_accounts()
-        except Exception as e:
-            logger.debug("reachy_email_nudge_skipped", error=str(e))
-            return
-
-        if not accounts:
-            return
-
-        new_ids: list[str] = []
-        for acct in accounts:
-            if _is_account_quiet_now(acct):
-                logger.debug(
-                    "reachy_email_nudge_account_quiet",
-                    account_id=acct["id"],
-                    label=acct.get("label"),
-                )
-                continue
-            try:
-                unread = await gmail.list_emails(
-                    status=EmailStatus.UNREAD,
-                    limit=20,
-                    account_id=acct["id"],
-                )
-                new_ids.extend(e.id for e in unread)
-            except Exception as e:
-                logger.warning(
-                    "reachy_email_nudge_account_failed",
-                    account_id=acct["id"],
-                    error=str(e),
-                )
-
-        if not new_ids:
-            self._reachy_last_email_count = 0
-            return
-
-        session = get_email_voice_session_service()
-        added = await session.enqueue(new_ids)
-        if added:
-            logger.info(
-                "reachy_email_nudge_enqueued",
-                added=added,
-                total_unread=len(new_ids),
-            )
-        self._reachy_last_email_count = len(new_ids)
-
-        # Kick off the first prompt if nothing is in flight.
-        if not session.is_active():
-            announced = await session.kickstart_if_idle()
-            if announced:
-                logger.info("reachy_email_nudge_announced", email_id=announced)
 
     async def _run_meeting_recordings_janitor(self):
         """Two-pass janitor for meeting WAV files.
@@ -2629,16 +2392,16 @@ Have a great evening!"""
     async def _run_meeting_pipeline_health(self):
         """F-33: active remediation of the meeting pipeline.
 
-        Checks five things every 15 min and publishes
-        ``meeting.health.alarm`` per failed gate:
+        Checks four things every 15 min and publishes
+        ``meeting.health.alarm`` per failed gate (the wake-word check was
+        removed — robot/Reachy hardware control moved to a separate app,
+        Zero Studio):
 
           1. host_agent /health reachable
           2. /api/meeting-recordings/capabilities can_record=true
           3. transcript backlog (meetings status='processing' older than
              1 h is suspicious)
           4. notification bus reachable (publish→recent roundtrip)
-          5. wake-word fire count in last 24 h > 0 (proxy for whether
-             the wake loop is alive)
 
         Failures don't auto-remediate yet — they publish alarms with a
         concrete repair hint so the user can act. Auto-restart of the
@@ -2806,27 +2569,9 @@ Have a great evening!"""
                     "repair": "Reload notification_bus singleton (zero-api restart).",
                 })
 
-            try:
-                from app.services.reachy_companion_service import (
-                    get_reachy_companion_service,
-                )
-                events = get_reachy_companion_service().list_events(limit=300)
-                day_ago = datetime.now(timezone.utc) - timedelta(hours=24)
-                wake_events = [
-                    e for e in events
-                    if str(getattr(e, "type", "")) == "voice_heard"
-                    and getattr(e, "created_at", None)
-                    and getattr(e, "created_at") > day_ago
-                ]
-                if not wake_events:
-                    issues.append({
-                        "id": "wake_word",
-                        "detail": "no wake-word fires in last 24h",
-                        "repair": "Open /reachy → DaemonPanel → Start daemon and verify mic device.",
-                    })
-                checked.append("wake_word")
-            except Exception as exc:
-                logger.debug("pipeline_health_wake_failed", error=str(exc))
+            # Wake-word check removed — robot/Reachy hardware control moved to
+            # a separate app (Zero Studio); reachy_companion_service no
+            # longer exists in Zero.
 
             if issues:
                 try:
@@ -2850,681 +2595,15 @@ Have a great evening!"""
         except Exception as e:
             logger.debug("meeting_pipeline_health_skipped", error=str(e))
 
-    async def _run_reachy_meeting_prep_brief(self):
-        """Fire a per-event prep brief ~5 minutes before each calendar event.
-
-        Cron is every minute so we don't miss the T-5 window; the prep
-        service's is_due_for_brief() returns true only inside the 2-minute
-        window centered at T-5 so each event fires exactly once across
-        cron ticks. We dedupe per event_id via self._reachy_prep_briefed
-        with a 1-hour TTL.
-        """
-        import time as _time
-
-        try:
-            from app.services.calendar_service import get_calendar_service
-            from app.services.meeting_prep_service import build_prep_brief, is_due_for_brief
-            from app.services.notification_bus import get_notification_bus
-            from datetime import datetime, timezone
-
-            svc = get_calendar_service()
-            now = datetime.now(tz=timezone.utc)
-            # F-36: share calendar cache with the other every-minute jobs.
-            events = await svc.cached_next_60min(limit=10)
-        except Exception as exc:
-            logger.debug("reachy_meeting_prep_brief_skipped", error=str(exc))
-            return
-
-        if not events:
-            return
-
-        now_s = _time.time()
-        if not hasattr(self, "_reachy_prep_briefed"):
-            self._reachy_prep_briefed: dict[str, float] = {}
-        # Drop old entries (1h TTL).
-        self._reachy_prep_briefed = {
-            k: v for k, v in self._reachy_prep_briefed.items() if now_s - v < 3600
-        }
-
-        for ev in events:
-            event_id = str(
-                getattr(ev, "id", None) or getattr(ev, "event_id", None) or ""
-            )
-            if not event_id or event_id in self._reachy_prep_briefed:
-                continue
-            start = getattr(ev, "start_time", None) or getattr(ev, "start", None)
-            if not start:
-                continue
-            try:
-                if isinstance(start, str):
-                    from datetime import datetime as _dt
-                    start_dt = _dt.fromisoformat(start.replace("Z", "+00:00"))
-                else:
-                    start_dt = start
-                if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=timezone.utc)
-            except Exception:
-                continue
-            if not is_due_for_brief(start_dt=start_dt, now=datetime.now(timezone.utc)):
-                continue
-            try:
-                brief = await build_prep_brief(meeting_id=event_id, calendar_event=ev)
-                await get_notification_bus().publish({
-                    "type": "meeting.prep",
-                    "event_id": event_id,
-                    "title": brief.get("title"),
-                    "starts_at": start_dt.isoformat(),
-                    "summary": brief.get("summary"),
-                    "markdown": brief.get("markdown"),
-                })
-                self._reachy_prep_briefed[event_id] = now_s
-                logger.info(
-                    "reachy_meeting_prep_brief_fired",
-                    event_id=event_id,
-                    title=brief.get("title"),
-                )
-            except Exception as exc:
-                logger.debug(
-                    "reachy_meeting_prep_brief_compose_failed",
-                    event_id=event_id,
-                    error=str(exc),
-                )
-
-    async def _run_reachy_meeting_auto_record(self):
-        """Start a recording for any flagged meeting whose start time just hit.
-
-        Routes through the Zero Host Audio Agent when ZERO_HOST_AGENT_URL is
-        configured (the common case â€” pyaudiowpatch isn't available inside
-        zero-api's Linux container). Falls back to in-process capture only
-        when the backend itself is running on a host with audio support.
-        """
-        try:
-            from datetime import datetime, timezone
-            from app.services.meeting_auto_recorder_service import (
-                get_meeting_auto_recorder_service,
-            )
-            from app.services.reachy_service import get_reachy_service
-
-            svc = get_meeting_auto_recorder_service()
-            now = datetime.now(timezone.utc)
-            due = await svc.due_starts(now, window_seconds=60)
-            if not due:
-                return
-
-            reachy = get_reachy_service()
-            reachy_up = await reachy.is_connected()
-
-            from app.services.meeting_recording_service import (
-                start_recording,
-                start_recording_via_host_agent,
-                _host_agent_base,
-            )
-            from app.infrastructure.database import get_session
-
-            use_host_agent = _host_agent_base() is not None
-
-            for entry in due:
-                meeting_id = entry["meeting_id"]
-                event_id = entry["calendar_event_id"]
-                # Consent guard — never_record_titles and external-attendee
-                # gating live in workspace/meetings/consent_policy.json.
-                try:
-                    from app.services.meeting_consent_service import (
-                        get_meeting_consent_service,
-                    )
-
-                    consent = get_meeting_consent_service().evaluate(
-                        title=entry.get("title"),
-                        attendees=entry.get("attendees"),
-                    )
-                    if consent.decision == "deny":
-                        logger.info(
-                            "reachy_meeting_auto_record_denied",
-                            meeting_id=meeting_id,
-                            reason=consent.reason,
-                        )
-                        await svc.mark_skipped(event_id, reason=consent.reason)
-                        continue
-                    if consent.decision == "ask":
-                        # v1: surface a confirm-toast via the bus and skip
-                        # the recording. The user must explicitly hit
-                        # record-now if they want to capture this one.
-                        try:
-                            from app.services.notification_bus import (
-                                get_notification_bus,
-                            )
-
-                            await get_notification_bus().publish({
-                                "type": "meeting.consent_needed",
-                                "meeting_id": meeting_id,
-                                "event_id": event_id,
-                                "title": entry.get("title"),
-                                "reason": consent.reason,
-                                "confirm_window_seconds": consent.confirm_window_seconds,
-                            })
-                        except Exception:
-                            pass
-                        await svc.mark_skipped(
-                            event_id, reason=f"consent: {consent.reason}"
-                        )
-                        continue
-                except Exception as exc:
-                    # Fix-119 (ACT-1): a consent gate MUST fail CLOSED. The old
-                    # handlers swallowed any evaluate() error (e.g. a hand-edited
-                    # consent_policy.json with a non-string never_record_titles
-                    # entry, or a non-string attendee -> AttributeError in
-                    # _is_internal) and fell THROUGH to record — silently
-                    # capturing external / two-party-consent meetings with no
-                    # consent check. On ANY consent-evaluation failure: skip the
-                    # recording and surface a consent_needed toast so the user
-                    # can explicitly record this one if they want it.
-                    logger.warning(
-                        "consent_guard_failed_fail_closed",
-                        meeting_id=meeting_id,
-                        error=str(exc),
-                    )
-                    try:
-                        from app.services.notification_bus import (
-                            get_notification_bus,
-                        )
-
-                        await get_notification_bus().publish({
-                            "type": "meeting.consent_needed",
-                            "meeting_id": meeting_id,
-                            "event_id": event_id,
-                            "title": entry.get("title"),
-                            "reason": f"consent check failed: {exc}",
-                        })
-                    except Exception:
-                        pass
-                    try:
-                        await svc.mark_skipped(event_id, reason=f"consent_error: {exc}")
-                    except Exception:
-                        pass
-                    continue
-                # Superhuman opt-in: if the user clicked "Send Zero" for
-                # this event, skip passive loopback and let the meeting
-                # agent handle it (when REAL_DRIVER is on).
-                try:
-                    from app.services.meeting_superhuman_service import (
-                        get_meeting_superhuman_service,
-                    )
-
-                    sh_svc = get_meeting_superhuman_service()
-                    if await sh_svc.is_opted_in(meeting_id):
-                        if sh_svc.real_driver_enabled():
-                            logger.info(
-                                "reachy_meeting_auto_record_handoff_to_superhuman",
-                                meeting_id=meeting_id,
-                            )
-                            await svc.mark_started(event_id)
-                            continue
-                        logger.info(
-                            "superhuman_optin_but_driver_disabled_falling_back",
-                            meeting_id=meeting_id,
-                        )
-                except Exception as exc:
-                    logger.debug("superhuman_handoff_skip", error=str(exc))
-
-                # Concurrency guard — if another recording is already in
-                # progress, queue this meeting instead of dropping it.
-                # The auto-stop loop drains the queue when the current
-                # recording ends, IFF the queued meeting still has window.
-                _other_recording = False
-                try:
-                    from app.services.meeting_recording_service import (
-                        get_recording_status,
-                        get_recording_status_via_host_agent,
-                    )
-
-                    if use_host_agent:
-                        status = await get_recording_status_via_host_agent()
-                        _other_recording = bool(status and status.get("is_recording"))
-                    else:
-                        _other_recording = bool(get_recording_status().get("is_recording"))
-                except Exception:
-                    _other_recording = False
-                if _other_recording:
-                    try:
-                        from app.services.meeting_concurrency_service import (
-                            get_meeting_concurrency_service,
-                        )
-                        from app.services.notification_bus import (
-                            get_notification_bus,
-                        )
-
-                        get_meeting_concurrency_service().enqueue(
-                            meeting_id=meeting_id,
-                            event_id=event_id,
-                            title=entry.get("title"),
-                            end_time=entry.get("end_time"),
-                            reason="recorder_busy",
-                        )
-                        await get_notification_bus().publish({
-                            "type": "meeting.conflict",
-                            "meeting_id": meeting_id,
-                            "event_id": event_id,
-                            "title": entry.get("title"),
-                            "reason": "recorder_busy",
-                        })
-                        await svc.mark_started(event_id)
-                        continue
-                    except Exception as exc:
-                        logger.debug("meeting_concurrency_enqueue_failed", error=str(exc))
-                try:
-                    if use_host_agent:
-                        await start_recording_via_host_agent(
-                            meeting_id=meeting_id, source="mixed"
-                        )
-                    else:
-                        async with get_session() as db:
-                            await start_recording(db, meeting_id=meeting_id, source="mixed")
-                    await svc.mark_started(event_id)
-                    logger.info(
-                        "reachy_meeting_auto_record_started",
-                        meeting_id=meeting_id,
-                        event_id=event_id,
-                        via="host_agent" if use_host_agent else "local",
-                    )
-                    # Flip companion policy into "meeting active" so the
-                    # silent-listen gate kicks in. Reachy stays mute until
-                    # the wake word fires.
-                    try:
-                        from app.services.reachy_companion_service import (
-                            get_reachy_companion_service,
-                        )
-                        get_reachy_companion_service().set_meeting_active(
-                            active=True, meeting_id=str(meeting_id)
-                        )
-                    except Exception as exc:
-                        logger.debug("companion_meeting_active_skip", error=str(exc))
-                    # F-43: auto-mark private if attendees / title match
-                    # the always_private policy (therapy, doctor, etc.).
-                    try:
-                        from app.services.meeting_privacy_service import (
-                            get_meeting_privacy_service,
-                        )
-
-                        priv = get_meeting_privacy_service()
-                        private, reason = priv.evaluate_default(
-                            title=entry.get("title"),
-                            attendees=entry.get("attendees"),
-                        )
-                        if private:
-                            priv.mark_private(str(meeting_id), source=f"auto:{reason or 'policy'}")
-                            logger.info(
-                                "meeting_auto_private",
-                                meeting_id=meeting_id,
-                                reason=reason,
-                            )
-                    except Exception as exc:
-                        logger.debug("auto_private_skip", error=str(exc))
-                    # F-78: push DND across Windows Focus Assist + Slack
-                    # + Teams. Best-effort; each adapter skipped if its
-                    # token isn't configured.
-                    try:
-                        import asyncio as _asyncio
-                        from app.services.meeting_dnd_service import (
-                            get_meeting_dnd_service,
-                        )
-
-                        _asyncio.create_task(
-                            get_meeting_dnd_service().apply(
-                                active=True, source=f"meeting:{meeting_id}"
-                            )
-                        )
-                    except Exception as exc:
-                        logger.debug("dnd_apply_start_skip", error=str(exc))
-                    # Fan out a meeting.starting notification (browser toast,
-                    # Windows tray via host_agent, Reachy speech).
-                    try:
-                        from app.services.notification_bus import (
-                            get_notification_bus,
-                        )
-                        await get_notification_bus().publish({
-                            "type": "meeting.starting",
-                            "meeting_id": meeting_id,
-                            "event_id": event_id,
-                            "title": entry.get("title"),
-                            "join_url": entry.get("join_url"),
-                            "via": "host_agent" if use_host_agent else "local",
-                        })
-                    except Exception as exc:
-                        logger.debug("notification_publish_skip", error=str(exc))
-                    if reachy_up:
-                        import asyncio as _asyncio
-                        _asyncio.create_task(
-                            reachy.say(f"Recording {entry.get('title') or 'this meeting'} now.")
-                        )
-                except RuntimeError as e:
-                    logger.info(
-                        "reachy_meeting_auto_record_already_running",
-                        meeting_id=meeting_id,
-                        error=str(e),
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "reachy_meeting_auto_record_failed",
-                        meeting_id=meeting_id,
-                        error=str(e),
-                    )
-        except Exception as e:
-            logger.debug("reachy_meeting_auto_record_skipped", error=str(e))
-
-    async def _run_reachy_meeting_auto_stop(self):
-        """Stop the recording for any auto-record meeting whose end time has passed.
-
-        Mirrors the routing in _run_reachy_meeting_auto_record â€” checks host_agent
-        status when configured, local AudioCapture otherwise.
-        """
-        try:
-            from datetime import datetime, timezone
-            from app.services.meeting_auto_recorder_service import (
-                get_meeting_auto_recorder_service,
-            )
-
-            svc = get_meeting_auto_recorder_service()
-            now = datetime.now(timezone.utc)
-            due = await svc.due_stops(now, grace_seconds=30)
-            if not due:
-                return
-
-            from app.services.meeting_recording_service import (
-                stop_recording,
-                get_recording_status,
-                stop_recording_via_host_agent,
-                get_recording_status_via_host_agent,
-                _host_agent_base,
-            )
-            from app.infrastructure.database import get_session
-
-            use_host_agent = _host_agent_base() is not None
-
-            # One status probe per tick â€” cheap and avoids stopping a recording
-            # that wasn't ours (e.g. manual Quick Meeting still in progress).
-            if use_host_agent:
-                status = await get_recording_status_via_host_agent()
-                is_recording = bool(status and status.get("is_recording"))
-            else:
-                is_recording = bool(get_recording_status().get("is_recording"))
-
-            for entry in due:
-                event_id = entry["calendar_event_id"]
-                if not is_recording:
-                    await svc.mark_stopped(event_id)
-                    continue
-                try:
-                    if use_host_agent:
-                        result = await stop_recording_via_host_agent()
-                    else:
-                        async with get_session() as db:
-                            result = await stop_recording(db)
-                    if result:
-                        await svc.mark_stopped(event_id)
-                        is_recording = False  # only one active recording at a time
-                        logger.info(
-                            "reachy_meeting_auto_record_stopped",
-                            meeting_id=entry["meeting_id"],
-                            event_id=event_id,
-                            via="host_agent" if use_host_agent else "local",
-                        )
-                        # Clear companion meeting_active and publish stop event.
-                        try:
-                            from app.services.reachy_companion_service import (
-                                get_reachy_companion_service,
-                            )
-                            get_reachy_companion_service().set_meeting_active(
-                                active=False, meeting_id=None
-                            )
-                        except Exception as exc:
-                            logger.debug("companion_meeting_inactive_skip", error=str(exc))
-                        # F-78: restore DND state on every adapter.
-                        try:
-                            import asyncio as _asyncio
-                            from app.services.meeting_dnd_service import (
-                                get_meeting_dnd_service,
-                            )
-
-                            _asyncio.create_task(
-                                get_meeting_dnd_service().apply(
-                                    active=False,
-                                    source=f"meeting_stop:{entry['meeting_id']}",
-                                )
-                            )
-                        except Exception as exc:
-                            logger.debug("dnd_apply_stop_skip", error=str(exc))
-                        try:
-                            from app.services.notification_bus import (
-                                get_notification_bus,
-                            )
-                            await get_notification_bus().publish({
-                                "type": "meeting.stopped",
-                                "meeting_id": entry["meeting_id"],
-                                "event_id": event_id,
-                                "title": entry.get("title"),
-                            })
-                        except Exception as exc:
-                            logger.debug("notification_publish_skip", error=str(exc))
-                        # F-20 + F-21: close the loop. After the meeting
-                        # is captured + summarized, kick off (a) action-
-                        # items → tasks and (b) follow-up email drafts in
-                        # the background so the user has them ready by
-                        # the time the summary email lands.
-                        try:
-                            from app.services.meeting_followup_service import (
-                                get_meeting_followup_service,
-                            )
-                            import asyncio as _asyncio
-
-                            _asyncio.create_task(
-                                get_meeting_followup_service().run(
-                                    meeting_id=entry["meeting_id"]
-                                )
-                            )
-                        except Exception as exc:
-                            logger.debug("meeting_followup_kickoff_skip", error=str(exc))
-                        # F-28: drain any queued meetings that collided
-                        # with the recording we just stopped. Start the
-                        # next one inline if its window is still open.
-                        try:
-                            from app.services.meeting_concurrency_service import (
-                                get_meeting_concurrency_service,
-                            )
-
-                            cq = get_meeting_concurrency_service()
-                            fresh = cq.drain_due(datetime.now(timezone.utc))
-                            for q in fresh:
-                                try:
-                                    if use_host_agent:
-                                        await start_recording_via_host_agent(
-                                            meeting_id=q["meeting_id"], source="mixed"
-                                        )
-                                    else:
-                                        async with get_session() as db:
-                                            await start_recording(
-                                                db,
-                                                meeting_id=q["meeting_id"],
-                                                source="mixed",
-                                            )
-                                    is_recording = True  # subsequent stops will fire on this one
-                                    logger.info(
-                                        "meeting_concurrency_drained_started",
-                                        meeting_id=q["meeting_id"],
-                                        event_id=q["calendar_event_id"],
-                                    )
-                                    from app.services.notification_bus import (
-                                        get_notification_bus,
-                                    )
-                                    await get_notification_bus().publish({
-                                        "type": "meeting.starting",
-                                        "meeting_id": q["meeting_id"],
-                                        "event_id": q["calendar_event_id"],
-                                        "title": q.get("title"),
-                                        "via": "host_agent" if use_host_agent else "local",
-                                        "reason": "concurrency_drain",
-                                    })
-                                    break  # one at a time
-                                except Exception as exc:
-                                    logger.debug(
-                                        "meeting_concurrency_drain_start_failed",
-                                        meeting_id=q.get("meeting_id"),
-                                        error=str(exc),
-                                    )
-                        except Exception as exc:
-                            logger.debug("meeting_concurrency_drain_skip", error=str(exc))
-                except Exception as e:
-                    logger.warning(
-                        "reachy_meeting_auto_stop_failed",
-                        meeting_id=entry["meeting_id"],
-                        error=str(e),
-                    )
-        except Exception as e:
-            logger.debug("reachy_meeting_auto_stop_skipped", error=str(e))
-
-    async def _run_reachy_morning_briefing(self):
-        """Daily 8AM briefing through Reachy in the narrator persona.
-
-        Reads the day's calendar, top tasks, and inbox load, condenses through
-        the unified LLM as a 2-3 sentence brief, then speaks it via reachy.say.
-        Skips silently if Reachy daemon is unavailable, an active realtime
-        voice session is already running, or the user explicitly disabled
-        proactive nudges via the companion policy.
-        """
-        if self._reachy_realtime_session_active():
-            logger.debug("reachy_morning_briefing_skipped", reason="realtime_session_active")
-            return
-        try:
-            from app.services.reachy_service import get_reachy_service
-            from app.services.reachy_companion_service import get_reachy_companion_service
-            from app.services.reachy_context_service import build_context_hint
-
-            reachy = get_reachy_service()
-            if not await reachy.is_connected():
-                return
-            policy = get_reachy_companion_service().get_policy()
-            if not policy.proactive_enabled or policy.mode in {"focus", "meeting", "privacy", "sleep"}:
-                logger.debug(
-                    "reachy_morning_briefing_skipped",
-                    reason="policy_disallows",
-                    mode=policy.mode,
-                    proactive=policy.proactive_enabled,
-                )
-                return
-        except Exception as e:
-            logger.debug("reachy_morning_briefing_skipped", error=str(e))
-            return
-
-        try:
-            context = await build_context_hint("narrator")
-            from app.infrastructure.unified_llm_client import get_unified_llm_client
-            llm = get_unified_llm_client()
-            prompt = (
-                "You are Zero speaking through Reachy as the narrator persona. "
-                "Give the user a calm 2-3 sentence morning briefing based on the "
-                "context below: the most important calendar event today, the most "
-                "important task, and one note. Speak like a thoughtful friend, "
-                "not a calendar bot. No greeting, no sign-off, just the brief.\n\n"
-                f"{context}"
-            )
-            text = (await llm.chat(
-                prompt=prompt,
-                task_type="voice_reply",
-                max_tokens=180,
-                temperature=0.6,
-            )).strip()
-            if not text:
-                return
-            try:
-                await reachy.play_emotion("curious1")
-            except Exception as e:
-                logger.debug("reachy_morning_briefing_emotion_failed", error=str(e))
-            await reachy.say(text)
-            logger.info("reachy_morning_briefing_spoken", chars=len(text))
-        except Exception as e:
-            logger.warning("reachy_morning_briefing_failed", error=str(e))
-
-    async def _run_reachy_evening_journal(self):
-        """6PM end-of-day reflection in the wellness persona.
-
-        Speaks the first journaling question through Reachy and leaves the
-        FloatingVoiceButton primed to capture the answer. Three questions
-        cycle on subsequent ticks within the same evening window. Writes any
-        captured answers to the vault under 00_Meta/_agent/journal/.
-        """
-        if self._reachy_realtime_session_active():
-            return
-        try:
-            from app.services.reachy_service import get_reachy_service
-            from app.services.reachy_companion_service import get_reachy_companion_service
-            reachy = get_reachy_service()
-            if not await reachy.is_connected():
-                return
-            policy = get_reachy_companion_service().get_policy()
-            if not policy.proactive_enabled or policy.mode in {"focus", "meeting", "privacy", "sleep"}:
-                return
-        except Exception as e:
-            logger.debug("reachy_evening_journal_skipped", error=str(e))
-            return
-
-        questions = [
-            "How did today go for you?",
-            "Was there anything that surprised you today?",
-            "One thing you want to remember from today?",
-        ]
-        idx = getattr(self, "_evening_journal_idx", 0) % len(questions)
-        self._evening_journal_idx = idx + 1
-        text = questions[idx]
-        try:
-            await reachy.play_emotion("understanding1")
-        except Exception as e:
-            logger.debug("reachy_evening_journal_emotion_failed", error=str(e))
-        try:
-            await reachy.say(text)
-            logger.info("reachy_evening_journal_prompt", question_idx=idx)
-        except Exception as e:
-            logger.debug("reachy_evening_journal_say_failed", error=str(e))
-
-    async def _run_reachy_ambient_heartbeat(self):
-        """Ambient idle gestures so Reachy doesn't sit perfectly still.
-
-        Runs only in ambient mode when no motion is currently active and
-        no realtime session is open. Picks a low-key emotion clip from a
-        curated subset (attentive/curious/thoughtful/serenity/relief) and
-        plays it through reachy.play_emotion. The 2-minute cadence is
-        deliberately sparse so the robot feels alive without being noisy.
-        """
-        if self._reachy_realtime_session_active():
-            return
-        try:
-            from app.services.reachy_service import get_reachy_service
-            from app.services.reachy_companion_service import get_reachy_companion_service
-            reachy = get_reachy_service()
-            if not await reachy.is_connected():
-                return
-            policy = get_reachy_companion_service().get_policy()
-            if policy.mode != "ambient" or not policy.body_motion_enabled:
-                return
-        except Exception as e:
-            logger.debug("reachy_ambient_heartbeat_skipped", error=str(e))
-            return
-
-        try:
-            moving_state = await reachy.is_moving()
-            running_uuids = moving_state.get("running") if isinstance(moving_state, dict) else None
-            if running_uuids:
-                return
-        except Exception as e:
-            logger.debug("reachy_ambient_heartbeat_running_check_failed", error=str(e))
-            return
-
-        import random
-        candidates = ["attentive1", "curious1", "thoughtful1", "serenity1", "relief1", "shy1"]
-        emotion = random.choice(candidates)
-        try:
-            await reachy.play_emotion(emotion)
-            logger.debug("reachy_ambient_heartbeat", emotion=emotion)
-        except Exception as e:
-            logger.debug("reachy_ambient_heartbeat_emotion_failed", error=str(e))
+    # _run_reachy_meeting_prep_brief / _run_reachy_meeting_auto_record /
+    # _run_reachy_meeting_auto_stop / _run_reachy_morning_briefing /
+    # _run_reachy_evening_journal / _run_reachy_ambient_heartbeat removed —
+    # robot/Reachy hardware control moved to a separate app (Zero Studio)
+    # and voice chat was dropped from Zero entirely. The meeting-auto-record
+    # trio was already unreachable dead code (unregistered since the
+    # 2026-06-20 meeting-concept retirement); the morning/evening/ambient
+    # trio were live Reachy voice jobs, now removed with their _JOB_HANDLERS
+    # / DAILY_SCHEDULE entries.
 
     async def _run_gmail_check(self):
         """Incremental Gmail sync â€” runs against EVERY connected account."""
@@ -5282,7 +4361,7 @@ Have a great evening!"""
             logger.error("company_operator_overnight_failed", error=str(e))
 
     async def _run_company_operator_morning_brief(self):
-        """Morning company brief for Zero, dashboard, and Reachy."""
+        """Morning company brief for Zero and the dashboard."""
         try:
             from app.services.company_operator_service import get_company_operator_service
             result = await get_company_operator_service().generate_report(
@@ -7011,9 +6090,9 @@ Have a great evening!"""
         """Re-apply each CURRENTLY-registered job's desired enabled-state.
 
         Jobs added straight to the scheduler after ``start()`` returns (the
-        daily_brief / weekly_reflection / reachy_* ticks registered from
-        ``main.py`` and the presence service) skip the override gating applied
-        during ``start()``. Without a reconcile pass they always come up enabled
+        daily_brief / weekly_reflection ticks registered from ``main.py``)
+        skip the override gating applied during ``start()``. Without a
+        reconcile pass they always come up enabled
         on boot, so a persisted disable — including the master "disable all" —
         would silently leak those runtime jobs back on after a restart.
 

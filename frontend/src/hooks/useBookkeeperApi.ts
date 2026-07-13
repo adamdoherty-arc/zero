@@ -23,6 +23,7 @@ export interface RecurringSummary {
   by_category: Record<string, number>
   generated_for_period: string[]
   all_generated: boolean
+  metered?: { period_cost: number; ytd_cost: number } | null
 }
 
 export interface RecurringListResponse {
@@ -40,6 +41,7 @@ export interface BookkeeperDraft {
   source: string
   raw: Record<string, unknown>
   status: string
+  paid_from?: string
   created_at: number
 }
 
@@ -159,6 +161,18 @@ export function useRunRecurring() {
     mutationFn: (period?: string) =>
       fetchJson<{ period: string; created: BookkeeperDraft[]; created_count: number }>(
         `/api/bookkeeper/recurring/run${period ? `?period=${period}` : ''}`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useRunMetered() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (period?: string) =>
+      fetchJson<{ period: string; created: BookkeeperDraft | null; reason: string }>(
+        `/api/bookkeeper/metered/run${period ? `?period=${period}` : ''}`,
         { method: 'POST' },
       ),
     onSuccess: () => invalidate(qc),

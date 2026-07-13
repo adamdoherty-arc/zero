@@ -118,6 +118,7 @@ import {
   useRecurringExpenses,
   useRejectDraft,
   useRunRecurring,
+  useRunMetered,
   useUpdateRecurring,
 } from '@/hooks/useBookkeeperApi'
 import {
@@ -3527,6 +3528,7 @@ function AiSpendPanel() {
   const updateRecurring = useUpdateRecurring()
   const deleteRecurring = useDeleteRecurring()
   const runRecurring = useRunRecurring()
+  const runMetered = useRunMetered()
   const acceptDraft = useAcceptDraft()
   const rejectDraft = useRejectDraft()
   const { data: categoryData } = useExpenseCategories()
@@ -3538,7 +3540,9 @@ function AiSpendPanel() {
   const categories = categoryData?.categories ?? []
   const recurring = data?.recurring ?? []
   const summary = data?.summary
-  const recurringDrafts = (draftsData?.drafts ?? []).filter((d) => d.source === 'recurring')
+  const recurringDrafts = (draftsData?.drafts ?? []).filter(
+    (d) => d.source === 'recurring' || d.source === 'llm_metered',
+  )
 
   const handleAdd = () => {
     const amt = parseFloat(amount)
@@ -3561,9 +3565,14 @@ function AiSpendPanel() {
     )
   }
 
+  const metered = summary?.metered
+  const titleParts: string[] = []
+  if (summary) titleParts.push(`${currency.format(summary.total_monthly)}/mo subs`)
+  if (metered && metered.period_cost > 0) titleParts.push(`${currency.format(metered.period_cost)} metered`)
+
   return (
     <Panel
-      title={summary ? `AI Spend - ${currency.format(summary.total_monthly)}/mo` : 'AI Spend'}
+      title={titleParts.length ? `AI Spend - ${titleParts.join(' + ')}` : 'AI Spend'}
       icon={Sparkles}
       action={
         <button
@@ -3586,6 +3595,37 @@ function AiSpendPanel() {
         SaaS, cloud, phone, insurance, and fees. Pick the category; each posts a reviewable monthly draft to
         the books.
       </p>
+      {metered && (
+        <div className="mb-3 flex items-center justify-between rounded-md border border-gray-800 bg-gray-950/60 p-3 text-xs">
+          <div>
+            <span className="text-gray-300">Metered API usage (Zero LLM calls)</span>
+            <span className="ml-2 text-gray-500">
+              {currency.format(metered.period_cost)} this month · {currency.format(metered.ytd_cost)} YTD
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={runMetered.isPending}
+            onClick={() =>
+              runMetered.mutate(undefined, {
+                onSuccess: (r) =>
+                  toast({
+                    title:
+                      r.reason === 'created'
+                        ? `Metered AI draft recorded for ${r.period}`
+                        : r.reason === 'already_generated'
+                          ? `Metered spend already recorded for ${r.period}`
+                          : `No metered spend for ${r.period}`,
+                  }),
+                onError: (e) => toast({ title: 'Record failed', description: e.message }),
+              })
+            }
+            className="inline-flex items-center gap-1 rounded-md border border-gray-700 px-2 py-1 text-gray-300 hover:text-white disabled:opacity-50"
+          >
+            Record last month
+          </button>
+        </div>
+      )}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <input
           value={vendor}

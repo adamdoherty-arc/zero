@@ -428,6 +428,42 @@ class BookkeeperService:
             "created_count": len(created),
         }
 
+    async def generate_metered_ai_draft(self, *, period: Optional[str] = None) -> dict[str, Any]:
+        """Emit ONE draft for the month's metered LLM API spend (llm_usage rollup).
+
+        Complements the flat-rate recurring subscriptions: metered Bifrost/vLLM/
+        provider-API cost is already recorded per call in llm_usage, so the
+        bookkeeper pulls the month total instead of asking Adam to type it.
+        Idempotent on (source="llm_metered", period); skips sub-cent months.
+        """
+        from app.services.llm_spend_service import get_llm_spend_service
+
+        period = period or self._previous_period()
+        spend = await get_llm_spend_service().spend_for_period(period)
+        async with self._lock:
+            drafts = self._read_drafts()
+            if any(d.source == "llm_metered" and d.raw.get("period") == period for d in drafts):
+                return {"period": period, "created": None, "reason": "already_generated"}
+            if spend < 0.01:
+                return {"period": period, "created": None, "reason": "no_metered_spend"}
+            draft = DraftEntry(
+                id=f"draft-{uuid.uuid4().hex[:10]}",
+                date=f"{period}-28",
+                description=f"Zero metered LLM APIs — {period}",
+                amount=-abs(spend),
+                currency=DEFAULT_CURRENCY,
+                suggested_category=AI_EXPENSE_ACCOUNT,
+                source="llm_metered",
+                raw={"period": period, "spend_usd": spend},
+                status="pending",
+                paid_from="business",
+                created_at=time.time(),
+            )
+            drafts.append(draft)
+            self._write_drafts(drafts)
+        logger.info("bookkeeper_metered_ai_draft", period=period, spend=spend)
+        return {"period": period, "created": draft.to_dict(), "reason": "created"}
+
     async def recurring_summary(self, *, period: Optional[str] = None) -> dict[str, Any]:
         """Totals + this-period generation status for the AI-spend widget."""
         period = period or self._current_period()
@@ -444,6 +480,27 @@ class BookkeeperService:
         for r in active:
             by_category[r.category] = by_category.get(r.category, 0.0) + r.amount_monthly
         total_monthly = sum(r.amount_monthly for r in active)
+
+        # Metered API spend (llm_usage) — best effort; a DB hiccup must never
+        # break the AI-spend panel, so this block degrades to None.
+        metered: Optional[dict[str, Any]] = None
+        try:
+            from app.services.llm_spend_service import get_llm_spend_service
+
+            spend_svc = get_llm_spend_service()
+            months = await spend_svc.monthly_spend(months=12)
+            year_prefix = period.split("-")[0]
+            metered = {
+                "period_cost": next(
+                    (m["cost_usd"] for m in months if m["period"] == period), 0.0
+                ),
+                "ytd_cost": round(
+                    sum(m["cost_usd"] for m in months if m["period"].startswith(year_prefix)), 2
+                ),
+            }
+        except Exception as e:
+            logger.warning("bookkeeper_metered_summary_failed", error=str(e))
+
         return {
             "period": period,
             "total_monthly": round(total_monthly, 2),
@@ -451,6 +508,7 @@ class BookkeeperService:
             "by_category": {k: round(v, 2) for k, v in by_category.items()},
             "generated_for_period": sorted(i for i in generated_ids if i),
             "all_generated": bool(active) and all(r.id in generated_ids for r in active),
+            "metered": metered,
         }
 
     # ------------------------------------------------------------------
