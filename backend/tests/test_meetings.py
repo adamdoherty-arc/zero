@@ -4,7 +4,16 @@ Tests for Meeting Intelligence (DailyMemory) endpoints.
 Tests CRUD operations, transcript/summary retrieval, search, speakers, and export.
 """
 
+import pytest
+
 from unittest.mock import patch, AsyncMock, MagicMock
+
+# The meeting subsystem went dormant on 2026-06-20: routers are unmounted from
+# app.main (code + tables kept, product surface removed), so every request here
+# 404s by design. Un-skip when/if the meetings routers are remounted.
+pytestmark = pytest.mark.skip(
+    reason="meetings dormant since 2026-06-20 — routers unmounted from app.main"
+)
 
 
 # ============================================================

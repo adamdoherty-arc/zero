@@ -84,8 +84,10 @@ async def test_ensure_heals_and_runs_every_statement(monkeypatch):
     out = await vrs.ensure_vault_search_infra()
     assert out["healed"] is True
     assert "vault_chunks.content_tsv" in out["missing_before"]
-    # 1 detect + every repair statement, then a commit
-    assert sess.execute.await_count == 1 + len(vrs._SEARCH_INFRA_REPAIR_SQL)
+    # 1 vault detect + every repair statement + 1 episodic-HNSW detect (the
+    # mocked scalar() is truthy, so the episodic repair itself doesn't run),
+    # then a commit.
+    assert sess.execute.await_count == 2 + len(vrs._SEARCH_INFRA_REPAIR_SQL)
     sess.commit.assert_awaited()
 
 
@@ -96,5 +98,6 @@ async def test_ensure_is_noop_when_all_present(monkeypatch):
     out = await vrs.ensure_vault_search_infra()
     assert out["healed"] is False
     assert out["missing_before"] == []
-    # still re-runs the idempotent DDL (cheap no-ops) every boot
-    assert sess.execute.await_count == 1 + len(vrs._SEARCH_INFRA_REPAIR_SQL)
+    # still re-runs the idempotent DDL (cheap no-ops) every boot, plus the
+    # vault + episodic detect probes
+    assert sess.execute.await_count == 2 + len(vrs._SEARCH_INFRA_REPAIR_SQL)

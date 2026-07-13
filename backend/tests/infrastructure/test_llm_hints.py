@@ -82,7 +82,10 @@ class TestPresetOverrides:
         monkeypatch.setenv("ZERO_HINT_PRESET", "embeddings_only")
         from app.infrastructure.llm_hints import resolve_hint_override
         spec = resolve_hint_override("hint:summarize")
-        assert spec and spec.startswith("kimi/")
+        # The point of embeddings_only: chat hints must NOT resolve local.
+        # The exact cloud vendor is config (kimi → bifrost/gemini as of
+        # 2026-07) — assert cloudness, not a pinned provider.
+        assert spec and not spec.startswith(("vllm/", "ollama/"))
 
     def test_memory_reflection_pulls_summarize_local(self, monkeypatch):
         monkeypatch.setenv("ZERO_HINT_PRESET", "memory_reflection")
