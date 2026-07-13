@@ -2,12 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps: libsndfile (audio), fonts (carousel rendering), ffmpeg, curl (font fetch)
+# System deps: libsndfile (audio), fonts (carousel rendering), ffmpeg, curl (font fetch),
+# poppler (pdftotext for receipt PDFs), tesseract (receipt photo OCR)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     fonts-dejavu-core \
     ffmpeg \
     curl \
+    poppler-utils \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Download the display font family used by the carousel renderer.
@@ -58,13 +61,9 @@ RUN pip install --no-cache-dir --timeout=1000 --retries=20 --progress-bar off uv
     && printf '#!/bin/bash\nexec python /opt/zero/mcpcli.py "$@"\n' > /usr/local/bin/mcp \
     && chmod +x /usr/local/bin/mcp
 
-# Pre-download openWakeWord ONNX models so the wake-word service can lazy-load
-# without a network call on first request. Idempotent — no-op if files exist.
-RUN python -c "import openwakeword; openwakeword.utils.download_models()" || true
-
-# Pre-download the Piper TTS voice used by the local realtime backend so the
-# first turn doesn't pay a HuggingFace fetch (and so we work offline). The
-# tts_service resolves bare voice names to /app/voices/<name>.onnx.
+# Pre-download the Piper TTS voice so the first turn doesn't pay a
+# HuggingFace fetch (and so we work offline). tts_service resolves bare
+# voice names to /app/voices/<name>.onnx.
 RUN mkdir -p /app/voices && \
     python -m piper.download_voices en_US-lessac-medium --download-dir /app/voices 2>&1 \
     || (echo "piper voice download failed; edge-tts will be the fallback" && true)

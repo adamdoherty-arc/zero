@@ -93,11 +93,38 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json()
 }
 
+async function fetchFormData<T>(url: string, form: FormData): Promise<T> {
+  // No explicit Content-Type: the browser sets the multipart boundary itself.
+  const response = await fetch(`${API_URL}${url}`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+    body: form,
+  })
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(String(detail.detail || response.statusText || `HTTP ${response.status}`))
+  }
+  return response.json()
+}
+
+export interface CategorizationRule {
+  id: string
+  match_type: 'payee' | 'contains' | 'regex'
+  pattern: string
+  category: string
+  priority: number
+  active: boolean
+  hits: number
+  learned: boolean
+  created_at: number
+}
+
 export const bookkeeperKeys = {
   all: ['bookkeeper'] as const,
   snapshot: (period: string) => [...bookkeeperKeys.all, 'snapshot', period] as const,
   recurring: () => [...bookkeeperKeys.all, 'recurring'] as const,
   drafts: (status?: string) => [...bookkeeperKeys.all, 'drafts', status] as const,
+  rules: () => [...bookkeeperKeys.all, 'rules'] as const,
 }
 
 function invalidate(qc: ReturnType<typeof useQueryClient>) {
@@ -163,6 +190,64 @@ export function useRunRecurring() {
         `/api/bookkeeper/recurring/run${period ? `?period=${period}` : ''}`,
         { method: 'POST' },
       ),
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useImportStatement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ file, paidFrom }: { file: File; paidFrom: string }) => {
+      const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+      if (ext === 'ofx' || ext === 'qfx') {
+        const form = new FormData()
+        form.append('file', file)
+        form.append('paid_from', paidFrom)
+        return fetchFormData<{ drafts: BookkeeperDraft[]; count: number }>(
+          '/api/bookkeeper/ingest-ofx',
+          form,
+        )
+      }
+      const csvText = await file.text()
+      const result = await fetchJson<{ drafts: BookkeeperDraft[]; count: number }>(
+        '/api/bookkeeper/ingest',
+        {
+          method: 'POST',
+          body: JSON.stringify({ source: 'bank_csv', csv: csvText, paid_from: paidFrom }),
+        },
+      )
+      return result
+    },
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useIngestReceipt() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ file, paidFrom }: { file: File; paidFrom: string }) => {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('paid_from', paidFrom)
+      return fetchFormData<BookkeeperDraft>('/api/bookkeeper/receipts', form)
+    },
+    onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useCategorizationRules() {
+  return useQuery({
+    queryKey: bookkeeperKeys.rules(),
+    queryFn: () => fetchJson<{ rules: CategorizationRule[] }>('/api/bookkeeper/rules'),
+    refetchInterval: 120000,
+  })
+}
+
+export function useDeleteRule() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetchJson<{ status: string; id: string }>(`/api/bookkeeper/rules/${id}`, { method: 'DELETE' }),
     onSuccess: () => invalidate(qc),
   })
 }

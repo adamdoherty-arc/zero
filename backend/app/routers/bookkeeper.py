@@ -5,7 +5,7 @@ Voice-friendly snapshot, CSV ingestion (draft only), draft approval flow.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.infrastructure.auth import require_auth
@@ -68,6 +68,84 @@ async def ingest(req: IngestRequest):
         source=req.source, csv_text=req.csv, paid_from=req.paid_from,
     )
     return {"drafts": [d.to_dict() for d in drafts], "count": len(drafts)}
+
+
+@router.post("/ingest-ofx")
+async def ingest_ofx(file: UploadFile = File(...), paid_from: str = Form("business")):
+    """Upload an OFX/QFX bank export → pending drafts (FITID-deduped)."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    content = await file.read()
+    try:
+        drafts = await get_bookkeeper_service().ingest_ofx(
+            source="bank_ofx", ofx_bytes=content, paid_from=paid_from,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"drafts": [d.to_dict() for d in drafts], "count": len(drafts)}
+
+
+@router.post("/receipts")
+async def ingest_receipt(file: UploadFile = File(...), paid_from: str = Form("personal")):
+    """Upload a receipt/invoice (PDF or photo) → one pending draft."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    content = await file.read()
+    try:
+        draft = await get_bookkeeper_service().ingest_receipt(
+            filename=file.filename or "receipt", content=content, paid_from=paid_from,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return draft.to_dict()
+
+
+class RuleCreateRequest(BaseModel):
+    match_type: str = Field(default="contains", pattern="^(payee|contains|regex)$")
+    pattern: str = Field(..., min_length=1, max_length=200)
+    category: str = Field(..., min_length=1)
+    priority: int = Field(default=100, ge=0, le=1000)
+
+
+class RuleUpdateRequest(BaseModel):
+    match_type: str | None = Field(default=None, pattern="^(payee|contains|regex)$")
+    pattern: str | None = Field(default=None, max_length=200)
+    category: str | None = None
+    priority: int | None = Field(default=None, ge=0, le=1000)
+    active: bool | None = None
+
+
+@router.get("/rules")
+async def list_rules():
+    """Categorization rules, highest precedence first."""
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    rules = await get_bookkeeper_service().list_rules()
+    return {"rules": [r.to_dict() for r in rules]}
+
+
+@router.post("/rules")
+async def add_rule(req: RuleCreateRequest):
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    rule = await get_bookkeeper_service().add_rule(
+        match_type=req.match_type, pattern=req.pattern, category=req.category, priority=req.priority,
+    )
+    return rule.to_dict()
+
+
+@router.patch("/rules/{rule_id}")
+async def update_rule(rule_id: str, req: RuleUpdateRequest):
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    rule = await get_bookkeeper_service().update_rule(rule_id, **req.model_dump(exclude_unset=True))
+    if rule is None:
+        raise HTTPException(404, "rule not found")
+    return rule.to_dict()
+
+
+@router.delete("/rules/{rule_id}")
+async def delete_rule(rule_id: str):
+    from app.services.bookkeeper_service import get_bookkeeper_service
+    ok = await get_bookkeeper_service().delete_rule(rule_id)
+    if not ok:
+        raise HTTPException(404, "rule not found")
+    return {"status": "deleted", "id": rule_id}
 
 
 @router.get("/drafts")

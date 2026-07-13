@@ -114,7 +114,11 @@ import {
   useAddRecurring,
   useBookkeeperDrafts,
   useBookkeeperSnapshot,
+  useCategorizationRules,
   useDeleteRecurring,
+  useDeleteRule,
+  useImportStatement,
+  useIngestReceipt,
   useRecurringExpenses,
   useRejectDraft,
   useRunRecurring,
@@ -4712,6 +4716,7 @@ function MonthlyClosePanel() {
           {recordedThisMonth ? "This month's recurring expenses are recorded." : "This month's recurring expenses aren't recorded yet — use AI/recurring spend → Record."}
         </span>
       </div>
+      <ImportTransactionsBlock />
       {closeTasks.length === 0 ? (
         <div className="rounded-md border border-dashed border-gray-800 p-3 text-xs text-gray-400">
           No bookkeeping-cadence tasks yet. Use "Set up my checklist" to seed the monthly close + deduction tracker.
@@ -4732,6 +4737,118 @@ function MonthlyClosePanel() {
         </div>
       )}
     </Panel>
+  )
+}
+
+function ImportTransactionsBlock() {
+  const importStatement = useImportStatement()
+  const ingestReceipt = useIngestReceipt()
+  const { data: rulesData } = useCategorizationRules()
+  const deleteRule = useDeleteRule()
+  const [paidFrom, setPaidFrom] = useState('business')
+  const [showRules, setShowRules] = useState(false)
+  const statementRef = useRef<HTMLInputElement>(null)
+  const receiptRef = useRef<HTMLInputElement>(null)
+
+  const rules = rulesData?.rules ?? []
+
+  const onStatement = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    importStatement.mutate(
+      { file, paidFrom },
+      {
+        onSuccess: (r) => toast({ title: `Imported ${r.count} draft(s) from ${file.name}` }),
+        onError: (err) => toast({ title: 'Import failed', description: err.message }),
+      },
+    )
+    e.target.value = ''
+  }
+
+  const onReceipt = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    ingestReceipt.mutate(
+      { file, paidFrom },
+      {
+        onSuccess: (d) => toast({ title: `Receipt drafted: ${d.description} (${currency.format(Math.abs(d.amount))})` }),
+        onError: (err) => toast({ title: 'Receipt parsing failed', description: err.message }),
+      },
+    )
+    e.target.value = ''
+  }
+
+  return (
+    <div className="mb-3 rounded-md border border-gray-800 bg-gray-950/60 p-3">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Import transactions</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input ref={statementRef} type="file" accept=".csv,.ofx,.qfx" className="hidden" onChange={onStatement} />
+        <input ref={receiptRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" className="hidden" onChange={onReceipt} />
+        <button
+          type="button"
+          disabled={importStatement.isPending}
+          onClick={() => statementRef.current?.click()}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50"
+        >
+          {importStatement.isPending ? 'Importing…' : 'Bank statement (.csv/.ofx/.qfx)'}
+        </button>
+        <button
+          type="button"
+          disabled={ingestReceipt.isPending}
+          onClick={() => receiptRef.current?.click()}
+          className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50"
+        >
+          {ingestReceipt.isPending ? 'Parsing…' : 'Receipt (PDF/photo)'}
+        </button>
+        <select
+          value={paidFrom}
+          onChange={(e) => setPaidFrom(e.target.value)}
+          title="Which account paid — personal-paid drafts post against owner equity"
+          className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500"
+        >
+          <option value="business">Paid from business</option>
+          <option value="personal">Paid from personal</option>
+        </select>
+      </div>
+      <p className="mt-2 text-[11px] text-gray-500">
+        Everything lands as a pending draft you review — nothing posts automatically. Re-uploads are
+        deduplicated. Accepting a draft with a corrected category teaches the categorizer.
+      </p>
+      <button
+        type="button"
+        onClick={() => setShowRules((v) => !v)}
+        className="mt-2 text-xs text-blue-300 hover:text-blue-200"
+      >
+        {showRules ? 'Hide' : 'Show'} categorization rules ({rules.length})
+      </button>
+      {showRules && (
+        <div className="mt-2 space-y-1">
+          {rules.length === 0 ? (
+            <div className="text-xs text-gray-500">No rules yet — they appear as you correct draft categories.</div>
+          ) : (
+            rules.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-2 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-xs">
+                <span className="min-w-0 truncate text-gray-300">
+                  <span className="text-gray-500">{r.match_type}:</span> {r.pattern}
+                  <span className="mx-1 text-gray-600">→</span>
+                  {r.category}
+                  {r.learned && <span className="ml-1.5 rounded bg-indigo-500/15 px-1 text-indigo-300">learned</span>}
+                  <span className="ml-1.5 text-gray-600">{r.hits} hit{r.hits === 1 ? '' : 's'}</span>
+                </span>
+                <button
+                  type="button"
+                  title="Delete rule"
+                  onClick={() => deleteRule.mutate(r.id)}
+                  className="text-gray-500 hover:text-red-300"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

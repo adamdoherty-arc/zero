@@ -27,12 +27,8 @@ python-dateutil>=2.8.2
 # Realtime API (AsyncOpenAI.realtime.connect, openai.types.realtime.*) requires >=2.30.
 openai>=2.30.0
 httpx>=0.28.1
-# Raw-websocket client, used by the Reachy realtime bridge.
+# Raw-websocket client (notification bus, misc WS routes).
 websockets>=13.0
-# Gradio client — used to claim a free OpenAI key from Pollen's HF Space so
-# realtime voice works out-of-the-box without a user-supplied key. Mirrors
-# upstream reachy_mini_conversation_app's first-boot bootstrap.
-gradio-client>=1.8.0
 
 # Logging
 structlog>=25.1.0
@@ -57,9 +53,6 @@ pytorch-lightning>=2.0,<2.5
 # which was removed in hub >=0.27. Pin to the last version that accepted the
 # old kwarg so diarization can load gated models without a TypeError.
 huggingface_hub>=0.23,<0.27
-# PyAudioWPatch: Windows WASAPI loopback audio capture (Windows-only, stays on host_agent)
-# sounddevice: microphone input (stays on host_agent)
-
 # Google APIs (Gmail, Calendar)
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
@@ -85,8 +78,7 @@ apscheduler>=3.10.0
 
 # Fuzzy string matching (research dedup)
 thefuzz>=0.22.1
-# Faster pure-Rust fuzzy matching used by wake-word service to tolerate
-# whisper mishearings of "hey zero".
+# Faster pure-Rust fuzzy matching (media_cast_sync_service.py).
 rapidfuzz>=3.9.0
 
 # Email Automation with LangChain
@@ -119,16 +111,9 @@ claude-agent-sdk>=0.1.48
 # MCP Server SDK (for zero-api and kimi-llm MCP servers)
 mcp>=1.26.0
 
-# Text-to-Speech
+# Text-to-Speech — used by tts_service.py (reel narration, meeting-agent TTS)
 edge-tts>=6.1.0
-piper-tts>=1.2.0  # Local TTS for Interactive Mode "Local" backend (host-resident, ~30MB ONNX voices)
-
-# Voice Activity Detection for the local realtime handler. webrtcvad-wheels
-# is a tiny (~50 KB) C-extension VAD with no Python deps. Picked over
-# silero-vad to avoid pulling torch (~500 MB) into the backend image — for
-# clear speech in a quiet room (Reachy's typical use case) webrtcvad is
-# more than sufficient.
-webrtcvad-wheels>=2.0.14
+piper-tts>=1.2.0  # local ONNX voices, no cloud round-trip
 
 # Image Compositing (carousel rendering)
 Pillow>=10.0.0
@@ -142,27 +127,22 @@ opencv-python-headless>=4.10.0
 # Video download for TikTok reference videos (character content)
 yt-dlp>=2025.1.1
 
-# Reachy Mini Robot Integration
-# reachy-mini>=1.0.0  # Install when robot arrives
-
-# Reachy vision / audio (Waves 3 + 13).
+# Face detection (faceprints.py, image_scorer_service.py, meeting_face_service.py).
 # Pin mediapipe below 0.10.20 — newer ARM/manylinux wheels on some indexes
 # ship only the `tasks` submodule and drop the legacy `mp.solutions`
-# namespace the vision service uses for HandLandmarker.
+# namespace these services use for HandLandmarker/FaceLandmarker.
 mediapipe>=0.10.11,<0.10.20
 # Keep protobuf below v5 for mediapipe; later dependency passes must not
-# upgrade this to v6 or Reachy vision/audio imports become fragile.
+# upgrade this to v6 or these imports become fragile.
 protobuf>=4.25.3,<5
-# Librosa for BPM detection in radio mode (Wave 13).
+# Librosa for BPM detection / beat-grid sync (reels/music_ingest.py).
 librosa>=0.10.0
 # Pin numba+llvmlite so pip doesn't burn 15+ min backtracking through versions
 # once pyannote.audio's transitive deps push extra constraints. 0.60/0.43 is a
 # known-good cp311 combination compatible with current librosa + pyannote.
 numba==0.60.0
 llvmlite==0.43.0
-# Wake-word detection — used by /api/reachy/wake-word/status + /predict.
-# Pulls scikit-learn + onnxruntime as transitive deps. ~25 MB total.
-openwakeword>=0.6.0
+# onnxruntime — piper-tts's local ONNX voice models depend on it.
 onnxruntime>=1.16.0
 
 # ---------------------------------------------------------------------------
@@ -206,3 +186,8 @@ purgatory>=3.0.0
 # Optional: the provider degrades gracefully when missing or when
 # COMPOSIO_API_KEY is unset (falls back to Zero's native code paths).
 composio-core>=0.7.21; python_version >= "3.10"
+
+# Bookkeeper intake (Enhancement-121): OFX/QFX bank-statement parsing (MIT)
+ofxparse>=0.21
+# Receipt/invoice PDF extraction — YAML templates + pluggable OCR (MIT).
+invoice2data>=0.4.5

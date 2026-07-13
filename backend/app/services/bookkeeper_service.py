@@ -42,6 +42,7 @@ LEDGER_DIR = Path("workspace") / "ada_ai"
 LEDGER_PATH = LEDGER_DIR / "ledger.beancount"
 DRAFT_PATH = LEDGER_DIR / "ledger_drafts.json"
 RECURRING_PATH = LEDGER_DIR / "recurring_expenses.json"
+RULES_PATH = LEDGER_DIR / "categorization_rules.json"
 ENTITY_NAME = os.getenv("ADA_AI_LEGAL_NAME", "ADA AI LLC")
 # Default expense account for AI/LLM subscriptions (Claude Max, ChatGPT, Cursor, ...).
 AI_EXPENSE_ACCOUNT = "Expenses:Software:AI"
@@ -131,6 +132,41 @@ class DraftEntry:
 
 
 @dataclass
+class CategorizationRule:
+    """A persisted transaction-categorization rule.
+
+    Clean-room reimplementation of Actual Budget's rules model (MIT,
+    github.com/actualbudget/actual — conditions→actions + payee category
+    learning). Rules are consulted before the keyword fallback; accepting a
+    draft with a category override auto-writes a `payee` rule (learned=True),
+    and plain accepts bump `hits` as a confidence signal.
+    """
+
+    id: str
+    match_type: str  # payee | contains | regex
+    pattern: str
+    category: str
+    priority: int = 100  # lower wins
+    active: bool = True
+    hits: int = 0
+    learned: bool = False
+    created_at: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "match_type": self.match_type,
+            "pattern": self.pattern,
+            "category": self.category,
+            "priority": self.priority,
+            "active": self.active,
+            "hits": self.hits,
+            "learned": self.learned,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
 class RecurringExpense:
     """A recurring business expense Adam pays on a fixed cadence.
 
@@ -174,6 +210,8 @@ class BookkeeperService:
             DRAFT_PATH.write_text(json.dumps({"drafts": []}, indent=2), encoding="utf-8")
         if not RECURRING_PATH.exists():
             RECURRING_PATH.write_text(json.dumps({"recurring": []}, indent=2), encoding="utf-8")
+        if not RULES_PATH.exists():
+            RULES_PATH.write_text(json.dumps({"rules": []}, indent=2), encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Backend detection — Beancount when installed, stub otherwise.
@@ -264,6 +302,149 @@ class BookkeeperService:
             ),
             encoding="utf-8",
         )
+
+    # ------------------------------------------------------------------
+    # Categorization rules — persisted, learned from accepted drafts.
+    # ------------------------------------------------------------------
+    def _read_rules(self) -> list[CategorizationRule]:
+        try:
+            data = json.loads(RULES_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        out: list[CategorizationRule] = []
+        for r in data.get("rules") or []:
+            try:
+                out.append(CategorizationRule(**r))
+            except Exception:
+                continue
+        return out
+
+    def _write_rules(self, rules: list[CategorizationRule]) -> None:
+        RULES_PATH.write_text(
+            json.dumps({"rules": [r.to_dict() for r in rules]}, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _normalize_payee(description: str) -> str:
+        """Stable payee key from a raw bank description.
+
+        Strips dates, card suffixes, and trailing numbers ('CLAUDE.AI *MAX
+        07/01 CARD 1234' → 'claude.ai max'), keeps the first three tokens.
+        """
+        text = (description or "").lower()
+        text = re.sub(r"\d{1,4}[/-]\d{1,2}([/-]\d{2,4})?", " ", text)  # dates
+        text = re.sub(r"\b(card|ref|conf|auth|txn|purchase|payment)\b\s*#?\s*\d*", " ", text)
+        text = re.sub(r"[*#]+", " ", text)
+        text = re.sub(r"\b\d{3,}\b", " ", text)  # long digit runs
+        tokens = [t for t in re.split(r"[^a-z0-9.&'+-]+", text) if t]
+        return " ".join(tokens[:3])
+
+    def _match_rule(self, description: str) -> Optional[CategorizationRule]:
+        desc = (description or "").lower()
+        payee = self._normalize_payee(description)
+        rules = sorted(
+            (r for r in self._read_rules() if r.active),
+            key=lambda r: (r.priority, -r.hits),
+        )
+        for rule in rules:
+            try:
+                if rule.match_type == "payee" and payee and payee == rule.pattern.lower():
+                    return rule
+                if rule.match_type == "contains" and rule.pattern.lower() in desc:
+                    return rule
+                if rule.match_type == "regex" and re.search(rule.pattern, description or "", re.I):
+                    return rule
+            except Exception:
+                continue
+        return None
+
+    def _learn_rule(self, description: str, category: str) -> None:
+        """Adam overrode the suggestion — remember the payee→category mapping."""
+        payee = self._normalize_payee(description)
+        if not payee or not category:
+            return
+        rules = self._read_rules()
+        for rule in rules:
+            if rule.match_type == "payee" and rule.pattern.lower() == payee:
+                rule.category = category
+                rule.hits += 1
+                self._write_rules(rules)
+                return
+        rules.append(
+            CategorizationRule(
+                id=f"rule-{uuid.uuid4().hex[:10]}",
+                match_type="payee",
+                pattern=payee,
+                category=category,
+                priority=50,  # learned rules beat manual defaults
+                learned=True,
+                hits=1,
+                created_at=time.time(),
+            )
+        )
+        self._write_rules(rules)
+        logger.info("bookkeeper_rule_learned", payee=payee, category=category)
+
+    def _bump_rule_hit(self, description: str) -> None:
+        rule = self._match_rule(description)
+        if not rule:
+            return
+        rules = self._read_rules()
+        for r in rules:
+            if r.id == rule.id:
+                r.hits += 1
+                self._write_rules(rules)
+                return
+
+    async def list_rules(self) -> list[CategorizationRule]:
+        async with self._lock:
+            rules = self._read_rules()
+        rules.sort(key=lambda r: (r.priority, -r.hits))
+        return rules
+
+    async def add_rule(
+        self, *, match_type: str, pattern: str, category: str, priority: int = 100
+    ) -> CategorizationRule:
+        rule = CategorizationRule(
+            id=f"rule-{uuid.uuid4().hex[:10]}",
+            match_type=match_type if match_type in ("payee", "contains", "regex") else "contains",
+            pattern=pattern.strip()[:200],
+            category=category.strip(),
+            priority=int(priority),
+            created_at=time.time(),
+        )
+        async with self._lock:
+            rules = self._read_rules()
+            rules.append(rule)
+            self._write_rules(rules)
+        return rule
+
+    async def update_rule(self, rule_id: str, **fields: Any) -> Optional[CategorizationRule]:
+        async with self._lock:
+            rules = self._read_rules()
+            for rule in rules:
+                if rule.id != rule_id:
+                    continue
+                for key in ("match_type", "pattern", "category"):
+                    if fields.get(key):
+                        setattr(rule, key, str(fields[key]).strip())
+                if fields.get("priority") is not None:
+                    rule.priority = int(fields["priority"])
+                if fields.get("active") is not None:
+                    rule.active = bool(fields["active"])
+                self._write_rules(rules)
+                return rule
+        return None
+
+    async def delete_rule(self, rule_id: str) -> bool:
+        async with self._lock:
+            rules = self._read_rules()
+            kept = [r for r in rules if r.id != rule_id]
+            if len(kept) == len(rules):
+                return False
+            self._write_rules(kept)
+        return True
 
     # ------------------------------------------------------------------
     # Recurring expenses — manual AI-subscription registry.
@@ -549,6 +730,180 @@ class BookkeeperService:
         logger.info("bookkeeper_ingest", source=source, count=len(new_drafts))
         return new_drafts
 
+    async def ingest_ofx(
+        self, *, source: str, ofx_bytes: bytes, paid_from: str = "business"
+    ) -> list[DraftEntry]:
+        """Parse an OFX/QFX bank export into pending drafts.
+
+        Dedupes on the bank's FITID, so re-uploading an overlapping statement
+        is safe — only unseen transactions become drafts.
+        """
+        from ofxparse import OfxParser  # MIT — github.com/jseutter/ofxparse
+
+        try:
+            ofx = OfxParser.parse(io.BytesIO(ofx_bytes))
+        except Exception as e:
+            logger.warning("bookkeeper_ofx_parse_failed", error=str(e))
+            raise ValueError(f"Could not parse OFX file: {e}") from e
+
+        accounts = list(getattr(ofx, "accounts", None) or [])
+        if not accounts and getattr(ofx, "account", None):
+            accounts = [ofx.account]
+
+        async with self._lock:
+            existing = self._read_drafts()
+            seen_fitids = {str(d.raw.get("fitid")) for d in existing if d.raw.get("fitid")}
+            new_drafts: list[DraftEntry] = []
+            for acct in accounts:
+                statement = getattr(acct, "statement", None)
+                for txn in getattr(statement, "transactions", None) or []:
+                    fitid = str(getattr(txn, "id", "") or "").strip()
+                    if fitid and fitid in seen_fitids:
+                        continue
+                    try:
+                        amount = float(txn.amount)
+                    except Exception:
+                        continue
+                    if amount == 0:
+                        continue
+                    desc = " ".join(
+                        part for part in (
+                            str(getattr(txn, "payee", "") or "").strip(),
+                            str(getattr(txn, "memo", "") or "").strip(),
+                        ) if part
+                    ) or "OFX transaction"
+                    txn_date = getattr(txn, "date", None)
+                    d = DraftEntry(
+                        id=f"draft-{uuid.uuid4().hex[:10]}",
+                        date=txn_date.date().isoformat() if txn_date else date.today().isoformat(),
+                        description=desc[:200],
+                        amount=amount,
+                        currency=DEFAULT_CURRENCY,
+                        suggested_category=self._suggest_category(desc, amount),
+                        source=source,
+                        raw={"fitid": fitid, "txn_type": str(getattr(txn, "type", "") or "")},
+                        status="pending",
+                        paid_from=paid_from,
+                        created_at=time.time(),
+                    )
+                    new_drafts.append(d)
+                    if fitid:
+                        seen_fitids.add(fitid)
+            if new_drafts:
+                existing.extend(new_drafts)
+                self._write_drafts(existing)
+        logger.info("bookkeeper_ofx_ingest", source=source, count=len(new_drafts))
+        return new_drafts
+
+    async def ingest_receipt(
+        self, *, filename: str, content: bytes, paid_from: str = "personal"
+    ) -> DraftEntry:
+        """Receipt/invoice file (PDF or photo) → one pending draft.
+
+        Pipeline: invoice2data template extraction → raw-text extraction
+        (pdftotext for PDFs, tesseract for images) + LLM structured extract
+        (TaxHacker-style fallback). Raises ValueError when nothing works.
+        """
+        import tempfile
+
+        suffix = Path(filename or "receipt").suffix.lower() or ".pdf"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+        try:
+            extracted = await asyncio.to_thread(self._invoice2data_extract, tmp_path)
+            if not extracted:
+                text = await self._extract_receipt_text(tmp_path, suffix)
+                if not text.strip():
+                    raise ValueError(
+                        "Could not read any text from the receipt (template match and OCR both failed)."
+                    )
+                extracted = await self._llm_extract_receipt(text)
+            vendor = str(extracted.get("vendor") or extracted.get("issuer") or "Receipt").strip()
+            amount = abs(float(extracted.get("amount") or 0.0))
+            if amount <= 0:
+                raise ValueError(f"No total amount found on the receipt ({vendor}).")
+            receipt_date = str(extracted.get("date") or date.today().isoformat())[:10]
+            d = DraftEntry(
+                id=f"draft-{uuid.uuid4().hex[:10]}",
+                date=receipt_date,
+                description=f"{vendor} — receipt ({filename})"[:200],
+                amount=-amount,
+                currency=DEFAULT_CURRENCY,
+                suggested_category=self._suggest_category(vendor, -amount),
+                source="receipt_ocr",
+                raw={"filename": filename, "extractor": extracted.get("extractor", "unknown")},
+                status="pending",
+                paid_from=paid_from,
+                created_at=time.time(),
+            )
+            async with self._lock:
+                drafts = self._read_drafts()
+                drafts.append(d)
+                self._write_drafts(drafts)
+            logger.info("bookkeeper_receipt_ingest", vendor=vendor, amount=amount)
+            return d
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _invoice2data_extract(path: Path) -> Optional[dict[str, Any]]:
+        try:
+            from invoice2data import extract_data  # MIT — github.com/invoice-x/invoice2data
+
+            result = extract_data(str(path))
+            if not result:
+                return None
+            raw_date = result.get("date")
+            return {
+                "vendor": result.get("issuer"),
+                "amount": result.get("amount"),
+                "date": raw_date.date().isoformat() if hasattr(raw_date, "date") else raw_date,
+                "extractor": "invoice2data",
+            }
+        except Exception as e:
+            logger.debug("bookkeeper_invoice2data_miss", error=str(e))
+            return None
+
+    @staticmethod
+    async def _extract_receipt_text(path: Path, suffix: str) -> str:
+        """pdftotext (poppler) for PDFs; tesseract for photos. Best effort."""
+        import subprocess
+
+        def _run(cmd: list[str]) -> str:
+            try:
+                out = subprocess.run(cmd, capture_output=True, timeout=60)
+                return out.stdout.decode("utf-8", errors="replace") if out.returncode == 0 else ""
+            except Exception:
+                return ""
+
+        if suffix == ".pdf":
+            return await asyncio.to_thread(_run, ["pdftotext", "-layout", str(path), "-"])
+        return await asyncio.to_thread(_run, ["tesseract", str(path), "stdout"])
+
+    @staticmethod
+    async def _llm_extract_receipt(text: str) -> dict[str, Any]:
+        """LLM fallback for unmatched receipt formats (TaxHacker-style prompt)."""
+        from app.infrastructure.unified_llm_client import get_unified_llm_client
+
+        result = await get_unified_llm_client().structured_chat(
+            prompt=(
+                "Extract the merchant/vendor name, total amount paid (USD number), and purchase "
+                "date (YYYY-MM-DD) from this receipt text. Use the FINAL total including tax.\n\n"
+                f"{text[:6000]}"
+            ),
+            output_schema={"vendor": "string", "amount": 0.0, "date": "YYYY-MM-DD"},
+            task_type="bookkeeper_receipt",
+            max_tokens=256,
+        )
+        if not isinstance(result, dict):
+            raise ValueError("Receipt LLM extraction returned no structured data.")
+        result["extractor"] = "llm"
+        return result
+
     def _parse_csv(self, csv_text: str) -> list[dict[str, Any]]:
         try:
             reader = csv.DictReader(io.StringIO(csv_text))
@@ -569,6 +924,10 @@ class BookkeeperService:
             return []
 
     def _suggest_category(self, description: str, amount: float) -> str:
+        # Persisted rules (incl. learned payee mappings) beat the keyword table.
+        rule = self._match_rule(description)
+        if rule:
+            return rule.category
         d = (description or "").lower()
         if amount > 0:
             if any(k in d for k in ("stripe", "invoice", "client", "subscription", "saas")):
@@ -609,6 +968,13 @@ class BookkeeperService:
                 if d.status != "pending":
                     return d
                 cat = category or d.suggested_category
+                # Category learning (Actual Budget's learn_categories): an
+                # override writes a payee rule; a plain accept is a confidence
+                # signal for whichever rule made the suggestion.
+                if category and category != d.suggested_category:
+                    self._learn_rule(d.description, category)
+                else:
+                    self._bump_rule_hit(d.description)
                 self._ensure_account_open(cat)
                 self._append_journal_entry(d, cat)
                 d.status = "accepted"
