@@ -600,6 +600,14 @@ class BookkeeperService:
                 )
                 created.append(draft)
             if created:
+                # Optional auto-accept for exact registry matches (they ARE the
+                # registry, amount and category verbatim). Default OFF — the
+                # draft-review loop stays the trust boundary unless Adam opts in.
+                if os.getenv("ZERO_BOOKKEEPER_AUTOACCEPT", "0").lower() in ("1", "true", "yes"):
+                    for d in created:
+                        self._ensure_account_open(d.suggested_category)
+                        self._append_journal_entry(d, d.suggested_category)
+                        d.status = "accepted"
                 drafts.extend(created)
                 self._write_drafts(drafts)
         logger.info("bookkeeper_recurring_run", period=period, created=len(created))
@@ -1063,14 +1071,17 @@ class BookkeeperService:
         # the dataclass field directly.
         side = self._funding_account(str(d.raw.get("paid_from") or d.paid_from))
         self._ensure_account_open(side)
-        amount_signed = d.amount
-        # Beancount convention: positive on the income side, negative on
-        # the asset side decreases bank; we just emit a balanced txn.
+        # Draft amounts use bank-statement sign (expense negative, income
+        # positive). Beancount convention debits the expense account and
+        # credits the funding side, so the category leg takes the NEGATED
+        # draft amount: expense -200 → Expenses +200 / side -200; income
+        # +500 → Income -500 / side +500.
+        category_amount = -d.amount
         safe_desc = d.description.replace('"', "'")
         block = (
             f'\n{d.date} * "{safe_desc}"\n'
-            f"  {category}                {amount_signed:.2f} {d.currency}\n"
-            f"  {side}                   {-amount_signed:.2f} {d.currency}\n"
+            f"  {category}                {category_amount:.2f} {d.currency}\n"
+            f"  {side}                   {-category_amount:.2f} {d.currency}\n"
         )
         try:
             with open(LEDGER_PATH, "a", encoding="utf-8") as f:

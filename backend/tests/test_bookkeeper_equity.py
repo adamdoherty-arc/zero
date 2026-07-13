@@ -19,6 +19,7 @@ def service(tmp_path, monkeypatch):
     monkeypatch.setattr(bk, "LEDGER_PATH", tmp_path / "ledger.beancount")
     monkeypatch.setattr(bk, "DRAFT_PATH", tmp_path / "ledger_drafts.json")
     monkeypatch.setattr(bk, "RECURRING_PATH", tmp_path / "recurring_expenses.json")
+    monkeypatch.setattr(bk, "RULES_PATH", tmp_path / "categorization_rules.json")
     return bk.BookkeeperService()
 
 
@@ -47,8 +48,9 @@ async def test_personal_paid_draft_posts_to_owner_equity(service, tmp_path):
     text = _ledger_text(tmp_path)
     assert bk.EQUITY_CONTRIB_ACCOUNT in text
     assert "Expenses:Software:AI" in text
-    # equity side is the positive leg of a negative expense amount
-    assert f"{bk.EQUITY_CONTRIB_ACCOUNT}                   200.00" in text
+    # Beancount convention: expense leg debits +200, owner equity is credited.
+    assert "Expenses:Software:AI                200.00" in text
+    assert f"{bk.EQUITY_CONTRIB_ACCOUNT}                   -200.00" in text
 
 
 async def test_business_paid_draft_posts_to_bank(service, tmp_path):
@@ -73,7 +75,7 @@ async def test_recurring_registry_paid_from_flows_to_ledger(service, tmp_path):
     draft_id = out["created"][0]["id"]
     await service.accept_draft(draft_id)
     text = _ledger_text(tmp_path)
-    assert f"{bk.EQUITY_CONTRIB_ACCOUNT}                   200.00" in text
+    assert f"{bk.EQUITY_CONTRIB_ACCOUNT}                   -200.00" in text
 
 
 async def test_legacy_draft_without_paid_from_defaults_to_bank(service, tmp_path):
@@ -95,7 +97,7 @@ async def test_legacy_draft_without_paid_from_defaults_to_bank(service, tmp_path
     )
     await service.accept_draft("draft-legacy1")
     text = _ledger_text(tmp_path)
-    assert f"{bk.BANK_ACCOUNT}                   10.00" in text
+    assert f"{bk.BANK_ACCOUNT}                   -10.00" in text
 
 
 async def test_post_owner_contribution_writes_balanced_block(service, tmp_path):

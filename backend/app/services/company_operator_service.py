@@ -765,6 +765,15 @@ class CompanyOperatorService:
                 summary=f"Dismissed agent question: {_compact(serialized['question'], limit=140)}",
                 after={"question_id": question_id},
             )
+        # Dismissal stats tune the bookkeeper's future asks (suppression after 2).
+        if (serialized.get("source") or "").startswith("bookkeeper"):
+            try:
+                from app.services.bookkeeper_agent_service import get_bookkeeper_agent_service
+
+                bk_key = str((serialized.get("context") or {}).get("bk_key") or "")
+                get_bookkeeper_agent_service().record_question_event(bk_key, "dismissed")
+            except Exception as e:
+                logger.warning("bookkeeper_dismiss_stats_failed", error=str(e))
         return serialized
 
     async def assign_task_to_subagent(

@@ -33,5 +33,17 @@ async def run_sweep():
 
 @router.get("/status")
 async def agent_status():
-    """Last sweep report + nag cooldown state."""
+    """Last sweep report + last health grade + nag cooldown state."""
     return get_bookkeeper_agent_service().status()
+
+
+@router.get("/health")
+async def books_health():
+    """Deterministic books-health grade (0-100 + dimensions), computed now."""
+    return await get_bookkeeper_agent_service().books_health()
+
+
+@router.post("/health/run")
+async def run_health():
+    """Full weekly health run now: grade + narrative + Legion report + facts mirror."""
+    return await get_bookkeeper_agent_service().weekly_health_run(requested_by="dashboard")

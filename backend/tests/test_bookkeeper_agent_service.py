@@ -36,8 +36,10 @@ def agent(tmp_path, monkeypatch):
     monkeypatch.setattr(bk, "LEDGER_PATH", tmp_path / "ledger.beancount")
     monkeypatch.setattr(bk, "DRAFT_PATH", tmp_path / "ledger_drafts.json")
     monkeypatch.setattr(bk, "RECURRING_PATH", tmp_path / "recurring_expenses.json")
+    monkeypatch.setattr(bk, "RULES_PATH", tmp_path / "categorization_rules.json")
     monkeypatch.setattr(bk, "get_bookkeeper_service", lambda: bk.BookkeeperService())
     monkeypatch.setattr(agent_mod, "STATE_PATH", tmp_path / "agent_state.json")
+    monkeypatch.setattr(agent_mod, "KNOWLEDGE_DIR", tmp_path / "knowledge")
     return BookkeeperAgentService()
 
 
@@ -268,6 +270,77 @@ async def test_daily_sweep_nags_once_and_respects_cooldown(db, agent):
     assert not [n for n in second["nags"] if n["check"].startswith("nag.drafts.")]
 
     await _purge_bookkeeper_questions()
+
+
+# ---------------------------------------------------------------------------
+# Books health grading
+# ---------------------------------------------------------------------------
+
+class _FakeTaxSummary:
+    def __init__(self, amounts: dict[str, float]):
+        self._amounts = amounts
+
+    async def summary(self, *, year: int):
+        return {
+            "line_items": [{"key": k, "amount": v} for k, v in self._amounts.items()],
+            "total_deductible": sum(self._amounts.values()),
+            "est_total_tax_saved": 0.0,
+        }
+
+
+async def _no_gaps(self):
+    return []
+
+
+async def test_books_health_scores_dimensions(agent, monkeypatch):
+    import app.services.tax_summary_service as ts_mod
+
+    monkeypatch.setattr(BookkeeperAgentService, "_pending_onboarding_specs", _no_gaps)
+    monkeypatch.setattr(
+        ts_mod, "get_tax_summary_service",
+        lambda: _FakeTaxSummary({"ledger": 100.0, "home_office": 1000.0, "cell_phone": 600.0, "hardware": 1800.0}),
+    )
+    # Fresh accepted entry today → freshness 100.
+    svc = bk.get_bookkeeper_service()
+    drafts = await svc.ingest_bank_csv(
+        source="bank_csv",
+        csv_text=f"date,description,amount\n{dt.date.today().isoformat()},AWS,-50.00\n",
+    )
+    await svc.accept_draft(drafts[0].id)
+
+    health = await agent.books_health()
+    dims = health["dimensions"]
+    assert dims["completeness"] == 100.0
+    assert dims["freshness"] == 100.0
+    assert dims["reconciliation"] == 100.0  # no active recurring + no old drafts
+    assert dims["deduction_capture"] == 100.0
+    assert health["score"] == 100.0
+
+
+async def test_books_health_weights_override(agent, monkeypatch):
+    import app.services.tax_summary_service as ts_mod
+
+    monkeypatch.setattr(BookkeeperAgentService, "_pending_onboarding_specs", _no_gaps)
+    monkeypatch.setattr(
+        ts_mod, "get_tax_summary_service", lambda: _FakeTaxSummary({"ledger": 0.0}),
+    )
+    # All weight on completeness (100) → perfect score despite empty books.
+    agent._write_knowledge(
+        "dimension_weights.json",
+        {"completeness": 1.0, "freshness": 0.0, "reconciliation": 0.0, "deduction_capture": 0.0},
+    )
+    health = await agent.books_health()
+    assert health["score"] == 100.0
+    assert health["dimensions"]["deduction_capture"] == 0.0
+
+
+def test_question_stats_recording(agent):
+    agent.record_question_event("home_office.total_sqft", "asked")
+    agent.record_question_event("home_office.total_sqft", "answered")
+    agent.record_question_event("nag.drafts.2026-07", "dismissed")
+    stats = agent._read_knowledge("question_stats.json", {})
+    assert stats["home_office.total_sqft"] == {"asked": 1, "answered": 1, "dismissed": 0}
+    assert stats["nag.drafts.2026-07"]["dismissed"] == 1
 
 
 async def test_1040es_t3_window_fires_critical_nag(db, agent, monkeypatch):

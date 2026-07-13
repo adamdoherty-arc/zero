@@ -191,3 +191,7 @@ composio-core>=0.7.21; python_version >= "3.10"
 ofxparse>=0.21
 # Receipt/invoice PDF extraction — YAML templates + pluggable OCR (MIT).
 invoice2data>=0.4.5
+# Real Beancount ledger engine — flips the bookkeeper out of stub mode so the
+# snapshot parses ledger.beancount (equity/asset accounts included). GPL kept
+# at arm's length: used as a parser library over our plain-text journal.
+beancount>=3.0.0

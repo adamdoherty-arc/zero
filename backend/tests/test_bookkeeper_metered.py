@@ -14,6 +14,7 @@ def service(tmp_path, monkeypatch):
     monkeypatch.setattr(bk, "LEDGER_PATH", tmp_path / "ledger.beancount")
     monkeypatch.setattr(bk, "DRAFT_PATH", tmp_path / "ledger_drafts.json")
     monkeypatch.setattr(bk, "RECURRING_PATH", tmp_path / "recurring_expenses.json")
+    monkeypatch.setattr(bk, "RULES_PATH", tmp_path / "categorization_rules.json")
     return bk.BookkeeperService()
 
 

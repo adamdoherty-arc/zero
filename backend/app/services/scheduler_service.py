@@ -104,6 +104,7 @@ JOB_CATEGORIES = {
         "company_prompt_eval_bridge",
         "company_progress_checkin",
         "bookkeeper_agent_daily",
+        "bookkeeper_books_health",
     ],
     "Character Content": [
         "character_research_refresh",
@@ -711,6 +712,11 @@ DAILY_SCHEDULE = {
     "bookkeeper_agent_daily": {
         "cron": "30 6 * * *",  # before the 06:45 morning brief so it reflects the sweep
         "description": "Bookkeeper agent: onboarding gaps, draft auto-generation, books nags, 1040-ES reminders",
+        "enabled": True,
+    },
+    "bookkeeper_books_health": {
+        "cron": "15 7 * * 1",  # Monday mornings
+        "description": "Bookkeeper agent: weekly books-health grade (0-100) reported to Legion loop registry",
         "enabled": True,
     },
     # Character Content
@@ -1520,6 +1526,7 @@ class SchedulerService:
             "company_prompt_eval_bridge": self._run_company_prompt_eval_bridge,
             "company_progress_checkin": self._run_company_progress_checkin,
             "bookkeeper_agent_daily": self._run_bookkeeper_agent_daily,
+            "bookkeeper_books_health": self._run_bookkeeper_books_health,
             # Character Content
             "character_research_refresh": self._run_character_research_refresh,
             "character_research_retry": self._run_character_research_retry,
@@ -1874,18 +1881,12 @@ Have a great evening!"""
             existing = await wsvc.list_work_items(limit=1000)
             if any(t.title.strip().lower() == title.strip().lower() for t in existing):
                 return
+            from app.services.bookkeeper_prompts import MONTH_END_CLOSE_CHECKLIST
+
             await wsvc.create_work_item(
                 TaskCreate(
                     title=title,
-                    description=(
-                        f"**Monthly close for {period}.**\n\n"
-                        "- [ ] Generate + accept recurring expense drafts (Tax & Deductions → AI/recurring spend).\n"
-                        "- [ ] Reconcile business checking; categorize every charge.\n"
-                        "- [ ] Update cell-phone / vehicle / home-office worksheets if anything changed.\n"
-                        "- [ ] Log any hardware purchased this month in the asset register.\n"
-                        "- [ ] Review the Tax Savings Summary.\n\n"
-                        "Auto-created by the monthly scheduler. Not tax advice."
-                    ),
+                    description=MONTH_END_CLOSE_CHECKLIST.format(period=period),
                     category=TaskCategory.CHORE,
                     priority=TaskPriority.MEDIUM,
                     source=TaskSource.MANUAL,
@@ -4427,6 +4428,20 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.error("bookkeeper_agent_daily_failed", error=str(e))
+
+    async def _run_bookkeeper_books_health(self):
+        """Weekly books-health grade: score + dimensions to Legion, facts mirror."""
+        try:
+            from app.services.bookkeeper_agent_service import get_bookkeeper_agent_service
+
+            health = await get_bookkeeper_agent_service().weekly_health_run(requested_by="scheduler")
+            logger.info(
+                "bookkeeper_books_health_done",
+                score=health.get("score"),
+                legion=health.get("legion_push"),
+            )
+        except Exception as e:
+            logger.error("bookkeeper_books_health_failed", error=str(e))
 
     async def _run_company_progress_checkin(self):
         """Zero check-in on ADA AI LLC setup tasks. Reports stalled and overdue work."""

@@ -41,6 +41,17 @@ logger = structlog.get_logger(__name__)
 
 # State lives beside the ledger in the workspace volume so it survives rebuilds.
 STATE_PATH = Path("workspace") / "ada_ai" / "bookkeeper_agent_state.json"
+# Self-improvement knowledge (ADA platform-auditor pattern): evolvable weights,
+# pruned audit history, and per-question ask/answer/dismiss stats.
+KNOWLEDGE_DIR = Path("workspace") / "ada_ai" / "bookkeeper_knowledge"
+
+DEFAULT_DIMENSION_WEIGHTS = {
+    "completeness": 0.35,
+    "freshness": 0.20,
+    "reconciliation": 0.20,
+    "deduction_capture": 0.25,
+}
+AUDIT_HISTORY_LIMIT = 20
 
 SOURCE_ONBOARDING = "bookkeeper_onboarding"
 SOURCE_AGENT = "bookkeeper_agent"
@@ -318,6 +329,7 @@ class BookkeeperAgentService:
             from app.services.company_operator_service import _serialize_question
 
             serialized = _serialize_question(row)
+        self.record_question_event(bk_key, "asked")
         logger.info("bookkeeper_question_created", bk_key=bk_key, source=source)
         return serialized
 
@@ -389,6 +401,7 @@ class BookkeeperAgentService:
             )
             return {"applied": False, "reason": "error", "error": str(e)}
 
+        self.record_question_event(bk_key, "answered")
         logger.info("bookkeeper_answer_applied", bk_key=bk_key, kind=kind, detail=result)
         return {"applied": True, "kind": kind, "detail": result}
 
@@ -633,11 +646,13 @@ class BookkeeperAgentService:
                 for d in pending if d.created_at
             ) if any(d.created_at for d in pending) else 0
             if len(pending) > 5 or oldest_days > 7:
+                from app.services.bookkeeper_prompts import DRAFT_REVIEW_GUIDANCE
+
                 await nag(
                     f"nag.drafts.{today.strftime('%Y-%m')}",
                     f"{len(pending)} bookkeeping draft(s) await review (oldest {oldest_days}d). "
                     "Accept or reject them on /company/tax so the books stay current.",
-                    "Unaccepted drafts never post to the ledger, so the tax summary undercounts your deductions.",
+                    DRAFT_REVIEW_GUIDANCE,
                     priority="high" if oldest_days > 14 else "medium",
                 )
 
@@ -721,8 +736,208 @@ class BookkeeperAgentService:
         state = self._read_state()
         return {
             "last_sweep": state.get("last_sweep"),
+            "last_health": state.get("last_health"),
             "cooldowns": state.get("cooldowns", {}),
         }
+
+    # ------------------------------------------------------------------
+    # Books health — deterministic 0-100 grade + weekly Legion report.
+    # ------------------------------------------------------------------
+    def _read_knowledge(self, name: str, default: Any) -> Any:
+        try:
+            return json.loads((KNOWLEDGE_DIR / name).read_text(encoding="utf-8"))
+        except Exception:
+            return default
+
+    def _write_knowledge(self, name: str, value: Any) -> None:
+        try:
+            KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
+            (KNOWLEDGE_DIR / name).write_text(
+                json.dumps(value, indent=2, sort_keys=True), encoding="utf-8"
+            )
+        except Exception as e:
+            logger.warning("bookkeeper_knowledge_write_failed", file=name, error=str(e))
+
+    def record_question_event(self, bk_key: str, event: str) -> None:
+        """Track asked/answered/dismissed per bk_key — tunes future asks."""
+        if not bk_key:
+            return
+        stats = self._read_knowledge("question_stats.json", {})
+        entry = stats.setdefault(bk_key, {"asked": 0, "answered": 0, "dismissed": 0})
+        if event in entry:
+            entry[event] += 1
+        self._write_knowledge("question_stats.json", stats)
+
+    async def books_health(self) -> dict[str, Any]:
+        """Deterministic 0-100 books grade with per-dimension detail."""
+        from app.services.bookkeeper_service import get_bookkeeper_service
+        from app.services.tax_summary_service import get_tax_summary_service
+
+        svc = get_bookkeeper_service()
+        today = date.today()
+        weights = {
+            **DEFAULT_DIMENSION_WEIGHTS,
+            **(self._read_knowledge("dimension_weights.json", {}) or {}),
+        }
+
+        # completeness — share of onboarding gaps filled.
+        pending = await self._pending_onboarding_specs()
+        total_specs = len(ONBOARDING_SPECS)
+        completeness = round(100 * (total_specs - len(pending)) / total_specs, 1)
+
+        # freshness — how recently the ledger saw an accepted entry.
+        snap = await svc.snapshot(period="YTD")
+        freshness = 0.0
+        if snap.last_entry_at:
+            try:
+                last_entry = date.fromisoformat(str(snap.last_entry_at)[:10])
+                age = (today - last_entry).days
+                if age <= 7:
+                    freshness = 100.0
+                elif age <= 30:
+                    freshness = round(100 - (age - 7) * (60 / 23), 1)  # 100 → 40
+                elif age <= 60:
+                    freshness = round(40 - (age - 30) * (40 / 30), 1)  # 40 → 0
+            except Exception:
+                pass
+
+        # reconciliation — month drafts generated + no aging backlog.
+        prev = await svc.recurring_summary(period=svc._previous_period())
+        reconciliation = 0.0
+        if not prev["active_count"] or prev["all_generated"]:
+            reconciliation += 50.0
+        pending_drafts = await svc.list_drafts(status="pending")
+        oldest_days = 0
+        if pending_drafts:
+            stamps = [d.created_at for d in pending_drafts if d.created_at]
+            if stamps:
+                oldest_days = max(
+                    (_now() - datetime.fromtimestamp(s, tz=timezone.utc)).days for s in stamps
+                )
+        if oldest_days <= 7:
+            reconciliation += 50.0
+        elif oldest_days <= 14:
+            reconciliation += 25.0
+
+        # deduction_capture — core deduction lines actually carrying amounts.
+        summary = await get_tax_summary_service().summary(year=today.year)
+        amounts = {li["key"]: li["amount"] for li in summary["line_items"]}
+        core = ("ledger", "home_office", "cell_phone", "hardware")
+        deduction_capture = round(100 * sum(1 for k in core if amounts.get(k, 0) > 0) / len(core), 1)
+
+        dimensions = {
+            "completeness": completeness,
+            "freshness": freshness,
+            "reconciliation": reconciliation,
+            "deduction_capture": deduction_capture,
+        }
+        total_weight = sum(weights.get(k, 0) for k in dimensions) or 1.0
+        score = round(sum(dimensions[k] * weights.get(k, 0) for k in dimensions) / total_weight, 1)
+        return {
+            "score": score,
+            "dimensions": dimensions,
+            "weights": weights,
+            "signals": {
+                "onboarding_gaps": len(pending),
+                "pending_drafts": len(pending_drafts),
+                "oldest_pending_days": oldest_days,
+                "last_entry_at": snap.last_entry_at,
+                "total_deductible": summary["total_deductible"],
+                "est_total_tax_saved": summary["est_total_tax_saved"],
+            },
+            "computed_at": _now().isoformat(),
+        }
+
+    async def weekly_health_run(self, *, requested_by: str = "scheduler") -> dict[str, Any]:
+        """Grade the books, narrate, report to Legion, mirror into facts."""
+        health = await self.books_health()
+
+        # Narrative — best effort (kimi-k2.5 via unified client).
+        try:
+            from app.infrastructure.unified_llm_client import get_unified_llm_client
+            from app.services.bookkeeper_prompts import BOOKS_HEALTH_NARRATIVE_PROMPT
+
+            narrative = await get_unified_llm_client().chat(
+                prompt=BOOKS_HEALTH_NARRATIVE_PROMPT.format(
+                    snapshot=json.dumps(health, indent=2)
+                ),
+                task_type="bookkeeper_health_narrative",
+                max_tokens=400,
+            )
+            health["narrative"] = str(narrative)[:1500] if narrative else None
+        except Exception as e:
+            logger.warning("bookkeeper_health_narrative_failed", error=str(e))
+            health["narrative"] = None
+
+        # Report to Legion's loop registry (idempotent per day via zero_run_id).
+        try:
+            from app.services.loop_report_sink_client import get_loop_sink
+
+            envelope = {
+                "zero_run_id": int(f"77{date.today():%Y%m%d}"),
+                "loop_name": "zero-bookkeeper-agent",
+                "owner_project": "zero",
+                "variant_label": None,
+                "status": "success",
+                "judge_score": health["score"] / 100.0,
+                "duration_s": None,
+                "vault_path": None,
+                "cost_tokens": None,
+                "payload": {
+                    "dimensions": health["dimensions"],
+                    "signals": health["signals"],
+                    "requested_by": requested_by,
+                },
+            }
+            push = await get_loop_sink().push(envelope)
+            health["legion_push"] = push.get("status")
+        except Exception as e:
+            logger.warning("bookkeeper_health_legion_push_failed", error=str(e))
+            health["legion_push"] = "failed"
+
+        # Mirror into company_facts for the UI + daily brief.
+        try:
+            from app.models.company_facts import CompanyFactCreate
+            from app.services.company_facts_service import get_company_facts_service
+
+            facts = get_company_facts_service()
+            await facts.upsert_fact(
+                CompanyFactCreate(
+                    key="books_health.score",
+                    label="Books health score (0-100)",
+                    value=str(health["score"]),
+                    domain="finance",
+                ),
+                created_by="bookkeeper_agent",
+                source=SOURCE_AGENT,
+            )
+            await facts.upsert_fact(
+                CompanyFactCreate(
+                    key="books_health.graded_at",
+                    label="Books health graded at",
+                    value=health["computed_at"],
+                    domain="finance",
+                ),
+                created_by="bookkeeper_agent",
+                source=SOURCE_AGENT,
+            )
+        except Exception as e:
+            logger.warning("bookkeeper_health_facts_mirror_failed", error=str(e))
+
+        # Audit history (pruned) + state.
+        history = self._read_knowledge("audit_history.json", [])
+        history.append({
+            "computed_at": health["computed_at"],
+            "score": health["score"],
+            "dimensions": health["dimensions"],
+        })
+        self._write_knowledge("audit_history.json", history[-AUDIT_HISTORY_LIMIT:])
+        state = self._read_state()
+        state["last_health"] = {k: health[k] for k in ("score", "dimensions", "computed_at", "narrative") if k in health}
+        self._write_state(state)
+
+        logger.info("bookkeeper_health_run_done", score=health["score"], legion=health.get("legion_push"))
+        return health
 
 
 class _ParseError(ValueError):
