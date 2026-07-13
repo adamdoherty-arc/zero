@@ -25,13 +25,13 @@ from app.routers import (
     # pipeline is the sole SoT for whale / options-flow / prediction data.
     llc_guidance, approvals, visual_workflows,
     ecosystem_health,
-    tts, reachy, reachy_intent, reachy_email, reachy_realtime, reachy_memory, reachy_companion, home_assistant, oauth_accounts, sight,
+    tts, oauth_accounts, sight,
     feedback, goals, memory,
     vision, focus,
     email_drafts, routine,
     habits, journal,
     agent_company, deep_research, experiments, council,
-    autonomous_research, vault, agent_approvals, voice_bridge, company_operator, company_work_items, company_facts,
+    autonomous_research, vault, agent_approvals, company_operator, company_work_items, company_facts,
     assets, tax_summary,
     personal_work_items,
     character_content, brain,
@@ -44,9 +44,9 @@ from app.routers import (
     loops,
     skills_proxy,
     bookkeeper,
+    bookkeeper_agent,
     daily_brief,
     turn_outcomes,
-    wake_presence,
     memory_tree,
     integrations,
     triggers,
@@ -57,6 +57,7 @@ from app.routers import (
     openhands,
     notifications,
     zero_run,
+    reels,
 )
 from app.infrastructure.config import get_settings
 from app.infrastructure.exceptions import register_exception_handlers
@@ -228,32 +229,6 @@ async def lifespan(app: FastAPI):
     from app.infrastructure.llm_router import get_llm_router
     await get_llm_router().initialize()
 
-    # Load Zero voice-stack config (STT / TTS selections) and pre-warm the
-    # Whisper + Piper models so the first voice turn doesn't pay a 9-10 s
-    # cold start. Both warmups are background tasks â€” startup keeps moving if
-    # either model is missing.
-    try:
-        from app.services.reachy_voice_config_service import get_reachy_voice_config
-        voice_cfg = get_reachy_voice_config()
-        await voice_cfg.load()
-
-        async def _voice_warmup() -> None:
-            try:
-                from app.services.audio_service import get_audio_service
-                from app.services.tts_service import get_tts_service
-                await get_audio_service().warmup(voice_cfg.get_stt_model())
-            except Exception as e:
-                logger.warning("audio_warmup_failed", error=str(e))
-            try:
-                from app.services.tts_service import get_tts_service
-                await get_tts_service().warmup()
-            except Exception as e:
-                logger.warning("tts_warmup_failed", error=str(e))
-
-        asyncio.create_task(_voice_warmup(), name="voice_warmup")
-    except Exception as e:
-        logger.warning("reachy_voice_config_init_failed", error=str(e))
-
     # Run startup validation checks
     from app.infrastructure.startup import run_startup_checks
     checks_passed = await run_startup_checks()
@@ -282,24 +257,6 @@ async def lifespan(app: FastAPI):
             logger.info("Daily automation scheduler started")
         except Exception as e:
             logger.warning("Failed to start scheduler", error=str(e))
-
-        # Reachy Mini ambient-behaviour scheduler (Wave 5). Attaches its own
-        # jobs to the main AsyncIOScheduler so there is no extra event loop.
-        try:
-            from app.services.reachy_presence_service import get_reachy_presence_service
-            get_reachy_presence_service().start()
-            logger.info("Reachy presence scheduler started")
-        except Exception as e:
-            logger.warning("Failed to start Reachy presence scheduler", error=str(e))
-
-        # Validate that every persona's edge-tts voice is real. Logs warnings
-        # for any bad voice so future persona additions don't break silently.
-        try:
-            import asyncio as _asyncio
-            from app.services.reachy_personas import validate_persona_voices
-            _asyncio.create_task(validate_persona_voices())
-        except Exception as e:
-            logger.debug("Persona voice validation skipped", error=str(e))
 
         # Integrations auto-fetch loop (20-min walk over every connected
         # service â†’ Memory Vault). Off by default; ZERO_AUTO_FETCH_AUTOSTART=1
@@ -333,85 +290,6 @@ async def lifespan(app: FastAPI):
                 logger.info("telegram_channel_started")
         except Exception as e:
             logger.warning("telegram_channel_start_failed", error=str(e))
-
-        # Cross-session memory compaction: re-extract durable notes from
-        # recent turns and age out low-confidence unused ones every 6 h.
-        try:
-            from app.services.scheduler_service import get_scheduler_service
-            from app.services.reachy_user_memory_service import (
-                get_reachy_user_memory_service,
-            )
-            sched = get_scheduler_service().scheduler
-
-            async def _reachy_memory_compact_job() -> None:
-                try:
-                    await get_reachy_user_memory_service().compact()
-                except Exception as exc:
-                    logger.debug("reachy_memory_compact_failed", error=str(exc))
-
-            sched.add_job(
-                _reachy_memory_compact_job,
-                trigger="interval",
-                hours=6,
-                id="reachy_memory_compact",
-                name="Reachy user memory compaction",
-                replace_existing=True,
-            )
-            logger.info("Reachy memory compaction scheduled (every 6h)")
-        except Exception as e:
-            logger.warning("Failed to schedule Reachy memory compaction", error=str(e))
-
-        # One-shot migration: pull existing user_memory.json _notes into the
-        # new Letta-style human block. Idempotent â€” guarded by a flag inside
-        # the store so it only runs the first time after the schema change.
-        try:
-            from app.services.reachy_memory_blocks import get_reachy_memory_blocks
-            await get_reachy_memory_blocks().maybe_migrate_from_user_memory()
-        except Exception as e:
-            logger.debug("reachy_memory_blocks_migration_skipped", error=str(e))
-
-        # Nightly personality synthesis: 02:30 daily, after the 02:15 drift
-        # scan. Reads the last 24 h of turns + current blocks and updates the
-        # human + relationship blocks; writes a snapshot to the vault.
-        try:
-            from app.services.reachy_personality_synthesis_service import (
-                get_reachy_personality_synthesis_service,
-            )
-            from app.services.scheduler_service import get_scheduler_service
-            sched = get_scheduler_service().scheduler
-
-            async def _reachy_personality_synthesis_job() -> None:
-                try:
-                    await get_reachy_personality_synthesis_service().run()
-                except Exception as exc:
-                    logger.debug(
-                        "reachy_personality_synthesis_failed",
-                        error=str(exc),
-                    )
-
-            sched.add_job(
-                _reachy_personality_synthesis_job,
-                trigger="cron",
-                hour=2,
-                minute=30,
-                id="reachy_personality_synthesis_tick",
-                name="Reachy nightly personality synthesis",
-                replace_existing=True,
-            )
-            logger.info("Reachy personality synthesis scheduled (02:30 daily)")
-        except Exception as e:
-            logger.warning(
-                "Failed to schedule Reachy personality synthesis",
-                error=str(e),
-            )
-
-        # Home Assistant â†’ Reachy gesture watcher (Wave 6). Inert when HA is
-        # not configured or the gesture map is empty.
-        try:
-            from app.services.home_assistant_watcher import get_ha_watcher
-            get_ha_watcher().start()
-        except Exception as e:
-            logger.warning("Failed to start HA gesture watcher", error=str(e))
 
         # Daily brief â€” composes the morning report and emails it. Runs at
         # 07:00 server-local time. Hour overridable via ZERO_DAILY_BRIEF_HOUR.
@@ -483,8 +361,7 @@ async def lifespan(app: FastAPI):
 
         # Reconcile persisted enabled-state across every job now registered,
         # including the ones added directly above (daily_brief_morning,
-        # weekly_reflection, reachy_memory_compact, reachy_personality_synthesis_tick)
-        # and the presence-service ticks. These register AFTER start_scheduler()
+        # weekly_reflection). These register AFTER start_scheduler()
         # applied overrides, so without this pass a persisted disable — notably
         # the master "disable all" — would leak them back on after a restart.
         try:
@@ -827,15 +704,8 @@ app.include_router(llc_guidance.router, prefix="/api/llc-guidance", tags=["LLC G
 app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"])
 app.include_router(visual_workflows.router, prefix="/api/visual-workflows", tags=["Visual Workflows"])
 
-# Text-to-Speech & Reachy Mini Robot
+# Text-to-Speech (reels narration, meeting confirmations) & wearable-agnostic vision
 app.include_router(tts.router, prefix="/api/tts", tags=["Text-to-Speech"])
-app.include_router(reachy.router, prefix="/api/reachy", tags=["Reachy Mini Robot"])
-app.include_router(reachy_intent.router, prefix="/api/reachy-intent", tags=["Zero Voice Intents"])
-app.include_router(reachy_email.router, prefix="/api/reachy/email", tags=["Reachy Email Triage"])
-app.include_router(reachy_realtime.router, prefix="/api/reachy/realtime", tags=["Reachy Realtime Voice"])
-app.include_router(reachy_memory.router, prefix="/api/reachy/memory", tags=["Reachy Memory Blocks"])
-app.include_router(reachy_companion.router, prefix="/api/reachy/companion", tags=["Reachy Companion"])
-app.include_router(home_assistant.router, prefix="/api/home-assistant", tags=["Home Assistant"])
 app.include_router(sight.router, prefix="/api/sight", tags=["Sight (wearable-agnostic vision)"])
 
 # Meeting Intelligence removed from product 2026-06-20 (routers unmounted; code/tables kept dormant)
@@ -878,11 +748,11 @@ app.include_router(company_facts.router)  # prefix in router
 app.include_router(assets.router)  # prefix in router
 app.include_router(tax_summary.router)  # prefix in router
 app.include_router(personal_work_items.router)  # prefix in router
+app.include_router(personal_work_items.file_router)  # prefix in router
 app.include_router(deep_research.router)  # prefix in router
 app.include_router(autonomous_research.router)  # prefix in router
 app.include_router(vault.router)  # prefix in router
 app.include_router(agent_approvals.router)  # prefix in router
-app.include_router(voice_bridge.router)  # prefix in router
 app.include_router(experiments.router)  # prefix in router
 app.include_router(council.router)  # prefix in router
 app.include_router(brain.router)  # prefix in router
@@ -892,9 +762,9 @@ app.include_router(loops.health_router)  # public watchdog liveness probe
 app.include_router(loops.router)  # authenticated loop registry/control
 app.include_router(skills_proxy.router)  # /api/skills/* and /api/teams/* proxied to Legion
 app.include_router(bookkeeper.router, prefix="/api/bookkeeper", tags=["Bookkeeper (ADA AI)"])
+app.include_router(bookkeeper_agent.router)  # prefix in router (/api/company/bookkeeper)
 app.include_router(daily_brief.router, prefix="/api/daily-brief", tags=["Daily Brief"])
 app.include_router(turn_outcomes.router, prefix="/api/turn-outcomes", tags=["Turn Outcomes"])
-app.include_router(wake_presence.router, prefix="/api/wake-presence", tags=["Wake & Presence"])
 app.include_router(memory_tree.router, prefix="/api/memory-vault", tags=["Memory Vault"])
 app.include_router(memory_tree.router, prefix="/api/memory-tree", tags=["Memory Tree (deprecated alias)"])
 app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
@@ -907,6 +777,8 @@ app.include_router(openhands.router, prefix="/api", tags=["OpenHands"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
 # Zero Supervisor — /api/zero/run + /critic + /stack-facts (Migration 053)
 app.include_router(zero_run.router)
+# Motivation Reels — quote-driven video pipeline (migration 059)
+app.include_router(reels.router, prefix="/api/reels", tags=["Motivation Reels"])
 
 
 @app.get("/")

@@ -103,6 +103,7 @@ JOB_CATEGORIES = {
         "company_operator_weekly_review",
         "company_prompt_eval_bridge",
         "company_progress_checkin",
+        "bookkeeper_agent_daily",
     ],
     "Character Content": [
         "character_research_refresh",
@@ -705,6 +706,11 @@ DAILY_SCHEDULE = {
     "company_progress_checkin": {
         "cron": "5 */2 * * *",
         "description": "Zero progress check-in: stalled tasks, overdue items, setup percent",
+        "enabled": True,
+    },
+    "bookkeeper_agent_daily": {
+        "cron": "30 6 * * *",  # before the 06:45 morning brief so it reflects the sweep
+        "description": "Bookkeeper agent: onboarding gaps, draft auto-generation, books nags, 1040-ES reminders",
         "enabled": True,
     },
     # Character Content
@@ -1513,6 +1519,7 @@ class SchedulerService:
             "company_operator_weekly_review": self._run_company_operator_weekly_review,
             "company_prompt_eval_bridge": self._run_company_prompt_eval_bridge,
             "company_progress_checkin": self._run_company_progress_checkin,
+            "bookkeeper_agent_daily": self._run_bookkeeper_agent_daily,
             # Character Content
             "character_research_refresh": self._run_character_research_refresh,
             "character_research_retry": self._run_character_research_retry,
@@ -4404,6 +4411,22 @@ Have a great evening!"""
             logger.info("company_prompt_eval_bridge_done", run_id=result.get("id"), status=result.get("status"))
         except Exception as e:
             logger.error("company_prompt_eval_bridge_failed", error=str(e))
+
+    async def _run_bookkeeper_agent_daily(self):
+        """Bookkeeper agent sweep: seed onboarding gaps, auto-generate the month's
+        drafts, and file inbox nags (draft backlog, stale books, 1040-ES)."""
+        try:
+            from app.services.bookkeeper_agent_service import get_bookkeeper_agent_service
+
+            report = await get_bookkeeper_agent_service().daily_sweep(requested_by="scheduler")
+            logger.info(
+                "bookkeeper_agent_daily_done",
+                gaps=report.get("onboarding_open_gaps"),
+                actions=len(report.get("actions", [])),
+                nags=len(report.get("nags", [])),
+            )
+        except Exception as e:
+            logger.error("bookkeeper_agent_daily_failed", error=str(e))
 
     async def _run_company_progress_checkin(self):
         """Zero check-in on ADA AI LLC setup tasks. Reports stalled and overdue work."""

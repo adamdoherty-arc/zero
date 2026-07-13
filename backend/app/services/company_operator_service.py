@@ -603,7 +603,12 @@ class CompanyOperatorService:
                 normalized = _normalize_question_text(row.question)
                 reason: Optional[str] = None
                 canonical_id: Optional[str] = None
-                if LOW_VALUE_QUESTION_RE.search(row.question):
+                # Bookkeeper questions are gap-driven and deduped at the source
+                # (one per bk_key, ever) — the generic dismissal heuristics and
+                # the focus budget must never eat them.
+                if (row.source or "").startswith("bookkeeper"):
+                    seen.setdefault(normalized, row)
+                elif LOW_VALUE_QUESTION_RE.search(row.question):
                     reason = "generic_nonblocking_fallback_question"
                 elif normalized in seen:
                     reason = "duplicate_question"
@@ -721,6 +726,18 @@ class CompanyOperatorService:
                 summary=f"Adam answered agent question: {_compact(serialized['question'], limit=140)}",
                 after={"question_id": question_id, "answer": answer},
             )
+        # Bookkeeper questions carry an `apply` spec: parse the answer and write
+        # it into the worksheet/registry/asset-register it belongs to.
+        if (serialized.get("source") or "").startswith("bookkeeper") and (
+            (serialized.get("context") or {}).get("apply")
+        ):
+            try:
+                from app.services.bookkeeper_agent_service import get_bookkeeper_agent_service
+
+                applied = await get_bookkeeper_agent_service().apply_answer(serialized)
+                serialized["bookkeeper_apply"] = applied
+            except Exception as e:
+                logger.warning("bookkeeper_answer_apply_failed", question_id=question_id, error=str(e))
         return serialized
 
     async def dismiss_question(

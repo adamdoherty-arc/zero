@@ -3041,14 +3041,59 @@ function QuestionDetailDrawer({ question, linkedTask, onClose }: {
               <div>Created: <span className="text-gray-100">{formatDateTime(question.created_at)}</span></div>
             </div>
           </section>
+          {Boolean(question.context?.['parse_error']) && (
+            <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+              Previous answer could not be applied: {String(question.context['parse_error'])}
+            </section>
+          )}
+          {(question.options ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(question.options ?? []).map((opt) => (
+                <button
+                  key={String(opt)}
+                  type="button"
+                  onClick={() => setAnswer(String(opt))}
+                  className={cn(
+                    'rounded-md border px-3 py-1.5 text-sm',
+                    answer === String(opt)
+                      ? 'border-blue-500 bg-blue-500/20 text-blue-100'
+                      : 'border-gray-700 bg-gray-900 text-gray-200 hover:border-gray-500',
+                  )}
+                >
+                  {String(opt)}{question.answer_type === 'percent' ? '%' : ''}
+                </button>
+              ))}
+            </div>
+          )}
           <label className="grid gap-2 text-xs text-gray-500">
             Answer for the agent
-            <textarea
-              value={answer}
-              onChange={(event) => setAnswer(event.target.value)}
-              placeholder="Give the agent the missing fact, decision, constraint, or next instruction..."
-              className="min-h-32 rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-blue-500"
-            />
+            {['number', 'currency', 'percent'].includes(question.answer_type ?? 'text') ? (
+              <div className="flex items-center gap-2">
+                {question.answer_type === 'currency' && <span className="text-sm text-gray-400">$</span>}
+                <input
+                  value={answer}
+                  onChange={(event) => setAnswer(event.target.value)}
+                  inputMode="decimal"
+                  placeholder={question.answer_type === 'percent' ? 'e.g. 80' : 'e.g. 1200'}
+                  className="h-10 w-44 rounded-md border border-gray-800 bg-gray-900 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+                />
+                {question.answer_type === 'percent' && <span className="text-sm text-gray-400">%</span>}
+              </div>
+            ) : question.answer_type === 'date' ? (
+              <input
+                type="date"
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
+                className="h-10 w-44 rounded-md border border-gray-800 bg-gray-900 px-3 text-sm text-gray-100 outline-none focus:border-blue-500"
+              />
+            ) : (
+              <textarea
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
+                placeholder="Give the agent the missing fact, decision, constraint, or next instruction..."
+                className="min-h-32 rounded-md border border-gray-800 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none focus:border-blue-500"
+              />
+            )}
           </label>
           <div className="flex flex-wrap gap-2">
             <button

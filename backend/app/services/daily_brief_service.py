@@ -99,8 +99,7 @@ class DailyBriefService:
         sections = await asyncio.gather(
             self._email_section(),
             self._calendar_section(),
-            self._meeting_prep_section(),
-            self._conflict_section(),
+            # Meeting prep + conflict sections removed 2026-06-20 (meetings concept retired)
             self._company_section(),
             self._finance_section(),
             self._reflection_section(),
@@ -390,6 +389,21 @@ class DailyBriefService:
                 f"Estimated quarterly tax: ${snap.estimated_tax:,.0f}",
                 f"Pending drafts to review: {snap.pending_drafts}",
             ]
+            # Bookkeeper agent state — open gaps + nags from the morning sweep.
+            try:
+                from app.services.bookkeeper_agent_service import get_bookkeeper_agent_service
+
+                sweep = get_bookkeeper_agent_service().status().get("last_sweep") or {}
+                gaps = sweep.get("onboarding_open_gaps")
+                if gaps:
+                    bullets.append(
+                        f"Tax tracker gaps: {gaps} onboarding question(s) waiting in /company/inbox"
+                    )
+                nags = sweep.get("nags") or []
+                if nags:
+                    bullets.append(f"Bookkeeper nags today: {len(nags)} (see /company/inbox)")
+            except Exception:
+                pass
             return BriefSection(
                 title="Finance",
                 body=f"{snap.entity} {snap.period} (backend: {snap.backend})",
@@ -409,7 +423,7 @@ class DailyBriefService:
             if not last:
                 return BriefSection(
                     title="Yesterday",
-                    body="No reflection summary yet — Reachy will start producing them as outcomes accumulate.",
+                    body="No reflection summary yet — Zero will start producing them as outcomes accumulate.",
                 )
             if isinstance(last, dict):
                 return BriefSection(
