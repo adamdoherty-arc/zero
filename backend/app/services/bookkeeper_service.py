@@ -45,6 +45,12 @@ RECURRING_PATH = LEDGER_DIR / "recurring_expenses.json"
 ENTITY_NAME = os.getenv("ADA_AI_LEGAL_NAME", "ADA AI LLC")
 # Default expense account for AI/LLM subscriptions (Claude Max, ChatGPT, Cursor, ...).
 AI_EXPENSE_ACCOUNT = "Expenses:Software:AI"
+# Funding sides. Personal-paid business expenses are still deductible for a
+# disregarded-entity SMLLC — the paying account only decides the balancing
+# posting: business account vs owner capital contribution.
+BANK_ACCOUNT = "Assets:Bank:Mercury"
+EQUITY_CONTRIB_ACCOUNT = "Equity:Owner:Contributions"
+EQUIPMENT_ACCOUNT = "Assets:Equipment"
 DEFAULT_CURRENCY = os.getenv("ADA_AI_CURRENCY", "USD")
 QUARTERLY_TAX_RATE = float(os.getenv("ADA_AI_TAX_RATE_EST", "0.22"))
 
@@ -105,6 +111,7 @@ class DraftEntry:
     source: str  # bank_csv | receipt_ocr | voice | manual
     raw: dict[str, Any] = field(default_factory=dict)
     status: str = "pending"  # pending | accepted | rejected
+    paid_from: str = "business"  # business | personal (any "personal..." string)
     created_at: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,6 +125,7 @@ class DraftEntry:
             "source": self.source,
             "raw": dict(self.raw),
             "status": self.status,
+            "paid_from": self.paid_from,
             "created_at": self.created_at,
         }
 
@@ -209,6 +217,8 @@ class BookkeeperService:
             f"1970-01-01 open Expenses:Tax:Federal          {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Expenses:Tax:State            {DEFAULT_CURRENCY}\n"
             f"1970-01-01 open Equity:Owner:Adam             {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Equity:Owner:Contributions    {DEFAULT_CURRENCY}\n"
+            f"1970-01-01 open Assets:Equipment              {DEFAULT_CURRENCY}\n"
         )
         LEDGER_PATH.write_text(opening, encoding="utf-8")
 
@@ -404,6 +414,7 @@ class BookkeeperService:
                         "paid_from": entry.paid_from,
                     },
                     status="pending",
+                    paid_from=entry.paid_from,
                     created_at=time.time(),
                 )
                 created.append(draft)
@@ -446,7 +457,7 @@ class BookkeeperService:
     # CSV ingestion — draft-only; LLM categorizes; user must accept.
     # ------------------------------------------------------------------
     async def ingest_bank_csv(
-        self, *, source: str, csv_text: str
+        self, *, source: str, csv_text: str, paid_from: str = "business"
     ) -> list[DraftEntry]:
         rows = self._parse_csv(csv_text)
         new_drafts: list[DraftEntry] = []
@@ -467,6 +478,7 @@ class BookkeeperService:
                 source=source,
                 raw=r,
                 status="pending",
+                paid_from=paid_from,
                 created_at=time.time(),
             )
             new_drafts.append(d)
@@ -557,8 +569,23 @@ class BookkeeperService:
                     return d
         return None
 
+    @staticmethod
+    def _funding_account(paid_from: str | None) -> str:
+        """Balancing account for a draft: owner equity when paid personally.
+
+        Recurring-registry values are freeform ("personal card", "Amex personal",
+        "business checking"), so match on the word, not equality.
+        """
+        if "personal" in (paid_from or "").lower():
+            return EQUITY_CONTRIB_ACCOUNT
+        return BANK_ACCOUNT
+
     def _append_journal_entry(self, d: DraftEntry, category: str) -> None:
-        side = "Assets:Bank:Mercury"
+        # Recurring drafts carry the registry's paid_from in raw (including
+        # drafts persisted before DraftEntry grew the field); other sources set
+        # the dataclass field directly.
+        side = self._funding_account(str(d.raw.get("paid_from") or d.paid_from))
+        self._ensure_account_open(side)
         amount_signed = d.amount
         # Beancount convention: positive on the income side, negative on
         # the asset side decreases bank; we just emit a balanced txn.
@@ -573,6 +600,32 @@ class BookkeeperService:
                 f.write(block)
         except Exception as e:
             logger.warning("bookkeeper_append_failed", error=str(e))
+
+    async def post_owner_contribution(self, *, date_str: str, description: str, amount: float) -> None:
+        """Record personal property entering the LLC: equipment up, owner equity up.
+
+        Posts Assets:Equipment (NOT Expenses:Hardware) so the tax summary's
+        asset-register line stays the single source for the deduction — this
+        entry only keeps the balance sheet honest.
+        """
+        amount = abs(float(amount or 0.0))
+        if amount <= 0:
+            return
+        async with self._lock:
+            self._ensure_account_open(EQUIPMENT_ACCOUNT)
+            self._ensure_account_open(EQUITY_CONTRIB_ACCOUNT)
+            safe_desc = (description or "Owner capital contribution").replace('"', "'")
+            block = (
+                f'\n{date_str} * "{safe_desc}"\n'
+                f"  {EQUIPMENT_ACCOUNT}                {amount:.2f} {DEFAULT_CURRENCY}\n"
+                f"  {EQUITY_CONTRIB_ACCOUNT}                   {-amount:.2f} {DEFAULT_CURRENCY}\n"
+            )
+            try:
+                with open(LEDGER_PATH, "a", encoding="utf-8") as f:
+                    f.write(block)
+            except Exception as e:
+                logger.warning("bookkeeper_contribution_append_failed", error=str(e))
+        logger.info("bookkeeper_owner_contribution", description=description, amount=amount)
 
     # ------------------------------------------------------------------
     # Snapshot — feeds the daily brief + dashboard tile.

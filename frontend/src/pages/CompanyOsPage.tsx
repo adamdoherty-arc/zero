@@ -135,6 +135,8 @@ import {
   useBusinessAssets,
   useCreateBusinessAsset,
   useDeleteBusinessAsset,
+  useRecordAssetTransfer,
+  type AcquisitionType,
   type AssetMethod,
 } from '@/hooks/useBusinessAssetsApi'
 import { deductionCatalog, type DeductionGroup } from '@/data/deduction-catalog'
@@ -3836,7 +3838,8 @@ function HomeOfficePanel() {
     <Panel title="Home Office Deduction" icon={PackageCheck}>
       <p className="mb-3 text-xs text-gray-400">
         Fill the worksheet; the CPA elects simplified vs actual at tax time (IRS Pub 587). The space must be used
-        regularly and exclusively for business. Not tax advice.
+        regularly and exclusively for business. Business internet stays deductible either way — under the
+        simplified method it shows as its own line in the tax summary. Not tax advice.
       </p>
       <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="grid gap-2 sm:grid-cols-2">
@@ -4160,6 +4163,7 @@ function DocsSection() {
 
 const ASSET_METHOD_LABELS: Record<AssetMethod, string> = {
   section_179: '§179 (full expense)',
+  bonus: '100% bonus depreciation',
   de_minimis: 'De minimis (full)',
   macrs_5yr: 'MACRS 5-yr (depreciate)',
   none: 'Track only (no deduction)',
@@ -4382,19 +4386,54 @@ function EquipmentAssetsPanel() {
   const { data: assetsLive, isLoading } = useBusinessAssets()
   const createAsset = useCreateBusinessAsset()
   const deleteAsset = useDeleteBusinessAsset()
+  const recordTransfer = useRecordAssetTransfer()
   const [name, setName] = useState('')
   const [cost, setCost] = useState('')
+  const [originalCost, setOriginalCost] = useState('')
   const [pct, setPct] = useState('100')
   const [method, setMethod] = useState<AssetMethod>('section_179')
   const [placed, setPlaced] = useState('')
+  const [acquisition, setAcquisition] = useState<AcquisitionType>('purchased')
 
   const rows = assetsLive ?? []
   const totalDeduction = rows.reduce((sum, a) => sum + (a.current_year_deduction ?? 0), 0)
 
+  const resetForm = () => {
+    setName(''); setCost(''); setOriginalCost(''); setPct('100')
+    setMethod('section_179'); setPlaced(''); setAcquisition('purchased')
+  }
+
   const handleAdd = () => {
     const c = parseFloat(cost)
     if (!name.trim() || !Number.isFinite(c) || c <= 0) {
-      toast({ title: 'Enter a name and a cost' })
+      toast({ title: acquisition === 'contributed' ? 'Enter a name and the FMV' : 'Enter a name and a cost' })
+      return
+    }
+    if (acquisition === 'contributed') {
+      if (!placed) {
+        toast({ title: 'Enter the transfer (placed-in-service) date' })
+        return
+      }
+      const orig = parseFloat(originalCost)
+      recordTransfer.mutate(
+        {
+          assets: [{
+            name: name.trim(),
+            fmv: c,
+            original_cost: Number.isFinite(orig) && orig > 0 ? orig : null,
+            business_use_pct: parseFloat(pct) || 100,
+            placed_in_service: placed,
+            method,
+          }],
+        },
+        {
+          onSuccess: () => {
+            resetForm()
+            toast({ title: 'Contribution recorded', description: 'Asset registered and owner-equity entry posted.' })
+          },
+          onError: (e) => toast({ title: 'Transfer failed', description: e.message }),
+        },
+      )
       return
     }
     createAsset.mutate(
@@ -4407,7 +4446,7 @@ function EquipmentAssetsPanel() {
       },
       {
         onSuccess: () => {
-          setName(''); setCost(''); setPct('100'); setMethod('section_179'); setPlaced('')
+          resetForm()
           toast({ title: 'Asset added' })
         },
         onError: (e) => toast({ title: 'Add failed', description: e.message }),
@@ -4418,23 +4457,31 @@ function EquipmentAssetsPanel() {
   return (
     <Panel title={`Equipment & Hardware${totalDeduction > 0 ? ` — ${currency.format(totalDeduction)} deduction` : ''}`} icon={Cpu}>
       <p className="mb-3 text-xs text-gray-400">
-        Computers, monitors, robot, peripherals. §179 expenses the business-use share in the year placed in
-        service; MACRS depreciates it. The CPA confirms the method. Not tax advice.
+        Computers, monitors, peripherals. Bought by the business = purchase; your own gear entering the LLC =
+        capital contribution (deduction basis is the lesser of FMV or what you originally paid, and an
+        owner-equity entry is posted automatically). The CPA confirms the method. Not tax advice.
       </p>
-      <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-7">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Item (e.g. Workstation)" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500 lg:col-span-2" />
-        <input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="Cost $" inputMode="decimal" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        <select value={acquisition} onChange={(e) => setAcquisition(e.target.value as AcquisitionType)} title="How it entered the business" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-1 text-xs text-gray-200 outline-none focus:border-blue-500">
+          <option value="purchased">Purchased by business</option>
+          <option value="contributed">Contributed from personal</option>
+        </select>
+        <input value={cost} onChange={(e) => setCost(e.target.value)} placeholder={acquisition === 'contributed' ? 'FMV $' : 'Cost $'} inputMode="decimal" title={acquisition === 'contributed' ? 'Fair market value on the transfer date' : 'Purchase cost'} className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        {acquisition === 'contributed' && (
+          <input value={originalCost} onChange={(e) => setOriginalCost(e.target.value)} placeholder="Original cost $" inputMode="decimal" title="What you originally paid (basis ceiling)" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        )}
         <input value={pct} onChange={(e) => setPct(e.target.value)} placeholder="% biz" inputMode="numeric" title="Business-use %" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
         <select value={method} onChange={(e) => setMethod(e.target.value as AssetMethod)} className="h-8 rounded-md border border-gray-800 bg-gray-950 px-1 text-xs text-gray-200 outline-none focus:border-blue-500">
           {(Object.keys(ASSET_METHOD_LABELS) as AssetMethod[]).map((m) => (
             <option key={m} value={m}>{ASSET_METHOD_LABELS[m]}</option>
           ))}
         </select>
-        <input value={placed} onChange={(e) => setPlaced(e.target.value)} type="date" title="Placed in service" className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
+        <input value={placed} onChange={(e) => setPlaced(e.target.value)} type="date" title={acquisition === 'contributed' ? 'Transfer / placed-in-service date' : 'Placed in service'} className="h-8 rounded-md border border-gray-800 bg-gray-950 px-2 text-xs text-gray-200 outline-none focus:border-blue-500" />
       </div>
       <div className="mb-3 flex justify-end">
-        <button type="button" onClick={handleAdd} disabled={createAsset.isPending} className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50">
-          <Plus className="h-3.5 w-3.5" /> Add asset
+        <button type="button" onClick={handleAdd} disabled={createAsset.isPending || recordTransfer.isPending} className="inline-flex h-8 items-center gap-1 rounded-md border border-gray-700 px-3 text-xs text-gray-200 hover:text-white disabled:opacity-50">
+          <Plus className="h-3.5 w-3.5" /> {acquisition === 'contributed' ? 'Record contribution' : 'Add asset'}
         </button>
       </div>
       {isLoading ? (
@@ -4452,6 +4499,11 @@ function EquipmentAssetsPanel() {
                 <div className="mt-0.5 text-[10px] uppercase tracking-wider text-gray-600">
                   {currency.format(a.cost)} · {a.business_use_pct}% biz · {ASSET_METHOD_LABELS[a.method]}
                   {a.placed_in_service ? ` · ${a.placed_in_service}` : ''}
+                  {a.acquisition_type === 'contributed' && (
+                    <span className="ml-1.5 rounded bg-indigo-500/15 px-1 py-0.5 normal-case tracking-normal text-indigo-300">
+                      contributed @ FMV
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2">

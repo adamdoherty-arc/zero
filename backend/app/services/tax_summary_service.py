@@ -101,14 +101,37 @@ class TaxSummaryService:
             ho_amount = ho.get("simplified_estimate")
             ho_method = "simplified"
         ho_amount = round(float(ho_amount or 0.0), 2)
+        ho_note = (
+            "Includes rent/utilities/electricity/insurance/internet allocation."
+            if ho_method == "actual"
+            else "$5/sqft simplified method; business internet is broken out separately below."
+        )
         line_items.append({
             "key": "home_office",
             "label": "Home office (annual)",
             "amount": ho_amount,
             "source": f"home-office worksheet ({ho_method})",
-            "note": "Includes rent/utilities/electricity/insurance/internet allocation.",
+            "note": ho_note,
             "missing_fields": ho.get("missing_fields", []),
         })
+
+        # ---- 2b. Internet, standalone under the simplified method --------
+        # The actual method already allocates internet inside the home-office
+        # line (company_facts_service.home_office_summary); under simplified
+        # the $5/sqft rate covers home costs but NOT the business share of
+        # internet, which stays separately deductible (Schedule C line 25).
+        if ho_method == "simplified":
+            inputs = ho.get("inputs") or {}
+            internet_monthly = _to_float(inputs.get("internet_monthly"), 0.0)
+            internet_pct = _to_float(inputs.get("internet_business_pct"), 0.0)
+            if internet_monthly > 0 and internet_pct > 0:
+                line_items.append({
+                    "key": "internet",
+                    "label": "Internet (business %, annual)",
+                    "amount": round(internet_monthly * 12 * (internet_pct / 100.0), 2),
+                    "source": "home-office worksheet (standalone; simplified method)",
+                    "note": "Not covered by the $5/sqft simplified rate; no double count.",
+                })
 
         # ---- 3. Cell phone + vehicle (mixed-use worksheets) --------------
         deds = await get_company_facts_service().deductions_summary()

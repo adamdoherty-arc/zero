@@ -16,6 +16,10 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 class IngestRequest(BaseModel):
     source: str = Field(..., description="bank_csv|receipt_ocr|manual")
     csv: str = Field(..., description="raw CSV text from the bank export")
+    paid_from: str = Field(
+        default="business", max_length=120,
+        description="business|personal — personal-paid drafts post against owner equity",
+    )
 
 
 class AcceptRequest(BaseModel):
@@ -61,7 +65,7 @@ async def snapshot(period: str = Query("YTD", pattern="^(YTD|MTD|QTD)$")):
 async def ingest(req: IngestRequest):
     from app.services.bookkeeper_service import get_bookkeeper_service
     drafts = await get_bookkeeper_service().ingest_bank_csv(
-        source=req.source, csv_text=req.csv,
+        source=req.source, csv_text=req.csv, paid_from=req.paid_from,
     )
     return {"drafts": [d.to_dict() for d in drafts], "count": len(drafts)}
 

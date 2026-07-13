@@ -61,3 +61,66 @@ def test_business_pct_clamped_to_100():
 def test_negative_pct_clamped_to_zero():
     a = _asset(cost=1000.0, business_use_pct=-20.0, method="section_179")
     assert current_year_deduction(a, year=2026) == 0.0
+
+
+def test_bonus_is_full_basis():
+    a = _asset(cost=3000.0, business_use_pct=100.0, method="bonus")
+    assert current_year_deduction(a, year=2026) == 3000.0
+
+
+def test_contributed_basis_is_lesser_fmv():
+    # FMV < original cost (typical for a used computer): basis = FMV
+    a = _asset(
+        cost=1200.0,
+        acquisition_type="contributed",
+        fmv_at_contribution=1200.0,
+        original_cost=2500.0,
+        method="section_179",
+    )
+    assert current_year_deduction(a, year=2026) == 1200.0
+
+
+def test_contributed_basis_is_lesser_original_cost():
+    # Original cost < FMV (appreciated property): basis = original cost
+    a = _asset(
+        cost=2000.0,
+        acquisition_type="contributed",
+        fmv_at_contribution=2000.0,
+        original_cost=1500.0,
+        method="section_179",
+    )
+    assert current_year_deduction(a, year=2026) == 1500.0
+
+
+def test_contributed_missing_original_cost_falls_back_to_fmv():
+    a = _asset(
+        cost=0.0,
+        acquisition_type="contributed",
+        fmv_at_contribution=900.0,
+        original_cost=None,
+        method="de_minimis",
+    )
+    assert current_year_deduction(a, year=2026) == 900.0
+
+
+def test_contributed_business_pct_applies_to_basis():
+    a = _asset(
+        cost=1000.0,
+        acquisition_type="contributed",
+        fmv_at_contribution=1000.0,
+        original_cost=4000.0,
+        business_use_pct=50.0,
+        method="section_179",
+    )
+    assert current_year_deduction(a, year=2026) == 500.0
+
+
+def test_purchased_ignores_contribution_fields():
+    a = _asset(
+        cost=1000.0,
+        acquisition_type="purchased",
+        fmv_at_contribution=100.0,
+        original_cost=50.0,
+        method="section_179",
+    )
+    assert current_year_deduction(a, year=2026) == 1000.0

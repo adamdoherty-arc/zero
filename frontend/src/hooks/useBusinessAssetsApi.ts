@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getAuthHeaders } from '@/lib/auth'
 
-export type AssetMethod = 'section_179' | 'de_minimis' | 'macrs_5yr' | 'none'
+export type AssetMethod = 'section_179' | 'bonus' | 'de_minimis' | 'macrs_5yr' | 'none'
+export type AcquisitionType = 'purchased' | 'contributed'
 
 export interface BusinessAsset {
   id: string
@@ -12,6 +13,10 @@ export interface BusinessAsset {
   business_use_pct: number
   placed_in_service: string | null
   method: AssetMethod
+  acquisition_type: AcquisitionType
+  fmv_at_contribution: number | null
+  original_cost: number | null
+  contribution_posted_at: string | null
   disposed_at: string | null
   evidence_url: string | null
   notes: string | null
@@ -28,6 +33,9 @@ export interface BusinessAssetCreateInput {
   business_use_pct?: number
   placed_in_service?: string | null
   method?: AssetMethod
+  acquisition_type?: AcquisitionType
+  fmv_at_contribution?: number | null
+  original_cost?: number | null
   evidence_url?: string | null
   notes?: string | null
 }
@@ -39,8 +47,22 @@ export interface BusinessAssetUpdateInput {
   business_use_pct?: number
   placed_in_service?: string | null
   method?: AssetMethod
+  acquisition_type?: AcquisitionType
+  fmv_at_contribution?: number | null
+  original_cost?: number | null
   disposed_at?: string | null
   evidence_url?: string | null
+  notes?: string | null
+}
+
+export interface AssetTransferItemInput {
+  name: string
+  asset_type?: string | null
+  fmv: number
+  original_cost?: number | null
+  business_use_pct?: number
+  placed_in_service: string
+  method?: AssetMethod | null
   notes?: string | null
 }
 
@@ -109,5 +131,21 @@ export function useDeleteBusinessAsset() {
     mutationFn: (id: string) =>
       fetchJson<{ status: string; id: string }>(`/api/company/assets/${id}`, { method: 'DELETE' }),
     onSuccess: () => invalidate(qc),
+  })
+}
+
+export function useRecordAssetTransfer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { assets: AssetTransferItemInput[]; memo_url?: string | null }) =>
+      fetchJson<BusinessAsset[]>('/api/company/assets/transfer', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      invalidate(qc)
+      // The equity posting lands in the bookkeeper ledger too.
+      qc.invalidateQueries({ queryKey: ['bookkeeper'] })
+    },
   })
 }

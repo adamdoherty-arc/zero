@@ -145,6 +145,27 @@ class TaskModel(Base):
     )
 
 
+class TaskAttachmentModel(Base):
+    """A file (scan, photo, PDF) attached to a task. Callers must verify the
+    owning task's scope (e.g. project_id=="personal") before exposing a row —
+    this table has no scope column of its own, same convention as
+    CompanyTaskEventModel below."""
+    __tablename__ = "task_attachments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(64), ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    uploaded_by: Mapped[str] = mapped_column(String(100), default="user")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("idx_task_attachments_task_created", "task_id", "created_at"),
+    )
+
+
 class CompanyTaskEventModel(Base):
     """Append-only audit trail for company work-item activity."""
     __tablename__ = "company_task_events"
@@ -224,8 +245,13 @@ class BusinessAssetModel(Base):
     cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     business_use_pct: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
     placed_in_service: Mapped[Optional[date]] = mapped_column(Date, index=True)
-    # section_179 | de_minimis | macrs_5yr | none
+    # section_179 | bonus | de_minimis | macrs_5yr | none
     method: Mapped[str] = mapped_column(String(40), nullable=False, default="section_179")
+    # purchased | contributed (owner capital contribution of personal property)
+    acquisition_type: Mapped[str] = mapped_column(String(20), nullable=False, default="purchased")
+    fmv_at_contribution: Mapped[Optional[float]] = mapped_column(Float)
+    original_cost: Mapped[Optional[float]] = mapped_column(Float)
+    contribution_posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     disposed_at: Mapped[Optional[date]] = mapped_column(Date)
     evidence_url: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -2978,25 +3004,9 @@ class MealPriceQuoteModel(Base):
     )
 
 
-# ---------------------------------------------------------------------------
-# Reachy custom motion sequences
-# ---------------------------------------------------------------------------
-
-class ReachySequenceModel(Base):
-    """User-defined motion sequences — ordered chains of emotion/dance clips."""
-    __tablename__ = "reachy_sequences"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    # steps: [{"clip": "yes1", "kind": "emotion", "gap_ms": 200}, ...]
-    steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    aliases: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
+# Reachy custom motion sequences (ReachySequenceModel) — removed. Robot/Reachy
+# hardware control moved to a separate app (Zero Studio); the reachy_sequences
+# table is dropped by migration 060 (038 kept in place as history).
 
 # ---------------------------------------------------------------------------
 # Carousel V2 foundation (migration 039 — carosel.txt blueprint Phase 1)
@@ -3317,3 +3327,162 @@ class LoopPromotionModel(Base):
     rationale: Mapped[Optional[str]] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     decided_by: Mapped[str] = mapped_column(String(80), nullable=False, default="auto")
+
+
+# ---------------------------------------------------------------------------
+# Motivation Reels — quote-driven video pipeline (migration 059)
+#
+# Parallel plane to the carousel tables above. Reuses the content-agnostic
+# learning tables (engagement_signals, bandit_logs, judge_scores,
+# idempotency_keys) by string key — only the reel-specific rows live here.
+# ---------------------------------------------------------------------------
+
+class ReelGenerationModel(Base):
+    """One row per motivation-reel generation attempt.
+
+    Mirrors ``CarouselGenerationModel`` but for quote-driven video. The full
+    ``MotivationReel`` Pydantic object lives across the JSONB columns so a
+    replay / review can reconstruct the exact reel.
+    """
+    __tablename__ = "reel_generations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    reel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    workflow_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+    workflow_run_id: Mapped[Optional[str]] = mapped_column(String(120), index=True)
+
+    sub_niche: Mapped[Optional[str]] = mapped_column(String(60), index=True)
+    theme: Mapped[Optional[str]] = mapped_column(String(120))
+    mood: Mapped[Optional[str]] = mapped_column(String(40))
+
+    quote_text: Mapped[Optional[str]] = mapped_column(Text)
+    quote_author: Mapped[Optional[str]] = mapped_column(String(160))
+    quote_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    scenes_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    music_track_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    music_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    voiceover: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    voiceover_url: Mapped[Optional[str]] = mapped_column(Text)
+
+    video_url: Mapped[Optional[str]] = mapped_column(Text)
+    video_sha256: Mapped[Optional[str]] = mapped_column(String(64))
+    duration_s: Mapped[Optional[float]] = mapped_column(Float)
+    visual_style: Mapped[Optional[str]] = mapped_column(String(40))
+
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    hashtags_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    cta_text: Mapped[Optional[str]] = mapped_column(Text)
+    cta_link: Mapped[Optional[str]] = mapped_column(Text)
+
+    judge_scores_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    composite_score: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    rubric_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    revision_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Bandit provenance — decision_point -> arm + decision_point -> log_id.
+    arms_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    bandit_log_ids_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    engagement_metrics_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    initiated_by: Mapped[Optional[str]] = mapped_column(String(40))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class ReelMusicTrackModel(Base):
+    """Royalty-free / generated music library. Real audio in ``storage_url``,
+    beat metadata for caption sync. Only ``is_bakeable`` tracks may be muxed.
+    """
+    __tablename__ = "reel_music_tracks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source: Mapped[str] = mapped_column(String(24), nullable=False, default="rf_library", index=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    artist: Mapped[Optional[str]] = mapped_column(String(160))
+    mood: Mapped[Optional[str]] = mapped_column(String(40), index=True)
+    energy: Mapped[Optional[str]] = mapped_column(String(16))
+    bpm: Mapped[Optional[float]] = mapped_column(Float)
+    beat_grid_json: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    duration_s: Mapped[Optional[float]] = mapped_column(Float)
+    license: Mapped[str] = mapped_column(String(24), nullable=False, default="cc0", index=True)
+    attribution: Mapped[Optional[str]] = mapped_column(Text)
+    storage_url: Mapped[Optional[str]] = mapped_column(Text)
+    local_path: Mapped[Optional[str]] = mapped_column(Text)
+    loop_safe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_bakeable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    avg_reward: Mapped[Optional[float]] = mapped_column(Float)
+    source_url: Mapped[Optional[str]] = mapped_column(Text)  # provenance / download URL
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReelPlatformPublishModel(Base):
+    """One row per (reel × platform) publish attempt."""
+    __tablename__ = "reel_platform_publishes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    reel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    generation_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    platform_post_id: Mapped[Optional[str]] = mapped_column(String(160), index=True)
+    publish_url: Mapped[Optional[str]] = mapped_column(Text)
+    publish_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    publish_error: Mapped[Optional[str]] = mapped_column(Text)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("reel_id", "platform", name="uq_reel_platform"),
+    )
+
+
+class ReelLinkModel(Base):
+    """The tracked CTA redirect (``/r/{token}``) carried by a reel."""
+    __tablename__ = "reel_links"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    reel_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    link_type: Mapped[str] = mapped_column(String(24), nullable=False, default="bio_funnel")
+    destination_url: Mapped[str] = mapped_column(Text, nullable=False)
+    product_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)  # -> tiktok_products
+    utm_template_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReelLinkClickModel(Base):
+    """CTR + conversion tracking for the tracked redirect."""
+    __tablename__ = "reel_link_clicks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    link_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    platform: Mapped[Optional[str]] = mapped_column(String(20))
+    ip_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    user_agent: Mapped[Optional[str]] = mapped_column(Text)
+    clicked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    converted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    conversion_value_usd: Mapped[Optional[float]] = mapped_column(Float)
+
+
+class ReelRevenueModel(Base):
+    """Creator-fund / ad-rev / affiliate revenue (read-only imports)."""
+    __tablename__ = "reel_revenue"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    reel_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    revenue_source: Mapped[str] = mapped_column(String(24), nullable=False)  # ad_rev | creator_fund | affiliate | product_sale
+    amount_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    views_in_period: Mapped[Optional[int]] = mapped_column(BigInteger)
+    period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

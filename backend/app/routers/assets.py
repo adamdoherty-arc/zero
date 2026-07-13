@@ -14,7 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.infrastructure.auth import require_auth
-from app.models.business_asset import BusinessAsset, BusinessAssetCreate, BusinessAssetUpdate
+from app.models.business_asset import (
+    AssetTransferRequest,
+    BusinessAsset,
+    BusinessAssetCreate,
+    BusinessAssetUpdate,
+)
 from app.services.asset_service import get_asset_service
 
 
@@ -40,17 +45,20 @@ async def list_assets(year: int = Query(default_factory=_default_year, ge=2000, 
 
 @router.post("", response_model=BusinessAsset)
 async def create_asset(req: BusinessAssetCreateRequest, year: int = Query(default_factory=_default_year, ge=2000, le=2100)):
-    payload = BusinessAssetCreate(
-        name=req.name,
-        asset_type=req.asset_type,
-        cost=req.cost,
-        business_use_pct=req.business_use_pct,
-        placed_in_service=req.placed_in_service,
-        method=req.method,
-        evidence_url=req.evidence_url,
-        notes=req.notes,
-    )
+    payload = BusinessAssetCreate(**req.model_dump(exclude={"actor"}))
     return await get_asset_service().create_asset(payload, year=year, created_by=req.actor)
+
+
+@router.post("/transfer", response_model=list[BusinessAsset])
+async def transfer_assets(req: AssetTransferRequest):
+    """Register personal property entering the LLC as a capital contribution.
+
+    Idempotent: re-posting the same items (same name + placed-in-service date)
+    neither duplicates register rows nor re-posts the owner-equity journal entry.
+    """
+    return await get_asset_service().record_contribution_batch(
+        req.assets, memo_url=req.memo_url, actor=req.actor
+    )
 
 
 @router.patch("/{asset_id}", response_model=BusinessAsset)

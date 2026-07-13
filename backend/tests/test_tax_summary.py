@@ -28,11 +28,16 @@ class _FakeBookkeeper:
 
 
 class _FakeFacts:
-    def __init__(self, facts: dict[str, str]):
+    def __init__(self, facts: dict[str, str], home_office: dict | None = None):
         self._facts = facts
+        self._home_office = home_office or {
+            "actual_estimate_annual": 1200.0,
+            "simplified_estimate": 1500.0,
+            "missing_fields": [],
+        }
 
     async def home_office_summary(self):
-        return {"actual_estimate_annual": 1200.0, "simplified_estimate": 1500.0, "missing_fields": []}
+        return self._home_office
 
     async def deductions_summary(self):
         return {
@@ -55,9 +60,9 @@ class _FakeAssets:
 _EXPECTED_TOTAL = 500.0 + 1200.0 + 600.0 + 870.0 + 1600.0
 
 
-def _patch(monkeypatch, facts: dict[str, str]):
+def _patch(monkeypatch, facts: dict[str, str], home_office: dict | None = None):
     monkeypatch.setattr(ts, "get_bookkeeper_service", lambda: _FakeBookkeeper())
-    monkeypatch.setattr(ts, "get_company_facts_service", lambda: _FakeFacts(facts))
+    monkeypatch.setattr(ts, "get_company_facts_service", lambda: _FakeFacts(facts, home_office))
     monkeypatch.setattr(ts, "get_asset_service", lambda: _FakeAssets())
 
 
@@ -95,6 +100,43 @@ async def test_defaults_when_no_tax_facts(monkeypatch):
 
     assert out["marginal_federal_pct"] == ts.DEFAULT_MARGINAL_FEDERAL_PCT  # 22
     assert out["include_se"] is True  # SE defaults on
+
+
+async def test_internet_standalone_under_simplified(monkeypatch):
+    _patch(monkeypatch, {}, home_office={
+        "actual_estimate_annual": None,  # forces simplified
+        "simplified_estimate": 1000.0,
+        "missing_fields": [],
+        "inputs": {"internet_monthly": "80", "internet_business_pct": "50"},
+    })
+    out = await ts.TaxSummaryService().summary(year=2026)
+
+    internet = next((li for li in out["line_items"] if li["key"] == "internet"), None)
+    assert internet is not None
+    assert internet["amount"] == round(80 * 12 * 0.5, 2)  # 480.0
+    assert out["total_deductible"] == round(sum(li["amount"] for li in out["line_items"]), 2)
+
+
+async def test_internet_absent_under_actual_method(monkeypatch):
+    _patch(monkeypatch, {}, home_office={
+        "actual_estimate_annual": 2000.0,  # actual wins — internet already inside
+        "simplified_estimate": 1500.0,
+        "missing_fields": [],
+        "inputs": {"internet_monthly": "80", "internet_business_pct": "50"},
+    })
+    out = await ts.TaxSummaryService().summary(year=2026)
+    assert not any(li["key"] == "internet" for li in out["line_items"])
+
+
+async def test_internet_skipped_when_inputs_missing(monkeypatch):
+    _patch(monkeypatch, {}, home_office={
+        "actual_estimate_annual": None,
+        "simplified_estimate": 1000.0,
+        "missing_fields": ["Monthly internet"],
+        "inputs": {},
+    })
+    out = await ts.TaxSummaryService().summary(year=2026)
+    assert not any(li["key"] == "internet" for li in out["line_items"])
 
 
 def test_to_float_and_bool_helpers():
