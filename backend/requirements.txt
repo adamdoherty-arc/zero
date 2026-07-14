@@ -15,7 +15,7 @@ aiofiles>=23.2.0
 # host_agent/superhuman.py driver.
 
 # CORS support
-python-multipart>=0.0.18
+python-multipart>=0.0.32
 
 # HTTP Client (Synchronous) for scripts
 requests>=2.31.0
