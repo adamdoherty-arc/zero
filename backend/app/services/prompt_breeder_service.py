@@ -103,6 +103,13 @@ class PromptBreederService:
                 .where(
                     PromptVariantModel.task_type == task_type,
                     PromptVariantModel.is_active.is_(True),
+                    # Only breed from PROVEN variants (docstring: "min 20 runs each").
+                    # Without this, a freshly bred child (avg_score=50.0 default) that
+                    # gets one lucky high grade on its first use outranks a mature
+                    # champion (total_uses=500) and becomes a breeding parent — a
+                    # single-sample fluke drives the next generation. Matches the
+                    # symmetric filter on `bottom_res` below.
+                    PromptVariantModel.total_uses >= MIN_RUNS_TO_RETIRE,
                 )
                 .order_by(PromptVariantModel.avg_score.desc())
                 .limit(TOP_K_TO_BREED)

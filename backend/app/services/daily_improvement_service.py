@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import ast
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -594,14 +595,18 @@ Please:
         cleaned = []
         for line in lines:
             # Check for "123: " prefix pattern
-            import re
             match = re.match(r'^\d+:\s?', line)
             if match:
                 cleaned.append(line[match.end():])
             else:
                 cleaned.append(line)
 
-        if not cleaned:
+        # Reject empty or whitespace-only extractions. Returning [''] / [' ']
+        # here would let _execute_auto_fix splice near-empty content into a
+        # source file (ast.parse('') succeeds, so the syntax gate would not
+        # catch it), silently blanking code. A non-parseable extraction must
+        # fail closed to human review.
+        if not cleaned or not any(line.strip() for line in cleaned):
             return None
 
         return cleaned
@@ -722,10 +727,28 @@ Please:
             svc = EnhancementService()
             signals = svc._extract_signals_from_file(source_file, content, project_name=item.get("project", ""))
 
-            # Check if any signal matches the original signal ID
+            # Check whether the flagged issue is still present.
+            #
+            # signal.id embeds the LINE NUMBER (enhancement_service.py:275 —
+            # md5(f"{file}:{line}:{message[:50]}")). Matching on the stale stored
+            # signal_id alone is a FAILURE-AS-SUCCESS trap: if a "fix" edits lines
+            # around a still-present issue, the issue shifts to a new line, its id
+            # changes, the id never matches, and this falls through to return True
+            # ("Signal resolved") even though the issue is still literally in the
+            # file — inflating the self-improvement success metrics. So also match
+            # on the message TEXT, which is stable across line shifts.
+            original_signal_id = item.get("signal_id")
+            original_message = (item.get("title") or "").strip()
             for signal in signals:
-                if signal.id == item.get("signal_id"):
-                    return False  # Signal still present
+                if signal.id == original_signal_id:
+                    return False  # still present (unshifted)
+                sig_msg = (signal.message or "").strip()
+                if original_message and sig_msg and (
+                    sig_msg == original_message
+                    or sig_msg.startswith(original_message[:80])
+                    or original_message.startswith(sig_msg[:80])
+                ):
+                    return False  # still present (shifted, but same message text)
 
             return True  # Signal gone
 

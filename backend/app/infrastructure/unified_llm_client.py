@@ -14,6 +14,7 @@ delegates here transparently.
 """
 
 import asyncio
+import contextvars
 import json
 import os
 import re
@@ -27,6 +28,26 @@ from app.infrastructure.llm_router import get_llm_router
 from app.models.llm import parse_provider_model
 
 logger = structlog.get_logger(__name__)
+
+
+# Records the model that ACTUALLY served the most recent chat() call on THIS
+# async task. Callers that resolve a task-type model up front (e.g. prompt_grader
+# stamping grader_model) otherwise attribute the result to the resolved PRIMARY
+# even when the fallback chain fired and a different model answered. ContextVar =>
+# per-task isolation, so concurrent LLM calls never race on the value.
+_SERVED_MODEL: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar(
+    "zero_llm_served_model", default=None
+)
+
+
+def get_last_served_model() -> Optional[str]:
+    """Model that served the most recent chat() call on this async task (or None).
+
+    Only meaningful immediately after an awaited chat() on the same task. Covers
+    the primary + per-task fallback chain (both dispatch through _call_provider);
+    the emergency freellm final tier bypasses it and leaves the prior value.
+    """
+    return _SERVED_MODEL.get()
 
 # Global semaphore to prevent LLM resource exhaustion.
 # Limits concurrent LLM calls across all providers to prevent:
@@ -704,6 +725,13 @@ class UnifiedLLMClient:
         behaviour change until keys are added.
         """
         provider = self._get_provider(provider_name)
+
+        # Record who is actually serving this attempt so callers can attribute the
+        # result to the true model when the fallback chain fires. On success the
+        # dispatcher returns immediately, so the LAST _call_provider set here (the
+        # one that succeeds) is the served model; failed attempts are overwritten
+        # by the next attempt. See get_last_served_model().
+        _SERVED_MODEL.set(model_name)
 
         # Audit-87: codegraph prompt enrichment. Mutates `messages` in place
         # (prepends a <codegraph_context> block to the system message based on

@@ -15,7 +15,10 @@ from typing import Dict, List, Optional
 import structlog
 
 from app.infrastructure.llm_router import get_llm_router
-from app.infrastructure.unified_llm_client import get_unified_llm_client
+from app.infrastructure.unified_llm_client import (
+    get_last_served_model,
+    get_unified_llm_client,
+)
 from app.models.brain import PromptRun, PromptRunGrade
 
 logger = structlog.get_logger(__name__)
@@ -143,11 +146,18 @@ class PromptGraderService:
         if not parsed:
             return None
 
+        # Attribute the grade to the model that ACTUALLY answered. `grader_model`
+        # above is the pre-call resolved PRIMARY; if the fallback chain fired, the
+        # served model differs, and recording the dead primary would corrupt
+        # judge-calibration-by-model analytics. Fall back to the resolved name only
+        # if the served model is unavailable (e.g. emergency freellm tier).
+        served_model = get_last_served_model() or grader_model
+
         return PromptRunGrade(
             quality_score=parsed["score"],
             quality_flags=parsed["flags"],
             quality_summary=parsed["summary"],
-            grader_model=grader_model,
+            grader_model=served_model,
         )
 
     def _parse_judge_response(self, raw: str) -> Optional[Dict]:
@@ -158,8 +168,15 @@ class PromptGraderService:
         # Strip code fences
         if text.startswith("```"):
             lines = text.split("\n")
-            end = -1 if lines[-1].strip() == "```" else len(lines)
-            text = "\n".join(lines[1:end]).strip()
+            # Only slice when the fence spans multiple lines. For a single-line
+            # fenced response ("```{...}```" with no newline), lines has length 1
+            # and lines[1:end] is an empty slice, which would blank otherwise-valid
+            # JSON and leave the run ungraded forever (grade_pending retries it every
+            # batch). Leave text intact in that case and let the brace-scan fallback
+            # below extract the JSON.
+            if len(lines) > 1:
+                end = -1 if lines[-1].strip() == "```" else len(lines)
+                text = "\n".join(lines[1:end]).strip()
 
         # Try direct parse; if not, find the first {...} block
         try:
