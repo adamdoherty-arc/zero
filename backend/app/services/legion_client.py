@@ -98,10 +98,18 @@ class LegionClient:
         self._session: Optional[aiohttp.ClientSession] = None
 
         from app.infrastructure.circuit_breaker import get_circuit_breaker
+        # LegionAPIError is raised ONLY for client/routing errors (any 4xx and a
+        # non-GET 404 — see _do_request). Those mean the caller sent a bad/stale
+        # request, NOT that Legion is down, so they must not count toward the
+        # breaker: otherwise a burst of stale-ID moves or bad payloads (e.g. an
+        # ID-drift event) trips the shared breaker and blocks healthy reads AND
+        # writes for recovery_timeout. Only LegionConnectionError (5xx exhausted
+        # / connection failure) should open the circuit.
         self._circuit_breaker = get_circuit_breaker(
             "legion",
             failure_threshold=5,
             recovery_timeout=30.0,
+            ignore_exceptions=(LegionAPIError,),
         )
 
     async def _get_session(self) -> aiohttp.ClientSession:

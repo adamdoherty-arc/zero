@@ -61,6 +61,11 @@ class CircuitBreaker:
         recovery_timeout: Seconds to wait before transitioning OPEN -> HALF_OPEN.
         half_open_max_calls: Max probe calls allowed in HALF_OPEN state.
         fallback: Optional callable returning a default value when circuit is open.
+        ignore_exceptions: Exception types that represent CLIENT-side errors
+            (e.g. a 4xx / stale-ID 404 from the caller's own bad request) rather
+            than downstream unhealth. These re-raise WITHOUT counting toward the
+            failure threshold, so one buggy caller can't trip the shared breaker
+            and DoS every other call. Default () preserves prior behaviour.
     """
 
     def __init__(
@@ -70,12 +75,14 @@ class CircuitBreaker:
         recovery_timeout: float = 30.0,
         half_open_max_calls: int = 2,
         fallback: Optional[Callable[[], Any]] = None,
+        ignore_exceptions: tuple = (),
     ):
         self.name = name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
         self.fallback = fallback
+        self.ignore_exceptions = ignore_exceptions
 
         self._state = CircuitState.CLOSED
         self._opened_at: Optional[float] = None
@@ -149,6 +156,15 @@ class CircuitBreaker:
             await self._on_success()
             return result
         except Exception as exc:
+            # Client-side errors (a 4xx / stale-ID 404 caused by the caller's
+            # own bad request) are NOT a signal that the downstream service is
+            # unhealthy. Counting them toward the failure threshold lets one
+            # buggy caller trip the shared breaker and DoS every OTHER call
+            # (reads included) for recovery_timeout seconds. Re-raise them
+            # without recording a failure; only genuine service failures
+            # (5xx exhausted, timeouts, connection errors) open the circuit.
+            if self.ignore_exceptions and isinstance(exc, self.ignore_exceptions):
+                raise
             await self._on_failure()
             raise
 
@@ -210,6 +226,7 @@ def get_circuit_breaker(
     failure_threshold: int = 5,
     recovery_timeout: float = 30.0,
     fallback: Optional[Callable[[], Any]] = None,
+    ignore_exceptions: tuple = (),
 ) -> CircuitBreaker:
     """Get or create a named circuit breaker (singleton per name)."""
     if name not in _registry:
@@ -218,7 +235,14 @@ def get_circuit_breaker(
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
             fallback=fallback,
+            ignore_exceptions=ignore_exceptions,
         )
+    elif ignore_exceptions:
+        # The breaker is a singleton per name, so its config is fixed by
+        # whichever call site created it first. If a later caller supplies an
+        # exempt set (e.g. legion_client marking LegionAPIError), keep it
+        # current so singleton-creation ordering can't silently drop it.
+        _registry[name].ignore_exceptions = ignore_exceptions
     return _registry[name]
 
 
