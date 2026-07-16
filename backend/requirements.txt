@@ -6,7 +6,7 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 
 # Async file operations
-aiofiles>=23.2.0
+aiofiles>=25.1.0
 
 # NOTE: F-19 Superhuman virtual attendee (Playwright + pyvirtualcam) runs
 # on the Windows host_agent process (NOT here in the Linux container)
