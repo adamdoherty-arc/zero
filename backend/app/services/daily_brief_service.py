@@ -416,10 +416,11 @@ class DailyBriefService:
         try:
             from app.services.reflection_service import get_reflection_service
             svc = get_reflection_service()
-            try:
-                last = await svc.latest_summary()  # type: ignore[attr-defined]
-            except AttributeError:
-                last = None
+            # Fix-147 (F1): latest_summary() now exists on ReflectionService; the
+            # old `# type: ignore` + `except AttributeError` shim silently forced
+            # this section to the "no summary yet" placeholder forever. Any real
+            # retrieval failure is caught by the outer try -> BriefSection(error).
+            last = await svc.latest_summary()
             if not last:
                 return BriefSection(
                     title="Yesterday",

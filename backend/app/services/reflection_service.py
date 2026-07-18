@@ -6,6 +6,7 @@ Used by content creation, research, and experiment systems.
 """
 
 from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 
 import structlog
@@ -310,6 +311,66 @@ class ReflectionService:
         except Exception as e:
             logger.error("decision_reflection_failed", error=str(e))
             return []
+
+    async def latest_summary(
+        self,
+        domain: Optional[str] = None,
+        within_days: int = 8,
+    ) -> Optional[Dict[str, Any]]:
+        """Most-recent persisted reflection learnings, for the Daily Brief's
+        'Yesterday' section.
+
+        Fix-147 (F1): the brief's ``_reflection_section`` has always called
+        ``latest_summary()`` behind a ``# type: ignore[attr-defined]`` +
+        ``except AttributeError`` shim — the method never existed, so the section
+        showed "No reflection summary yet" on every brief, forever, regardless of
+        how many reflections accumulated. ``run_reflection`` stores each
+        meta-learning as an episodic memory with ``source_type='reflection'``;
+        surface the newest few. Returns None (brief shows its neutral placeholder)
+        when none exist yet or on any retrieval error — the brief must never
+        crash on this section.
+        """
+        try:
+            from app.services.episodic_memory_service import (
+                get_episodic_memory_service,
+            )
+
+            svc = get_episodic_memory_service()
+            # namespace=None spans all reflection domains; over-fetch then filter
+            # to source_type='reflection' (get_recent has no source_type filter).
+            recent = await svc.get_recent(namespace=domain, limit=60)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
+
+            wins: List[str] = []
+            for mem in recent:
+                if getattr(mem, "source_type", None) != "reflection":
+                    continue
+                created = getattr(mem, "created_at", None)
+                if created is not None:
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    if created < cutoff:
+                        continue
+                content = (getattr(mem, "content", "") or "").strip()
+                if content:
+                    wins.append(content)
+                if len(wins) >= 5:
+                    break
+
+            if not wins:
+                return None
+
+            plural = "s" if len(wins) != 1 else ""
+            return {
+                "summary": (
+                    f"{len(wins)} reflection insight{plural} from the last "
+                    f"{within_days} days:"
+                ),
+                "wins": wins,
+            }
+        except Exception as e:  # noqa: BLE001 — brief section must degrade, not crash
+            logger.warning("reflection_latest_summary_failed", error=str(e))
+            return None
 
 
 @lru_cache()

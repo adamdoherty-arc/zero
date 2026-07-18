@@ -491,8 +491,15 @@ Rules:
                 "reason": "non-Python auto-fix refused (syntax cannot be validated); routed to human review",
             }
 
-        # Create backup
-        backup_path = file_path.with_suffix(file_path.suffix + '.bak')
+        # Create backup. Fix-147 (F2): the filename must be unique per applied
+        # fix. _select_diverse_improvements allows up to 2 signals from the same
+        # file in one cycle; a deterministic `<file>.bak` meant the 2nd fix
+        # overwrote the 1st's backup with the already-patched content, so the
+        # backup_path recorded in fixes.json for fix #1 no longer held the true
+        # pre-fix original — corrupting the rollback/audit trail. Tag with the
+        # signal id (fallback: line number) so same-cycle backups never collide.
+        _bk_tag = str(item.get("signal_id") or f"L{line_number}")[:16]
+        backup_path = file_path.with_name(f"{file_path.name}.{_bk_tag}.bak")
         try:
             await asyncio.to_thread(backup_path.write_text, content, encoding='utf-8')
         except Exception:
