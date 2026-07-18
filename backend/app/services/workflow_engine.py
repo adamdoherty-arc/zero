@@ -202,6 +202,14 @@ def evaluate_condition(condition_str: str, context: Dict[str, Any]) -> bool:
     if not condition_str:
         return True
     resolved = resolve_template(condition_str, context)
+    if "{{" in resolved:
+        # An unresolved template ("{{ steps.x.output.y }}" left verbatim,
+        # e.g. a bad path or missing context key) must NOT fall through to
+        # bool(resolved) — a non-empty literal string is truthy, so a gated
+        # step would incorrectly RUN on a condition that never actually
+        # evaluated. Fail closed instead.
+        logger.warning("workflow_condition_unresolved", condition=condition_str)
+        return False
     if resolved in ("", "None", "0", "false", "False"):
         return False
     # Safe comparison parsing - check operators in order (longest first)
@@ -657,6 +665,20 @@ class DAGExecutor:
                             state["error"] = f"Step '{step_id}' failed: {result}"
                             self.state_manager.complete_execution(execution_id, state)
                             return state
+                    elif isinstance(result, dict) and result.get("status") == "failed":
+                        # _execute_step catches handler/timeout failures itself
+                        # and returns a {"status": "failed", ...} dict instead
+                        # of raising, so the Exception branch above never fires
+                        # for them. Without this branch on_error is never
+                        # honored and state["status"] = "completed" below runs
+                        # even when every step failed.
+                        state["steps"][step_id] = result
+                        step_def = workflow.get_step(step_id)
+                        if step_def and step_def.get("on_error") != "continue":
+                            state["status"] = "failed"
+                            state["error"] = f"Step '{step_id}' failed: {result.get('error')}"
+                            self.state_manager.complete_execution(execution_id, state)
+                            return state
 
                 # Checkpoint after each wave
                 self.state_manager.save_state(execution_id, state)
@@ -776,7 +798,34 @@ class DAGExecutor:
                 if step_def:
                     tasks.append(self._execute_step(step_def, context, state))
 
-            await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Mirror execute_workflow's result processing — previously this
+            # loop discarded `results` entirely, so a resumed execution
+            # always reported "completed" even if every remaining step
+            # failed and on_error wasn't "continue".
+            for step_id, result in zip(remaining, results):
+                if isinstance(result, Exception):
+                    state["steps"][step_id] = {
+                        "output": None,
+                        "status": "failed",
+                        "error": str(result),
+                    }
+                    step_def = workflow.get_step(step_id)
+                    if step_def and step_def.get("on_error") != "continue":
+                        state["status"] = "failed"
+                        state["error"] = f"Step '{step_id}' failed: {result}"
+                        self.state_manager.complete_execution(execution_id, state)
+                        return state
+                elif isinstance(result, dict) and result.get("status") == "failed":
+                    state["steps"][step_id] = result
+                    step_def = workflow.get_step(step_id)
+                    if step_def and step_def.get("on_error") != "continue":
+                        state["status"] = "failed"
+                        state["error"] = f"Step '{step_id}' failed: {result.get('error')}"
+                        self.state_manager.complete_execution(execution_id, state)
+                        return state
+
             self.state_manager.save_state(execution_id, state)
 
         state["status"] = "completed"

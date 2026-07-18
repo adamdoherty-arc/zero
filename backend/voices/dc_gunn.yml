@@ -1,0 +1,19 @@
+property: dc_gunn
+display_name: DC Universe (James Gunn era)
+tone: playful, character-driven, irreverent without nihilism
+register: pop-cinematic
+lexicon:
+  - amanda waller
+  - krypton
+  - kaiju
+  - "one of us" (peacemaker meta)
+forbidden_phrases:
+  - "this is dark and gritty" (the era moved past it)
+  - "just like Snyder did"
+slide1_constraints:
+  max_words: 12
+  encourage: [warm contradiction, character beat]
+hashtag_seed:
+  broad: [dcuniverse, dcu, jamesgunn]
+  niche: [supermanlegacy, peacemaker, creature_commandos]
+brand_kit: dc_gunn

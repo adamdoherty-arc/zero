@@ -13,7 +13,7 @@ from functools import lru_cache
 import structlog
 
 from app.infrastructure.config import get_settings
-from app.infrastructure.circuit_breaker import get_circuit_breaker
+from app.infrastructure.circuit_breaker import get_circuit_breaker, CircuitBreakerError
 
 logger = structlog.get_logger(__name__)
 
@@ -48,31 +48,37 @@ class AIContentToolsClient:
     async def _request(
         self, method: str, endpoint: str, **kwargs
     ) -> Optional[Dict[str, Any]]:
-        """Make an HTTP request with circuit breaker and retry."""
+        """Make an HTTP request with circuit breaker and retry.
+
+        The circuit breaker only exposes `.call(fn)` (no allow_request /
+        record_success / record_failure). Each of the 3 retry attempts is a
+        separate `breaker.call()` invocation (retry loop lives outside the
+        breaker call) so per-attempt outcomes are individually recorded.
+        """
         url = f"{self.base_url}{endpoint}"
 
-        if not self._breaker.allow_request():
-            logger.warning("act_circuit_open", endpoint=endpoint)
-            return None
+        async def _single_attempt():
+            session = await self._get_session()
+            async with session.request(method, url, **kwargs) as resp:
+                if resp.status == 404:
+                    return None
+                if resp.status >= 400:
+                    text = await resp.text()
+                    logger.warning("act_request_error", status=resp.status, body=text[:200])
+                    if resp.status < 500:
+                        return None
+                    raise aiohttp.ClientResponseError(
+                        resp.request_info, resp.history, status=resp.status
+                    )
+                return await resp.json()
 
         for attempt in range(3):
             try:
-                session = await self._get_session()
-                async with session.request(method, url, **kwargs) as resp:
-                    if resp.status == 404:
-                        return None
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        logger.warning("act_request_error", status=resp.status, body=text[:200])
-                        if resp.status < 500:
-                            return None
-                        raise aiohttp.ClientResponseError(
-                            resp.request_info, resp.history, status=resp.status
-                        )
-                    self._breaker.record_success()
-                    return await resp.json()
+                return await self._breaker.call(_single_attempt)
+            except CircuitBreakerError:
+                logger.warning("act_circuit_open", endpoint=endpoint)
+                return None
             except (aiohttp.ClientError, TimeoutError) as e:
-                self._breaker.record_failure()
                 if attempt < 2:
                     logger.debug("act_retry", attempt=attempt + 1, error=str(e))
                     continue

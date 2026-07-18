@@ -338,6 +338,13 @@ class GmailOAuthService:
                 existing.scopes = list(getattr(creds, "scopes", []) or GOOGLE_SCOPES)
                 existing.last_refreshed_at = datetime.now(timezone.utc)
                 self._refresh_failed.pop(existing.id, None)
+                # The reauth flow just overwrote this account's credentials —
+                # evict the cached googleapiclient Resource so the next
+                # Gmail call rebuilds it with the fresh creds instead of
+                # reusing the pre-reauth client (mirrors calendar_service.py
+                # disconnect()'s _services.clear()).
+                from app.services.gmail_service import get_gmail_service
+                get_gmail_service().invalidate_cached_service(existing.id)
                 return existing.id
 
             # Promote to default if this is the only account.

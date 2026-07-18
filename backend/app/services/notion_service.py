@@ -14,6 +14,19 @@ from app.infrastructure.circuit_breaker import get_circuit_breaker
 logger = structlog.get_logger()
 
 
+class NotionClientError(Exception):
+    """Raised for Notion 4xx responses that aren't rate-limit related.
+
+    A non-retryable APIResponseError (e.g. a stale page_id 404, a malformed
+    filter 400) means the CALLER sent a bad request, not that Notion is
+    unhealthy. Registered as an ignore_exceptions type on the "notion"
+    circuit breaker so one bad caller can't trip the shared breaker for
+    every other Notion call. 429 (rate limit) and 5xx still count — those
+    genuinely indicate the caller should back off / Notion is unhealthy.
+    """
+    pass
+
+
 class NotionService:
     """Service for Notion API operations."""
 
@@ -25,6 +38,7 @@ class NotionService:
             "notion",
             failure_threshold=3,
             recovery_timeout=120.0,
+            ignore_exceptions=(NotionClientError,),
         )
 
     def _get_client(self):
@@ -39,6 +53,26 @@ class NotionService:
                 raise
         return self._client
 
+    async def _breaker_call(self, fn):
+        """Invoke `fn` through the Notion circuit breaker, converting a
+        non-retryable APIResponseError (4xx except 429) into NotionClientError
+        *before* it reaches the breaker, so the breaker's ignore_exceptions
+        can exempt it from counting toward the shared failure threshold.
+        429 and 5xx are left as-is and still count.
+        """
+        from notion_client.errors import APIResponseError
+
+        async def _wrapped():
+            try:
+                return await fn()
+            except APIResponseError as e:
+                status = getattr(e, "status", None)
+                if status is not None and status < 500 and status != 429:
+                    raise NotionClientError(str(e)) from e
+                raise
+
+        return await self._breaker.call(_wrapped)
+
     async def get_database(self, database_id: Optional[str] = None) -> Dict[str, Any]:
         """Fetch a Notion database by ID."""
         client = self._get_client()
@@ -49,7 +83,7 @@ class NotionService:
         async def _retrieve():
             return await client.databases.retrieve(database_id=db_id)
 
-        result = await self._breaker.call(_retrieve)
+        result = await self._breaker_call(_retrieve)
         logger.info("notion_database_retrieved", database_id=db_id)
         return result
 
@@ -74,7 +108,7 @@ class NotionService:
         async def _query():
             return await client.databases.query(**kwargs)
 
-        result = await self._breaker.call(_query)
+        result = await self._breaker_call(_query)
         pages = result.get("results", [])
         logger.info("notion_database_queried", database_id=db_id, results=len(pages))
         return pages
@@ -96,7 +130,7 @@ class NotionService:
         async def _create():
             return await client.pages.create(**kwargs)
 
-        result = await self._breaker.call(_create)
+        result = await self._breaker_call(_create)
         logger.info("notion_page_created", page_id=result["id"])
         return result
 
@@ -109,7 +143,7 @@ class NotionService:
         async def _update():
             return await client.pages.update(page_id=page_id, properties=properties)
 
-        result = await self._breaker.call(_update)
+        result = await self._breaker_call(_update)
         logger.info("notion_page_updated", page_id=page_id)
         return result
 
@@ -120,7 +154,7 @@ class NotionService:
         async def _get():
             return await client.pages.retrieve(page_id=page_id)
 
-        return await self._breaker.call(_get)
+        return await self._breaker_call(_get)
 
     # =========================================================================
     # Domain-Specific Sync Methods
@@ -267,7 +301,7 @@ class NotionService:
         async def _search():
             return await client.search(query=query, page_size=20)
 
-        result = await self._breaker.call(_search)
+        result = await self._breaker_call(_search)
         pages = result.get("results", [])
         return [
             {
@@ -339,7 +373,7 @@ class NotionService:
                 })
             return changed
 
-        return await self._breaker.call(_inner)
+        return await self._breaker_call(_inner)
 
     async def sync_bidirectional(self) -> Dict[str, Any]:
         """
@@ -401,7 +435,7 @@ class NotionService:
                     async def _get_blocks(pid=page["page_id"]):
                         return await client.blocks.children.list(block_id=pid)
 
-                    blocks_result = await self._breaker.call(_get_blocks)
+                    blocks_result = await self._breaker_call(_get_blocks)
                     blocks = blocks_result.get("results", [])
 
                     # Extract text from paragraph blocks

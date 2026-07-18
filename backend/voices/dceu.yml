@@ -1,0 +1,23 @@
+property: dceu
+display_name: DC Extended Universe
+tone: weighty, mythic, occasionally bombastic
+register: cinematic
+lexicon:
+  - kryptonite
+  - amazon
+  - bat-signal
+  - krypton
+  - apokolips
+  - mother box
+  - new gods
+forbidden_phrases:
+  - quirky
+  - just kidding
+  - the snap
+slide1_constraints:
+  max_words: 12
+  encourage: [contradiction hook, numbered receipt]
+hashtag_seed:
+  broad: [dccomics, dceu, batman, superman]
+  niche: [snyderverse, dccinematic]
+brand_kit: dceu

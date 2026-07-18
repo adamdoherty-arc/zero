@@ -1,0 +1,28 @@
+property: mcu
+display_name: Marvel Cinematic Universe
+tone: mainstream-excited, hopeful, family-friendly, Whedon-cadence quips OK
+register: pop-cinematic
+lexicon:
+  - infinity
+  - multiverse
+  - variant
+  - sacred timeline
+  - TVA
+  - snap
+  - blip
+  - vibranium
+  - arc reactor
+  - serum
+forbidden_phrases:
+  - you won't believe...
+  - mind = blown
+  - this changes everything (used >once per carousel)
+  - "trust me" (deflective)
+slide1_constraints:
+  max_words: 12
+  forbid: [profanity, excessive caps]
+  encourage: [contradiction hook, specific number]
+hashtag_seed:
+  broad: [marvel, mcu, marveltrivia]
+  niche: [marvelstudios, mcuphase5, multiversesaga]
+brand_kit: mcu

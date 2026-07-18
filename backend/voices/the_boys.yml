@@ -1,0 +1,23 @@
+property: the_boys
+display_name: The Boys (Prime Video)
+tone: edgy, irreverent, dark-comic, bordering on nihilist
+register: streaming-edgy
+lexicon:
+  - supe
+  - compound v
+  - vought
+  - "Christ on a cracker"
+  - homelaughter
+forbidden_phrases:
+  - hopeful platitudes
+  - "with great power..."
+  - wholesome
+slide1_constraints:
+  max_words: 12
+  allow_mild_profanity_after_slide_1: true
+  forbid_on_slide_1: [f-bomb]
+  encourage: [hostile contradiction, dark fact]
+hashtag_seed:
+  broad: [theboys, theboystv, primevideo]
+  niche: [homelander, soldierboy, thedeep, butcher]
+brand_kit: the_boys

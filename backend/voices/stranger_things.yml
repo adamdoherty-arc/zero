@@ -1,0 +1,23 @@
+property: stranger_things
+display_name: Stranger Things
+tone: 80s-coded warmth, Spielberg/King references, never ironic
+register: nostalgic-genre
+lexicon:
+  - upside down
+  - hawkins
+  - mind flayer
+  - eleven
+  - vecna
+  - hellfire club
+  - DnD
+forbidden_phrases:
+  - "millennials remember"
+  - "that hits different"
+  - "gen z will never know"
+slide1_constraints:
+  max_words: 12
+  encourage: [Spielberg-cadence wonder, period detail]
+hashtag_seed:
+  broad: [strangerthings, netflix]
+  niche: [hawkins, vecna, season5, eddiemunson]
+brand_kit: stranger_things

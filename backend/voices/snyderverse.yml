@@ -1,0 +1,22 @@
+property: snyderverse
+display_name: Snyderverse (Zack Snyder DCEU cut)
+tone: mythic, weighty, biblical/Homeric register
+register: epic-prestige
+lexicon:
+  - covenant
+  - ascension
+  - godhood
+  - apokolips
+  - knightmare
+  - anti-life
+forbidden_phrases:
+  - quirky
+  - "just kidding"
+  - lol
+slide1_constraints:
+  max_words: 12
+  encourage: [biblical cadence, weighty contradiction]
+hashtag_seed:
+  broad: [snyderverse, justiceleague, zacksnyder]
+  niche: [restorethesnyderverse, knightmare, dcuextended]
+brand_kit: snyderverse

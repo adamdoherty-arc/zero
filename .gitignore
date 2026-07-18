@@ -91,8 +91,14 @@ nssm-stderr*.log
 reachy-*.png
 reachy_*.png
 
-# Recorded / cloned voice samples — don't commit user audio
-backend/voices/
+# Recorded / cloned voice samples — don't commit user audio.
+# NOTE: `backend/voices/` (whole-dir exclude) would make the yml negation
+# below impossible (git can't re-include inside an excluded dir), and it
+# silently kept the 7 carousel property voice packs out of git — so the
+# image never had them and voice_loader fell back to neutral for every
+# property after each rebuild (Fix-146 / run ed70fd7f F0).
+backend/voices/*
+!backend/voices/*.yml
 .gstack/
 
 # Runtime data directories — created on demand, never checked in

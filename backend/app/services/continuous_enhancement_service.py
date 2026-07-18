@@ -273,7 +273,7 @@ class ContinuousEnhancementService:
 
     async def _get_pending_signals(self) -> List[Dict[str, Any]]:
         """Get pending signals from PostgreSQL, filtered to target projects."""
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
         from app.infrastructure.database import get_session
         from app.db.models import EnhancementSignalModel
 
@@ -283,6 +283,19 @@ class ContinuousEnhancementService:
             query = (
                 select(EnhancementSignalModel)
                 .where(EnhancementSignalModel.status == "pending")
+                # Filter to target projects BEFORE the limit — otherwise a
+                # burst of signals from a non-target project can fill the
+                # whole `max_improvements_per_cycle * 3` window and starve
+                # zero/legion signals out of this cycle entirely. NULL
+                # project_name rows (older rows predating the column) MUST
+                # stay in the window — SQL IN() drops NULLs — so the Python
+                # source_file path-parse below can attribute or admit them.
+                .where(
+                    or_(
+                        EnhancementSignalModel.project_name.in_(target),
+                        EnhancementSignalModel.project_name.is_(None),
+                    )
+                )
                 .order_by(EnhancementSignalModel.detected_at.desc())
                 .limit(self._config["max_improvements_per_cycle"] * 3)
             )
@@ -529,6 +542,8 @@ Rules:
                 signal.status = "converted"
                 signal.converted_to_task = task_id
                 signal.converted_at = datetime.utcnow()
+            else:
+                logger.warning("enhancement_signal_convert_miss", signal_id=signal_id)
 
     # ========================================
     # PHASE 4: SPRINT BATCHING

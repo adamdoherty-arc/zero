@@ -16,7 +16,7 @@ from functools import lru_cache
 import structlog
 
 from app.infrastructure.config import get_settings
-from app.infrastructure.circuit_breaker import get_circuit_breaker
+from app.infrastructure.circuit_breaker import get_circuit_breaker, CircuitBreakerError
 
 logger = structlog.get_logger(__name__)
 
@@ -238,49 +238,60 @@ class TikTokApiClient:
     async def _api_request(
         self, method: str, endpoint: str, **kwargs
     ) -> Optional[Dict[str, Any]]:
-        """Make an authenticated API request with circuit breaker."""
+        """Make an authenticated API request with circuit breaker.
+
+        The circuit breaker only exposes `.call(fn)` (no allow_request /
+        record_success / record_failure) — see infrastructure/circuit_breaker.py.
+        Each of the 3 retry attempts is a separate `breaker.call()` invocation
+        (retry loop lives outside the breaker call) so per-attempt outcomes are
+        individually recorded, mirroring the old per-attempt record_* calls.
+        """
         if not await self._ensure_valid_token():
             logger.warning("tiktok_not_authorized")
-            return None
-
-        if not self._breaker.allow_request():
-            logger.warning("tiktok_circuit_open", endpoint=endpoint)
             return None
 
         url = f"{TIKTOK_API_BASE}{endpoint}"
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self._access_token}"
 
+        reauth_retry = object()
+
+        async def _single_attempt():
+            session = await self._get_session()
+            async with session.request(method, url, headers=headers, **kwargs) as resp:
+                if resp.status == 401:
+                    if await self.refresh_access_token():
+                        headers["Authorization"] = f"Bearer {self._access_token}"
+                        return reauth_retry
+                    return None
+
+                if resp.status >= 400:
+                    text = await resp.text()
+                    logger.warning("tiktok_api_error", status=resp.status, body=text[:300])
+                    if resp.status < 500:
+                        return {"error": text, "status": resp.status}
+                    raise aiohttp.ClientResponseError(
+                        resp.request_info, resp.history, status=resp.status
+                    )
+
+                return await resp.json()
+
         for attempt in range(3):
             try:
-                session = await self._get_session()
-                async with session.request(method, url, headers=headers, **kwargs) as resp:
-                    if resp.status == 401:
-                        if await self.refresh_access_token():
-                            headers["Authorization"] = f"Bearer {self._access_token}"
-                            continue
-                        return None
-
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        logger.warning("tiktok_api_error", status=resp.status, body=text[:300])
-                        if resp.status < 500:
-                            self._breaker.record_success()
-                            return {"error": text, "status": resp.status}
-                        raise aiohttp.ClientResponseError(
-                            resp.request_info, resp.history, status=resp.status
-                        )
-
-                    self._breaker.record_success()
-                    return await resp.json()
-
+                result = await self._breaker.call(_single_attempt)
+            except CircuitBreakerError:
+                logger.warning("tiktok_circuit_open", endpoint=endpoint)
+                return None
             except (aiohttp.ClientError, TimeoutError) as e:
-                self._breaker.record_failure()
                 if attempt < 2:
                     logger.debug("tiktok_retry", attempt=attempt + 1, error=str(e))
                     continue
                 logger.error("tiktok_request_failed", endpoint=endpoint, error=str(e))
                 return None
+
+            if result is reauth_retry:
+                continue
+            return result
 
         return None
 

@@ -1,0 +1,23 @@
+property: got_hotd
+display_name: Game of Thrones / House of the Dragon
+tone: prestige, archaisms, House sigil literacy
+register: high-fantasy-prestige
+lexicon:
+  - smallfolk
+  - high septon
+  - king's landing
+  - the seven
+  - "the realm"
+  - dragonfire
+  - sept
+forbidden_phrases:
+  - "as you guys know"
+  - "totally"
+  - modern slang
+slide1_constraints:
+  max_words: 12
+  encourage: [House politics hook, lineage contradiction]
+hashtag_seed:
+  broad: [gameofthrones, hotd, houseofthedragon]
+  niche: [targaryen, asoiaf, dragonriders]
+brand_kit: got_hotd

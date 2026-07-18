@@ -68,6 +68,12 @@ RUN mkdir -p /app/voices && \
     python -m piper.download_voices en_US-lessac-medium --download-dir /app/voices 2>&1 \
     || (echo "piper voice download failed; edge-tts will be the fallback" && true)
 
+# Carousel property voice packs (7 ymls, tracked in git via the
+# .gitignore negation). voice_loader resolves to /app/voices in-container;
+# without this COPY every rebuild silently reverted all 7 properties to
+# the neutral fallback (previously only present via a manual docker cp).
+COPY voices/ /app/voices/
+
 # Copy app code
 COPY app/ ./app/
 COPY run.py .

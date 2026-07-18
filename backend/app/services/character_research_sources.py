@@ -13,6 +13,7 @@ Gathers deep character research from 8 sources:
 """
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import List, Optional, Dict, Any
@@ -285,10 +286,21 @@ class CharacterResearchSources:
         self._searxng_url = settings.searxng_url
         self._timeout = aiohttp.ClientTimeout(total=25)
         self._firecrawl_available = None  # Lazy-checked
+        self._firecrawl_checked_at: Optional[float] = None
+
+    # Firecrawl availability is re-probed after this many seconds instead of
+    # latching forever — this service is a process-lifetime singleton
+    # (@lru_cache below), so a container restart of Firecrawl would
+    # otherwise never be picked back up without restarting zero-api too.
+    _FIRECRAWL_CHECK_TTL_S = 600
 
     async def _check_firecrawl(self) -> bool:
-        """Check if Firecrawl is reachable (cached per instance)."""
-        if self._firecrawl_available is not None:
+        """Check if Firecrawl is reachable (cached per instance, TTL'd)."""
+        if (
+            self._firecrawl_available is not None
+            and self._firecrawl_checked_at is not None
+            and (time.monotonic() - self._firecrawl_checked_at) < self._FIRECRAWL_CHECK_TTL_S
+        ):
             return self._firecrawl_available
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
@@ -296,6 +308,7 @@ class CharacterResearchSources:
                     self._firecrawl_available = resp.status == 200
         except (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError):
             self._firecrawl_available = False
+        self._firecrawl_checked_at = time.monotonic()
         logger.info("firecrawl_check", available=self._firecrawl_available, url=self._firecrawl_url)
         return self._firecrawl_available
 
@@ -309,6 +322,10 @@ class CharacterResearchSources:
         # Check Firecrawl availability once upfront
         await self._check_firecrawl()
 
+        source_names = [
+            "fandom_wiki", "reddit", "tvtropes", "imdb_trivia",
+            "quotes", "entertainment_articles", "wikipedia_deep", "power_databases",
+        ]
         tasks = [
             self._safe_research(self.research_fandom_wiki, name, universe, franchise),
             self._safe_research(self.research_reddit, name, universe, franchise),
@@ -320,10 +337,19 @@ class CharacterResearchSources:
             self._safe_research(self.research_power_databases, name, universe),
         ]
 
-        results = await asyncio.gather(*tasks)
+        # return_exceptions=True: _safe_research already swallows its own
+        # source's errors, but a genuinely uncaught exception (e.g. a bug
+        # class not in its except tuple) must not take down every OTHER
+        # source's results via a bare asyncio.gather() re-raise.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         fragments = []
         source_counts = {}
-        for result in results:
+        for src_name, result in zip(source_names, results):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "research_source_gather_exception", source=src_name, error=str(result)
+                )
+                continue
             fragments.extend(result)
             for f in result:
                 source_counts[f.source] = source_counts.get(f.source, 0) + 1
@@ -344,7 +370,7 @@ class CharacterResearchSources:
         except asyncio.TimeoutError:
             logger.warning("research_source_timeout", source=func.__name__)
             return []
-        except (aiohttp.ClientError, ValueError, KeyError, ConnectionError, OSError) as e:
+        except (aiohttp.ClientError, ValueError, KeyError, ConnectionError, OSError, TypeError) as e:
             logger.warning("research_source_error", source=func.__name__, error=str(e))
             return []
 
@@ -544,7 +570,7 @@ class CharacterResearchSources:
 
                         content = f"**{title}**\n\n{selftext[:2000]}" if selftext else title
                         ftype = "fan_theory" if sub == "FanTheories" else "trivia"
-                        if "detail" in sub.lower():
+                        if "detail" in (title + " " + selftext).lower():
                             ftype = "hidden_detail"
 
                         fragments.append(ResearchFragment(
@@ -672,7 +698,7 @@ class CharacterResearchSources:
                     for r in data.get("results", [])[:5]:
                         title = r.get("title", "")
                         snippet = r.get("content", "")
-                        url = r.get("url", "")
+                        url = r.get("url") or ""
                         if not snippet or "tvtropes.org" not in url:
                             continue
                         name_parts = name.lower().split()
@@ -726,7 +752,7 @@ class CharacterResearchSources:
                             data = await resp.json()
 
                         for r in data.get("results", []):
-                            url = r.get("url", "")
+                            url = r.get("url") or ""
                             if "imdb.com" in url and imdb_url is None:
                                 if "trivia" in url:
                                     imdb_url = url
@@ -736,7 +762,7 @@ class CharacterResearchSources:
                         for r in data.get("results", [])[:5]:
                             snippet = r.get("content", "")
                             title = r.get("title", "")
-                            rurl = r.get("url", "")
+                            rurl = r.get("url") or ""
                             if snippet and name.lower() in (title + " " + snippet).lower():
                                 is_imdb = "imdb.com" in rurl
                                 fragments.append(ResearchFragment(
@@ -810,7 +836,7 @@ class CharacterResearchSources:
                     for r in data.get("results", [])[:5]:
                         snippet = r.get("content", "")
                         title = r.get("title", "")
-                        url = r.get("url", "")
+                        url = r.get("url") or ""
                         if snippet and name.lower() in (snippet + title).lower():
                             is_wikiquote = "wikiquote.org" in url
                             fragments.append(ResearchFragment(
@@ -894,7 +920,7 @@ class CharacterResearchSources:
                     for r in data.get("results", [])[:8]:
                         snippet = r.get("content", "")
                         title = r.get("title", "")
-                        url = r.get("url", "")
+                        url = r.get("url") or ""
                         if not snippet:
                             continue
 
@@ -1121,7 +1147,7 @@ class CharacterResearchSources:
                     for r in data.get("results", [])[:5]:
                         snippet = r.get("content", "")
                         title = r.get("title", "")
-                        url = r.get("url", "")
+                        url = r.get("url") or ""
                         if not snippet:
                             continue
 

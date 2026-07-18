@@ -42,6 +42,23 @@ from app.infrastructure.llm_providers.base import BaseLLMProvider
 logger = structlog.get_logger(__name__)
 
 
+class VLLMClientError(Exception):
+    """Raised for vLLM 4xx responses (bad request, context-length overflow, etc).
+
+    These are CLIENT-side errors — the caller sent a bad request — not a
+    signal that vLLM itself is unhealthy. Registered as an ignore_exceptions
+    type on the "llm_vllm" circuit breaker so one caller's malformed request
+    can't trip the shared breaker for every other vLLM caller. Carries
+    `.response` / `.request` copied from the underlying httpx.HTTPStatusError
+    so any caller that inspects those attributes still works.
+    """
+
+    def __init__(self, message: str, *, response=None, request=None):
+        super().__init__(message)
+        self.response = response
+        self.request = request
+
+
 class VllmProvider(BaseLLMProvider):
     """Local vLLM server (OpenAI-compatible)."""
 
@@ -65,6 +82,7 @@ class VllmProvider(BaseLLMProvider):
             "llm_vllm",
             failure_threshold=5,
             recovery_timeout=60.0,
+            ignore_exceptions=(VLLMClientError,),
         )
 
     def _resolve_model(self, model: Optional[str]) -> str:
@@ -123,7 +141,14 @@ class VllmProvider(BaseLLMProvider):
                 f"{self._base_url}/chat/completions",
                 json=payload,
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code < 500:
+                    raise VLLMClientError(
+                        str(exc), response=exc.response, request=exc.request
+                    ) from exc
+                raise
             data = response.json()
             # Defensive fallback: if a gateway (Bifrost v1.5.0) strips
             # chat_template_kwargs, Qwen3.6 emits the answer into

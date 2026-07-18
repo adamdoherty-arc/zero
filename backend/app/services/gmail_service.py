@@ -27,6 +27,20 @@ from app.db.models import EmailCacheModel, SyncStatusModel
 logger = structlog.get_logger()
 
 
+class GmailStaleIdError(Exception):
+    """Raised when a Gmail API call 404s on a stale/already-processed email_id.
+
+    A burst of these (e.g. the UI double-clicking archive on an email that
+    was already archived, or a sync racing a user action) must not trip the
+    shared "gmail" circuit breaker and block sync/send for every other
+    caller — see infrastructure/circuit_breaker.py's ignore_exceptions.
+    401/403/429/5xx SHOULD still count: those genuinely indicate Gmail is
+    unhealthy or the token needs a refresh (the breaker is reset after
+    reauth — see routers/google_oauth.py:114).
+    """
+    pass
+
+
 class GmailService:
     """Service for Gmail operations."""
 
@@ -41,7 +55,45 @@ class GmailService:
             "gmail",
             failure_threshold=3,
             recovery_timeout=60.0,
+            ignore_exceptions=(GmailStaleIdError,),
         )
+
+    def invalidate_cached_service(self, account_id: Optional[str] = None) -> None:
+        """Evict cached googleapiclient Resource(s) so the next
+        _get_gmail_service() call rebuilds from fresh credentials.
+
+        Call this after an account's credentials are persisted/overwritten
+        (e.g. a reauth callback in gmail_oauth_service.py) — otherwise the
+        pre-reauth client keeps being reused until process restart. `None`
+        clears the entire cache (mirrors calendar_service.py's disconnect()
+        clearing `_services`). A specific `account_id` also drops the
+        "_default" entry since we can't cheaply tell here whether that
+        account is the current default (an extra rebuild is harmless).
+        """
+        if account_id is None:
+            self._services.clear()
+            return
+        self._services.pop(account_id, None)
+        self._services.pop("_default", None)
+
+    async def _breaker_call(self, fn):
+        """Invoke `fn` through the Gmail circuit breaker, converting a
+        stale-ID 404 HttpError into GmailStaleIdError *before* it reaches the
+        breaker, so ignore_exceptions can exempt it from counting toward the
+        shared failure threshold. 401/403/429/5xx are left as-is and still
+        count.
+        """
+        from googleapiclient.errors import HttpError
+
+        async def _wrapped():
+            try:
+                return await fn()
+            except HttpError as e:
+                if getattr(e, "resp", None) and int(e.resp.status) == 404:
+                    raise GmailStaleIdError(str(e)) from e
+                raise
+
+        return await self._breaker.call(_wrapped)
 
     async def is_connected(self) -> bool:
         """True if at least one Google account has valid tokens."""
@@ -333,7 +385,7 @@ Reply with ONLY the category name, nothing else."""
                     maxResults=max_results
                 ).execute()
 
-            results = await self._breaker.call(_list_messages)
+            results = await self._breaker_call(_list_messages)
 
             messages = results.get("messages", [])
             emails = []
@@ -403,18 +455,28 @@ Reply with ONLY the category name, nothing else."""
                     errors.append(f"Error fetching {msg_ref['id']}: {str(e)}")
                     logger.warning("gmail_message_fetch_error", id=msg_ref["id"], error=str(e))
 
-            # Upsert all emails into PostgreSQL with account tag.
+            # Upsert all emails into PostgreSQL with account tag. Each row is
+            # wrapped in its own SAVEPOINT (begin_nested) so one poison row
+            # (e.g. a NUL byte in body_text) rolls back only that row instead
+            # of aborting the whole batch and wedging sync permanently.
             async with get_session() as session:
                 for email in emails:
                     row = self._email_to_row(email)
                     row.account_id = account_id
-                    await session.merge(row)
+                    try:
+                        async with session.begin_nested():
+                            await session.merge(row)
+                    except Exception as e:
+                        logger.warning(
+                            "gmail_sync_row_merge_failed", email_id=email.id, error=str(e)
+                        )
+                        continue
 
             # Get profile for email address
             async def _get_profile():
                 return service.users().getProfile(userId="me").execute()
 
-            profile = await self._breaker.call(_get_profile)
+            profile = await self._breaker_call(_get_profile)
 
             # Update sync status
             unread = len([e for e in emails if e.status == EmailStatus.UNREAD])
@@ -428,11 +490,10 @@ Reply with ONLY the category name, nothing else."""
             )
             await self._save_sync_status(sync_status)
 
-            # Store history_id for incremental sync
-            history_id = results.get("historyId") or (
-                service.users().getProfile(userId="me").execute().get("historyId")
-                if not results.get("historyId") else None
-            )
+            # Store history_id for incremental sync. Reuse the profile we
+            # already fetched above (breaker-wrapped) instead of making a
+            # second, unwrapped getProfile() call for the same data.
+            history_id = results.get("historyId") or profile.get("historyId")
             if history_id:
                 async with get_session() as session:
                     row = await session.get(SyncStatusModel, "gmail")
@@ -528,7 +589,7 @@ Reply with ONLY the category name, nothing else."""
 
             return labels
 
-        return await self._breaker.call(_fetch_labels)
+        return await self._breaker_call(_fetch_labels)
 
     async def mark_as_read(self, email_id: str) -> bool:
         """Mark email as read."""
@@ -542,7 +603,7 @@ Reply with ONLY the category name, nothing else."""
                     body={"removeLabelIds": ["UNREAD"]}
                 ).execute()
 
-            await self._breaker.call(_mark_read)
+            await self._breaker_call(_mark_read)
 
             # Update DB
             async with get_session() as session:
@@ -571,7 +632,7 @@ Reply with ONLY the category name, nothing else."""
                     body={"removeLabelIds": ["INBOX"]}
                 ).execute()
 
-            await self._breaker.call(_archive)
+            await self._breaker_call(_archive)
 
             # Update DB
             async with get_session() as session:
@@ -605,7 +666,7 @@ Reply with ONLY the category name, nothing else."""
                     body={"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX", "UNREAD"]},
                 ).execute()
 
-            await self._breaker.call(_trash)
+            await self._breaker_call(_trash)
 
             async with get_session() as session:
                 row = await session.get(EmailCacheModel, email_id)
@@ -665,7 +726,7 @@ Reply with ONLY the category name, nothing else."""
             async def _send():
                 return service.users().messages().send(userId="me", body=payload).execute()
 
-            sent = await self._breaker.call(_send)
+            sent = await self._breaker_call(_send)
             sent_id = sent.get("id") if isinstance(sent, dict) else None
             logger.info(
                 "email_sent",
@@ -692,7 +753,7 @@ Reply with ONLY the category name, nothing else."""
                     body=body
                 ).execute()
 
-            await self._breaker.call(_star)
+            await self._breaker_call(_star)
 
             # Update DB
             async with get_session() as session:
@@ -809,7 +870,7 @@ Reply with ONLY the category name, nothing else."""
                     historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
                 ).execute()
 
-            results = await self._breaker.call(_list_history)
+            results = await self._breaker_call(_list_history)
 
             new_history_id = results.get("historyId")
             histories = results.get("history", [])
@@ -874,11 +935,20 @@ Reply with ONLY the category name, nothing else."""
                     logger.warning("history_message_fetch_error", id=msg_id, error=str(e))
 
             # Persist new emails (tagged with account_id) and update history_id.
+            # Each row is wrapped in its own SAVEPOINT (begin_nested) so one
+            # poison row doesn't roll back the whole batch and wedge sync.
             async with get_session() as session:
                 for email in new_email_objects:
                     row = self._email_to_row(email)
                     row.account_id = account_id
-                    await session.merge(row)
+                    try:
+                        async with session.begin_nested():
+                            await session.merge(row)
+                    except Exception as e:
+                        logger.warning(
+                            "gmail_sync_row_merge_failed", email_id=email.id, error=str(e)
+                        )
+                        continue
 
             # Update history_id on the account row (preferred) and mirror to
             # the legacy SyncStatus row for the default account so old code
