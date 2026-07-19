@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -413,14 +414,26 @@ async def _system_check_adapter(user_text: str, ctx: dict[str, Any]) -> Supervis
             backlog = data.get("transcript_backlog") or {}
             pending = approvals.get("pending") or 0
             in_flight = backlog.get("total_processing") or 0
-            mode = companion.get("mode") or "ambient"
             extras = []
             if pending:
                 extras.append(f"{pending} pending approval{'s' if pending != 1 else ''}")
             if in_flight:
                 extras.append(f"{in_flight} meeting{'s' if in_flight != 1 else ''} transcribing")
             tail = " " + " and ".join(extras) + "." if extras else ""
-            spoken = f"All systems nominal. Companion is in {mode} mode.{tail}"
+            # R3 (supervise zero 6a8c5562): this used to append "Companion is in
+            # {mode} mode", where mode came from `companion.get("mode") or
+            # "ambient"`. The robot companion moved to Zero Studio on 2026-07-11
+            # and meeting_steward_status.py:43 now returns {"retired": True}
+            # with no "mode" key at all — so the `or "ambient"` default always
+            # fired and Zero confidently reported a deleted subsystem as running.
+            # This is a live path: system_check is reachable from ordinary text
+            # ("system check", "health check", "everything ok").
+            spoken = f"All systems nominal.{tail}"
+            if not companion.get("retired") and companion.get("mode"):
+                spoken = (
+                    f"All systems nominal. "
+                    f"Companion is in {companion['mode']} mode.{tail}"
+                )
         else:
             first = issues[0]
             spoken = (
@@ -578,13 +591,30 @@ _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+# R2 (supervise zero 6a8c5562): matching was `if kw in t` — an unanchored
+# substring test — over a keyword list containing tokens as short as "ada",
+# "ein", "cpa", and "tax". So "am I being productive?" matched "ein" and routed
+# to the company adapter, which answered with an ADA AI LLC brief; "Adam"
+# matched "ada"; "syntax" matched "tax"; "work-life balance" matched "balance".
+# The turn isn't dropped, it's answered by the wrong agent — indistinguishable
+# from a drop on the user's side. Word boundaries fix it without touching the
+# keyword list, and \b handles the multi-word phrases ("daily brief", "p and l")
+# unchanged. Compiled once at import; the list is static.
+@lru_cache(maxsize=1)
+def _compiled_keyword_intents() -> tuple[tuple[str, tuple[re.Pattern, ...]], ...]:
+    return tuple(
+        (intent, tuple(re.compile(rf"\b{re.escape(kw.strip())}\b") for kw in keywords))
+        for intent, keywords in _KEYWORD_INTENTS
+    )
+
+
 def _classify(user_text: str) -> str:
     t = (user_text or "").strip().lower()
     if not t:
         return "direct"
-    for intent, keywords in _KEYWORD_INTENTS:
-        for kw in keywords:
-            if kw in t:
+    for intent, patterns in _compiled_keyword_intents():
+        for pat in patterns:
+            if pat.search(t):
                 return intent
     return "direct"
 

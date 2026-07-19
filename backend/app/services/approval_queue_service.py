@@ -71,7 +71,19 @@ class ApprovalQueueService:
         the caller didn't score it -> treated as high-enough so legacy callers
         keep auto-executing write_local; only an explicit low score (or DND)
         gates it.
+
+        A-3 (supervise zero 6a8c5562): this used to end in a bare
+        ``return False``, so ANY tier outside the four canonical strings —
+        "Financial", "write-external", a future "payment", or a caller typo —
+        fell through to "no gate needed" and ``gated_call`` executed the side
+        effect with no approval row at all. ``tier`` is a free-form String(20)
+        supplied by callers, and this module already anticipates unknown tiers
+        elsewhere (``_TIER_EXPIRY.get(tier, ...)``). A trust boundary must
+        default-DENY, so the terminal case is now "gate it" and only ``read``
+        is explicitly ungated.
         """
+        if tier == "read":
+            return False
         if tier in ("write_external", "financial"):
             return True
         if tier == "write_local":
@@ -85,7 +97,9 @@ class ApprovalQueueService:
                 )
                 if salience < threshold:
                     return True
-        return False
+            return False
+        logger.warning("approval_unknown_tier_gated", tier=tier)
+        return True
 
     async def request(
         self,
@@ -202,6 +216,28 @@ class ApprovalQueueService:
     async def get(self, approval_id: str) -> Optional[AgentApprovalModel]:
         async with get_session() as session:
             return await session.get(AgentApprovalModel, approval_id)
+
+    @staticmethod
+    def effective_status(row: AgentApprovalModel) -> str:
+        """The row's status as of NOW, not as of the last sweep.
+
+        A-1 (supervise zero 6a8c5562): expire_stale() only runs hourly, so a
+        row can sit past expires_at with status still literally "pending".
+        Fix-123 excluded those from the pending LIST, but the guard was nested
+        inside ``if status == "pending"`` — so the unfiltered list (the UI's
+        "all" tab) and get() still reported them as pending. The frontend gates
+        its Approve/Reject buttons on ``status === 'pending'``, so a dead
+        approval rendered as actionable; clicking Approve then hit decide(),
+        whose own expiry predicate refused it, surfacing as a 404. Deriving the
+        status here gives every read path one answer.
+        """
+        if row.status == "pending" and row.expires_at is not None:
+            expires_at = row.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at < _now():
+                return "expired"
+        return row.status
 
     async def expire_stale(self) -> int:
         """Mark pending approvals past their expiry as expired."""

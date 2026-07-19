@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import select, desc, and_, or_, func, update as sql_update
+from sqlalchemy import select, desc, and_, case, or_, func, update as sql_update
 import structlog
 
 from app.db.models import ApprovalRequestModel
@@ -206,21 +206,59 @@ class ApprovalService:
 
     async def get_stats(self) -> Dict[str, Any]:
         async with get_session() as session:
+            # A-2 (supervise zero 6a8c5562): this bucketed on the raw DB status
+            # string with no expiry predicate, while list_pending() (above) got
+            # the Fix-128 filter. auto_expire_check only runs hourly and the
+            # default TTL is 24h, so the two disagreed for up to a full sweep:
+            # OrchestratorPage renders this `pending` count in a tile directly
+            # above the usePendingApprovals() list, so the badge could read
+            # "3 Pending" over a list showing 1. One trust boundary, one
+            # definition of pending — logically-expired rows count as expired.
+            # Bucket on the EFFECTIVE status rather than the stored one, in the
+            # same single group_by — a logically-expired `pending` row counts as
+            # expired here exactly as it does in list_pending(), with no extra
+            # round trip and no second definition of "pending" to drift.
+            now = datetime.now(timezone.utc)
+            _effective_status = case(
+                (
+                    and_(
+                        ApprovalRequestModel.status == "pending",
+                        ApprovalRequestModel.expires_at.isnot(None),
+                        ApprovalRequestModel.expires_at < now,
+                    ),
+                    "expired",
+                ),
+                else_=ApprovalRequestModel.status,
+            )
             stmt = select(
-                ApprovalRequestModel.status,
+                _effective_status.label("status"),
                 func.count().label("count"),
-            ).group_by(ApprovalRequestModel.status)
+            ).group_by(_effective_status)
             rows = (await session.execute(stmt)).all()
-            by_status = {r.status: r.count for r in rows}
+            by_status: Dict[str, int] = {}
+            for r in rows:
+                by_status[r.status] = by_status.get(r.status, 0) + r.count
 
             # Calculate average decision time for decided requests
             avg_hours = 0.0
+            # A-4 (supervise zero 6a8c5562): auto_expire_check stamps decided_at
+            # (with decision_by="auto_expire") on requests nobody ever looked at,
+            # and this average filtered on decided_at alone. Every ignored
+            # request therefore contributed its ENTIRE TTL — 24h by default — so
+            # the "Avg Decision" tile measured neglect rather than human
+            # responsiveness, and inflated the more the queue was ignored.
             decided_stmt = select(
                 func.avg(
                     func.extract('epoch', ApprovalRequestModel.decided_at) -
                     func.extract('epoch', ApprovalRequestModel.created_at)
                 ).label("avg_seconds")
-            ).where(ApprovalRequestModel.decided_at.isnot(None))
+            ).where(
+                ApprovalRequestModel.decided_at.isnot(None),
+                or_(
+                    ApprovalRequestModel.decision_by.is_(None),
+                    ApprovalRequestModel.decision_by != "auto_expire",
+                ),
+            )
             avg_row = (await session.execute(decided_stmt)).scalar()
             if avg_row:
                 avg_hours = round(avg_row / 3600, 1)
@@ -228,6 +266,8 @@ class ApprovalService:
             return {
                 "total": sum(by_status.values()),
                 "by_status": by_status,
+                # A-2: reports the same "pending" the pending LIST reports —
+                # by_status is already bucketed on effective status above.
                 "pending": by_status.get("pending", 0),
                 "approved": by_status.get("approved", 0),
                 "rejected": by_status.get("rejected", 0),

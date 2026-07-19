@@ -27,6 +27,8 @@ class ApprovalDecision(BaseModel):
 
 
 def _serialize(row) -> dict:
+    from app.services.approval_queue_service import ApprovalQueueService
+
     return {
         "id": row.id,
         "tool_name": row.tool_name,
@@ -34,7 +36,11 @@ def _serialize(row) -> dict:
         "summary": row.summary,
         "arguments": row.arguments,
         "requested_by": row.requested_by,
-        "status": row.status,
+        # A-1 (supervise zero 6a8c5562): report the status as of NOW. The raw
+        # column still reads "pending" until the hourly sweep flips it, and the
+        # frontend gates its Approve/Reject buttons on status === 'pending' —
+        # so a dead approval used to render as actionable and 404 on click.
+        "status": ApprovalQueueService.effective_status(row),
         "decision_reason": row.decision_reason,
         "decided_by": row.decided_by,
         "created_at": row.created_at.isoformat() if row.created_at else None,

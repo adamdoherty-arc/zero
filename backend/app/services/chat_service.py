@@ -571,37 +571,56 @@ class ChatService:
         model_name = get_llm_router().resolve("chat")
         full_content = ""
 
-        try:
-            async for chunk in client.chat_stream(
-                messages=ollama_msgs,
-                task_type="chat",
-                temperature=0.5,
-                max_tokens=4096,
-            ):
-                full_content += chunk
-                yield f'data: {json.dumps({"type": "chunk", "content": chunk})}\n\n'
-        except Exception as e:
-            logger.error("ask_zero_stream_failed", error=str(e))
-            # Fix-141 F8: generic fallback only — detail stays server-side.
-            error_msg = "Sorry, I couldn't generate a response. Please try again in a moment."
-            yield f'data: {json.dumps({"type": "chunk", "content": error_msg})}\n\n'
-            full_content = error_msg
+        from app.services.memory_service import get_memory_service
+        mem = get_memory_service()
 
-        session.messages.append(AIMessage(content=full_content))
-
-        # Persist to database
+        # R4 (supervise zero 6a8c5562): the human turn used to be persisted only
+        # AFTER the yield loop. Starlette calls aclose() on this generator when
+        # the browser navigates away or aborts the fetch, which raises
+        # GeneratorExit at the `yield` — and GeneratorExit derives from
+        # BaseException, so `except Exception` below does not catch it and the
+        # generator unwinds immediately. Everything after the loop was skipped,
+        # so the user's own question was never written to the DB: once the
+        # in-memory session expired or the container restarted, the turn was
+        # gone. Persist the question BEFORE the stream can be interrupted.
         try:
-            from app.services.memory_service import get_memory_service
-            mem = get_memory_service()
             await mem.create_session(session_id=session.session_id, project_id=session.project_id)
             await mem.add_message(session.session_id, "human", message)
-            await mem.add_message(session.session_id, "ai", full_content, metadata={"model": model_name, "sources": [s["name"] for s in sources]})
-            if len(session.messages) <= 2:
-                await mem.generate_title(session.session_id)
         except Exception as e:
-            logger.debug("chat_stream_persist_failed", error=str(e))
+            logger.debug("chat_stream_persist_human_failed", error=str(e))
 
-        yield f'data: {json.dumps({"type": "done", "session_id": session.session_id, "sources": sources, "model": model_name})}\n\n'
+        try:
+            try:
+                async for chunk in client.chat_stream(
+                    messages=ollama_msgs,
+                    task_type="chat",
+                    temperature=0.5,
+                    max_tokens=4096,
+                ):
+                    full_content += chunk
+                    yield f'data: {json.dumps({"type": "chunk", "content": chunk})}\n\n'
+            except Exception as e:
+                logger.error("ask_zero_stream_failed", error=str(e))
+                # Fix-141 F8: generic fallback only — detail stays server-side.
+                error_msg = "Sorry, I couldn't generate a response. Please try again in a moment."
+                yield f'data: {json.dumps({"type": "chunk", "content": error_msg})}\n\n'
+                full_content = error_msg
+
+            session.messages.append(AIMessage(content=full_content))
+            yield f'data: {json.dumps({"type": "done", "session_id": session.session_id, "sources": sources, "model": model_name})}\n\n'
+        finally:
+            # R4: runs on GeneratorExit too, so a partial answer the user
+            # actually saw is still recorded rather than silently discarded.
+            if full_content:
+                try:
+                    await mem.add_message(
+                        session.session_id, "ai", full_content,
+                        metadata={"model": model_name, "sources": [s["name"] for s in sources]},
+                    )
+                    if len(session.messages) <= 2:
+                        await mem.generate_title(session.session_id)
+                except Exception as e:
+                    logger.debug("chat_stream_persist_ai_failed", error=str(e))
 
 
 # ---------------------------------------------------------------------------

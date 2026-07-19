@@ -81,7 +81,10 @@ class CouncilService:
         logger.info("council_proposed", decision_id=decision_id, topic=req.topic[:100])
         return _orm_to_decision(row)
 
-    async def conduct_vote(self, decision_id: str) -> CouncilDecision:
+    # RSN-A5 (supervise zero 6a8c5562): declared `-> CouncilDecision` while the
+    # RSN-3 bail path below returns None. The lie is what hid the missing guard
+    # from readers and type-checkers at the orchestration_graph call site.
+    async def conduct_vote(self, decision_id: str) -> Optional[CouncilDecision]:
         """Run 2-round debate + vote protocol."""
         async with get_session() as session:
             row = await session.get(CouncilDecisionModel, decision_id)
@@ -170,7 +173,22 @@ class CouncilService:
         total_confidence = 0.0
         counted_votes = 0
         for role_id, vote in round2.items():
-            pos = vote.get("position", "abstain")
+            # RSN-A4 (supervise zero 6a8c5562): `position` arrives as raw LLM
+            # JSON, so "Approve", "approve ", and "needs revision" are all
+            # routine outputs — and every one of them failed the `in
+            # position_counts` test and was silently swallowed as a non-vote.
+            # Two live consequences: four "Approve" votes tallied to zero and
+            # forced needs_revision at confidence 0.0, and a casing split let a
+            # decision finalize on half the council. The sibling `confidence`
+            # field was already hardened for exactly this reason (RSN-1 below);
+            # `position` — the field the entire tally rests on — was not.
+            pos = str(vote.get("position", "abstain")).strip().lower()
+            pos = pos.replace(" ", "_").replace("-", "_")
+            if pos not in position_counts and pos != "abstain":
+                logger.warning(
+                    "council_vote_unrecognized_position",
+                    role=role_id, position=vote.get("position"),
+                )
             if pos in position_counts:
                 position_counts[pos] += 1
                 # Fix-115: only roles that cast a real vote contribute to the

@@ -1313,9 +1313,17 @@ async def council_node(state: OrchestratorState) -> dict:
             decisions = await svc.list_decisions(pending_only=True, limit=1)
             if decisions:
                 result = await svc.conduct_vote(decisions[0].id)
-                text = (f"Council voted on: **{result.topic}**\n"
-                        f"Decision: {result.decision}\n"
-                        f"Confidence: {result.confidence_score:.0f}%")
+                # RSN-A5 (supervise zero 6a8c5562): conduct_vote returns None
+                # when the row vanishes between selection and the tally write.
+                # The router path guards this (council.py:37-38); this chat path
+                # derefed it straight into AttributeError: 'NoneType' inside the
+                # handler, surfacing to the user as a generic failure.
+                if result is None:
+                    text = "That council decision was removed before the vote finished."
+                else:
+                    text = (f"Council voted on: **{result.topic}**\n"
+                            f"Decision: {result.decision}\n"
+                            f"Confidence: {result.confidence_score:.0f}%")
             else:
                 text = "No pending council decisions. Propose one first!"
         else:

@@ -4291,14 +4291,24 @@ Have a great evening!"""
             for report in reports:
                 # Propose a council decision based on research findings
                 topic = f"Strategic review: {report.query[:200]} â€” Should we act on these findings?"
-                await council.propose(CouncilProposal(
+                # RSN-A1 (supervise zero 6a8c5562): this used to propose, then
+                # re-query with list_decisions(status="proposed") to find what it
+                # had just created. That filter maps to `decision == "proposed"`,
+                # and the `decision` column only ever holds None / approve /
+                # reject / needs_revision -- so it matched nothing, `if decisions`
+                # was always False, and conduct_vote NEVER ran. Every daily tick
+                # left an orphaned un-voted proposal behind: 47 rows, all 47
+                # unvoted, 2026-05-02..2026-07-18, every one source=daily_council_auto.
+                # council_service.py:267-271 documents this exact bug being fixed
+                # for the voice/chat path; this caller was left behind.
+                # propose() already returns the decision -- vote on it directly,
+                # which also removes the lookup race entirely.
+                decision = await council.propose(CouncilProposal(
                     topic=topic,
                     context={"research_id": report.id, "source": "daily_council_auto"}
                 ))
-                # Run the vote immediately
-                decisions = await council.list_decisions(status="proposed", limit=1)
-                if decisions:
-                    await council.conduct_vote(decisions[0].id)
+                if decision is not None:
+                    await council.conduct_vote(decision.id)
                 break  # One decision per day
             logger.info("ai_company_daily_council_done")
         except Exception as e:

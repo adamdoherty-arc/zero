@@ -38,9 +38,14 @@ class TestIdxPartitionResolve:
             _resolve_partition("zero-dev", "00_Meta/_agent/research/x.md") == "inbox"
         )
 
-    def test_work_override_is_hard_dropped_via_path_fallback(self):
-        # Vault constitution: `work` is hard-dropped. It is not a valid retrieval
-        # partition, so the override is rejected and the path decides.
+    def test_work_override_is_rejected_and_path_decides(self):
+        # RET-01 (supervise zero 6a8c5562): renamed from
+        # ...is_hard_dropped_via_path_fallback. The old name claimed this
+        # assertion proved the constitution's `work` hard-drop, but asserting
+        # the note is indexed as "reference" proves the OPPOSITE -- the note is
+        # still in the corpus. All this function does is refuse to let a
+        # privacy-taxonomy value leak into the retrieval column. The actual drop
+        # is enforced in _index_file and covered by the test below.
         assert _resolve_partition("work", "10_Atlas/secret.md") == "reference"
 
     def test_valid_override_is_honoured(self):

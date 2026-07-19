@@ -89,8 +89,17 @@ def _resolve_partition(partition_override: object, rel: str) -> str:
     (~83% of chunks were stored as ``personal``), so partition-filtered retrieval
     and the journal time-decay silently missed those notes. Only honour an
     override that is already a valid retrieval partition; otherwise derive it from
-    the path (which also enforces the constitution's ``work`` hard-drop, since
-    ``work`` is not a valid retrieval partition).
+    the path.
+
+    RET-01 (supervise zero 6a8c5562): this docstring used to claim the path
+    fallback "enforces the constitution's ``work`` hard-drop". It does not, and
+    the claim was load-bearing enough that the accompanying test was named
+    ``test_work_override_is_hard_dropped_via_path_fallback`` while asserting the
+    note is indexed as ``reference``. **Rejecting an override is not dropping a
+    note.** A note whose frontmatter says ``partition: work`` still gets chunked,
+    embedded, stored, and returned by search — it just lands in a path-derived
+    bucket. The real drop is enforced by the caller (``_index_file``); this
+    function only chooses a retrieval bucket for a note that IS being indexed.
     """
     if isinstance(partition_override, str) and partition_override in _VALID_PARTITIONS:
         return partition_override
@@ -380,19 +389,50 @@ class VaultIndexerService:
             "chunks_deleted": chunks_deleted,
         }
 
+    async def _delete_chunks_for_path(self, rel: str) -> int:
+        """Purge every chunk previously indexed for one vault path.
+
+        RET-01: used by the `work` hard-drop so a note that was indexed before
+        it was (re)tagged `work` does not linger in the searchable corpus.
+        """
+        async with get_session() as session:
+            result = await session.execute(
+                delete(VaultChunkModel).where(VaultChunkModel.path == rel)
+            )
+            await session.commit()
+            return int(getattr(result, "rowcount", 0) or 0)
+
     async def _index_file(self, fp: Path, rel: str, raw: bytes, file_hash: str) -> int:
         try:
             text = raw.decode("utf-8", errors="replace")
         except Exception:  # noqa: BLE001
             return 0
         fm, body = _parse_frontmatter(text)
-        partition = _resolve_partition((fm or {}).get("partition"), rel)
         tags = []
         raw_tags = (fm or {}).get("tags")
         if isinstance(raw_tags, list):
             tags = [str(t) for t in raw_tags if t]
         elif isinstance(raw_tags, str):
             tags = [raw_tags]
+
+        # RET-01 (supervise zero 6a8c5562): the constitution's `work` hard-drop
+        # had no implementation anywhere. _resolve_partition() rejects `work` as
+        # a retrieval-partition OVERRIDE, and its docstring plus a test name both
+        # described that as the drop — but rejecting an override only picks a
+        # different bucket; the note was still chunked, embedded, stored, and
+        # returned by search, frontmatter and all. Live exposure was zero when
+        # this was found (0 notes and 0 chunks carrying `work`), because the
+        # scope rule keeps Eightfold material in a separate vault — which is
+        # exactly why it went unnoticed. This is the belt to that braces: a
+        # `work` note that ever lands here is skipped, and any chunks a previous
+        # pass already wrote for it are purged.
+        _fm_partition = str((fm or {}).get("partition") or "").strip().lower()
+        if _fm_partition == "work" or "work" in {t.strip().lower() for t in tags}:
+            logger.warning("vault_index_work_partition_dropped", path=rel)
+            await self._delete_chunks_for_path(rel)
+            return 0
+
+        partition = _resolve_partition((fm or {}).get("partition"), rel)
 
         # IDX-STAT-BLOCK (supervise 3c3ade8e): fp.stat() is a synchronous syscall
         # run up to max_files times per reindex tick inside this async method;
