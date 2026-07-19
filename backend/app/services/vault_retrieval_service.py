@@ -103,6 +103,11 @@ _SEARCH_INFRA_REPAIR_SQL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_vault_chunks_embedding_hnsw "
     "ON vault_chunks USING hnsw (embedding vector_cosine_ops) "
     "WITH (m = 16, ef_construction = 128)",
+    # RET-02: de-duplicate BEFORE the unique index, or the index build fails on
+    # the very drift it is meant to re-establish. Keeps the newest row per
+    # (path, chunk_idx); the indexer rewrites content on the next pass anyway.
+    "DELETE FROM vault_chunks a USING vault_chunks b "
+    "WHERE a.ctid < b.ctid AND a.path = b.path AND a.chunk_idx = b.chunk_idx",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_vault_chunks_path_idx "
     "ON vault_chunks (path, chunk_idx)",
 )
@@ -163,9 +168,37 @@ async def ensure_vault_search_infra() -> dict[str, Any]:
     """
     before = await search_infra_status()
     episodic_hnsw_created = False
+
+    # RET-02 (supervise zero 6a8c5562): every repair statement used to share ONE
+    # transaction. Postgres DDL is transactional, so a failure on the LAST
+    # statement rolled back the earlier ones — including the ADD COLUMN
+    # content_tsv this function exists to restore. And the last statement is
+    # `CREATE UNIQUE INDEX ux_vault_chunks_path_idx`, which fails on exactly the
+    # drift being healed: VaultChunkModel declares no unique constraint on
+    # (path, chunk_idx), so when create_all rebuilds the table the index is gone
+    # and duplicate chunk rows accumulate (the indexer documents this). With
+    # duplicates present the CREATE UNIQUE INDEX raises, the whole transaction
+    # rolls back, content_tsv is never created, and EVERY vault search 500s on
+    # UndefinedColumn. main.py swallows the failure as a warning, so the app
+    # boots with BM25 permanently dead — precisely the silent-500 class this
+    # function was written to eliminate.
+    #
+    # Each statement now commits independently and a failure is logged and
+    # stepped over, so one broken repair can no longer take the others down.
+    for stmt in _SEARCH_INFRA_REPAIR_SQL:
+        try:
+            async with get_session() as session:
+                await session.execute(text(stmt))
+                await session.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "vault_search_infra.repair_stmt_failed",
+                statement=stmt.split("\n")[0][:120],
+                error=str(e),
+                impact="this repair was skipped; the others still applied",
+            )
+
     async with get_session() as session:
-        for stmt in _SEARCH_INFRA_REPAIR_SQL:
-            await session.execute(text(stmt))
         # IDX-EPISODIC-HNSW: detect-then-create so the (potentially slow) HNSW
         # build only runs on real drift, and the log distinguishes healed vs
         # verified. On a fresh/empty env the table has 0 rows -> instant build.

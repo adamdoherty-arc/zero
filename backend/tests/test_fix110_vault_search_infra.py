@@ -44,8 +44,18 @@ def test_repair_sql_includes_critical_content_tsv():
     assert "GENERATED ALWAYS AS" in joined
     assert "ix_vault_chunks_content_tsv" in joined
     assert "ix_vault_chunks_embedding_hnsw" in joined
-    # all statements idempotent (safe to re-run every boot)
+    # All statements must be safe to re-run every boot.
+    #
+    # RET-02 (supervise zero 6a8c5562): the check below is a SYNTACTIC proxy for
+    # that invariant ("IF NOT EXISTS" / "DO $$"). The de-dupe DELETE added with
+    # RET-02 is idempotent by CONSTRUCTION rather than by keyword — re-running it
+    # deletes nothing, because the duplicates it targets are gone after the first
+    # pass. It is exempted explicitly (not by loosening the rule for everything)
+    # so a genuinely non-idempotent statement still fails this test.
+    _IDEMPOTENT_BY_CONSTRUCTION = ("DELETE FROM vault_chunks a USING vault_chunks b",)
     for stmt in vrs._SEARCH_INFRA_REPAIR_SQL:
+        if stmt.startswith(_IDEMPOTENT_BY_CONSTRUCTION):
+            continue
         s = stmt.upper()
         assert ("IF NOT EXISTS" in s) or ("DO $$" in s.replace(" ", "") or "DO $$" in s)
     # detect query inspects the critical column, not just indexes

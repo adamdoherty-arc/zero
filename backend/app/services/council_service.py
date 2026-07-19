@@ -1,7 +1,13 @@
 """
 Council of Agents Service.
-Multi-agent debate and voting using diverse LLM providers for genuine reasoning diversity.
-2-round protocol: independent positions → informed revision → final vote.
+Multi-agent debate and voting: four role lenses (strategic / technical /
+financial / risk) over a 2-round protocol — independent positions → informed
+revision → final vote.
+
+NOTE (RSN-A3): this docstring used to claim "diverse LLM providers for genuine
+reasoning diversity". All four lanes currently resolve to the same model, so the
+diversity today is one of PROMPT LENS, not provider. See the comment above
+COUNCIL_ROLES before relying on the tally as independent judgment.
 """
 
 import uuid
@@ -19,9 +25,27 @@ from app.models.agent_company import CouncilDecision, CouncilProposal
 
 logger = structlog.get_logger()
 
-# Council voting roles with intentionally diverse providers.
-# Provider diversity is configured via the central LLM router
-# (router task types: council_ceo, council_researcher, council_analyst, council_validator).
+# Council voting roles.
+#
+# RSN-A3 (supervise zero 6a8c5562): this comment used to read "intentionally
+# diverse providers", and the service docstring promised "genuine reasoning
+# diversity". Neither is true today — all four assignments in
+# app/models/llm.py resolve to the SAME model (bifrost/vllm-local/qwen3-chat);
+# only council_ceo and council_researcher even carry a distinct fallback. The
+# per-role temperatures (0.3 / 0.7 / 0.3 / 0.3) were the last remaining source
+# of variance, and conduct_vote then overrode them with a hardcoded 0.5 and 0.3
+# at the two call sites — so the "council" was one model at one temperature
+# sampled four times, differing only by the system-prompt lens. A majority vote
+# over correlated samples is not the independent judgment the tally implies.
+#
+# Fixed here: each role's ASSIGNED temperature is passed through instead of
+# being overridden, restoring per-lens variance. Making the providers genuinely
+# diverse is a separate call with real cost/latency consequences (it means
+# routing some lanes off the local vLLM to paid or rate-limited lanes) — that
+# assignment change is left to the operator rather than made silently here.
+# Router task types: council_ceo, council_researcher, council_analyst, council_validator.
+_ROLE_FALLBACK_TEMPERATURE = 0.5
+
 COUNCIL_ROLES = {
     "ceo": {
         "task_type": "council_ceo",
@@ -44,6 +68,30 @@ COUNCIL_ROLES = {
         "prompt": "You are the Validator. Evaluate from a risk and feasibility perspective. Consider failure modes, assumptions, and potential downsides.",
     },
 }
+
+
+def _role_temperature(task_type: str) -> float:
+    """The temperature the router ASSIGNED to this council lane.
+
+    RSN-A3: conduct_vote used to hardcode 0.5 (round 1) and 0.3 (round 2) at the
+    call sites, silently discarding the per-role temperatures that are the only
+    thing distinguishing the four lanes while they all point at one model.
+
+    Read through the LIVE router (resolve_with_params), not the class defaults,
+    so an operator edit to the persisted router_config.json actually takes
+    effect here.
+    """
+    try:
+        from app.infrastructure.llm_router import get_llm_router
+
+        _model, assignment = get_llm_router().resolve_with_params(task_type)
+        t = getattr(assignment, "temperature", None)
+        if isinstance(t, (int, float)):
+            return float(t)
+    except Exception as e:  # noqa: BLE001 - a router hiccup must not kill a vote
+        logger.warning("council_role_temperature_lookup_failed",
+                       task_type=task_type, error=str(e))
+    return _ROLE_FALLBACK_TEMPERATURE
 
 
 def _orm_to_decision(row: CouncilDecisionModel) -> CouncilDecision:
@@ -113,7 +161,7 @@ class CouncilService:
                     prompt=prompt,
                     system=f"You are evaluating a proposal from the {config['lens']} perspective.",
                     task_type=config["task_type"],
-                    temperature=0.5,
+                    temperature=_role_temperature(config["task_type"]),
                     max_tokens=1024,
                 )
                 round1[role_id] = vote if isinstance(vote, dict) else {"position": "abstain", "reasoning": str(vote), "confidence": 50}
@@ -154,7 +202,7 @@ class CouncilService:
                     prompt=prompt,
                     system=f"You are making your final vote from the {config['lens']} perspective.",
                     task_type=config["task_type"],
-                    temperature=0.3,
+                    temperature=_role_temperature(config["task_type"]),
                     max_tokens=1024,
                 )
                 round2[role_id] = vote if isinstance(vote, dict) else {"position": "abstain", "reasoning": str(vote), "confidence": 50}

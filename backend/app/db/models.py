@@ -2751,6 +2751,13 @@ class VaultChunkModel(Base):
     Journal gets time-decay; the other partitions don't.
     """
     __tablename__ = "vault_chunks"
+    # RET-02 (supervise zero 6a8c5562): ux_vault_chunks_path_idx existed only as
+    # hand-rolled repair DDL, not on the model — so every create_all rebuild
+    # dropped it, after which the indexer's delete-then-insert-per-path could
+    # write duplicate chunk rows. Declaring it here means create_all restores it.
+    __table_args__ = (
+        UniqueConstraint("path", "chunk_idx", name="ux_vault_chunks_path_idx"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     path: Mapped[str] = mapped_column(Text, nullable=False, index=True)

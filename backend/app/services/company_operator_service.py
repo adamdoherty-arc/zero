@@ -1486,6 +1486,35 @@ class CompanyOperatorService:
                 row.tier = normalized_tier
                 row.summary = normalized_summary
                 row.arguments = merged_args
+                # A-5 (supervise zero 6a8c5562): expires_at is derived from tier
+                # ONLY at creation (_TIER_EXPIRY in approval_queue_service), so
+                # re-tiering a live pending row here left the OLD window in
+                # place. _TIER_EXPIRY encodes a real security property —
+                # financial expires in 30 min vs write_external's 6 h — so a row
+                # created as write_external and normalized to financial stayed
+                # approvable 12x longer than the ladder allows. Re-derive from
+                # created_at, and clamp so a re-tier can only ever SHORTEN the
+                # approval window, never extend it.
+                try:
+                    from app.services.approval_queue_service import _TIER_EXPIRY
+
+                    _ttl = _TIER_EXPIRY.get(normalized_tier)
+                    if _ttl is not None and row.created_at is not None:
+                        _created = row.created_at
+                        if _created.tzinfo is None:
+                            _created = _created.replace(tzinfo=timezone.utc)
+                        _retiered = _created + _ttl
+                        _current = row.expires_at
+                        if _current is not None and _current.tzinfo is None:
+                            _current = _current.replace(tzinfo=timezone.utc)
+                        row.expires_at = (
+                            _retiered if _current is None else min(_retiered, _current)
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "approval_retier_expiry_recompute_failed",
+                        approval_id=row.id, tier=normalized_tier, error=str(exc),
+                    )
                 await get_company_work_item_service().record_event(
                     task.id,
                     "approval_normalized",

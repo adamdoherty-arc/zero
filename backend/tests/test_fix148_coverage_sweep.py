@@ -297,3 +297,121 @@ class TestWorkPartitionHardDrop:
 
         assert written == 0, "a work-partition note must not be indexed"
         assert purged == ["10_Atlas/leak.md"], "prior chunks must be purged"
+
+
+# ---------------------------------------------------------------------------
+# RET-02 — repair DDL shared one transaction, so the last statement's failure
+# rolled back the critical content_tsv repair.
+# ---------------------------------------------------------------------------
+
+class TestSearchInfraRepairIsolation:
+    def test_dedupe_precedes_the_unique_index(self):
+        """CREATE UNIQUE INDEX fails on exactly the duplicate rows the missing
+        index allows, so the de-dupe must run first or the repair can never
+        succeed on a drifted table."""
+        from app.services.vault_retrieval_service import _SEARCH_INFRA_REPAIR_SQL
+        stmts = list(_SEARCH_INFRA_REPAIR_SQL)
+        dedupe = next(i for i, s in enumerate(stmts) if s.startswith("DELETE FROM vault_chunks a"))
+        unique = next(i for i, s in enumerate(stmts) if "ux_vault_chunks_path_idx" in s)
+        assert dedupe < unique
+
+    def test_content_tsv_repair_is_present(self):
+        from app.services.vault_retrieval_service import _SEARCH_INFRA_REPAIR_SQL
+        assert any("content_tsv" in s for s in _SEARCH_INFRA_REPAIR_SQL)
+
+    def test_model_declares_the_unique_constraint(self):
+        """It existed only as hand-rolled repair DDL, so every create_all
+        rebuild dropped it and duplicates could accumulate."""
+        from app.db.models import VaultChunkModel
+        cons = {
+            tuple(c.name for c in con.columns)
+            for con in VaultChunkModel.__table__.constraints
+            if con.__class__.__name__ == "UniqueConstraint"
+        }
+        assert ("path", "chunk_idx") in cons
+
+
+# ---------------------------------------------------------------------------
+# RSN-A2 — success_criteria was generated, paid for, and discarded.
+# ---------------------------------------------------------------------------
+
+class TestExperimentSuccessCriteriaPersisted:
+    def test_design_persists_success_criteria_into_parameters(self):
+        import inspect
+        from app.services import experiment_service as es
+        src = inspect.getsource(es.ExperimentService.design_experiment)
+        assert '"success_criteria": design.get("success_criteria")' in src
+
+    def test_conclusion_prompt_separates_criteria_from_metrics(self):
+        """The analyst that decides hypothesis_supported was being shown
+        `metrics` (a {name: how-to-measure} map) labelled as the success
+        criteria, so every verdict rested on measurement definitions."""
+        import inspect
+        from app.services import experiment_service as es
+        src = inspect.getsource(es.ExperimentService.run_experiment)
+        assert "Metrics measured:" in src
+        assert "f\"Success criteria: {row.metrics}\n\n\"" not in src
+
+
+# ---------------------------------------------------------------------------
+# RSN-A3 — per-role temperature was overridden at both call sites.
+# ---------------------------------------------------------------------------
+
+class TestCouncilUsesAssignedTemperature:
+    def test_assigned_temperatures_are_read_from_the_live_router(self):
+        from app.services.council_service import _role_temperature
+        from app.infrastructure.llm_router import get_llm_router
+        router = get_llm_router()
+        for task_type in ("council_ceo", "council_researcher", "council_analyst", "council_validator"):
+            _model, assignment = router.resolve_with_params(task_type)
+            assert assignment is not None, f"{task_type} has no router assignment"
+            assert _role_temperature(task_type) == pytest.approx(assignment.temperature)
+
+    def test_researcher_lane_is_hotter_than_the_rest(self):
+        """0.7 vs 0.3 is the only remaining source of variance while all four
+        lanes point at one model; the hardcoded 0.5/0.3 erased it."""
+        from app.services.council_service import _role_temperature
+        assert _role_temperature("council_researcher") > _role_temperature("council_ceo")
+
+    def test_unknown_lane_falls_back_without_raising(self):
+        from app.services.council_service import _role_temperature, _ROLE_FALLBACK_TEMPERATURE
+        assert _role_temperature("not_a_real_lane") == _ROLE_FALLBACK_TEMPERATURE
+
+    def test_call_sites_no_longer_hardcode_a_temperature(self):
+        import inspect
+        from app.services import council_service as cs
+        src = inspect.getsource(cs.CouncilService.conduct_vote)
+        assert "temperature=0.5" not in src and "temperature=0.3" not in src
+        assert src.count("_role_temperature(config[\"task_type\"])") == 2
+
+
+# ---------------------------------------------------------------------------
+# A-5 — re-tiering a pending approval kept the old (longer) expiry window.
+# ---------------------------------------------------------------------------
+
+class TestRetierRederivesExpiry:
+    def test_financial_ttl_is_shorter_than_write_external(self):
+        """The property that makes the bug matter: without re-deriving, a
+        write_external row normalized to financial stays approvable 12x longer
+        than the ladder allows."""
+        from app.services.approval_queue_service import _TIER_EXPIRY
+        assert _TIER_EXPIRY["financial"] < _TIER_EXPIRY["write_external"]
+
+    def test_retier_clamp_only_shortens(self):
+        """Mirror of the clamp: min(created+new_ttl, current)."""
+        from app.services.approval_queue_service import _TIER_EXPIRY
+        created = datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc)
+        current = created + _TIER_EXPIRY["write_external"]        # 6h
+        retiered = created + _TIER_EXPIRY["financial"]            # 30m
+        assert min(retiered, current) == retiered, "re-tier must shorten"
+
+        # And the reverse direction must NOT extend the window.
+        current_short = created + _TIER_EXPIRY["financial"]
+        retiered_long = created + _TIER_EXPIRY["write_external"]
+        assert min(retiered_long, current_short) == current_short, "re-tier must never extend"
+
+    def test_retier_recomputes_expiry_in_source(self):
+        import inspect
+        from app.services import company_operator_service as cos
+        src = inspect.getsource(cos)
+        assert "_TIER_EXPIRY" in src and "row.expires_at" in src

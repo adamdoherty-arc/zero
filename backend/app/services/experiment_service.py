@@ -104,7 +104,18 @@ class ExperimentService:
                 hypothesis=req.hypothesis,
                 methodology=design.get("methodology", ""),
                 experiment_type=req.experiment_type,
-                parameters=req.parameters,
+                # RSN-A2 (supervise zero 6a8c5562): the design step asks the LLM
+                # for `success_criteria` -- the pass/fail bar -- and the result
+                # was then dropped on the floor: ExperimentModel has no column
+                # for it and nothing read it back. run_experiment compensated by
+                # labelling `metrics` (a {name: how-to-measure} map) as "Success
+                # criteria" to the analyst that decides hypothesis_supported, so
+                # every verdict was drawn against measurement DEFINITIONS rather
+                # than any threshold. Persist it alongside the parameters.
+                parameters={
+                    **(req.parameters or {}),
+                    "success_criteria": design.get("success_criteria"),
+                },
                 metrics=design.get("metrics", {}),
                 linked_idea_id=req.linked_idea_id,
                 linked_research_id=req.linked_research_id,
@@ -168,7 +179,11 @@ class ExperimentService:
                 f"Analyze these experiment results:\n\n"
                 f"Hypothesis: {row.hypothesis}\n"
                 f"Results: {results}\n"
-                f"Success criteria: {row.metrics}\n\n"
+                # RSN-A2: the real pass/fail bar, and the measurement
+                # definitions, on separate labelled lines. `metrics` was
+                # previously mislabelled as the success criteria.
+                f"Success criteria: {(row.parameters or {}).get('success_criteria') or '(none recorded)'}\n"
+                f"Metrics measured: {row.metrics}\n\n"
                 "Return JSON:\n"
                 '{"conclusion": "clear conclusion about whether hypothesis is supported", '
                 '"confidence": 0-100, '
