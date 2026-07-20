@@ -123,7 +123,7 @@ async def get_session_history(session_id: str):
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
-    """Delete a chat session."""
-    if ChatService.delete_session(session_id):
+    """Delete a chat session (from both the in-memory store and the DB)."""
+    if await ChatService.delete_session(session_id):
         return {"status": "deleted", "session_id": session_id}
     raise HTTPException(status_code=404, detail="Session not found")

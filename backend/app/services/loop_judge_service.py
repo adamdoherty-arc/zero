@@ -106,6 +106,9 @@ class LoopJudgeService:
         )
         self._judge_model = os.environ.get("ZERO_LOOP_JUDGE_MODEL", _DEFAULT_JUDGE_MODEL)
         self._timeout_s = float(os.environ.get("ZERO_LOOP_JUDGE_TIMEOUT", _DEFAULT_JUDGE_TIMEOUT))
+        self._legion_base = (
+            os.environ.get("ZERO_LEGION_BASE_URL") or "http://host.docker.internal:8005"
+        ).rstrip("/")
 
     async def score_recent_runs(self, *, limit: int = 10) -> dict[str, Any]:
         """Find recent successful runs without a judge_score and score them."""
@@ -195,6 +198,9 @@ class LoopJudgeService:
             await session.commit()
 
         logger.info("loop.judged", run_id=run_id, score=score, mode=verdict.get("primary_failure_mode"))
+        # Backfill the score onto Legion's mirror (the run was pushed at
+        # completion with judge_score=NULL). Best-effort; never blocks scoring.
+        await self._push_judge_to_legion(run_id, float(score))
         return verdict
 
     # ------------------------------------------------------------------
@@ -205,8 +211,43 @@ class LoopJudgeService:
         try:
             with open(target, "r", encoding="utf-8", errors="replace") as fh:
                 return fh.read()
-        except OSError:
+        except OSError as exc:
+            # Log the miss. Otherwise a moved/renamed skill path makes score_one
+            # return None silently, and the run is re-selected + re-skipped every
+            # tick forever with no diagnostic trail explaining why.
+            logger.warning("loop.judge_spec_unreadable", target=target, error=str(exc))
             return ""
+
+    def _legion_headers(self) -> dict[str, str]:
+        token = (
+            os.environ.get("ZERO_LEGION_SINK_TOKEN")
+            or os.environ.get("ZERO_GATEWAY_TOKEN")
+            or ""
+        ).strip()
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+    async def _push_judge_to_legion(self, run_id: int, score: float) -> None:
+        """Backfill judge_score onto Legion's loop-run mirror (best-effort).
+
+        The run was mirrored at completion time with judge_score=NULL because the
+        judge runs on a later tick. This targeted POST updates ONLY judge_score
+        (a full re-push would clobber payload/variant_label), so Legion's
+        cross-project loop dashboard finally shows the quality signal. A failure
+        here is logged and swallowed — it must never block local scoring.
+        """
+        url = f"{self._legion_base}/api/loops/runs/{run_id}/judge"
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                resp = await client.post(
+                    url, json={"judge_score": score}, headers=self._legion_headers()
+                )
+                if resp.status_code == 404:
+                    # No mirror row (run never pushed / pruned) — nothing to backfill.
+                    logger.debug("loop.judge_legion_no_mirror_row", run_id=run_id)
+                    return
+                resp.raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("loop.judge_legion_push_failed", run_id=run_id, error=str(exc))
 
     async def _call_litellm(self, system: str, user: str) -> str:
         url = f"{self._litellm_base}/chat/completions"

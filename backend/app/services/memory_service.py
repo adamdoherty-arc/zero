@@ -202,6 +202,33 @@ class MemoryService:
             return title
         return "Untitled conversation"
 
+    async def delete_session(self, session_id: str) -> bool:
+        """Hard-delete a session and every message it owns from Postgres.
+
+        Returns True if the session actually existed (a session row and/or
+        orphaned messages were removed). Messages are deleted explicitly rather
+        than relying on the FK ``ondelete=CASCADE`` so the behaviour holds even
+        if the live constraint predates the cascade. This is what makes a
+        deleted chat stay deleted: the in-memory store alone (chat_service)
+        cannot reach these rows, so without this the chat resurrects on the next
+        list/rehydrate and a memory-evicted session 404s on delete.
+        """
+        from sqlalchemy import delete as sa_delete
+        from app.db.models import ConversationMessageModel, ConversationSessionModel
+        async with AsyncSessionLocal() as db:
+            msg_result = await db.execute(
+                sa_delete(ConversationMessageModel).where(
+                    ConversationMessageModel.session_id == session_id
+                )
+            )
+            sess_result = await db.execute(
+                sa_delete(ConversationSessionModel).where(
+                    ConversationSessionModel.id == session_id
+                )
+            )
+            await db.commit()
+        return (sess_result.rowcount or 0) > 0 or (msg_result.rowcount or 0) > 0
+
 
 _memory_service: Optional[MemoryService] = None
 

@@ -196,6 +196,22 @@ def _extract_json(raw: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _safe_float(value: Any, default: float) -> float:
+    """Coerce to float, falling back to default on None / non-numeric.
+
+    dict.get(key, default) does NOT apply the default when the key is present
+    with a None value, so a model emitting `{"predicted_engagement": null, ...}`
+    would otherwise reach float(None) -> TypeError and crash the whole vote
+    round (the coercion is outside the LLM-call try/except).
+    """
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 RUBRIC_SYSTEM = (
     "You are the Critic. Score the carousel on five dimensions from 0 to 10 "
     "(canon_accuracy, hook_strength, pacing, visual_consistency, platform_compliance) "
@@ -405,8 +421,8 @@ class ContentSwarmService:
                 "reasoning": "parse_failed",
             }
         return {
-            "predicted_engagement": max(0.0, min(100.0, float(parsed.get("predicted_engagement", 50)))),
-            "confidence": max(0.0, min(1.0, float(parsed.get("confidence", 0.5)))),
+            "predicted_engagement": max(0.0, min(100.0, _safe_float(parsed.get("predicted_engagement"), 50.0))),
+            "confidence": max(0.0, min(1.0, _safe_float(parsed.get("confidence"), 0.5))),
             "vote": str(parsed.get("vote", "hold")).lower(),
             "reasoning": str(parsed.get("reasoning", ""))[:500],
         }

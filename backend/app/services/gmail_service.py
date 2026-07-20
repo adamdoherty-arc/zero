@@ -833,6 +833,38 @@ Reply with ONLY the category name, nothing else."""
     # HISTORY API - Incremental Sync (Sprint 41 Task 68)
     # ========================================================================
 
+    async def _fetch_all_history(self, service, history_id: str) -> tuple[list[dict], Optional[str]]:
+        """Walk EVERY page of history().list() from history_id.
+
+        Returns (all_history_records, latest_history_id). Pagination is
+        load-bearing: history().list() returns a nextPageToken when the delta
+        spans multiple pages, and the mailbox's latest historyId is returned on
+        every page. Processing only page 1 while advancing the cursor to that
+        latest id silently drops every change on pages 2+ (a real risk after
+        downtime). The cursor is only returned after all pages are consumed.
+        """
+        histories: list[dict] = []
+        new_history_id: Optional[str] = None
+        page_token = None
+        for _page in range(50):  # safety cap against a pathological token loop
+            def _list_history(_pt=page_token):
+                kwargs = dict(
+                    userId="me",
+                    startHistoryId=history_id,
+                    historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
+                )
+                if _pt:
+                    kwargs["pageToken"] = _pt
+                return service.users().history().list(**kwargs).execute()
+
+            results = await self._breaker_call(_list_history)
+            new_history_id = results.get("historyId") or new_history_id
+            histories.extend(results.get("history", []))
+            page_token = results.get("nextPageToken")
+            if not page_token:
+                break
+        return histories, new_history_id
+
     async def sync_incremental(self, account_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Incremental sync via Gmail History API for one account.
@@ -863,17 +895,7 @@ Reply with ONLY the category name, nothing else."""
             return await self.sync_inbox(max_results=50, days_back=3, account_id=account_id)
 
         try:
-            async def _list_history():
-                return service.users().history().list(
-                    userId="me",
-                    startHistoryId=history_id,
-                    historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
-                ).execute()
-
-            results = await self._breaker_call(_list_history)
-
-            new_history_id = results.get("historyId")
-            histories = results.get("history", [])
+            histories, new_history_id = await self._fetch_all_history(service, history_id)
 
             added_ids = set()
             for h in histories:

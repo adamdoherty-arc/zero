@@ -231,11 +231,25 @@ class ChatService:
         ]
 
     @staticmethod
-    def delete_session(session_id: str) -> bool:
-        if session_id in _sessions:
-            del _sessions[session_id]
-            return True
-        return False
+    async def delete_session(session_id: str) -> bool:
+        """Delete a chat session from BOTH the in-memory store and Postgres.
+
+        Sessions are persisted by ``memory_service`` and merged into
+        ``list_sessions`` / rehydrated by ``get_session_history``. Deleting only
+        the in-memory copy left the DB rows behind, so a "deleted" chat
+        resurrected on the next list/rehydrate, and a session already evicted
+        from memory (TTL or restart) 404'd on delete though the user could still
+        see it. Return True if the session existed in EITHER place.
+        """
+        in_memory = _sessions.pop(session_id, None) is not None
+        deleted_from_db = False
+        try:
+            from app.services.memory_service import get_memory_service
+            deleted_from_db = await get_memory_service().delete_session(session_id)
+        except Exception as e:
+            logger.warning("chat.delete_session_db_failed",
+                           session_id=session_id, error=str(e))
+        return in_memory or deleted_from_db
 
     # ------------------------------------------------------------------
     # Context building

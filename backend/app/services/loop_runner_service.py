@@ -69,6 +69,10 @@ class LoopRunnerService:
         self._registry = get_loop_registry()
         self._vault = get_vault_writer()
         self._sink = get_loop_sink()
+        # Strong refs to in-flight background dispatch tasks. asyncio only keeps
+        # a WEAK ref to a bare create_task result, so without this the task can
+        # be GC'd mid-run, orphaning a `running` row that never finalizes.
+        self._bg_tasks: set[asyncio.Task[Any]] = set()
         self._litellm_base = (
             os.environ.get("ZERO_VLLM_CHAT_URL")
             or os.environ.get("ZERO_LITELLM_URL")
@@ -124,6 +128,13 @@ class LoopRunnerService:
         task. Status updates are visible via `GET /api/loops/runs/{run_id}`.
         """
         kind = loop["runner_kind"]
+
+        # Same sandbox safety gate as dispatch() — the background entrypoint must
+        # not let a sandbox_required code-editing loop run unsandboxed.
+        blocked = await self._sandbox_gate_blocked(loop, kind)
+        if blocked is not None:
+            return blocked
+
         run_id = await self._registry.mark_run_started(
             loop["id"],
             runner_kind=kind,
@@ -154,32 +165,48 @@ class LoopRunnerService:
                 except Exception:
                     pass
 
-        asyncio.create_task(_bg())
+        task = asyncio.create_task(_bg())
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
         return {"loop_id": loop["id"], "run_id": run_id, "status": "dispatched"}
+
+    async def _sandbox_gate_blocked(self, loop: dict[str, Any], kind: str) -> Optional[dict[str, Any]]:
+        """Return a 'blocked' result if a sandbox-required loop has no sandbox
+        wired in; else None.
+
+        Shared by dispatch() AND dispatch_background() — a code-editing loop
+        (sandbox_required=true) must not be able to skip the gate by entering
+        through the background dispatch path used by /trigger and Legion fan-out.
+        """
+        if not loop.get("sandbox_required"):
+            return None
+        sandbox_url = os.environ.get("ZERO_LOOP_SANDBOX_URL")
+        ack = os.environ.get("ZERO_LOOP_SANDBOX_OK", "false").lower() in {"1", "true", "yes"}
+        if sandbox_url or ack:
+            return None
+        fail_run = await self._registry.mark_run_started(
+            loop["id"], runner_kind=kind, runner_id="sandbox-gate",
+        )
+        await self._registry.mark_run_completed(
+            fail_run,
+            status="failure",
+            error=(
+                "loop has sandbox_required=true but no sandbox is wired in. "
+                "Set ZERO_LOOP_SANDBOX_URL=<legion sandbox endpoint> OR "
+                "ZERO_LOOP_SANDBOX_OK=true to acknowledge running unsandboxed."
+            ),
+        )
+        await self._registry.reschedule(loop["id"])
+        return {"loop_id": loop["id"], "run_id": fail_run, "status": "blocked"}
 
     async def dispatch(self, loop: dict[str, Any]) -> dict[str, Any]:
         """Dispatch one loop to its registered runner kind."""
         kind = loop["runner_kind"]
 
         # Sandbox safety gate — code-editing loops require explicit operator opt-in.
-        if loop.get("sandbox_required"):
-            sandbox_url = os.environ.get("ZERO_LOOP_SANDBOX_URL")
-            ack = os.environ.get("ZERO_LOOP_SANDBOX_OK", "false").lower() in {"1", "true", "yes"}
-            if not sandbox_url and not ack:
-                fail_run = await self._registry.mark_run_started(
-                    loop["id"], runner_kind=kind, runner_id="sandbox-gate",
-                )
-                await self._registry.mark_run_completed(
-                    fail_run,
-                    status="failure",
-                    error=(
-                        "loop has sandbox_required=true but no sandbox is wired in. "
-                        "Set ZERO_LOOP_SANDBOX_URL=<legion sandbox endpoint> OR "
-                        "ZERO_LOOP_SANDBOX_OK=true to acknowledge running unsandboxed."
-                    ),
-                )
-                await self._registry.reschedule(loop["id"])
-                return {"loop_id": loop["id"], "run_id": fail_run, "status": "blocked"}
+        blocked = await self._sandbox_gate_blocked(loop, kind)
+        if blocked is not None:
+            return blocked
 
         run_id = await self._registry.mark_run_started(
             loop["id"],
@@ -253,7 +280,15 @@ class LoopRunnerService:
                 user=user_msg,
                 timeout_s=min(loop.get("wall_clock_budget_s") or _DEFAULT_RUNNER_TIMEOUT, _DEFAULT_RUNNER_TIMEOUT),
             )
-            status = "success"
+            # An empty completion (200 OK with choices:[] or blank content) is
+            # NOT a success — recording it as one inflates success-rate metrics
+            # and (for variants) the successes counter, and the run is silently
+            # unjudgeable (output stored as NULL). Treat blank output as failure.
+            if output_text.strip():
+                status = "success"
+            else:
+                status = "failure"
+                error_text = "empty completion (no choices/content from LLM)"
         except asyncio.TimeoutError:
             error_text = f"runner timeout after {loop.get('wall_clock_budget_s', _DEFAULT_RUNNER_TIMEOUT)}s"
             status = "timeout"
@@ -508,7 +543,15 @@ class LoopRunnerService:
                 user=user_msg,
                 timeout_s=min(loop.get("wall_clock_budget_s") or _DEFAULT_RUNNER_TIMEOUT, _DEFAULT_RUNNER_TIMEOUT),
             )
-            status = "success"
+            # An empty completion (200 OK with choices:[] or blank content) is
+            # NOT a success — recording it as one inflates success-rate metrics
+            # and (for variants) the successes counter, and the run is silently
+            # unjudgeable (output stored as NULL). Treat blank output as failure.
+            if output_text.strip():
+                status = "success"
+            else:
+                status = "failure"
+                error_text = "empty completion (no choices/content from LLM)"
         except asyncio.TimeoutError:
             error_text = "runner timeout"
             status = "timeout"
@@ -629,16 +672,19 @@ class LoopRunnerService:
 
         total_weight = sum(w for _, w in weights)
         if total_weight <= 0:
-            chosen = variants[0]
-        else:
-            roll = random.uniform(0.0, total_weight)
-            chosen = variants[0]
-            cum = 0.0
-            for v, w in weights:
-                cum += w
-                if roll <= cum:
-                    chosen = v
-                    break
+            # Every non-retired variant has zero traffic weight (all deactivated
+            # but not retired). Picking variants[0] here would run a
+            # deliberately-disabled variant and corrupt its stats. Signal "no
+            # active variant" so the caller reschedules via its failure path.
+            return None
+        roll = random.uniform(0.0, total_weight)
+        chosen = variants[0]
+        cum = 0.0
+        for v, w in weights:
+            cum += w
+            if roll <= cum:
+                chosen = v
+                break
 
         return {
             "id": chosen.id,
