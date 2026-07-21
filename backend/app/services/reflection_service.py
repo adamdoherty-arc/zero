@@ -104,7 +104,12 @@ class ReflectionService:
                 # try/except; critique is guarded the same way below.)
                 if not isinstance(analysis, dict):
                     analysis = {}
-                overall_score = float(analysis.get("overall", 50))
+                # RFL-3 (supervise ff278a1a): the `50` default only fires when the key
+                # is ABSENT; a present-but-null / non-numeric `overall` raised into the
+                # outer except, which `break`s the whole loop -> a silent no-op
+                # reflection that returns the unimproved content as if it ran.
+                _ov = analysis.get("overall", 50)
+                overall_score = float(_ov) if isinstance(_ov, (int, float)) else 50.0
                 issues = analysis.get("issues", [])
                 scores.append({"iteration": iteration, "score": overall_score,
                               "scores": analysis.get("scores", {})})
@@ -336,9 +341,15 @@ class ReflectionService:
             )
 
             svc = get_episodic_memory_service()
-            # namespace=None spans all reflection domains; over-fetch then filter
-            # to source_type='reflection' (get_recent has no source_type filter).
-            recent = await svc.get_recent(namespace=domain, limit=60)
+            # R2 (supervise ff278a1a): filter source_type in SQL instead of over-fetching
+            # 60 rows and dropping non-reflection ones in Python. Reflections are written
+            # weekly while content_learning/prompt_evolution/brain_improvement write
+            # continuously — a burst of >60 non-reflection episodic rows between two
+            # reflections would push the reflection out of the window and re-create the
+            # Fix-147 "No reflection summary yet" tile despite valid reflections existing.
+            recent = await svc.get_recent(
+                namespace=domain, source_type="reflection", limit=20
+            )
             cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
 
             wins: List[str] = []

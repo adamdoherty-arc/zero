@@ -252,10 +252,18 @@ class OutcomeLearningService:
     async def get_best_strategy(
         self,
         domain: str,
-        action_type: str,
+        action_type: Optional[str] = None,
         min_samples: int = 5,
     ) -> Optional[str]:
-        """Return the strategy with highest avg_score for a domain/action_type."""
+        """Return the strategy with highest avg_score for a domain, optionally scoped
+        to a single ``action_type``.
+
+        L2 (supervise ff278a1a): ``action_type`` is now optional. The only production
+        caller (``enrich_task_prompt``) passed the literal ``"general"``, which no
+        ``record_outcome`` ever writes, so the "Recommended Strategy" hint always
+        returned None. A domain-level lookup (action_type=None) surfaces the real
+        best strategy across the domain's recorded action_types.
+        """
         try:
             async with get_session() as session:
                 query = (
@@ -265,10 +273,15 @@ class OutcomeLearningService:
                         sql_func.count().label("cnt"),
                     )
                     .where(BrainOutcomeRecordModel.domain == domain)
-                    .where(BrainOutcomeRecordModel.action_type == action_type)
                     .where(BrainOutcomeRecordModel.actual_score.isnot(None))
                     .where(BrainOutcomeRecordModel.strategy_used.isnot(None))
-                    .group_by(BrainOutcomeRecordModel.strategy_used)
+                )
+                if action_type:
+                    query = query.where(
+                        BrainOutcomeRecordModel.action_type == action_type
+                    )
+                query = (
+                    query.group_by(BrainOutcomeRecordModel.strategy_used)
                     .having(sql_func.count() >= min_samples)
                     .order_by(sql_func.avg(BrainOutcomeRecordModel.actual_score).desc())
                     .limit(1)

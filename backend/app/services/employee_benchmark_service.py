@@ -285,9 +285,16 @@ class EmployeeBenchmarkService:
             )
             ce_total = (await session.execute(ce_total_q)).scalar() or 0
 
-            # Council decisions
-            council_q = select(sql_func.count(CouncilDecisionModel.id)).where(
-                CouncilDecisionModel.created_at >= since
+            # Council decisions — count only councils that reached a GENUINE verdict.
+            # (supervise ff278a1a): abandoned/orphan proposals (decision IS NULL, or the
+            # terminal 'expired' state used to reap 47 pre-fix RSN-A1 orphans) must not
+            # inflate experimental-rigor. The daily-council vote path was fixed
+            # 2026-07-19 but the metric still rewarded un-decided proposals.
+            council_q = (
+                select(sql_func.count(CouncilDecisionModel.id))
+                .where(CouncilDecisionModel.created_at >= since)
+                .where(CouncilDecisionModel.decision.isnot(None))
+                .where(CouncilDecisionModel.decision != "expired")
             )
             council_count = (await session.execute(council_q)).scalar() or 0
 

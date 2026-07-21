@@ -37,8 +37,13 @@ class _FakeEpisodic:
     def __init__(self, mems):
         self._mems = mems
 
-    async def get_recent(self, namespace=None, limit=20):
-        return self._mems[:limit]
+    async def get_recent(self, namespace=None, limit=20, source_type=None):
+        # Honor the source_type SQL filter the production get_recent now applies
+        # (Fix-150 R2): a low-frequency reflection source stays findable.
+        mems = self._mems
+        if source_type is not None:
+            mems = [m for m in mems if getattr(m, "source_type", None) == source_type]
+        return mems[:limit]
 
 
 def _patch_episodic(mems):
@@ -87,7 +92,7 @@ async def test_latest_summary_degrades_to_none_on_error():
     from app.services.reflection_service import ReflectionService
 
     class _Boom:
-        async def get_recent(self, namespace=None, limit=20):
+        async def get_recent(self, namespace=None, limit=20, source_type=None):
             raise RuntimeError("db down")
 
     with patch(

@@ -300,7 +300,7 @@ class ZeroBrainService:
                 parts.append(f"- {l}")
 
         # 3. Best strategy hint
-        best = await self._outcomes.get_best_strategy(domain=domain, action_type="general")
+        best = await self._outcomes.get_best_strategy(domain=domain)
         if best:
             parts.append(f"\n## Recommended Strategy: {best}")
 

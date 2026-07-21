@@ -77,8 +77,12 @@ class ContentLearningEngine:
             processed = 0
             for record in records:
                 engagement = float(record.engagement_rate or 0)
-                # Map engagement to 0-100 score
-                score = min(100, engagement * 1000)  # 0.10 engagement = 100
+                # Map engagement to 0-100 score.
+                # L1 (supervise ff278a1a): content_performance.engagement_rate is stored
+                # as a weighted PERCENTAGE (content_agent_service.py:503 = eng/views*100),
+                # NOT a fraction. The old *1000 mapping scored any >=0.1% engagement as a
+                # perfect 100, inflating every strategy win-rate. *10 maps 10% -> 100.
+                score = min(100, engagement * 10)  # 10.0 (=10%) engagement -> 100
 
                 try:
                     await outcome_svc.record_outcome(

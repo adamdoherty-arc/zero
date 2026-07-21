@@ -74,7 +74,13 @@ class WeeklyReviewService:
                         select(TaskModel)
                         .where(
                             and_(
-                                TaskModel.status.in_(("todo", "in_progress", "blocked")),
+                                # R1 (supervise ff278a1a): the GTD "Get Clear" stale
+                                # sweep must include the DEFAULT status `backlog` (and
+                                # on_hold/review/testing). The old todo/in_progress/
+                                # blocked allowlist hid the most common forgotten-task
+                                # bucket, so stale backlog items were invisible in the
+                                # weekly review.
+                                TaskModel.status.notin_(("done", "archived")),
                                 TaskModel.created_at < week_ago,
                             )
                         )
@@ -109,12 +115,21 @@ class WeeklyReviewService:
                 ).scalars().all()
             )
 
-            # Get Creative — high-novelty findings not promoted to a topic yet.
+            # Get Creative — RECENT high-novelty findings not yet turned into a task.
+            # R4 (supervise ff278a1a): the old query had no recency and no promoted
+            # filter, so the same all-time top-5 rendered every week regardless of the
+            # section's own "recent … not promoted" label.
             findings = list(
                 (
                     await session.execute(
                         select(ResearchFindingModel)
-                        .where(ResearchFindingModel.status != "archived")
+                        .where(
+                            and_(
+                                ResearchFindingModel.status != "archived",
+                                ResearchFindingModel.discovered_at >= week_ago,
+                                ResearchFindingModel.linked_task_id.is_(None),
+                            )
+                        )
                         .order_by(ResearchFindingModel.novelty_score.desc())
                         .limit(5)
                     )

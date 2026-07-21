@@ -295,8 +295,14 @@ class EpisodicMemoryService:
         self,
         namespace: Optional[str] = None,
         limit: int = 20,
+        source_type: Optional[str] = None,
     ) -> List[EpisodicMemory]:
-        """Get most recent memories, optionally filtered by namespace."""
+        """Get most recent memories, optionally filtered by namespace/source_type.
+
+        Pushing ``source_type`` into SQL (rather than over-fetching and filtering in
+        Python) keeps a low-frequency source (e.g. weekly reflections) findable even
+        when high-frequency sources dominate the recency ordering.
+        """
         try:
             async with get_session() as session:
                 query = select(EpisodicMemoryModel).order_by(
@@ -304,6 +310,8 @@ class EpisodicMemoryService:
                 )
                 if namespace:
                     query = query.where(EpisodicMemoryModel.namespace == namespace)
+                if source_type:
+                    query = query.where(EpisodicMemoryModel.source_type == source_type)
                 query = query.limit(limit)
 
                 result = await session.execute(query)
