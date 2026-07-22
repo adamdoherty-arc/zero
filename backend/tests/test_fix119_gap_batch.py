@@ -121,7 +121,11 @@ async def test_act2_auto_expire_expires_pending_regression():
         expires_in_hours=-1, auto_action_on_expiry="reject",
     )
     rid = req["id"]
-    assert req["status"] == "pending"
+    # ACT-1 (supervise ee392aa1): _to_dict now reports the EFFECTIVE status, so a
+    # row created already-past-expiry reads "expired" here (it truly is) before
+    # the sweep flips the stored column. The raw DB column is still "pending" —
+    # which is what auto_expire_check() below claims and rejects.
+    assert req["status"] == "expired"
     n = await svc.auto_expire_check()
     assert n >= 1
     after = await svc.get_request(rid)

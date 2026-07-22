@@ -5,7 +5,7 @@ tier-based (read | write_local | write_external | financial) and used by the
 supervisor + specialist graph nodes to pause at tool boundaries.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -21,7 +21,11 @@ router = APIRouter(
 
 
 class ApprovalDecision(BaseModel):
-    status: str = Field(..., description="approved | rejected")
+    # ACT-2 (supervise ee392aa1): a bare `str` let an invalid status (typo like
+    # "approve", or "maybe") pass Pydantic and hit the service's raw ValueError,
+    # surfacing as a generic 500 (logged as unhandled_exception). A Literal makes
+    # FastAPI reject bad input with a structured 422 before the service runs.
+    status: Literal["approved", "rejected"] = Field(..., description="approved | rejected")
     reason: Optional[str] = None
     decided_by: str = Field(default="user")
 

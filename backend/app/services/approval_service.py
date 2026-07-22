@@ -275,6 +275,19 @@ class ApprovalService:
                 "avg_decision_time_hours": avg_hours,
             }
 
+    @staticmethod
+    def effective_status(row) -> str:
+        """Status as of NOW: a `pending` row past expires_at reads as expired
+        even before the hourly auto_expire sweep flips the column."""
+        status = row.status
+        if status == "pending" and row.expires_at is not None:
+            exp = row.expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < datetime.now(timezone.utc):
+                return "expired"
+        return status
+
     def _to_dict(self, row) -> Dict[str, Any]:
         return {
             "id": row.id,
@@ -284,7 +297,12 @@ class ApprovalService:
             "context_data": row.context_data,
             "initiated_by": row.initiated_by,
             "route": row.route,
-            "status": row.status,
+            # ACT-1 (supervise ee392aa1): list_all()/get_request() echoed the raw
+            # status column, so a pending-but-expired row (before the hourly sweep)
+            # rendered as actionable and then dead-ended in _decide's approve guard.
+            # Mirror get_stats()/list_pending()'s effective-status definition here
+            # so every read path agrees on one meaning of "pending".
+            "status": self.effective_status(row),
             "decision_by": row.decision_by,
             "decision_reason": row.decision_reason,
             "decided_at": row.decided_at.isoformat() if row.decided_at else None,

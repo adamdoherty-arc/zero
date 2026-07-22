@@ -133,12 +133,22 @@ class BifrostProvider(BaseLLMProvider):
             headers=self._request_headers(payload),
         ) as response:
             response.raise_for_status()
+            # R1 (supervise ee392aa1): mirror _message_content's reasoning
+            # fallback. Qwen3-thinking / Kimi (both reasoning models — qwen3-chat
+            # is the default chat route) frequently stream the answer in
+            # `reasoning_content` deltas with `content=""`. The old loop only
+            # yielded `content`, so such a response streamed ZERO chunks and the
+            # user got a silent blank reply. Buffer reasoning and, only if no
+            # content ever arrived, emit it at the end — so real answers stream
+            # live and the thinking is never leaked when content is present.
+            saw_content = False
+            reasoning_parts: List[str] = []
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
                     continue
                 data_str = line[6:].strip()
                 if data_str == "[DONE]":
-                    return
+                    break
                 try:
                     import json
 
@@ -146,10 +156,17 @@ class BifrostProvider(BaseLLMProvider):
                     delta = data.get("choices", [{}])[0].get("delta", {})
                     content = delta.get("content") or ""
                     if content:
+                        saw_content = True
                         yield content
+                    elif not saw_content:
+                        rc = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                        if rc:
+                            reasoning_parts.append(rc)
                 except Exception as e:  # noqa: BLE001
                     logger.debug("bifrost_stream_chunk_parse_failed", error=str(e))
                     continue
+            if not saw_content and reasoning_parts:
+                yield "".join(reasoning_parts)
 
     async def is_healthy(self) -> bool:
         try:

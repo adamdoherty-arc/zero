@@ -84,10 +84,23 @@ class EpisodicMemoryService:
                         continue
 
                     try:
-                        importance = float(item.get("importance") or 50)
+                        # RET-3 (supervise ee392aa1): `or 50` promoted a
+                        # legitimate importance of 0 (trivia the LLM scored at the
+                        # bottom) to mid-scale 50, silently inflating TTL/ranking.
+                        # Default only on a truly absent/None value.
+                        _raw_importance = item.get("importance")
+                        importance = float(_raw_importance) if _raw_importance is not None else 50.0
                     except (TypeError, ValueError):
                         importance = 50.0
-                    tags = item.get("tags", [])
+                    # RET-1 (supervise ee392aa1): an LLM emitting `"tags": null`
+                    # (a common JSON-mode habit for an empty array) left tags=None.
+                    # The ORM row committed (nullable column), but the EpisodicMemory
+                    # Pydantic build below — tags: List[str] non-Optional — then
+                    # raised ValidationError, caught per-item AFTER the commit: the
+                    # fact was persisted yet dropped from the return list, and the
+                    # NULL-tags row later fails to deserialize on retrieval too.
+                    # `or []` coerces both absent and null to an empty list.
+                    tags = item.get("tags") or []
                     ttl_days = HIGH_IMPORTANCE_TTL_DAYS if importance >= IMPORTANCE_THRESHOLD else DEFAULT_TTL_DAYS
 
                     embedding = await ollama.embed_safe(content)
@@ -381,7 +394,11 @@ class EpisodicMemoryService:
                     query = query.where(EpisodicMemoryModel.namespace == namespace)
                 result = await session.execute(query)
                 return result.scalar() or 0
-        except Exception:
+        except Exception as e:
+            # RET-4 (supervise ee392aa1): every other method in this file logs on
+            # this catch; count() alone swallowed silently, so a DB outage would
+            # be indistinguishable from "zero memories" to any future metric caller.
+            logger.warning("episodic_count_failed", error=str(e), namespace=namespace)
             return 0
 
 

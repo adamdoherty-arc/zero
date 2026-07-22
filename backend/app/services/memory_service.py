@@ -192,11 +192,25 @@ class MemoryService:
 
     async def generate_title(self, session_id: str) -> str:
         """Auto-generate a title from the first user message."""
-        messages = await self.get_messages(session_id, limit=3)
-        first_human = next((m for m in messages if m["role"] == "human"), None)
-        if first_human:
-            title = first_human["content"][:80]
-            if len(first_human["content"]) > 80:
+        # RET-2 (supervise ee392aa1): get_messages() returns the NEWEST `limit`
+        # rows (ORDER BY id DESC), so `get_messages(limit=3)` titled from the tail
+        # of the conversation, not its opening — masked today only because both
+        # callers gate on len(messages) <= 2. Query the earliest human message
+        # directly so the title is stable and reflects the real first message.
+        from app.db.models import ConversationMessageModel
+        async with AsyncSessionLocal() as db:
+            row = (await db.execute(
+                select(ConversationMessageModel)
+                .where(
+                    ConversationMessageModel.session_id == session_id,
+                    ConversationMessageModel.role == "human",
+                )
+                .order_by(ConversationMessageModel.id.asc())
+                .limit(1)
+            )).scalar_one_or_none()
+        if row and row.content:
+            title = row.content[:80]
+            if len(row.content) > 80:
                 title += "..."
             await self.update_session_title(session_id, title)
             return title

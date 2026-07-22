@@ -613,6 +613,15 @@ class ChatService:
                 ):
                     full_content += chunk
                     yield f'data: {json.dumps({"type": "chunk", "content": chunk})}\n\n'
+                # R1 (supervise ee392aa1): a reasoning-only stream can finish with
+                # zero content chunks (BifrostProvider.chat_stream now surfaces the
+                # reasoning fallback, but a genuinely empty completion still yields
+                # nothing). Emit the same generic fallback the except branch uses
+                # rather than letting the user see a silent blank reply + a `done`.
+                if not full_content:
+                    error_msg = "Sorry, I couldn't generate a response. Please try again in a moment."
+                    yield f'data: {json.dumps({"type": "chunk", "content": error_msg})}\n\n'
+                    full_content = error_msg
             except Exception as e:
                 logger.error("ask_zero_stream_failed", error=str(e))
                 # Fix-141 F8: generic fallback only — detail stays server-side.
@@ -620,12 +629,18 @@ class ChatService:
                 yield f'data: {json.dumps({"type": "chunk", "content": error_msg})}\n\n'
                 full_content = error_msg
 
-            session.messages.append(AIMessage(content=full_content))
             yield f'data: {json.dumps({"type": "done", "session_id": session.session_id, "sources": sources, "model": model_name})}\n\n'
         finally:
             # R4: runs on GeneratorExit too, so a partial answer the user
             # actually saw is still recorded rather than silently discarded.
+            # R2 (supervise ee392aa1): append to the in-memory session HERE too,
+            # not after the loop. On a mid-stream client disconnect GeneratorExit
+            # skipped the old post-loop append, so the DB got the partial AI turn
+            # but the in-memory session.messages never did — a split-brain that
+            # made get_session_history and the next prompt window disagree with
+            # the DB until eviction. Both stores now update together.
             if full_content:
+                session.messages.append(AIMessage(content=full_content))
                 try:
                     await mem.add_message(
                         session.session_id, "ai", full_content,
