@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 
@@ -47,6 +48,18 @@ logger = structlog.get_logger(__name__)
 # Limit concurrent LLM calls per hunt_for_service to avoid Bifrost 429s when
 # multiple services fire in parallel during the morning scheduler burst.
 _LLM_CONCURRENCY = asyncio.Semaphore(3)
+
+# CB-LLM (supervise ee392aa1): when the shared LLM is fully unavailable (every
+# provider in the fallback chain failed — observed live: vllm-local saturated at
+# max_num_seqs=1, groq/cerebras 429, freellm 401), the 4-hourly hunt_all batch
+# of ~90+ merchant pages otherwise fires one DOOMED extraction per page, each
+# cascading through every dead provider over 1-2 min — starving the shared GPU
+# and flooding logs for the whole run while yielding nothing. Once the
+# "all providers failed" signal is seen, skip LLM extraction for a cooldown and
+# probe again after it. Bounds the storm to ~1 probe per cooldown instead of N
+# per batch. Module-level so the singleton service shares one breaker.
+_LLM_CB_COOLDOWN_S = 300.0
+_llm_cb = {"until": 0.0}  # monotonic deadline; <= now means closed (extract allowed)
 
 
 # HTML aggregator sources extracted via the LLM. Each merchant-scoped page
@@ -597,6 +610,10 @@ class MealPromoHunterService:
 
         Returns empty list on any error so the caller falls back to regex.
         """
+        # CB-LLM: breaker open — the LLM was just seen fully unavailable; skip the
+        # call (and the semaphore wait) so a batch doesn't storm a dead gateway.
+        if time.monotonic() < _llm_cb["until"]:
+            return []
         async with _LLM_CONCURRENCY:
             return await self._extract_codes_llm_inner(markdown, merchant_name, merchant_slug)
 
@@ -654,7 +671,19 @@ Return only JSON, no prose.'''
                 json_mode=True,
             )
         except Exception as e:
-            logger.debug("promo_llm_extract_error", error=str(e), merchant=merchant_slug)
+            msg = str(e)
+            # CB-LLM: the whole fallback chain failed — trip the breaker so the
+            # rest of this batch (and any hunt in the cooldown) skips the LLM.
+            if "all llm providers failed" in msg.lower() or "all providers failed" in msg.lower():
+                if time.monotonic() >= _llm_cb["until"]:
+                    logger.warning(
+                        "promo_llm_circuit_open",
+                        cooldown_s=_LLM_CB_COOLDOWN_S,
+                        merchant=merchant_slug,
+                    )
+                _llm_cb["until"] = time.monotonic() + _LLM_CB_COOLDOWN_S
+            else:
+                logger.debug("promo_llm_extract_error", error=msg, merchant=merchant_slug)
             return []
 
         # Parse — handle both bare array and object-with-key formats

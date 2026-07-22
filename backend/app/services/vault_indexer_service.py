@@ -407,6 +407,16 @@ class VaultIndexerService:
             text = raw.decode("utf-8", errors="replace")
         except Exception:  # noqa: BLE001
             return 0
+        # IDX-NUL (supervise ee392aa1): a corrupt vault file (e.g. a half-written
+        # health-watchdog daily journal padded with 0x00) decodes NUL bytes into
+        # text. PostgreSQL text columns cannot hold 0x00, so a single such file
+        # raised DataError on the batch INSERT and aborted the ENTIRE reindex tick
+        # every 2 min (silent — the scheduler wrapper caught+logged it and still
+        # recorded job status=completed). Strip NUL at the decode boundary so one
+        # bad file degrades to its readable text instead of breaking all indexing.
+        if "\x00" in text:
+            logger.warning("vault_index_nul_stripped", path=rel, nul_count=text.count("\x00"))
+            text = text.replace("\x00", "")
         fm, body = _parse_frontmatter(text)
         tags = []
         raw_tags = (fm or {}).get("tags")
