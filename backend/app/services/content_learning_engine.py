@@ -169,17 +169,28 @@ class ContentLearningEngine:
             category=category,
         )
 
-        # Store as episodic memory if winning
-        if category == "winning":
+        # Store as episodic memory. L6: previously ONLY "winning" persisted
+        # anything — needs_revision/neutral were log-and-return, so the
+        # docstring's "flagged for revision" was a no-op. Now a low-scoring
+        # prompt is durably flagged as negative signal so the flag is real.
+        if category in ("winning", "needs_revision"):
             try:
                 from app.services.episodic_memory_service import get_episodic_memory_service
                 memory_svc = get_episodic_memory_service()
+                if category == "winning":
+                    content = f"Winning carousel prompt (score={ai_score:.1f}): {original_prompt[:500]}"
+                    importance = 70
+                    tags = ["winning_prompt", "carousel", f"score_{int(ai_score)}"]
+                else:
+                    content = f"Carousel prompt flagged for revision (score={ai_score:.1f}): {original_prompt[:500]}"
+                    importance = 40
+                    tags = ["needs_revision", "carousel", f"score_{int(ai_score)}"]
                 await memory_svc.store_direct(
-                    content=f"Winning carousel prompt (score={ai_score:.1f}): {original_prompt[:500]}",
+                    content=content,
                     source_type="prompt_evolution",
                     namespace="content",
-                    importance=70,
-                    tags=["winning_prompt", "carousel", f"score_{int(ai_score)}"],
+                    importance=importance,
+                    tags=tags,
                 )
             except Exception as e:  # best-effort memory store — a DB/embedding-network blip must not lose the already-registered result
                 logger.debug("prompt_evolution_memory_failed", error=str(e))

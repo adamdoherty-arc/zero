@@ -97,13 +97,20 @@ class LoopRunnerService:
         NOT dispatch them in-process, otherwise every tick double-dispatches
         and orphans `running` rows.
         """
-        due = await self._registry.next_due_loops(within_seconds=300, limit=max_runs)
+        # L1: exclude opencode at the query level. Its next_due_at is NEVER
+        # advanced here (advancing it would hide the loop from the daemon's
+        # /queue poll, which also selects by next_due_at), so before this fix a
+        # stale opencode row sat at the front of this next_due_at-ordered
+        # `limit` window every tick and starved claude_skill/http loops. The
+        # daemon still sees opencode via /queue (which does not pass this filter).
+        due = await self._registry.next_due_loops(
+            within_seconds=300, limit=max_runs, exclude_runner_kinds=["opencode"]
+        )
         results: list[dict[str, Any]] = []
         for loop in due:
             if loop.get("runner_kind") == "opencode":
-                # Skip — daemon owns this dispatch path. Reschedule so the
-                # loop doesn't reappear in /queue immediately for the daemon
-                # before the daemon's next 60s poll consumes it.
+                # Defensive: already excluded at the query level. Do NOT
+                # reschedule — the loop must stay due for the daemon's /queue.
                 continue
             try:
                 result = await self.dispatch(loop)

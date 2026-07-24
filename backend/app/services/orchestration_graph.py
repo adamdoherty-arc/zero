@@ -1301,7 +1301,50 @@ async def council_node(state: OrchestratorState) -> dict:
         from app.models.agent_company import CouncilProposal
         svc = get_council_service()
 
-        if any(kw in msg_lower for kw in ["propose", "council vote", "decide", "should we"]):
+        import re
+        # R1/R2: the documented command is `council vote <id>` (emitted below).
+        # "council vote" also contains the substring the propose branch used to
+        # match on, so following the instruction fell into propose and created a
+        # garbage proposal instead of voting; and the vote branch ignored the
+        # typed id, only ever voting the newest pending decision. Detect an
+        # explicit vote command + its optional target id FIRST.
+        #   "council vote <id>" / "vote <id>" / "run vote <id>" -> vote that id
+        #   "council vote on <topic>" / "propose ..." / "decide" -> propose
+        #   bare "vote" / "run vote"                             -> vote newest pending
+        vote_id_match = re.search(
+            r'\b(?:council\s+vote|run\s+vote|vote)\s+(?!on\b)([A-Za-z0-9][A-Za-z0-9_\-]{3,})',
+            content, re.IGNORECASE,
+        )
+        is_bare_vote = (
+            re.search(r'\b(?:run\s+vote|vote)\b', msg_lower) is not None
+            and "on " not in msg_lower
+            and not any(kw in msg_lower for kw in ["propose", "decide", "should we"])
+        )
+        wants_vote = bool(vote_id_match) or is_bare_vote
+
+        if wants_vote:
+            target_id = vote_id_match.group(1) if vote_id_match else None
+            if not target_id:
+                decisions = await svc.list_decisions(pending_only=True, limit=1)
+                target_id = decisions[0].id if decisions else None
+            if not target_id:
+                text = "No pending council decisions. Propose one first!"
+            else:
+                result = await svc.conduct_vote(target_id)
+                # RSN-A5 (supervise zero 6a8c5562): conduct_vote returns None
+                # when the row vanishes between selection and the tally write.
+                if result is None:
+                    text = "That council decision was removed before the vote finished."
+                else:
+                    conf = (
+                        f"{result.confidence_score:.0f}%"
+                        if result.confidence_score is not None
+                        else "pending"
+                    )
+                    text = (f"Council voted on: **{result.topic}**\n"
+                            f"Decision: {result.decision}\n"
+                            f"Confidence: {conf}")
+        elif any(kw in msg_lower for kw in ["propose", "council vote on", "decide", "should we"]):
             topic = content
             for prefix in ["propose ", "council vote on ", "should we "]:
                 if msg_lower.startswith(prefix):
@@ -1309,23 +1352,6 @@ async def council_node(state: OrchestratorState) -> dict:
                     break
             decision = await svc.propose(CouncilProposal(topic=topic))
             text = f"Council decision proposed: **{decision.topic}**\nID: {decision.id}\nRun vote with: council vote {decision.id}"
-        elif any(kw in msg_lower for kw in ["vote", "run vote"]):
-            decisions = await svc.list_decisions(pending_only=True, limit=1)
-            if decisions:
-                result = await svc.conduct_vote(decisions[0].id)
-                # RSN-A5 (supervise zero 6a8c5562): conduct_vote returns None
-                # when the row vanishes between selection and the tally write.
-                # The router path guards this (council.py:37-38); this chat path
-                # derefed it straight into AttributeError: 'NoneType' inside the
-                # handler, surfacing to the user as a generic failure.
-                if result is None:
-                    text = "That council decision was removed before the vote finished."
-                else:
-                    text = (f"Council voted on: **{result.topic}**\n"
-                            f"Decision: {result.decision}\n"
-                            f"Confidence: {result.confidence_score:.0f}%")
-            else:
-                text = "No pending council decisions. Propose one first!"
         else:
             decisions = await svc.list_decisions(limit=10)
             if decisions:

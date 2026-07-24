@@ -180,13 +180,17 @@ class ContentAgentService:
             )
             session.add(row)
 
-            # Update topic example count
-            topic_result = await session.execute(
-                select(ContentTopicModel).where(ContentTopicModel.id == data.topic_id)
+            # Update topic example count (C3: atomic increment — avoids lost
+            # updates when adds overlap, e.g. research_content_trends + a router add).
+            await session.execute(
+                update(ContentTopicModel)
+                .where(ContentTopicModel.id == data.topic_id)
+                .values(
+                    examples_count=sql_func.coalesce(
+                        ContentTopicModel.examples_count, 0
+                    ) + 1
+                )
             )
-            topic = topic_result.scalar_one_or_none()
-            if topic:
-                topic.examples_count = (topic.examples_count or 0) + 1
 
             # Generate embedding
             try:
@@ -217,13 +221,14 @@ class ContentAgentService:
                 delete(ContentExampleModel).where(ContentExampleModel.id == example_id)
             )
 
-            # Update topic example count
-            topic_result = await session.execute(
-                select(ContentTopicModel).where(ContentTopicModel.id == topic_id)
+            # Update topic example count (C3: atomic decrement, floored at 0 via
+            # the WHERE guard so it never drifts negative under concurrency).
+            await session.execute(
+                update(ContentTopicModel)
+                .where(ContentTopicModel.id == topic_id)
+                .where(ContentTopicModel.examples_count > 0)
+                .values(examples_count=ContentTopicModel.examples_count - 1)
             )
-            topic = topic_result.scalar_one_or_none()
-            if topic and topic.examples_count > 0:
-                topic.examples_count -= 1
 
             return True
 
@@ -425,7 +430,17 @@ class ContentAgentService:
                     hashtags=topic.hashtag_strategy,
                 )
                 if result:
-                    job_id = result.get("job_id") or result.get("id", "")
+                    job_id = result.get("job_id") or result.get("id") or ""
+                    if not job_id:
+                        # C4: a truthy result with no id keys is not a real
+                        # queued job — appending "" made job_ids truthy (false
+                        # "queued" status) and inflated content_generated_count
+                        # with phantom jobs.
+                        logger.warning(
+                            "content_generation_no_job_id",
+                            topic_id=topic.id, result_keys=list(result.keys()),
+                        )
+                        continue
                     gen_id = result.get("generation_id") or job_id
                     job_ids.append(job_id)
                     gen_ids.append(gen_id)
@@ -447,14 +462,20 @@ class ContentAgentService:
             except Exception as e:
                 logger.error("content_generation_failed", error=str(e))
 
-        # Update generated count
-        async with get_session() as session:
-            result = await session.execute(
-                select(ContentTopicModel).where(ContentTopicModel.id == topic.id)
-            )
-            row = result.scalar_one_or_none()
-            if row:
-                row.content_generated_count = (row.content_generated_count or 0) + len(job_ids)
+        # Update generated count (C2: atomic increment — a read-modify-write on
+        # the ORM object lost updates when two generate calls for one topic ran
+        # concurrently).
+        if job_ids:
+            async with get_session() as session:
+                await session.execute(
+                    update(ContentTopicModel)
+                    .where(ContentTopicModel.id == topic.id)
+                    .values(
+                        content_generated_count=sql_func.coalesce(
+                            ContentTopicModel.content_generated_count, 0
+                        ) + len(job_ids)
+                    )
+                )
 
         return ContentGenerateResponse(
             job_ids=job_ids,
@@ -472,53 +493,76 @@ class ContentAgentService:
         from app.services.ai_content_tools_client import get_ai_content_tools_client
         act = get_ai_content_tools_client()
 
-        updated = 0
+        # C1: never hold the DB session open across the get_performance() HTTP
+        # calls — the old loop pinned one PG connection in an open transaction
+        # across up to 100 sequential network awaits (hourly idle-in-tx FATALs).
+        # Split into Tx-A (read ids) -> session-less HTTP -> Tx-C (bulk write).
+
+        # Tx-A: snapshot the unprocessed record ids (short-lived read tx).
         async with get_session() as session:
-            query = select(ContentPerformanceModel).where(
+            query = select(
+                ContentPerformanceModel.id,
+                ContentPerformanceModel.act_generation_id,
+                ContentPerformanceModel.tiktok_product_id,
+            ).where(
                 ContentPerformanceModel.feedback_processed == False  # noqa: E712
             )
             if topic_id:
                 query = query.where(ContentPerformanceModel.topic_id == topic_id)
             query = query.limit(100)
+            rows = (await session.execute(query)).all()
 
-            result = await session.execute(query)
-            records = result.scalars().all()
-
-            for record in records:
-                if not record.act_generation_id:
-                    continue
-                try:
-                    perf_data = await act.get_performance(
-                        generation_id=record.act_generation_id
-                    )
-                    if perf_data and isinstance(perf_data, list) and len(perf_data) > 0:
-                        p = perf_data[0]
-                        record.views = p.get("views", 0)
-                        record.likes = p.get("likes", 0)
-                        record.comments = p.get("comments", 0)
-                        record.shares = p.get("shares", 0)
-                        record.saves = p.get("saves", 0)
-
-                        total_eng = record.likes + record.comments * 3 + record.shares * 5
-                        record.engagement_rate = (total_eng / record.views * 100) if record.views else 0
-                        record.performance_score = min(95, 30 + record.engagement_rate * 5)
-                        record.synced_at = datetime.now(timezone.utc)
-                        updated += 1
-                except Exception as e:
-                    logger.debug("perf_sync_skip", gen_id=record.act_generation_id, error=str(e))
-
-        # Feed performance data back to product scoring
-        if updated > 0:
+        # Session-less: fetch performance per generation over HTTP.
+        pending: list[tuple[str, dict]] = []
+        product_ids: set[str] = set()
+        for rec_id, gen_id, product_id in rows:
+            if not gen_id:
+                continue
             try:
-                product_ids = set()
-                for record in records:
-                    if record.tiktok_product_id:
-                        product_ids.add(record.tiktok_product_id)
-                if product_ids:
-                    from app.services.tiktok_shop_service import get_tiktok_shop_service
-                    shop_svc = get_tiktok_shop_service()
-                    for pid in product_ids:
-                        await shop_svc.update_score_from_performance(pid)
+                perf_data = await act.get_performance(generation_id=gen_id)
+            except Exception as e:
+                logger.debug("perf_sync_skip", gen_id=gen_id, error=str(e))
+                continue
+            if perf_data and isinstance(perf_data, list) and len(perf_data) > 0:
+                p = perf_data[0]
+                views = p.get("views", 0)
+                likes = p.get("likes", 0)
+                comments = p.get("comments", 0)
+                shares = p.get("shares", 0)
+                total_eng = likes + comments * 3 + shares * 5
+                engagement_rate = (total_eng / views * 100) if views else 0
+                pending.append((rec_id, {
+                    "views": views,
+                    "likes": likes,
+                    "comments": comments,
+                    "shares": shares,
+                    "saves": p.get("saves", 0),
+                    "engagement_rate": engagement_rate,
+                    "performance_score": min(95, 30 + engagement_rate * 5),
+                    "synced_at": datetime.now(timezone.utc),
+                }))
+                if product_id:
+                    product_ids.add(product_id)
+
+        # Tx-C: write the collected metrics back in a short-lived tx.
+        updated = 0
+        if pending:
+            async with get_session() as session:
+                for rec_id, values in pending:
+                    await session.execute(
+                        update(ContentPerformanceModel)
+                        .where(ContentPerformanceModel.id == rec_id)
+                        .values(**values)
+                    )
+                    updated += 1
+
+        # Feed performance data back to product scoring (session-less).
+        if updated > 0 and product_ids:
+            try:
+                from app.services.tiktok_shop_service import get_tiktok_shop_service
+                shop_svc = get_tiktok_shop_service()
+                for pid in product_ids:
+                    await shop_svc.update_score_from_performance(pid)
             except Exception as e:
                 logger.warning("performance_feedback_failed", error=str(e))
 

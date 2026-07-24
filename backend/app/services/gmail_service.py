@@ -5,6 +5,7 @@ Persistence layer uses PostgreSQL via SQLAlchemy async ORM.
 """
 
 import json
+import asyncio
 import base64
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -12,7 +13,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 import structlog
 
-from sqlalchemy import select, update, func as sa_func
+from sqlalchemy import select, update, delete, func as sa_func
 
 from app.models.email import (
     Email, EmailSummary, EmailThread, EmailLabel,
@@ -150,8 +151,11 @@ class GmailService:
                         unread_count=(row.metadata_ or {}).get("unread_count", 0),
                         sync_errors=row.errors or [],
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            # A real DB/connection error must not be masked as a fresh, empty,
+            # disconnected status (that hides an outage behind a healthy-looking
+            # zero-count state). Log it, then fall through to the default.
+            logger.warning("sync_status_load_failed", error=str(e))
         return EmailSyncStatus()
 
     async def _save_sync_status(self, status: EmailSyncStatus) -> None:
@@ -495,6 +499,22 @@ Reply with ONLY the category name, nothing else."""
             # second, unwrapped getProfile() call for the same data.
             history_id = results.get("historyId") or profile.get("historyId")
             if history_id:
+                # CAP-2: seed the PER-ACCOUNT cursor. sync_incremental reads
+                # oauth_accounts.metadata first; without this seed a non-default
+                # account had no per-account history_id, fell back to the shared
+                # "gmail" row (holding the default account's id), and 404'd every
+                # tick -> full resync forever. Only the shared row was written
+                # here before.
+                if account_id:
+                    try:
+                        await get_gmail_oauth_service().update_account_metadata(
+                            account_id, history_id=str(history_id)
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "gmail_account_history_seed_failed",
+                            account_id=account_id, error=str(e),
+                        )
                 async with get_session() as session:
                     row = await session.get(SyncStatusModel, "gmail")
                     if row:
@@ -851,7 +871,11 @@ Reply with ONLY the category name, nothing else."""
                 kwargs = dict(
                     userId="me",
                     startHistoryId=history_id,
-                    historyTypes=["messageAdded", "labelAdded", "labelRemoved"],
+                    # messageDeleted was previously omitted, so trashed/deleted
+                    # mail lingered in the local cache forever (A5).
+                    historyTypes=[
+                        "messageAdded", "messageDeleted", "labelAdded", "labelRemoved",
+                    ],
                 )
                 if _pt:
                     kwargs["pageToken"] = _pt
@@ -898,9 +922,25 @@ Reply with ONLY the category name, nothing else."""
             histories, new_history_id = await self._fetch_all_history(service, history_id)
 
             added_ids = set()
+            deleted_ids: set[str] = set()
+            # msg_id -> {"added": set(labelIds), "removed": set(labelIds)}. A5:
+            # these label/read/star/archive changes were fetched (the label
+            # history types were even requested) but never applied, so local
+            # read/star/label state drifted from Gmail until a full resync.
+            label_changes: dict[str, dict] = {}
             for h in histories:
                 for ma in h.get("messagesAdded", []):
                     added_ids.add(ma["message"]["id"])
+                for md in h.get("messagesDeleted", []):
+                    deleted_ids.add(md["message"]["id"])
+                for la in h.get("labelsAdded", []):
+                    mid = la["message"]["id"]
+                    chg = label_changes.setdefault(mid, {"added": set(), "removed": set()})
+                    chg["added"].update(la.get("labelIds", []))
+                for lr in h.get("labelsRemoved", []):
+                    mid = lr["message"]["id"]
+                    chg = label_changes.setdefault(mid, {"added": set(), "removed": set()})
+                    chg["removed"].update(lr.get("labelIds", []))
 
             # Find which IDs already exist in DB
             existing_ids: set[str] = set()
@@ -914,14 +954,24 @@ Reply with ONLY the category name, nothing else."""
 
             new_emails = 0
             new_email_objects: list[Email] = []
+            # CAP-3: a transient fetch failure must NOT let the history cursor
+            # advance past an un-fetched message (that message's messagesAdded
+            # event would be behind the cursor forever = silent permanent loss).
+            # A 404 means the message is already gone from Gmail, so it is safe
+            # to advance past; anything else holds the cursor for a retry.
+            retriable_failure = False
 
             for msg_id in added_ids:
                 if msg_id in existing_ids:
                     continue
                 try:
-                    msg = service.users().messages().get(
-                        userId="me", id=msg_id, format="full"
-                    ).execute()
+                    # .execute() is a blocking googleapiclient HTTP call — offload
+                    # it so the whole async event loop doesn't stall per message.
+                    msg = await asyncio.to_thread(
+                        lambda mid=msg_id: service.users().messages().get(
+                            userId="me", id=mid, format="full"
+                        ).execute()
+                    )
                     headers = self._parse_headers(msg.get("payload", {}).get("headers", []))
                     text_body, html_body = self._decode_body(msg.get("payload", {}))
                     from_addr = self._parse_email_address(headers.get("from", ""))
@@ -954,11 +1004,16 @@ Reply with ONLY the category name, nothing else."""
                     await self._check_alert_rules(email)
 
                 except Exception as e:
-                    logger.warning("history_message_fetch_error", id=msg_id, error=str(e))
+                    err = str(e)
+                    if "404" not in err and "notfound" not in err.lower():
+                        retriable_failure = True
+                    logger.warning("history_message_fetch_error", id=msg_id, error=err)
 
-            # Persist new emails (tagged with account_id) and update history_id.
-            # Each row is wrapped in its own SAVEPOINT (begin_nested) so one
-            # poison row doesn't roll back the whole batch and wedge sync.
+            # Persist new emails (tagged with account_id), apply deletions and
+            # label changes, then update history_id. Each new row is wrapped in
+            # its own SAVEPOINT (begin_nested) so one poison row doesn't roll
+            # back the whole batch and wedge sync.
+            newly_added_ids = {e.id for e in new_email_objects}
             async with get_session() as session:
                 for email in new_email_objects:
                     row = self._email_to_row(email)
@@ -972,10 +1027,38 @@ Reply with ONLY the category name, nothing else."""
                         )
                         continue
 
+                # A5: drop messages deleted/trashed in Gmail from the cache so
+                # they stop surfacing locally.
+                if deleted_ids:
+                    await session.execute(
+                        delete(EmailCacheModel).where(
+                            EmailCacheModel.id.in_(list(deleted_ids))
+                        )
+                    )
+
+                # A5: apply label/read/star/important changes to existing cached
+                # rows (skip freshly-added rows — they already carry full labels,
+                # and skip deleted ones).
+                for mid, chg in label_changes.items():
+                    if mid in deleted_ids or mid in newly_added_ids:
+                        continue
+                    row = await session.get(EmailCacheModel, mid)
+                    if row is None:
+                        continue
+                    labels = set(row.labels or [])
+                    labels |= chg["added"]
+                    labels -= chg["removed"]
+                    row.labels = sorted(labels)
+                    row.status = "unread" if "UNREAD" in labels else "read"
+                    row.is_starred = "STARRED" in labels
+                    row.is_important = "IMPORTANT" in labels
+
             # Update history_id on the account row (preferred) and mirror to
             # the legacy SyncStatus row for the default account so old code
-            # that reads from SyncStatusModel keeps working.
-            if new_history_id:
+            # that reads from SyncStatusModel keeps working. CAP-3: hold the
+            # cursor when a retriable message fetch failed, so the un-fetched
+            # message is retried next tick instead of being lost.
+            if new_history_id and not retriable_failure:
                 if account_id:
                     await oauth_svc.update_account_metadata(
                         account_id, history_id=str(new_history_id)
@@ -988,14 +1071,30 @@ Reply with ONLY the category name, nothing else."""
                         legacy.metadata_ = meta
                         legacy.last_sync = datetime.utcnow()
                         await session.merge(legacy)
+            elif retriable_failure:
+                logger.warning(
+                    "gmail_history_cursor_held",
+                    account_id=account_id,
+                    reason="retriable message fetch failure; not advancing history_id",
+                )
 
             logger.info(
                 "gmail_incremental_sync_complete",
                 account_id=account_id,
                 new_emails=new_emails,
+                deletions=len(deleted_ids),
+                label_updates=len(label_changes),
+                cursor_held=retriable_failure,
                 history_changes=len(histories),
             )
-            return {"status": "success", "type": "incremental", "new_emails": new_emails, "account_id": account_id}
+            return {
+                "status": "success",
+                "type": "incremental",
+                "new_emails": new_emails,
+                "deletions": len(deleted_ids),
+                "label_updates": len(label_changes),
+                "account_id": account_id,
+            }
 
         except Exception as e:
             if "historyId" in str(e).lower() or "404" in str(e):

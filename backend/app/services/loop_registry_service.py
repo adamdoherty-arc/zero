@@ -134,8 +134,16 @@ class LoopRegistryService:
         *,
         within_seconds: int = 300,
         limit: int = 25,
+        exclude_runner_kinds: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
-        """Loops whose next_due_at is now-or-soon and which are enabled."""
+        """Loops whose next_due_at is now-or-soon and which are enabled.
+
+        `exclude_runner_kinds` lets the in-process runner drop runner kinds it
+        does NOT own (e.g. opencode, dispatched by the external /queue daemon)
+        at the SQL level, so those rows never occupy slots in the ordered
+        `limit` window and starve the kinds the in-process runner does own.
+        The default (None) preserves the /queue endpoint's behaviour.
+        """
         cutoff = _utcnow() + timedelta(seconds=within_seconds)
         async with get_session() as session:
             stmt = (
@@ -143,9 +151,10 @@ class LoopRegistryService:
                 .where(LoopModel.enabled.is_(True))
                 .where(LoopModel.next_due_at.is_not(None))
                 .where(LoopModel.next_due_at <= cutoff)
-                .order_by(LoopModel.next_due_at.asc())
-                .limit(limit)
             )
+            if exclude_runner_kinds:
+                stmt = stmt.where(LoopModel.runner_kind.notin_(exclude_runner_kinds))
+            stmt = stmt.order_by(LoopModel.next_due_at.asc()).limit(limit)
             rows = (await session.execute(stmt)).scalars().all()
             return [self._serialize_loop(r) for r in rows]
 
