@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.db.models import TaskModel
 from app.infrastructure.config import get_settings
@@ -107,6 +107,7 @@ class VaultTaskSyncService:
 
         in_active_section = False
         changed = False
+        created_ids: list[str] = []  # IDX-1: rollback set if the annotation write fails
 
         for i, line in enumerate(lines):
             h = _HEADING_RE.match(line)
@@ -153,6 +154,7 @@ class VaultTaskSyncService:
                 # New task — create + annotate vault line with task_id.
                 new_id = await self._create_task(title=text, status=target_status, vault_path=note.name)
                 stats["created"] += 1
+                created_ids.append(new_id)
                 lines[i] = f"{indent}- [{m.group('state')}] {text}  <!-- zero-task: {new_id} -->"
                 changed = True
                 stats["annotated"] += 1
@@ -161,9 +163,44 @@ class VaultTaskSyncService:
             try:
                 note.write_text("\n".join(lines) + "\n", encoding="utf-8")
             except Exception as e:  # noqa: BLE001
+                # IDX-1 (supervise fc9c5829): the `<!-- zero-task: id -->` comment
+                # IS the idempotency key — it is the only thing that stops the next
+                # tick from re-matching the same checkbox line. Creating the task
+                # rows first and then failing to persist that key (locked file,
+                # sync-client handle, permission blip) left the rows orphaned and
+                # the line un-annotated, so every subsequent tick created ANOTHER
+                # task for the same checkbox — unbounded duplicates for as long as
+                # the write kept failing. Roll the rows back instead: nothing is
+                # lost, and the next tick retries the pair cleanly.
                 logger.warning("vault_task_sync_annotate_failed", path=str(note), error=str(e))
+                if created_ids:
+                    rolled_back = await self._delete_tasks(created_ids)
+                    stats["created"] -= rolled_back
+                    stats["annotated"] -= rolled_back
+                    stats["rolled_back"] = stats.get("rolled_back", 0) + rolled_back
+                    logger.warning(
+                        "vault_task_sync_rolled_back_unannotated",
+                        path=str(note),
+                        count=rolled_back,
+                        note="annotation write failed; created tasks removed to prevent duplicate creation next tick",
+                    )
 
         return stats
+
+    async def _delete_tasks(self, task_ids: list[str]) -> int:
+        """IDX-1: drop tasks whose vault annotation could not be persisted."""
+        if not task_ids:
+            return 0
+        try:
+            async with get_session() as session:
+                result = await session.execute(
+                    delete(TaskModel).where(TaskModel.id.in_(task_ids))
+                )
+                await session.commit()
+                return int(getattr(result, "rowcount", 0) or 0)
+        except Exception as e:  # noqa: BLE001
+            logger.error("vault_task_sync_rollback_failed", ids=task_ids, error=str(e))
+            return 0
 
     async def _get_task(self, task_id: str) -> Optional[TaskModel]:
         async with get_session() as session:

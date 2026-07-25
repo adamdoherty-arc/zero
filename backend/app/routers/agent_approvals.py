@@ -79,7 +79,27 @@ async def decide(approval_id: str, decision: ApprovalDecision):
         reason=decision.reason,
     )
     if not row:
-        raise HTTPException(404, "Approval not found or already decided")
+        # ACT-7 (supervise fc9c5829): a None from decide() collapsed three very
+        # different causes into one "not found or already decided" 404 — an unknown
+        # id, an already-decided row, and (per the Fix-123 A1 guard) a still-pending
+        # row whose expires_at has passed. An operator approving a financial request
+        # two minutes past its 30-min TTL got the same message as a typo'd id, with
+        # nothing to suggest the right action is "ask the agent to re-request".
+        # Re-read the row and answer with the actual reason.
+        existing = await svc.get(approval_id)
+        if existing is None:
+            raise HTTPException(404, f"Approval {approval_id} not found")
+        effective = svc.effective_status(existing)
+        if effective == "expired":
+            raise HTTPException(
+                410,
+                f"Approval {approval_id} expired at {existing.expires_at.isoformat()} "
+                f"and can no longer be approved; a new request must be raised.",
+            )
+        raise HTTPException(
+            409,
+            f"Approval {approval_id} is already '{effective}' and cannot be decided again.",
+        )
     return _serialize(row)
 
 

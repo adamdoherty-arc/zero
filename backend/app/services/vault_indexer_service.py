@@ -130,6 +130,20 @@ def _json_safe(obj: Any) -> Any:
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """Split a note into (frontmatter dict, body).
+
+    IDX-2 (supervise fc9c5829): _FRONTMATTER_RE anchors on a literal ``\\n`` after
+    the opening ``---``, so a note saved with CRLF line endings ("---\\r\\n") never
+    matched and this returned ``({}, full_text)``. 380 of 17,723 live vault notes
+    were in that state, with two silent consequences: tags and the ``partition``
+    override were dropped and the raw YAML block was indexed as body prose, and —
+    more seriously — ``_index_file``'s ``work`` hard-drop reads ``fm["partition"]``,
+    so a CRLF note tagged ``partition: work`` bypassed the constitution's drop
+    entirely. Normalize line endings here, at the parser boundary, so every caller
+    (and the body handed to the chunker) sees one form.
+    """
+    if "\r" in text:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
     m = _FRONTMATTER_RE.match(text)
     if not m:
         return {}, text
@@ -144,12 +158,27 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:
         return {}, text
 
 
+_FENCE_RE = re.compile(r"^\s*(?:`{3,}|~{3,})")
+
+
 def _split_by_headings(text: str) -> list[tuple[str, str]]:
-    """Return [(heading_path, body), ...]. Heading path is '> '-joined h1/h2/...."""
+    """Return [(heading_path, body), ...]. Heading path is '> '-joined h1/h2/....
+
+    IDX-3 (supervise fc9c5829): this splitter had no fenced-code-block awareness,
+    so any line inside a ``` block that began with 1-6 `#` and a space — a shell
+    comment, a Python `# TODO`, markdown-inside-markdown — was treated as a real
+    heading. It flushed the section mid-code-block, cutting one logical unit into
+    several chunks and writing a bogus `heading_path` onto each. Live exposure at
+    the time of the fix: 9,651 false headings across 1,954 of 17,723 vault notes
+    (the plan/session archives are code-dense), corrupting both chunk boundaries
+    and the heading metadata retrieval ranks on. Track fence state and skip
+    heading detection inside fences.
+    """
     sections: list[tuple[str, str]] = []
     cur_path: list[tuple[int, str]] = []
     buf: list[str] = []
     current_heading_path = ""
+    in_fence = False
 
     def flush():
         nonlocal buf
@@ -159,7 +188,14 @@ def _split_by_headings(text: str) -> list[tuple[str, str]]:
         buf = []
 
     for line in text.splitlines():
-        m = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if _FENCE_RE.match(line):
+            # Toggle on any fence marker. An unterminated fence keeps the rest of
+            # the note fenced, which is the safe direction: it preserves the text
+            # verbatim under the last real heading instead of inventing new ones.
+            in_fence = not in_fence
+            buf.append(line)
+            continue
+        m = None if in_fence else re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
         if m:
             flush()
             level = len(m.group(1))
@@ -232,6 +268,12 @@ class VaultIndexerService:
         # either UniqueViolation-aborts on ux_vault_chunks_path_idx or writes
         # duplicate chunk rows. Only one pass runs at a time.
         self._reindex_lock = asyncio.Lock()
+        # IDX-4: rel_path -> file_hash for files that legitimately produce zero
+        # chunks (empty body after frontmatter). These never persist a
+        # VaultChunkModel row, so the row-derived unchanged-file skip can never
+        # match them. Process-local by design: it is a work-avoidance cache, not
+        # state — a restart just re-does one no-op pass per empty file.
+        self._empty_hashes: dict[str, str] = {}
 
     def available(self) -> bool:
         return self._root.is_dir()
@@ -281,6 +323,8 @@ class VaultIndexerService:
         files_changed = 0
         chunks_written = 0
         chunks_deleted = 0
+        orphan_paths = 0  # IDX-6
+        unreadable = 0  # IDX-5
 
         # Build a set of live paths for orphan detection.
         live_paths: set[str] = set()
@@ -321,9 +365,28 @@ class VaultIndexerService:
             scanned += 1
             try:
                 raw = fp.read_bytes()
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                # IDX-5 (supervise fc9c5829): this skip was completely silent —
+                # an unreadable file (locked handle, un-hydrated cloud placeholder,
+                # permission error) was indistinguishable from an unchanged one in
+                # every log, counter, and API response, so a chronically failing
+                # file could never be discovered. It is still retried next tick.
+                unreadable += 1
+                logger.warning("vault_index_unreadable", path=rel, error=str(e))
                 continue
             file_hash = _sha256_bytes(raw)
+
+            # IDX-4 (supervise fc9c5829): a note whose body is empty after
+            # frontmatter (49 live vault notes — placeholder dailies, plan stubs)
+            # produces zero chunks, so no VaultChunkModel row and therefore no
+            # content_hash is ever persisted for it. The unchanged-file skip below
+            # reads its hash from those rows, so it never matched: every such note
+            # was re-read, re-parsed, and burned one of the max_files re-embed slots
+            # on every 2-minute tick, forever, while doing no work. Remember the
+            # hash of files that legitimately yield no chunks and skip them until
+            # their bytes change.
+            if not force and self._empty_hashes.get(rel) == file_hash:
+                continue
 
             # Skip unchanged files unless forced. Fix-115: a file whose chunks
             # are still NULL-embedded (embedder was down on a prior tick) is
@@ -349,7 +412,15 @@ class VaultIndexerService:
             files_changed += 1
             written = await self._index_file(fp, rel, raw, file_hash)
             chunks_written += written
-            reindexed += 1
+            if written:
+                self._empty_hashes.pop(rel, None)
+                reindexed += 1
+            else:
+                # IDX-4: no chunks were produced, so no embedding work was done —
+                # this file must not consume a re-embed slot (that is what starved
+                # genuinely-changed files at the tail of the cap). Record the hash
+                # so subsequent ticks skip it outright until the bytes change.
+                self._empty_hashes[rel] = file_hash
 
         # Orphan sweep: remove chunks whose source file no longer exists.
         # Only run when the scan was complete (the loop did NOT hit the cap) to
@@ -361,11 +432,19 @@ class VaultIndexerService:
                 db_paths = {p for (p,) in result.all()}
                 orphans = db_paths - live_paths
                 if orphans:
-                    await session.execute(
+                    result = await session.execute(
                         delete(VaultChunkModel).where(VaultChunkModel.path.in_(orphans))
                     )
                     await session.commit()
-                    chunks_deleted = len(orphans)
+                    # IDX-6 (supervise fc9c5829): this reported `len(orphans)` —
+                    # the number of orphaned PATHS — under the name chunks_deleted,
+                    # in both the log line and the /api/vault/reindex response. A
+                    # sweep of 50 deleted files averaging 3 chunks each reported 50
+                    # instead of ~150, so the metric understated the blast radius of
+                    # every orphan sweep. Use the real rowcount, as the sibling
+                    # _delete_chunks_for_path already does.
+                    chunks_deleted = int(getattr(result, "rowcount", 0) or 0)
+                    orphan_paths = len(orphans)
         else:
             logger.warning(
                 "orphan_sweep_skipped_reembed_capped",
@@ -380,6 +459,9 @@ class VaultIndexerService:
             files_changed=files_changed,
             chunks_written=chunks_written,
             chunks_deleted=chunks_deleted,
+            orphan_paths=orphan_paths,
+            unreadable=unreadable,
+            empty_body_cached=len(self._empty_hashes),
         )
         return {
             "status": "ok",
@@ -387,6 +469,8 @@ class VaultIndexerService:
             "files_changed": files_changed,
             "chunks_written": chunks_written,
             "chunks_deleted": chunks_deleted,
+            "orphan_paths": orphan_paths,
+            "unreadable": unreadable,
         }
 
     async def _delete_chunks_for_path(self, rel: str) -> int:
@@ -417,6 +501,8 @@ class VaultIndexerService:
         if "\x00" in text:
             logger.warning("vault_index_nul_stripped", path=rel, nul_count=text.count("\x00"))
             text = text.replace("\x00", "")
+        # IDX-2: CRLF normalization lives in _parse_frontmatter (parser boundary),
+        # so `body` below is already newline-normalized for the chunker.
         fm, body = _parse_frontmatter(text)
         tags = []
         raw_tags = (fm or {}).get("tags")

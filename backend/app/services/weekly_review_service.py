@@ -1,9 +1,17 @@
 """Weekly Review — Friday PM, GTD-flavored. SecondBrain Phase 4 §6.
 
 Writes `20_Calendar/Weekly/YYYY-Www.md`. Three sections:
-  - Get Clear: inbox bloat + stale tasks + unresolved drift alerts
-  - Get Current: every active project's last_activity + next_action + blockers
+  - Get Clear: stale tasks + unresolved drift alerts
+  - Get Current: in-progress work + blocked work + research shipped this week
   - Get Creative: someday/maybe candidates mined from research findings
+
+R-3 (supervise fc9c5829): this docstring used to promise "inbox bloat" in Get
+Clear and "every active project's last_activity + next_action + blockers" in
+Get Current. Neither was implemented — there is no inbox metric in this file,
+and no query ever touched blocked work, so 19 live blocked tasks sat unflagged
+while the docstring claimed the Friday review surfaced them. Blocked tasks are
+now a real section; the per-project last_activity/next_action rollup and the
+inbox metric are NOT implemented and are no longer claimed here.
 
 Non-interactive for now. Phase 5 makes the Creative pass interactive through
 the Ask Zero chat with the user reviewing + picking next week's top_3.
@@ -46,12 +54,17 @@ class WeeklyReviewService:
         return self._vault.is_dir()
 
     async def generate_and_write(self) -> dict[str, Any]:
-        if not self.available():
+        # R-2 (supervise fc9c5829): Fix-141 F7 pushed the blocking `write_text`
+        # off the event loop but left its siblings — `is_dir()` and `mkdir()` are
+        # both synchronous syscalls running directly on the loop in this async
+        # method, the exact class F7 closed. On a contended/network volume they
+        # stall every concurrent coroutine for the syscall duration.
+        if not await asyncio.to_thread(self.available):
             return {"status": "skipped", "reason": "vault_unavailable"}
 
         label, today = _iso_week()
         target_dir = self._vault / "20_Calendar" / "Weekly"
-        target_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(lambda: target_dir.mkdir(parents=True, exist_ok=True))
         target = target_dir / f"{label}.md"
 
         body = await self._render(label, today)
@@ -66,7 +79,44 @@ class WeeklyReviewService:
 
     async def _render(self, label: str, today: str) -> str:
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+        # R-1 (supervise fc9c5829): every section header rendered
+        # `len(<already-LIMITed list>)`, so the count silently saturated at the
+        # page size. Live at the time of the fix: 87 stale open tasks reported as
+        # "10", 23 open alerts reported as "10", 36 in-progress reported as "20".
+        # Surfacing backlog bloat is the entire purpose of the GTD Get Clear pass,
+        # and it was capped at exactly the number that hides bloat. Count in SQL,
+        # list a bounded preview, and say so when the preview is partial.
+        _stale_where = and_(
+            TaskModel.status.notin_(("done", "archived")),
+            TaskModel.created_at < week_ago,
+        )
+        _alerts_where = AgentAlertModel.status == "open"
+        _active_where = TaskModel.status == "in_progress"
+        _blocked_where = TaskModel.status == "blocked"
+        _research_where = and_(
+            DeepResearchReportModel.status == "completed",
+            DeepResearchReportModel.completed_at >= week_ago,
+        )
+
         async with get_session() as session:
+
+            async def _count(model: Any, where: Any) -> int:
+                return int(
+                    (
+                        await session.execute(
+                            select(func.count()).select_from(model).where(where)
+                        )
+                    ).scalar()
+                    or 0
+                )
+
+            stale_total = await _count(TaskModel, _stale_where)
+            alerts_total = await _count(AgentAlertModel, _alerts_where)
+            active_total = await _count(TaskModel, _active_where)
+            blocked_total = await _count(TaskModel, _blocked_where)
+            research_total = await _count(DeepResearchReportModel, _research_where)
+
             # Get Clear
             stale_tasks = list(
                 (
@@ -105,11 +155,26 @@ class WeeklyReviewService:
                 (
                     await session.execute(
                         select(TaskModel)
-                        .where(TaskModel.status == "in_progress")
+                        .where(_active_where)
                         # Fix-141 F6: updated_at is nullable (onupdate only, no
                         # insert default) and Postgres DESC puts NULLS FIRST —
                         # never-touched rows sorted ABOVE genuinely recent work.
                         .order_by(func.coalesce(TaskModel.updated_at, TaskModel.created_at).desc())
+                        .limit(20)
+                    )
+                ).scalars().all()
+            )
+
+            # R-3: blocked work. The module docstring promised blockers in Get
+            # Current since the file was written; nothing ever queried them, so
+            # 19 live blocked tasks were invisible to the weekly review. Oldest
+            # first — a task blocked longest is the one most worth unblocking.
+            blocked_tasks = list(
+                (
+                    await session.execute(
+                        select(TaskModel)
+                        .where(_blocked_where)
+                        .order_by(TaskModel.created_at.asc())
                         .limit(20)
                     )
                 ).scalars().all()
@@ -141,17 +206,16 @@ class WeeklyReviewService:
                 (
                     await session.execute(
                         select(DeepResearchReportModel)
-                        .where(
-                            and_(
-                                DeepResearchReportModel.status == "completed",
-                                DeepResearchReportModel.completed_at >= week_ago,
-                            )
-                        )
+                        .where(_research_where)
                         .order_by(DeepResearchReportModel.completed_at.desc())
                         .limit(20)
                     )
                 ).scalars().all()
             )
+
+        def _more(total: int, shown: int) -> str:
+            """R-1: never let a bounded preview masquerade as the whole set."""
+            return f" _(showing {shown} of {total})_" if total > shown else ""
 
         lines: list[str] = [
             f"---\nid: {label}\ntype: weekly\npartition: personal\nweek: {label}\n"
@@ -160,22 +224,26 @@ class WeeklyReviewService:
             "",
             "## Get Clear",
             "",
-            f"**Stale open tasks (>7d):** {len(stale_tasks)}",
+            f"**Stale open tasks (>7d):** {stale_total}{_more(stale_total, min(len(stale_tasks), 8))}",
         ]
         for t in stale_tasks[:8]:
             lines.append(f"- `[{t.priority}]` {t.title} (id: {t.id}, status: {t.status})")
         lines.append("")
-        lines.append(f"**Open alerts:** {len(open_alerts)}")
+        lines.append(f"**Open alerts:** {alerts_total}{_more(alerts_total, min(len(open_alerts), 8))}")
         for a in open_alerts[:8]:
             lines.append(f"- `[{a.severity}|sal={a.salience:.2f}]` {a.summary}")
         lines.append("")
 
         lines.extend(["## Get Current", ""])
-        lines.append(f"**In-progress tasks:** {len(active_tasks)}")
+        lines.append(f"**In-progress tasks:** {active_total}{_more(active_total, min(len(active_tasks), 12))}")
         for t in active_tasks[:12]:
             lines.append(f"- {t.title} (id: {t.id})")
         lines.append("")
-        lines.append(f"**Research shipped this week:** {len(research)}")
+        lines.append(f"**Blocked tasks:** {blocked_total}{_more(blocked_total, min(len(blocked_tasks), 12))}")
+        for t in blocked_tasks[:12]:
+            lines.append(f"- {t.title} (id: {t.id})")
+        lines.append("")
+        lines.append(f"**Research shipped this week:** {research_total}{_more(research_total, min(len(research), 8))}")
         for r in research[:8]:
             when = r.completed_at.strftime("%Y-%m-%d") if r.completed_at else ""
             lines.append(f"- {when} — {r.query}")

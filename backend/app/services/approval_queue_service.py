@@ -27,7 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 import structlog
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 
 from app.db.models import AgentApprovalModel
 from app.infrastructure.config import get_settings
@@ -194,7 +194,10 @@ class ApprovalQueueService:
     ) -> list[AgentApprovalModel]:
         async with get_session() as session:
             q = select(AgentApprovalModel).order_by(AgentApprovalModel.created_at.desc()).limit(limit)
-            if status:
+            # ACT-4: `expired` is a DERIVED bucket (see the elif below), so it must
+            # not also be constrained by the literal column value — that AND would
+            # re-exclude exactly the pending-but-past-expiry rows we want.
+            if status and status != "expired":
                 q = q.where(AgentApprovalModel.status == status)
             # Fix-123 (A2): a row that is `pending` but past expires_at is
             # logically dead — expire_stale() just hasn't swept it yet (hourly).
@@ -208,6 +211,24 @@ class ApprovalQueueService:
                     or_(
                         AgentApprovalModel.expires_at.is_(None),
                         AgentApprovalModel.expires_at >= _now(),
+                    )
+                )
+            # ACT-4 (supervise fc9c5829): Fix-123 (A2) correctly removed
+            # pending-but-past-expiry rows from the `pending` bucket, but nothing
+            # put them in the `expired` bucket — that filter matched only the
+            # literal DB status, which expire_stale() sets on an HOURLY cron. So
+            # for up to ~59 min a dead approval appeared on NEITHER filtered tab
+            # (visible only in the unfiltered list, where effective_status() finally
+            # reports it as expired). Mirror the derivation here.
+            elif status == "expired":
+                q = q.where(
+                    or_(
+                        AgentApprovalModel.status == "expired",
+                        and_(
+                            AgentApprovalModel.status == "pending",
+                            AgentApprovalModel.expires_at.is_not(None),
+                            AgentApprovalModel.expires_at < _now(),
+                        ),
                     )
                 )
             result = await session.execute(q)
@@ -239,8 +260,21 @@ class ApprovalQueueService:
                 return "expired"
         return row.status
 
+    # ACT-3: an approval claimed for execution should never outlive this window.
+    # gated_call's longest sanctioned wait is wait_timeout_seconds, and execute()
+    # is a single tool call — an hour is far beyond any legitimate run.
+    _EXECUTING_STALE_AFTER = timedelta(hours=1)
+
     async def expire_stale(self) -> int:
-        """Mark pending approvals past their expiry as expired."""
+        """Mark pending approvals past their expiry as expired.
+
+        ACT-3 (supervise fc9c5829): also reaps rows stranded in "executing".
+        gated_call claims a row (status="executing") before awaiting execute();
+        if that process dies — hard crash, container restart, SIGKILL — between
+        the claim and the result write, no code path could ever move the row
+        again (decide() and this sweep both required "pending"). Those rows are
+        terminal-failed here so the queue cannot silently accumulate dead gates.
+        """
         async with get_session() as session:
             result = await session.execute(
                 update(AgentApprovalModel)
@@ -252,10 +286,28 @@ class ApprovalQueueService:
                 .returning(AgentApprovalModel.id)
             )
             ids = [r[0] for r in result.all()]
+
+            stuck_cutoff = _now() - self._EXECUTING_STALE_AFTER
+            stuck_result = await session.execute(
+                update(AgentApprovalModel)
+                .where(
+                    AgentApprovalModel.status == "executing",
+                    AgentApprovalModel.decided_at < stuck_cutoff,
+                )
+                .values(
+                    status="failed",
+                    error="stranded in executing (process died mid-execution); reaped by expire_stale",
+                    executed_at=_now(),
+                )
+                .returning(AgentApprovalModel.id)
+            )
+            stuck_ids = [r[0] for r in stuck_result.all()]
             await session.commit()
         if ids:
             logger.info("approvals_expired", count=len(ids), ids=ids[:10])
-        return len(ids)
+        if stuck_ids:
+            logger.warning("approvals_executing_reaped", count=len(stuck_ids), ids=stuck_ids[:10])
+        return len(ids) + len(stuck_ids)
 
     async def gated_call(
         self,
@@ -281,7 +333,33 @@ class ApprovalQueueService:
         instead of auto-executing.
         """
         if not self._requires_gate(tier, salience=salience, dnd=dnd):
-            result = await execute()
+            # ACT-6 (supervise fc9c5829): the ungated path wrote no row and logged
+            # nothing, while request() always logs "approval_requested". For the
+            # auto tiers (read, and write_local above the salience threshold — the
+            # common case under the ladder) that meant a tool could execute with
+            # zero trace of tool_name/arguments/requester anywhere; if execute()
+            # then raised, the exception surfaced with no record the call ever
+            # happened. The audit trail must cover auto-approved actions too.
+            logger.info(
+                "approval_auto_executed",
+                tool=tool_name,
+                tier=tier,
+                requested_by=requested_by,
+                salience=salience,
+                dnd=dnd,
+                summary=summary[:200],
+            )
+            try:
+                result = await execute()
+            except Exception as e:  # noqa: BLE001
+                logger.error(
+                    "approval_auto_execute_failed",
+                    tool=tool_name,
+                    tier=tier,
+                    requested_by=requested_by,
+                    error=str(e),
+                )
+                raise
             return {"status": "executed_direct", "result": result}
 
         approval = await self.request(
@@ -329,6 +407,36 @@ class ApprovalQueueService:
                         )
                         await session.commit()
                     return {"status": "executed", "approval_id": approval.id, "result": result}
+                # ACT-3 (supervise fc9c5829): this caught only `Exception`, so an
+                # `asyncio.CancelledError` — a BaseException since 3.8, raised on
+                # every task cancellation and on shutdown — skipped the failure
+                # write entirely and left the row stranded in the "executing" state
+                # claimed at the top of this block. Nothing could then move it:
+                # decide() requires status=="pending" and expire_stale() only swept
+                # "pending", so the row was a permanent dead end needing manual DB
+                # surgery. Record the terminal state on cancellation too, then let
+                # the cancellation propagate (never swallow it).
+                except asyncio.CancelledError:
+                    try:
+                        async with get_session() as session:
+                            await session.execute(
+                                update(AgentApprovalModel)
+                                .where(AgentApprovalModel.id == approval.id)
+                                .values(
+                                    status="failed",
+                                    error="cancelled during execution",
+                                    executed_at=_now(),
+                                )
+                            )
+                            await session.commit()
+                    except Exception as write_err:  # noqa: BLE001
+                        logger.error(
+                            "approval_cancel_write_failed",
+                            id=approval.id,
+                            error=str(write_err),
+                        )
+                    logger.warning("approval_execution_cancelled", id=approval.id)
+                    raise
                 except Exception as e:  # noqa: BLE001
                     async with get_session() as session:
                         await session.execute(

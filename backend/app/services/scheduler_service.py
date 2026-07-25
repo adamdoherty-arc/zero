@@ -4410,7 +4410,21 @@ Have a great evening!"""
                 report_type="weekly_review",
                 requested_by="scheduler",
             )
-            logger.info("company_operator_weekly_review_done", run_id=result.get("id"), status=result.get("status"))
+            # R-4 (supervise fc9c5829): run_tick() swallows its own exceptions and
+            # RETURNS {"status": "failed"} rather than raising, so the except below
+            # never fires for an internal failure and the run was logged as
+            # "..._done" at INFO. Surface a returned failure at error level so it
+            # shows up in an error-level scan like a raised one.
+            if str(result.get("status") or "").lower() in ("failed", "error"):
+                logger.error(
+                    "company_operator_weekly_review_failed",
+                    run_id=result.get("id"),
+                    status=result.get("status"),
+                    error=result.get("error"),
+                    note="run_tick returned a failure instead of raising",
+                )
+            else:
+                logger.info("company_operator_weekly_review_done", run_id=result.get("id"), status=result.get("status"))
         except Exception as e:
             logger.error("company_operator_weekly_review_failed", error=str(e))
 

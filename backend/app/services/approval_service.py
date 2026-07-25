@@ -79,8 +79,35 @@ class ApprovalService:
 
     async def list_all(self, status: Optional[str] = None, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         async with get_session() as session:
+            # ACT-5 (supervise fc9c5829): list_all never got the Fix-128 (ACT-B2)
+            # expiry mirror that list_pending has, so its filter and its payload
+            # disagreed. `?status=pending` matched the literal column and returned
+            # rows already past expires_at, while _to_dict() reports
+            # effective_status() — i.e. "expired" — for that same row: the caller
+            # asked for pending and got items labelled expired. Symmetrically,
+            # `?status=expired` missed them until auto_expire_check's scheduled
+            # sweep. Derive both buckets the same way every other read path does.
+            now = datetime.now(timezone.utc)
+            _unexpired = or_(
+                ApprovalRequestModel.expires_at.is_(None),
+                ApprovalRequestModel.expires_at >= now,
+            )
             conditions = []
-            if status:
+            if status == "pending":
+                conditions.append(ApprovalRequestModel.status == "pending")
+                conditions.append(_unexpired)
+            elif status == "expired":
+                conditions.append(
+                    or_(
+                        ApprovalRequestModel.status == "expired",
+                        and_(
+                            ApprovalRequestModel.status == "pending",
+                            ApprovalRequestModel.expires_at.is_not(None),
+                            ApprovalRequestModel.expires_at < now,
+                        ),
+                    )
+                )
+            elif status:
                 conditions.append(ApprovalRequestModel.status == status)
             where = and_(*conditions) if conditions else True
             total = (await session.execute(
