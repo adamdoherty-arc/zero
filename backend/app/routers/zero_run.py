@@ -266,9 +266,11 @@ async def sprints_next_priority(
 
 @router.get("/stack-facts")
 async def stack_facts() -> dict[str, Any]:
-    """Live infrastructure truth: Bifrost reachability, Reachy daemon state,
-    host_agent state, vault indexer heartbeat, Langfuse reachability, MCP
-    presence (cyanheads, legion-mcp, ada-mcp), alembic head."""
+    """Live infrastructure truth: Bifrost reachability, vault indexer
+    heartbeat, Langfuse reachability, MCP presence (cyanheads, legion-mcp,
+    ada-mcp), alembic head. host_agent retired 2026-07-11 (robot/Reachy
+    hardware control moved to Zero Studio) — reported as a static block,
+    not probed."""
     bifrost_url = os.getenv("BIFROST_GATEWAY_URL", "http://shared-bifrost:8080").rstrip("/")
     bifrost_status = "unknown"
     bifrost_error: str | None = None
@@ -280,18 +282,13 @@ async def stack_facts() -> dict[str, Any]:
         bifrost_status = "unreachable"
         bifrost_error = str(e)[:200]
 
-    reachy = await _probe("http://host.docker.internal:8000/api/daemon/status", "reachy_daemon")
-    host_agent = await _probe(
-        os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796") + "/health",
-        "host_agent",
-    )
+    host_agent = {"status": "retired", "note": "moved to Zero Studio"}
     langfuse_url = os.getenv("LANGFUSE_HOST") or "http://zero-langfuse-web:3000"
     langfuse = await _probe(f"{langfuse_url}/api/public/health", "langfuse")
 
     # Alembic head + open approval count + vault indexer heartbeat
     alembic_head = None
     approvals_open = -1
-    voice_active = -1
     async with get_session() as session:
         try:
             row = (await session.execute(sa_text("SELECT version_num FROM alembic_version"))).first()
@@ -318,8 +315,6 @@ async def stack_facts() -> dict[str, Any]:
             "frontend_dev": 5174,
             "postgres_host": 5434,
             "postgres_container": 5432,
-            "reachy_daemon": 8000,
-            "host_agent": 18796,
             "langfuse_host": 3010,
             "bifrost": 4445,
             "vllm_chat": 18801,
@@ -330,14 +325,9 @@ async def stack_facts() -> dict[str, Any]:
             "bifrost_status": bifrost_status,
             "bifrost_error": bifrost_error,
         },
-        "reachy": reachy,
         "host_agent": host_agent,
         "langfuse": langfuse,
         "approvals": {"open": approvals_open},
-        "voice": {
-            "note": "Voice sessions tracked in Langfuse — see /api/zero/run/{id} → events for voice.session_started",
-            "active_count": voice_active,
-        },
         "mcp": _mcp_presence(),
         "vault": {
             "constitution": "/c/code/vault/ObsidianZero/00_Meta/CLAUDE.md",
@@ -442,7 +432,7 @@ _CRITIC_PROMPT_TEMPLATE = """You are a code reviewer. You have not seen any prio
 
 REVIEW the diff below against the ACCEPTANCE CRITERIA. Be unsparing. Do NOT
 summarize the work — judge the artifacts directly. This is Zero, a
-chief-of-staff assistant + Reachy voice + Company OS surface. Auto-REJECT
+chief-of-staff assistant + Company OS surface. Auto-REJECT
 on: any direct vault write outside _agent/ that isn't routed through
 cyanheads_obsidian MCP, any path introducing `partition: work`, any code
 re-adding realtime auto-promote on FloatingVoiceButton, any external write
@@ -510,6 +500,55 @@ def _diff_for_files(files_changed, base: str = "HEAD~1") -> str:
     return "(repo not mounted)"
 
 
+_CRITIC_DIFF_MAX_CHARS = int(os.getenv("ZERO_CRITIC_DIFF_MAX_CHARS", "60000"))
+
+
+def _budget_diff(diff_text: str, max_chars: int = _CRITIC_DIFF_MAX_CHARS) -> str:
+    """Fit a diff into the critic's context WITHOUT hiding whole files.
+
+    CRITIC-3 (supervise fc9c5829): this used to be a bare ``diff_text[:12000]``.
+    A 12k-char prefix silently dropped every file after the first one or two, and
+    the critic — correctly reasoning about the artifact it was given — then
+    REJECTED for "the implementation is missing" and "these acceptance criteria
+    cannot be verified". Observed on review 40: a 7-file / 717-line diff was cut
+    to its first 2.x files and rejected on that basis, a FALSE reject caused
+    entirely by the harness. Two changes:
+      1. the cap tracks the model's real context (Qwen3.5-35B-A3B is 32k tokens;
+         12k chars was ~3k tokens, absurdly conservative) and is env-tunable;
+      2. when the diff still does not fit, every file gets a PROPORTIONAL slice
+         and an explicit omission marker, so no file is ever invisible and the
+         critic can tell "truncated" apart from "not implemented".
+    """
+    if len(diff_text) <= max_chars:
+        return diff_text
+
+    parts = re.split(r"(?m)^(?=diff --git )", diff_text)
+    parts = [p for p in parts if p.strip()]
+    if len(parts) <= 1:
+        head = diff_text[:max_chars]
+        return (
+            "[NOTE: this diff was TRUNCATED to fit the critic's context. Absence of "
+            "code below is NOT evidence that it was not implemented.]\n\n" + head +
+            f"\n\n[... {len(diff_text) - max_chars} chars omitted ...]\n"
+        )
+
+    header = (
+        f"[NOTE: this {len(diff_text)}-char diff spans {len(parts)} files and was "
+        f"TRUNCATED to fit the critic's context. EVERY file is represented below, but "
+        f"some hunks are elided and marked. Absence of code is NOT evidence that a "
+        f"criterion was not implemented — judge only what is shown.]\n\n"
+    )
+    budget = max(0, max_chars - len(header))
+    per_file = max(600, budget // len(parts))
+    out = [header]
+    for p in parts:
+        if len(p) <= per_file:
+            out.append(p)
+        else:
+            out.append(p[:per_file] + f"\n[... {len(p) - per_file} chars of this file's diff elided ...]\n")
+    return "".join(out)
+
+
 async def _run_critic_background(
     review_id: int,
     files_changed: list[str],
@@ -522,9 +561,11 @@ async def _run_critic_background(
     t0 = time.time()
     critique_text = ""
     model_used = "error"
+    # Hoisted out of the try so the CRITIC-2 error path can always name the model
+    # (a failure inside get_bifrost_client() would otherwise NameError here).
+    model = os.getenv("ZERO_VLLM_CHAT_MODEL", "vllm-local/Qwen3-32B-AWQ")
     try:
         client = get_bifrost_client()
-        model = os.getenv("ZERO_VLLM_CHAT_MODEL", "vllm-local/Qwen3-32B-AWQ")
         critique_text = await client.complete(
             model=model,
             messages=[
@@ -539,7 +580,25 @@ async def _run_critic_background(
         )
         model_used = model
     except Exception as e:  # noqa: BLE001
-        critique_text = f"(critic LLM call failed: {e})"
+        # CRITIC-2 (supervise fc9c5829): this formatted only `{e}`, and the
+        # failure this path actually hits most is httpx.ReadTimeout, whose str()
+        # is the EMPTY STRING — so a timed-out critic recorded the literal text
+        # "(critic LLM call failed: )" and the operator got no signal at all about
+        # what went wrong (observed on review 39: ReadTimeout('') after 107s).
+        # Always carry the exception type, and the request timeout when we know it.
+        detail = str(e) or repr(e)
+        critique_text = (
+            f"(critic LLM call failed: {type(e).__name__}: {detail} "
+            f"| model={model} after {int(time.time() - t0)}s)"
+        )
+        logger.error(
+            "critic_llm_failed",
+            review_id=review_id,
+            error_type=type(e).__name__,
+            error=detail,
+            model=model,
+            elapsed_s=int(time.time() - t0),
+        )
         model_used = "error"
     latency_ms = int((time.time() - t0) * 1000)
 
@@ -596,7 +655,27 @@ async def critic_review(
     if not sprint_id:
         raise HTTPException(status_code=400, detail="legion_sprint_id required")
     files_changed = body.get("files_changed") or []
+    # CRITIC-1 (supervise fc9c5829): zero_critic_reviews.run_id is a UUID column,
+    # but nothing validated the caller's value — a non-UUID run_id (e.g. the short
+    # 8-char run handle every supervise run logs) reached the INSERT and surfaced
+    # as an opaque 500 InternalServerError from psycopg, after the expensive
+    # diff/prompt assembly had already run. Same class as ACT-2 in this sweep:
+    # a malformed input is a 422, not a 500. Validate at the boundary and say
+    # exactly what is wrong.
     run_id = body.get("run_id")
+    if run_id not in (None, ""):
+        try:
+            run_id = str(uuid.UUID(str(run_id)))
+        except (ValueError, AttributeError, TypeError):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"run_id must be a UUID (got {run_id!r}); "
+                    "pass the full run UUID, not the short run handle"
+                ),
+            )
+    else:
+        run_id = None
     round_n = int(body.get("round", 1))
     base_ref = body.get("base_ref", "HEAD~1")
     description = body.get("sprint_description") or ""
@@ -610,7 +689,7 @@ async def critic_review(
     diff_text = body.get("diff") or body.get("diff_text") or ""
     if not diff_text.strip():
         diff_text = _diff_for_files(files_changed, base=base_ref)
-    diff_text = diff_text[:12000]
+    diff_text = _budget_diff(diff_text)
     prompt = _CRITIC_PROMPT_TEMPLATE.format(ac=ac, diff=diff_text)
 
     async with get_session() as session:

@@ -296,6 +296,38 @@ async def test_act3_stranded_executing_row_is_reaped():
 
 
 # ---------------------------------------------------------------------------
+# CRITIC-3 — the critic's diff budget must never hide a whole file. A bare
+# [:12000] prefix showed only 3 of this run's 7 files, and the critic then
+# REJECTED for "the implementation is missing" — a false reject caused entirely
+# by the harness (observed on review 40).
+# ---------------------------------------------------------------------------
+def test_critic3_diff_budget_represents_every_file():
+    from app.routers.zero_run import _budget_diff
+
+    files = [f"src/mod_{i}.py" for i in range(7)]
+    diff = "".join(
+        f"diff --git a/{f} b/{f}\n--- a/{f}\n+++ b/{f}\n" + ("+line\n" * 900)
+        for f in files
+    )
+    out = _budget_diff(diff, max_chars=12000)
+
+    for f in files:
+        assert f"diff --git a/{f}" in out, f"{f} vanished from the budgeted diff"
+    assert len(out) <= 12000 * 1.2, "budgeted diff must respect the cap"
+    assert "TRUNCATED" in out, "the critic must be told the diff was truncated"
+    assert "NOT evidence" in out, (
+        "the notice must stop the critic inferring 'not implemented' from absence"
+    )
+
+
+def test_critic3_small_diff_passes_through_untouched():
+    from app.routers.zero_run import _budget_diff
+
+    diff = "diff --git a/a.py b/a.py\n+one line\n"
+    assert _budget_diff(diff, max_chars=12000) == diff
+
+
+# ---------------------------------------------------------------------------
 # ACT-5 — approval_service.list_all's filter and payload must agree. Pre-fix
 # `?status=pending` returned rows whose serialized status read "expired".
 # ---------------------------------------------------------------------------
