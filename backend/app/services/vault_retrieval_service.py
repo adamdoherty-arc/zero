@@ -14,6 +14,7 @@ Returns the top-N chunks plus distinct file paths for follow-up reads.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -28,6 +29,49 @@ logger = structlog.get_logger(__name__)
 
 
 _RRF_K = 60  # standard RRF constant
+
+# RET-4 (supervise 6a1563fd): the dense side was an unfiltered
+# `ORDER BY embedding <=> :emb LIMIT :k`, so it ALWAYS returned `per_side_k`
+# rows no matter how far away they were, and RRF then scored purely on rank —
+# discarding the `cosine_sim` this query computes. Two consequences, both
+# measured live before the fix:
+#   * every query returned a top score of 0.016393 (= 1/(60+1)) regardless of
+#     relevance. `zzqqxx nonsense gibberish flurbular` and `GTD weekly review`
+#     produced the SAME top score, so `score` carried no relevance signal and
+#     callers had no way to tell a real hit from noise.
+#   * `search()` could never return "nothing relevant" — a query about a topic
+#     absent from the vault still got a full `top_k` of confident-looking hits.
+# The floor gives the dense side an abstain path so `search()` can return
+# nothing when the vault genuinely holds nothing relevant.
+#
+# Calibrated against the live index on 2026-07-28, AFTER the IDX-7 boilerplate
+# purge and a VACUUM (both change the numbers materially — see below):
+#
+#   noise queries, top-1 cosine   real queries, top-1 cosine
+#     capital of Mongolia  0.494    GTD weekly review     0.813
+#     mitochondria/starfish 0.566   email draft approval  0.783
+#     xylophone quantum     0.630   company tax worksheet 0.753
+#     zzqqxx gibberish      0.647   ADA trading strategy  0.747
+#                                   approval queue expiry 0.725
+#                                   vault indexer chunking 0.682
+#                                   what did I do last wk 0.677
+#                                   reels pipeline        0.664
+#
+# Highest noise 0.647 vs lowest real 0.664 — a real but NARROW margin, because
+# this embedder puts even unrelated English around 0.6. Treat this number as a
+# tuned heuristic, not a constant: it is env-overridable precisely because the
+# right cut depends on the vault's content and the embedding model, and a model
+# swap invalidates the calibration above. Set it to 0.0 to disable the floor.
+#
+# Two caveats worth knowing before re-tuning:
+#   * Before the IDX-7 purge these figures were far lower and compressed
+#     (GTD weekly review topped out at 0.525) because ~15k identical boilerplate
+#     chunks occupied the nearest-neighbour slots for almost every query. Do not
+#     calibrate against an index with duplicate-vector clusters.
+#   * pgvector's HNSW graph keeps deleted rows until VACUUM, and an
+#     under-vacuumed graph silently returns FEWER than LIMIT rows. Always VACUUM
+#     after a bulk delete before trusting a recall measurement.
+_MIN_DENSE_SIM = float(os.getenv("ZERO_VAULT_MIN_DENSE_SIM", "0.65"))
 
 
 async def _embed_query(text_: str) -> Optional[list[float]]:
@@ -243,11 +287,15 @@ class VaultRetrievalService:
         partitions: Optional[list[str]] = None,
         top_k: int = 10,
         per_side_k: int = 40,
+        min_similarity: Optional[float] = None,
     ) -> dict[str, Any]:
         """Hybrid BM25 + dense search with RRF fusion.
 
         partitions: optional list in {reference, projects, journal, inbox}. Empty = all.
+        min_similarity: cosine floor for the dense side (RET-4). Defaults to
+            ``_MIN_DENSE_SIM``; pass 0.0 to restore the old unfiltered behaviour.
         """
+        min_similarity = _MIN_DENSE_SIM if min_similarity is None else min_similarity
         embedding = await _embed_query(query)
 
         part_filter_sql = ""
@@ -276,12 +324,16 @@ class VaultRetrievalService:
             bm25_rows = [dict(r) for r in bm25_rows]
 
             if embedding is not None:
+                # RET-4: `<=>` is cosine DISTANCE, so `sim >= min_sim` is
+                # `distance <= 1 - min_sim`. Expressed as a distance bound so
+                # the HNSW index is still usable for the ORDER BY.
                 dense_sql = text(
                     f"""
                     SELECT id, path, partition, heading_path, chunk_idx, content, file_mtime,
                            1 - (embedding <=> (:emb)::vector) AS cosine_sim
                       FROM vault_chunks
                      WHERE embedding IS NOT NULL
+                       AND (embedding <=> (:emb)::vector) <= :max_dist
                        {part_filter_sql}
                      ORDER BY embedding <=> (:emb)::vector
                      LIMIT :k
@@ -289,6 +341,7 @@ class VaultRetrievalService:
                 )
                 dense_params = dict(params)
                 dense_params["emb"] = str(embedding)
+                dense_params["max_dist"] = 1.0 - min_similarity
                 dense_rows = [dict(r) for r in (await session.execute(dense_sql, dense_params)).mappings().all()]
 
         # RRF fuse
@@ -301,9 +354,13 @@ class VaultRetrievalService:
             sid = row["id"]
             scores.setdefault(sid, {"row": row, "bm25": 0.0, "dense": 0.0})
             scores[sid]["dense"] += 1.0 / (_RRF_K + rank)
+            # RET-4: keep the actual cosine so callers get a relevance signal
+            # instead of the rank-only RRF constant. The bm25 loop runs first
+            # and its rows have no `cosine_sim`, so record it off the dense row.
+            scores[sid]["cosine_sim"] = float(row["cosine_sim"])
 
         now = datetime.now(timezone.utc)
-        fused = []
+        fused: list[tuple[float, dict[str, Any], Optional[float]]] = []
         for sid, agg in scores.items():
             row = agg["row"]
             raw = agg["bm25"] + agg["dense"]
@@ -313,11 +370,11 @@ class VaultRetrievalService:
                 if isinstance(mtime, datetime):
                     age_days = max(0.0, (now - mtime).total_seconds() / 86400.0)
                     raw *= 0.5 ** (age_days / 30.0)
-            fused.append((raw, row))
+            fused.append((raw, row, agg.get("cosine_sim")))
         fused.sort(key=lambda t: t[0], reverse=True)
 
         results = []
-        for score, row in fused[:top_k]:
+        for score, row, cosine_sim in fused[:top_k]:
             results.append(
                 {
                     "id": row["id"],
@@ -327,6 +384,10 @@ class VaultRetrievalService:
                     "chunk_idx": row["chunk_idx"],
                     "content": (row["content"] or "")[:1200],
                     "score": round(float(score), 6),
+                    # RET-4: `score` is rank-derived (RRF) and is NOT comparable
+                    # across queries. `cosine_sim` is the absolute relevance
+                    # signal; None means the hit came from BM25 only.
+                    "cosine_sim": round(cosine_sim, 4) if cosine_sim is not None else None,
                 }
             )
 
@@ -347,6 +408,7 @@ class VaultRetrievalService:
             "bm25_count": len(bm25_rows),
             "dense_count": len(dense_rows),
             "dense_enabled": embedding is not None,
+            "min_similarity": min_similarity,
         }
 
     async def get_file(self, path: str) -> dict[str, Any]:

@@ -154,12 +154,18 @@ def test_chunk_empty_body():
 
 
 def test_chunk_small_body_stays_whole():
-    chunks = _chunk_section("H", "small body")
+    # Fix-155 (IDX-7): the fixture was "small body" (9 chars of signal), which
+    # now falls under the boilerplate floor added to _chunk_section. The
+    # property under test is unchanged — a body below _MAX_CHUNK_CHARS is
+    # emitted as ONE whole chunk rather than split — so only the fixture grew
+    # enough to carry real signal.
+    body = "A small but genuinely meaningful body of vault prose."
+    chunks = _chunk_section("H", body)
     assert len(chunks) == 1
     assert chunks[0].idx == 0
     assert chunks[0].heading_path == "H"
-    assert chunks[0].content == "small body"
-    assert chunks[0].token_count == len("small body") // 4
+    assert chunks[0].content == body
+    assert chunks[0].token_count == len(body) // 4
 
 
 def test_chunk_large_body_multi_chunk_no_bytes_dropped():

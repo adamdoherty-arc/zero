@@ -28,12 +28,53 @@ logger = structlog.get_logger(__name__)
 # Max entries in orchestration log
 ORCHESTRATION_LOG_LIMIT = 200
 
-# Project IDs in Legion
+# INFRA-2: capabilities Legion has removed upstream. Latched on the first
+# LegionCapabilityRemovedError so the hourly tick stops re-attempting (and
+# re-warning about) an endpoint that is gone rather than flaky. Process-local
+# on purpose: a Legion deploy that restores the family is picked up on the next
+# zero-api restart without a code change.
+_REMOVED_CAPABILITIES: set[str] = set()
+
+
+def _note_capability_removed(capability: str, error: Exception) -> bool:
+    """Record a removed upstream capability. Returns True on the FIRST sighting."""
+    if capability in _REMOVED_CAPABILITIES:
+        return False
+    _REMOVED_CAPABILITIES.add(capability)
+    logger.warning(
+        "legion_capability_removed",
+        capability=capability,
+        error=str(error),
+        effect="autopilot planning is dormant until this is re-wired to the v2 API",
+    )
+    return True
+
+# Project IDs in Legion.
+#
+# INFRA-1 (supervise 6a1563fd): ALL FOUR entries were wrong, and each pointed at
+# a real but different project, so the autopilot drove the wrong backlog under
+# every label. Verified against `GET http://localhost:8005/api/projects`:
+#
+#   label        was  ->  that id is actually     correct id
+#   zero          8       AI Content Tools             7
+#   ada           6       FortressOS Job Platform      5
+#   fortressos    7       Zero Personal Assistant      6
+#   legion        3       GPU Manager                  1
+#
+# So the row labelled "fortressos" was planning sprints into Zero, and "zero"
+# was planning into AI Content Tools. This never corrupted anything only because
+# every write went through the `/api/swarm/*` endpoints Legion's v2 rewrite had
+# already removed (see `_SWARM_REMOVED` below) — a dead endpoint was masking a
+# live mis-targeting bug. Fixing the map alone would have pointed real writes at
+# the right projects for the first time, so both are fixed together.
+#
+# Zero's own id is also carried by `settings.zero_legion_project_id` (=7); the
+# two must not drift.
 PROJECT_IDS = {
-    "zero": 8,
-    "ada": 6,
-    "fortressos": 7,
-    "legion": 3,
+    "zero": 7,
+    "ada": 5,
+    "fortressos": 6,
+    "legion": 1,
 }
 
 
@@ -121,7 +162,16 @@ class AutonomousOrchestrationService:
         self, legion, project_name: str, project_id: int
     ) -> Dict[str, Any]:
         """Decide what to do for a single project and execute."""
+        from app.services.legion_client import LegionCapabilityRemovedError
+
         result = {"project": project_name, "project_id": project_id}
+
+        # INFRA-2: every action this method can take goes through /api/swarm/*.
+        # Once that family is known-removed there is nothing to attempt, so skip
+        # without re-issuing (and re-warning about) four doomed POSTs per tick.
+        if "swarm" in _REMOVED_CAPABILITIES:
+            result["action"] = "skipped_capability_removed"
+            return result
 
         # Get active sprint for this project
         try:
@@ -149,10 +199,18 @@ class AutonomousOrchestrationService:
                         "completed",
                         {"old_sprint": sprint_id, "new_sprint": plan_result.get("id") if plan_result else None},
                     )
+                except LegionCapabilityRemovedError as e:
+                    _note_capability_removed("swarm", e)
+                    result["action"] = "skipped_capability_removed"
                 except Exception as e:
                     result["action"] = "plan_next_sprint_failed"
-                    result["error"] = str(e)
-                    logger.warning("plan_next_sprint_failed", project=project_name, error=str(e))
+                    result["error"] = f"{type(e).__name__}: {e}"
+                    logger.warning(
+                        "plan_next_sprint_failed",
+                        project=project_name,
+                        error_type=type(e).__name__,
+                        error=str(e),
+                    )
             else:
                 # Sprint has pending tasks — trigger swarm execution
                 pending = total - completed - failed
@@ -176,10 +234,18 @@ class AutonomousOrchestrationService:
                             "triggered",
                             {"sprint_id": sprint_id, "pending": pending},
                         )
+                    except LegionCapabilityRemovedError as e:
+                        _note_capability_removed("swarm", e)
+                        result["action"] = "skipped_capability_removed"
                     except Exception as e:
                         result["action"] = "swarm_lifecycle_failed"
-                        result["error"] = str(e)
-                        logger.warning("swarm_lifecycle_failed", project=project_name, error=str(e))
+                        result["error"] = f"{type(e).__name__}: {e}"
+                        logger.warning(
+                            "swarm_lifecycle_failed",
+                            project=project_name,
+                            error_type=type(e).__name__,
+                            error=str(e),
+                        )
                 else:
                     result["action"] = "no_pending_tasks"
         else:
@@ -194,10 +260,18 @@ class AutonomousOrchestrationService:
                     "completed",
                     {"new_sprint": plan_result.get("id") if plan_result else None},
                 )
+            except LegionCapabilityRemovedError as e:
+                _note_capability_removed("swarm", e)
+                result["action"] = "skipped_capability_removed"
             except Exception as e:
                 result["action"] = "plan_new_sprint_failed"
-                result["error"] = str(e)
-                logger.warning("plan_new_sprint_failed", project=project_name, error=str(e))
+                result["error"] = f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "plan_new_sprint_failed",
+                    project=project_name,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
 
         return result
 

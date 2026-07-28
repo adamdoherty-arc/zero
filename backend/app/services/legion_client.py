@@ -591,22 +591,48 @@ class LegionClient:
     # SWARM OPERATIONS
     # ============================================
 
+    async def _swarm_post(self, endpoint: str, json: Optional[Dict] = None) -> Dict:
+        """POST to a ``/swarm/*`` endpoint, translating 404 into a typed error.
+
+        INFRA-2: the family was removed by Legion v2. Callers need to tell
+        "gone" apart from "temporarily failing" so they can stop retrying.
+        """
+        try:
+            return await self._post(endpoint, json)
+        except LegionAPIError as e:
+            if "404" in str(e):
+                raise LegionCapabilityRemovedError(
+                    f"Legion no longer exposes {endpoint} — the /api/swarm/* family "
+                    "was removed by the v2 rewrite; sprint intake is governed by "
+                    "/api/v2/admissions now. This capability is dormant, not failing."
+                ) from e
+            raise
+
     async def trigger_swarm_lifecycle(self, project_id: int, force_plan_next: bool = False) -> Dict:
-        """Trigger full sprint lifecycle: audit -> execute -> plan next."""
-        return await self._post("/swarm/lifecycle", {
+        """Trigger full sprint lifecycle: audit -> execute -> plan next.
+
+        REMOVED UPSTREAM — see :class:`LegionCapabilityRemovedError`.
+        """
+        return await self._swarm_post("/swarm/lifecycle", {
             "project_id": project_id,
             "force_plan_next": force_plan_next,
         })
 
     async def trigger_swarm_execute(self, sprint_id: int, max_attempts: int = 6) -> Dict:
-        """Execute sprint tasks via agent swarm."""
-        return await self._post(f"/swarm/execute/{sprint_id}", {
+        """Execute sprint tasks via agent swarm.
+
+        REMOVED UPSTREAM — see :class:`LegionCapabilityRemovedError`.
+        """
+        return await self._swarm_post(f"/swarm/execute/{sprint_id}", {
             "max_attempts": max_attempts,
         })
 
     async def plan_next_sprint(self, project_id: int) -> Dict:
-        """Plan next sprint for a project from backlog/ideas."""
-        return await self._post(f"/swarm/plan-next/{project_id}", {})
+        """Plan next sprint for a project from backlog/ideas.
+
+        REMOVED UPSTREAM — see :class:`LegionCapabilityRemovedError`.
+        """
+        return await self._swarm_post(f"/swarm/plan-next/{project_id}", {})
 
     async def enable_project_autonomy(self, project_id: int, enabled: bool = True) -> Dict:
         """Enable/disable autonomous mode for a project."""
@@ -750,6 +776,24 @@ class LegionConnectionError(Exception):
 
 class LegionAPIError(Exception):
     """Raised when Legion returns an error."""
+    pass
+
+
+class LegionCapabilityRemovedError(LegionAPIError):
+    """Raised when a Legion endpoint this client depends on no longer exists.
+
+    INFRA-2 (supervise 6a1563fd): Legion's v2 rewrite removed the whole
+    ``/api/swarm/*`` family (confirmed against its live OpenAPI: zero paths
+    match ``swarm``). The three methods below kept POSTing to it, so every
+    autonomous-orchestration tick raised a generic ``LegionAPIError`` that the
+    caller logged as a transient failure and retried an hour later — forever.
+
+    A removed endpoint is not a transient failure, and conflating the two is
+    what let this run undetected: the logs showed a recurring warning that read
+    like a flaky upstream. Subclassing ``LegionAPIError`` keeps every existing
+    ``except LegionAPIError`` handler working while letting callers that care
+    latch the capability off instead of retrying it.
+    """
     pass
 
 

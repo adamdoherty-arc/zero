@@ -47,6 +47,28 @@ logger = structlog.get_logger(__name__)
 _SKIP_DIR_PARTS = {".obsidian", ".git", ".trash", "90_Archive", "node_modules"}
 _MAX_CHUNK_CHARS = 2000  # ~500 tokens with overlap
 _OVERLAP_CHARS = 240
+
+# IDX-7 (supervise 6a1563fd): a heading section whose body is a single
+# boilerplate line was still chunked, embedded and indexed. Measured on the live
+# index: 17,914 of 101,484 chunks (17.7%) were under 40 chars, and the top two
+# were `**Status:** `success`` (10,391 copies) and `**Status:** `failure``
+# (5,283) emitted by the auto-generated loop-run notes under
+# `00_Meta/_agent/loops/`. Identical text embeds to an identical vector, so
+# those two strings alone collapsed ~15% of the corpus onto TWO points in the
+# embedding space — and because the dense side of `search()` has no similarity
+# floor, they filled the nearest-neighbour list for almost any query (measured:
+# 40/40 of the dense top-40 for both "GTD weekly review" and "ADA trading
+# strategy"). Every one of the 12 most common sub-40-char chunks was
+# content-free boilerplate (```bash, "- None", "_(no tasks yet)_", ...).
+#
+# The floor is measured on markdown-STRIPPED text so the decision is about
+# retrievable signal rather than formatting: `**Status:** `success`` carries 14
+# signal chars, while a genuinely short but meaningful line is judged on its
+# real words. Tunable because the right cut depends on a vault's writing style.
+_MIN_CHUNK_SIGNAL_CHARS = 20
+
+# Markdown decoration that carries no retrieval signal on its own.
+_MD_DECORATION_RE = re.compile(r"[*_`~#>\[\]()!|+-]|\s+")
 # IDX-FM-NOEOL (supervise f8574c6d): the trailing `\n` after the closing `---`
 # was mandatory, so a pure-frontmatter note whose bytes end at `---` (no body,
 # no trailing newline) failed to match — its frontmatter (tags, partition
@@ -209,12 +231,28 @@ def _split_by_headings(text: str) -> list[tuple[str, str]]:
     return sections
 
 
+def _signal_len(text: str) -> int:
+    """Length of ``text`` once markdown decoration and whitespace are removed.
+
+    IDX-7: used to decide whether a chunk carries enough retrievable signal to
+    be worth embedding. ``**Status:** `success``` measures 14 here, not 21.
+    """
+    return len(_MD_DECORATION_RE.sub("", text))
+
+
+def _is_indexable(content: str) -> bool:
+    """IDX-7: reject chunks that are pure boilerplate/formatting."""
+    return _signal_len(content) >= _MIN_CHUNK_SIGNAL_CHARS
+
+
 def _chunk_section(heading_path: str, body: str) -> list[_Chunk]:
     """Token-cap chunks from a heading section. Small sections stay whole."""
     body = body.strip()
     if not body:
         return []
     if len(body) <= _MAX_CHUNK_CHARS:
+        if not _is_indexable(body):
+            return []
         return [_Chunk(idx=0, heading_path=heading_path, content=body, token_count=len(body) // 4)]
     chunks: list[_Chunk] = []
     start = 0
@@ -241,7 +279,12 @@ def _chunk_section(heading_path: str, body: str) -> list[_Chunk]:
         # from the index for every large section. max(start+1, ...) guarantees
         # forward progress.
         start = max(start + 1, end - _OVERLAP_CHARS)
-    return chunks
+    # IDX-7: the tail slice of a long section can still be a boilerplate
+    # fragment; re-index the survivors so `idx` stays gap-free.
+    kept = [c for c in chunks if _is_indexable(c.content)]
+    for new_idx, chunk in enumerate(kept):
+        chunk.idx = new_idx
+    return kept
 
 
 def _iter_markdown(root: Path) -> Iterable[Path]:
@@ -546,8 +589,10 @@ class VaultIndexerService:
                 ch.idx = global_idx
                 all_chunks.append(ch)
                 global_idx += 1
-        if not all_chunks and body.strip():
-            # file with no headings; treat as one chunk
+        if not all_chunks and body.strip() and _is_indexable(body):
+            # file with no headings; treat as one chunk (IDX-7: unless the whole
+            # file is boilerplate — this fallback previously re-admitted exactly
+            # the stub content `_chunk_section` had just rejected).
             all_chunks = [_Chunk(idx=0, heading_path="", content=body.strip(), token_count=len(body) // 4)]
 
         # Fix-109: embed ALL chunks first (no session held across the embedder

@@ -21,6 +21,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 VAULT_DIRNAME = "vault"
 
 _SLUG_RE = re.compile(r"[^a-zA-Z0-9_-]+")
@@ -86,6 +90,18 @@ def _frontmatter_parse(text: str) -> tuple[dict, str]:
         v = v.strip()
         if v.startswith('"') and v.endswith('"'):
             v = v[1:-1]
+        # RET-2 (supervise 6a1563fd): `_frontmatter_dump` writes lists in the
+        # inline form `key: [a, b]`, but this parser returned them as the STRING
+        # "[a, b]" — so dump -> parse was lossy for every list field. Two live
+        # consequences: `/api/memory-tree/entry` handed the UI `tags` as a
+        # string (iterating it yields CHARACTERS), and `agent_writable: []`
+        # round-tripped to the string "[]", which is TRUTHY — inverting the
+        # meaning of "nothing is agent-writable" for any future gate that reads
+        # it. Parse the inline form back into a real list.
+        elif v.startswith("[") and v.endswith("]"):
+            inner = v[1:-1].strip()
+            meta[k] = [p.strip() for p in inner.split(",") if p.strip()] if inner else []
+            continue
         meta[k] = v
     return meta, body.strip()
 
@@ -145,8 +161,20 @@ def _write_text(path: Path, text: str, *, root: Path, source: str, run_id: str) 
                 overwrite=False,
             )
             return
-    except Exception:
-        pass
+    except Exception as e:
+        # RET-3: this fallback is legitimate for unit tests (temp roots that are
+        # not the mounted vault), but it also swallowed a REAL VaultWriterService
+        # failure and silently completed the write directly — bypassing the
+        # writer's audit trail while reporting success. Tests hit the
+        # `available()` / path checks above and never raise, so anything landing
+        # here is a genuine fault and must be visible.
+        logger.warning(
+            "memory_vault_writer_unavailable_direct_write",
+            error_type=type(e).__name__,
+            error=str(e),
+            path=str(path),
+            source=source,
+        )
 
     root.mkdir(parents=True, exist_ok=True)
     path.parent.mkdir(parents=True, exist_ok=True)

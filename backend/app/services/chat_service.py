@@ -534,7 +534,16 @@ class ChatService:
                 max_tokens=4096,
             )
         except Exception as e:
-            logger.error("ask_zero_chat_failed", error=str(e))
+            # RSP-3: `str(httpx.ReadTimeout())` is "", so the most common LLM
+            # failure logged as `ask_zero_chat_failed error=''` — a line with
+            # zero diagnostic content. The user still gets the sanitised reply
+            # below (Fix-141 F8); only the OPERATOR-side signal was missing.
+            logger.error(
+                "ask_zero_chat_failed",
+                error_type=type(e).__name__,
+                error=str(e),
+                model=model,
+            )
             # Fix-141 F8: never leak raw exception detail (provider URLs,
             # upstream errors) into the user-facing reply / TTS output.
             content = "Sorry, I couldn't generate a response. Please try again in a moment."
@@ -552,7 +561,18 @@ class ChatService:
             if len(session.messages) <= 2:
                 await mem.generate_title(session.session_id)
         except Exception as e:
-            logger.debug("chat_persist_failed", error=str(e))
+            # RSP-4: this is the write that makes a conversation survive a
+            # restart. Losing it was logged at DEBUG — invisible at the default
+            # INFO level — so chat history could stop persisting entirely with
+            # no operator-visible signal. The 12 `_gather_context` swallows below
+            # stay at DEBUG on purpose (best-effort context, the reply is still
+            # useful without any one source); losing the transcript is not.
+            logger.warning(
+                "chat_persist_failed",
+                error_type=type(e).__name__,
+                error=str(e),
+                session_id=session.session_id,
+            )
 
         return ChatResponse(
             content=content,

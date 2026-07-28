@@ -72,7 +72,20 @@ async def send_message_stream(request: ChatMessageRequest):
                 yield chunk
         except Exception as e:
             import json
-            yield f'data: {json.dumps({"type": "error", "content": str(e)})}\n\n'
+            # RSP-2: `str(httpx.ReadTimeout())` is the EMPTY STRING, and a read
+            # timeout is the single most common way this call fails. The old
+            # frame was literally `{"type":"error","content":""}` — the UI showed
+            # a blank error and nothing was logged at all (this module built a
+            # `logger` and never used it). Carry the exception TYPE, which is
+            # always present, and log server-side with the same detail.
+            detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            logger.error(
+                "ask_zero_stream_failed",
+                error_type=type(e).__name__,
+                error=str(e),
+                session_id=request.session_id,
+            )
+            yield f'data: {json.dumps({"type": "error", "content": detail})}\n\n'
 
     return StreamingResponse(
         event_generator(),
@@ -102,7 +115,19 @@ async def send_message(request: ChatMessageRequest):
             model=result.model,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # RSP-1: same empty-`str(e)` trap as the streaming path — a timeout here
+        # produced `500 {"detail": ""}` with no server-side log, so a failed
+        # chat was invisible from both ends.
+        logger.error(
+            "ask_zero_message_failed",
+            error_type=type(e).__name__,
+            error=str(e),
+            session_id=request.session_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(e).__name__}: {e}" if str(e) else type(e).__name__,
+        )
 
 
 @router.get("/sessions", response_model=List[SessionInfo])
