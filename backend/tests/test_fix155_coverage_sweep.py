@@ -213,3 +213,40 @@ def test_dense_sql_bounds_cosine_distance():
     src = inspect.getsource(mod.VaultRetrievalService.search)
     assert "(embedding <=> (:emb)::vector) <= :max_dist" in src
     assert "dense_params[\"max_dist\"] = 1.0 - min_similarity" in src
+
+
+# ---------------------------------------------------------------------------
+# CRITIC-4 — the judge must never be told "no ACs" when the caller sent them
+# ---------------------------------------------------------------------------
+
+def test_runtime_evidence_is_used_as_acceptance_criteria():
+    """Review 43 scored AC=0 because this payload was silently discarded."""
+    from app.routers.zero_run import _resolve_ac
+
+    evidence = "AC-1 dense abstain: 4 nonsense queries returned 0 hits."
+    resolved = _resolve_ac(ac_override=None, description="", runtime_evidence=evidence)
+    assert "AC-1 dense abstain" in resolved
+    assert "no description on sprint" not in resolved
+
+
+def test_ac_precedence_override_then_description_then_evidence():
+    from app.routers.zero_run import _resolve_ac
+
+    assert "OVERRIDE" in _resolve_ac(
+        ac_override="OVERRIDE", description="DESC", runtime_evidence="EVID"
+    )
+    assert "DESC" in _resolve_ac(
+        ac_override=None, description="DESC", runtime_evidence="EVID"
+    )
+    assert "EVID" in _resolve_ac(
+        ac_override=None, description="   ", runtime_evidence="EVID"
+    )
+
+
+def test_empty_ac_set_tells_the_judge_how_to_score_it():
+    """An empty AC set is not a failed AC set — say so, or the judge invents a 0."""
+    from app.routers.zero_run import _resolve_ac
+
+    resolved = _resolve_ac(ac_override=None, description="", runtime_evidence=None)
+    assert "EMPTY, not failed" in resolved
+    assert "Do not score" in resolved

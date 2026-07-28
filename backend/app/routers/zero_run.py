@@ -463,9 +463,40 @@ Keep your response under 600 words.
 """
 
 
+_NO_AC_SENTINEL = (
+    "(none supplied — this sprint carried no acceptance criteria and the caller "
+    "sent no runtime evidence)\n\n"
+    "SCORING NOTE for question (1): the AC set is EMPTY, not failed. Do not score "
+    "(1) as 0 for the absence of criteria — an empty set has no unverified member. "
+    "Judge (1) on whether the diff carries its own verification (tests that assert "
+    "the new behaviour, measurable evidence in comments), and say plainly in your "
+    "critique that no ACs were supplied."
+)
+
+
+def _resolve_ac(*, ac_override, description: str, runtime_evidence) -> str:
+    """Resolve the acceptance-criteria block handed to the critic.
+
+    CRITIC-4: `runtime_evidence` is a first-class source. It used to be accepted
+    by the endpoint and then dropped on the floor, so a caller that supplied its
+    ACs there got a judge told it had none.
+    """
+    for candidate in (ac_override, description, runtime_evidence):
+        if isinstance(candidate, str) and candidate.strip():
+            return _extract_ac_from_description(candidate)
+    logger.warning(
+        "critic_review_no_acceptance_criteria",
+        detail=(
+            "no ac_override / sprint_description / runtime_evidence supplied; "
+            "the critic is judging the diff on its own merits"
+        ),
+    )
+    return _NO_AC_SENTINEL
+
+
 def _extract_ac_from_description(description: str) -> str:
     if not description:
-        return "(no description on sprint)"
+        return _NO_AC_SENTINEL
     m = re.search(
         r"^ACCEPTANCE[^:\n]*:\s*\n(.+?)(?:\n[A-Z][A-Z_]+:|\Z)",
         description, re.DOTALL | re.MULTILINE,
@@ -680,7 +711,21 @@ async def critic_review(
     base_ref = body.get("base_ref", "HEAD~1")
     description = body.get("sprint_description") or ""
 
-    ac = body.get("ac_override") or _extract_ac_from_description(description)
+    # CRITIC-4 (supervise 6a1563fd): the AC block was sourced ONLY from
+    # `ac_override` / `sprint_description`. A caller that sent its acceptance
+    # evidence under `runtime_evidence` — which this endpoint accepts and which
+    # is the natural name for it — had that payload silently dropped, and the
+    # judge was then handed the literal string "(no description on sprint)" as
+    # its acceptance criteria. Review 43 scored question (1) as 0 for exactly
+    # this reason ("The Acceptance Criteria section is explicitly empty") on a
+    # change that shipped 11 verified ACs, and the model visibly wavered before
+    # landing on ACCEPT. Same failure shape as CRITIC-3 last run: the harness
+    # silently degrades the artifact the judge is asked to rule on.
+    ac = _resolve_ac(
+        ac_override=body.get("ac_override"),
+        description=description,
+        runtime_evidence=body.get("runtime_evidence"),
+    )
     # Fix-95: the zero-api container has no git binary / no .git, so the
     # in-container `git diff` always fails and the critic sees "(no diff)".
     # Prefer a caller-supplied diff (the supervisor computes it host-side where
