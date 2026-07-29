@@ -215,186 +215,13 @@ async def _bookkeeper_adapter(user_text: str, ctx: dict[str, Any]) -> Supervisor
         )
 
 
-async def _summary_regen_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
-    """F-75 — voice 'Hey Zero, redo the summary'. Dispatches to the
-    realtime regenerate_summary tool which finds the active or most-
-    recent meeting and re-summarises + re-renders the vault file."""
-    try:
-        from app.services.reachy_realtime.tools import _regenerate_summary
-        from app.services.reachy_realtime.common import ToolDependencies
-        from app.services.reachy_realtime.bg_tool_manager import BackgroundToolManager
-
-        result = await _regenerate_summary(
-            ToolDependencies(), {}, BackgroundToolManager()
-        )
-        spoken = result.get("response_text") or (
-            "Summary regenerated." if result.get("ok") else "Could not regenerate the summary."
-        )
-        return SupervisorResult(
-            intent="summary_regen",
-            spoken=spoken[:500],
-            tool_calls=[{"adapter": "summary_regen", "ok": bool(result.get("ok")), "result": {
-                "meeting_id": result.get("meeting_id"),
-                "elapsed_ms": result.get("elapsed_ms"),
-                "action_items": result.get("action_items"),
-            }}],
-        )
-    except Exception as e:
-        logger.warning("supervisor_summary_regen_failed", error=str(e))
-        return SupervisorResult(
-            intent="summary_regen",
-            spoken="I couldn't reach the summarizer.",
-            tool_calls=[{"adapter": "summary_regen", "ok": False, "error": str(e)}],
-            error=str(e),
-        )
-
-
-async def _face_enroll_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
-    """F-65 — voice 'Hey Zero, that was Sarah'. Extracts the proposed
-    display name from the trailing tokens and routes to the realtime
-    enroll tool via a synthetic dispatch."""
-    import re
-
-    text = (user_text or "").strip()
-    # Try to extract the name from common phrasings.
-    m = (
-        re.search(r"that (?:was|is)\s+(.+?)$", text, re.IGNORECASE)
-        or re.search(r"(?:label|name|save)\s+(?:speaker[_\s\d]*\s+)?(?:as\s+|that as\s+)?(.+?)$", text, re.IGNORECASE)
-        or re.search(r"enroll\s+(?:the\s+new\s+face|that\s+face)?\s*(?:as\s+)?(.+?)$", text, re.IGNORECASE)
-        or re.search(r"remember this face as\s+(.+?)$", text, re.IGNORECASE)
-    )
-    name = (m.group(1).strip(" .!?") if m else "").strip()
-    name = re.sub(r"^(an?\s+|the\s+)", "", name, flags=re.IGNORECASE).strip()
-    if not name or len(name) < 2:
-        return SupervisorResult(
-            intent="face_enroll",
-            spoken="Who should I save that face as?",
-            tool_calls=[{"adapter": "face_enroll", "ok": False, "reason": "no_name"}],
-        )
-    try:
-        from app.services.reachy_realtime.tools import _enroll_face_from_meeting
-        from app.services.reachy_realtime.common import ToolDependencies
-        from app.services.reachy_realtime.bg_tool_manager import BackgroundToolManager
-
-        deps = ToolDependencies()  # bare deps OK — tool reads companion
-        # policy + workspace directly.
-        result = await _enroll_face_from_meeting(
-            deps, {"display_name": name}, BackgroundToolManager()
-        )
-        spoken = result.get("response_text") or (
-            f"Saved that face as {name}." if result.get("ok") else "Face enrollment didn't work."
-        )
-        return SupervisorResult(
-            intent="face_enroll",
-            spoken=spoken[:500],
-            tool_calls=[{"adapter": "face_enroll", "ok": bool(result.get("ok")), "name": name, "result": result}],
-        )
-    except Exception as e:
-        logger.warning("supervisor_face_enroll_failed", error=str(e))
-        return SupervisorResult(
-            intent="face_enroll",
-            spoken="I couldn't reach the face enrollment service.",
-            tool_calls=[{"adapter": "face_enroll", "ok": False, "error": str(e)}],
-            error=str(e),
-        )
-
-
-async def _adhoc_capture_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
-    """F-50 — voice 'Hey Zero, record this' / 'end recording'.
-
-    Treats the user's intent as start-or-stop based on the verb. The
-    actual capture flows through host_agent's /record/start and /stop —
-    same path the auto-record scheduler uses, so the meeting goes
-    through the full transcription / summary / follow-up pipeline."""
-    import httpx
-    import os
-
-    text = (user_text or "").lower()
-    is_stop = any(k in text for k in (
-        "end recording", "stop recording", "stop the meeting",
-        "end the meeting", "finish recording", "wrap up",
-    ))
-    is_start = any(k in text for k in (
-        "record this", "start recording", "begin recording",
-        "capture this", "record the meeting",
-    ))
-    if not is_start and not is_stop:
-        is_start = True  # default to start when ambiguous
-    host_url = (
-        os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796")
-        .rstrip("/")
-    )
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as c:
-            if is_stop:
-                r = await c.post(f"{host_url}/record/stop")
-                data = r.json() if r.status_code < 400 else {}
-                # Fix-96: symmetric with the start path (which flips
-                # meeting_active=True). Clear it on stop so the silent-listen
-                # gate + meeting DND don't stay stuck on after a voice "stop
-                # recording" — the scheduler auto-stop loop only reconciles
-                # calendar-scheduled events, never ad-hoc voice stops.
-                try:
-                    from app.services.reachy_companion_service import (
-                        get_reachy_companion_service,
-                    )
-                    get_reachy_companion_service().set_meeting_active(
-                        active=False, meeting_id=None
-                    )
-                except Exception:
-                    pass
-                spoken = (
-                    "Recording stopped. I'll process the transcript and surface action items."
-                    if data.get("meeting_id") or data.get("ok")
-                    else "I don't think a recording was running."
-                )
-                return SupervisorResult(
-                    intent="meeting_capture_stop",
-                    spoken=spoken,
-                    tool_calls=[{"adapter": "adhoc_capture", "action": "stop", "ok": True, "result": data}],
-                )
-            # Start path
-            r = await c.post(
-                f"{host_url}/record/start",
-                json={"source": "mic", "title": _adhoc_title()},
-            )
-            data = r.json() if r.status_code < 400 else {}
-            if data.get("error"):
-                return SupervisorResult(
-                    intent="meeting_capture_start",
-                    spoken=f"I couldn't start recording — {data.get('error')}.",
-                    tool_calls=[{"adapter": "adhoc_capture", "action": "start", "ok": False, "result": data}],
-                )
-            # Flip companion into meeting_active so the silent-listen gate
-            # kicks in and post-stop drains run automatically.
-            try:
-                from app.services.reachy_companion_service import (
-                    get_reachy_companion_service,
-                )
-                mid = str(data.get("meeting_id") or "")
-                if mid:
-                    get_reachy_companion_service().set_meeting_active(
-                        active=True, meeting_id=mid
-                    )
-            except Exception:
-                pass
-            return SupervisorResult(
-                intent="meeting_capture_start",
-                spoken="Recording started. I'll stay silent until you ask a question.",
-                tool_calls=[{"adapter": "adhoc_capture", "action": "start", "ok": True, "result": data}],
-            )
-    except Exception as e:
-        logger.warning("supervisor_adhoc_capture_failed", error=str(e))
-        return SupervisorResult(
-            intent="meeting_capture",
-            spoken="I couldn't reach the recorder right now.",
-            tool_calls=[{"adapter": "adhoc_capture", "ok": False, "error": str(e)}],
-            error=str(e),
-        )
-
-
-def _adhoc_title() -> str:
-    return f"Ad hoc {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+# _summary_regen_adapter / _face_enroll_adapter / _adhoc_capture_adapter
+# (F-75 / F-65 / F-50, voice-triggered meeting adapters) removed — they were
+# already unreachable (not registered in _KEYWORD_INTENTS or self._adapters,
+# per the 2026-06-20 meeting-concept retirement) and imported from
+# app.services.reachy_realtime, which is deleted now that robot/Reachy
+# hardware control has moved to a separate app (Zero Studio) and voice chat
+# has been dropped from Zero entirely.
 
 
 async def _system_check_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResult:
@@ -534,29 +361,8 @@ async def _brief_adapter(user_text: str, ctx: dict[str, Any]) -> SupervisorResul
 # request like "research the best CPAs in Duval" should land on research,
 # not company, even though the latter's keyword list includes "duval"/"cpa".
 _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
-    # F-50: ad-hoc capture verbs win before the broader meeting / calendar
-    # intents. Order matters — "record this" must NOT fall into calendar.
-    ("meeting_capture", (
-        "record this", "start recording", "begin recording", "capture this",
-        "record the meeting", "end recording", "stop recording",
-        "stop the meeting", "end the meeting", "finish recording", "wrap up",
-    )),
-    # F-65: voice face-enrollment. "that was sarah" / "label speaker_01 as
-    # mike" — short phrases the LLM should hand to enroll_face_from_meeting.
-    ("face_enroll", (
-        "that was ", "that is ", "label speaker", "label that as",
-        "enroll the new face", "enroll that face", "name this face",
-        "save that as ", "remember this face as",
-    )),
-    # F-75: redo the summary verbs. Win before meeting_rag's broader
-    # "recap the meeting" so the user gets a fresh regeneration, not a
-    # repeat read of the old summary.
-    ("summary_regen", (
-        "redo the summary", "redo summary", "try the summary again",
-        "regenerate the summary", "regenerate summary", "rebuild the recap",
-        "better summary", "summarise again", "summarize again",
-        "remake the summary", "re-summarise", "re-summarize",
-    )),
+    # Meeting voice intents (meeting_capture / face_enroll / summary_regen /
+    # meeting_rag) removed 2026-06-20 — meetings concept retired from product.
     # F-45: system_check wins early so "how's everything" doesn't fall
     # into the daily-brief / calendar buckets.
     ("system_check", (
@@ -566,19 +372,6 @@ _KEYWORD_INTENTS: list[tuple[str, tuple[str, ...]]] = [
     )),
     ("daily_brief", (
         "daily brief", "morning brief", "what should i work on", "overnight report",
-    )),
-    # meeting_rag wins over calendar when the question is about transcript
-    # content. "what did" / "what was said" / "summarise the meeting" route
-    # here. Keep before the calendar entry so "what did sarah say in our
-    # meeting?" doesn't get pulled into a calendar lookup.
-    ("meeting_rag", (
-        "what did", "what was said", "what was discussed", "who said",
-        "summarise the meeting", "summarize the meeting", "recap the meeting",
-        "in the meeting", "in our meeting", "in yesterday's meeting",
-        "in the last meeting", "in our last meeting", "in our recent meeting",
-        "in the previous meeting", "last meeting", "previous meeting",
-        "in the standup", "in our standup", "in the call", "in our call",
-        "what was decided", "what did we decide", "what did we agree",
     )),
     ("research", ("research ", "look up", "find out", "investigate", "compare")),
     ("email", ("email", "inbox", "mail", "gmail", "message", "messages")),
@@ -668,11 +461,9 @@ class SupervisorGraph:
             "research": _research_adapter,
             "bookkeeper": _bookkeeper_adapter,
             "daily_brief": _brief_adapter,
-            "meeting_rag": _meeting_rag_adapter,
             "system_check": _system_check_adapter,
-            "meeting_capture": _adhoc_capture_adapter,
-            "face_enroll": _face_enroll_adapter,
-            "summary_regen": _summary_regen_adapter,
+            # Meeting adapters (meeting_rag / meeting_capture / face_enroll /
+            # summary_regen) removed 2026-06-20 — meetings concept retired.
         }
         self._lg_app: Any = None
         if USE_LANGGRAPH:

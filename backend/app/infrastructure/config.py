@@ -116,25 +116,16 @@ class Settings(BaseSettings):
     embedding_model: str = "qwen3-embed"
     embedding_dimension: int = 768
 
-    # Reachy Mini voice surface
+    # Reachy Mini daemon URL + TTS-confirmation toggle — kept for the meeting
+    # recording pipeline's best-effort "Recording started" / "Meeting saved"
+    # announcements (meeting_recording_service.py). Robot/Reachy hardware
+    # control itself moved to a separate app (Zero Studio); Zero no longer
+    # runs a Reachy realtime voice chat surface.
     reachy_api_url: str = "http://host.docker.internal:8000"
     reachy_tts_confirmations: bool = True  # speak "Recording started" / "Meeting saved"
     # Ambient camera understanding is useful when explicitly enabled, but the
-    # VLM tick can take many seconds and should not compete with live voice by
-    # default. Enable with ZERO_AMBIENT_VISION_ENABLED=true.
+    # VLM tick can take many seconds. Enable with ZERO_AMBIENT_VISION_ENABLED=true.
     ambient_vision_enabled: bool = False
-
-    # Reachy realtime voice chat (ported from reachy_mini_conversation_app).
-    # Two provider backends — OpenAI Realtime and Gemini Live — each BYO API key.
-    # openai_api_key is net-new to Zero (no other service needs OpenAI directly;
-    # the existing openai SDK usage is for OpenAI-compatible endpoints).
-    openai_api_key: Optional[str] = None
-    reachy_realtime_backend: Optional[str] = None  # explicit override: "local", "openai", or "gemini"
-    reachy_realtime_model: Optional[str] = None  # None = default for chosen backend
-    reachy_realtime_voice: Optional[str] = None  # None = default for chosen backend
-    reachy_realtime_profile: Optional[str] = None  # profile / persona id, None = default
-    # The "local" realtime backend talks to vLLM via the existing
-    # ``vllm_chat_url`` setting at the top of this class.
 
     # Meeting recording: preferred mic device for Reachy/other USB capture. Matched
     # as a case-insensitive substring against sounddevice.query_devices() names.

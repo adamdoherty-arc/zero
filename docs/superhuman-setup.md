@@ -1,5 +1,20 @@
 # Superhuman v2 — Zero as a virtual Zoom attendee
 
+> **2026-07-11: `host_agent` retired.** Robot/Reachy hardware control moved
+> to a separate app (Zero Studio), and `host_agent` — the Windows-host
+> process this doc's "preferred" driver path depended on for VB-Cable audio
+> routing and Chromium hosting — was deleted along with it. The steps below
+> that reference `host_agent` (§2, the `ZERO_MEETING_AGENT_USE_HOST_AGENT`
+> flag, the `/agent/*` endpoints in §5) no longer apply.
+>
+> `meeting_agent_service.py` still has an in-process Playwright fallback
+> (`_init_driver()`), so transcript capture / join-and-leave still works.
+> **Real audio playback into the meeting (VB-Cable → "CABLE Input") does
+> not** — that required a Windows-host process with access to Windows
+> audio devices, which a Linux Docker container cannot reach on its own.
+> Rebuilding that path (e.g. a lightweight host-side audio bridge) is
+> unscoped follow-on work, not part of the 2026-07-11 robot removal.
+
 ## What this is
 
 Zero joins a Zoom (or Google Meet / Teams) meeting URL as a participant,

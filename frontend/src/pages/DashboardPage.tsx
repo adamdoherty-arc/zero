@@ -6,9 +6,7 @@ import { Link } from 'react-router-dom'
 import { AgentStatusCard } from '@/components/agent/AgentStatusCard'
 import { TaskSubmitForm } from '@/components/agent/TaskSubmitForm'
 import { TaskHistory } from '@/components/agent/TaskHistory'
-import { ReachyCameraViewer } from '@/components/reachy/ReachyCameraViewer'
 import { DailyBrief } from '@/components/DailyBrief'
-import { MeetingAnalyticsTile } from '@/components/meetings/MeetingAnalyticsTile'
 
 function SystemStatusCard() {
   const { data: health } = useHealthReady()
@@ -58,26 +56,14 @@ export function DashboardPage() {
         <TaskSubmitForm />
       </div>
 
-      {/* System Status + Zero robot live view */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-        <div className="lg:col-span-1 flex">
-          <div className="flex-1 flex flex-col gap-4">
-            <SystemStatusCard />
-          </div>
-        </div>
-        <div className="lg:col-span-2">
-          <ReachyCameraViewer height={240} compact />
-        </div>
+      {/* System Status */}
+      <div className="mb-8">
+        <SystemStatusCard />
       </div>
 
       {/* Zero Daily Brief — composed by daily_brief_service at 7am */}
       <div className="mb-8">
         <DailyBrief />
-      </div>
-
-      {/* F-73 Meeting analytics — week-over-week counts + completion rate */}
-      <div className="mb-8">
-        <MeetingAnalyticsTile />
       </div>
 
       {/* Daily Briefing Card */}

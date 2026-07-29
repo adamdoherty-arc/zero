@@ -11,6 +11,11 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: zero-searxng
+    # Disabled 2026-05-27 (operator request): crash-looped on DuckDuckGo CAPTCHA
+    # (SearxEngineCaptchaException). Reversible — remove this profile (or run
+    # `docker compose -f docker-compose.searxng.yml --profile disabled up -d`)
+    # to bring it back.
+    profiles: ["disabled"]
     ports:
       - "8888:8080"
     volumes:

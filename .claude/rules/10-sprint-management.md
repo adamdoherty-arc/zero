@@ -7,7 +7,7 @@ Zero's `project_id` in Legion is **7** (`Zero Personal Assistant`). Verified 202
 ## When to open a Sprint vs make a plain commit
 
 A **Sprint** is required for:
-- New feature (router, service, agent, voice flow, Reachy capability)
+- New feature (router, service, agent)
 - Enhancement to existing feature (new endpoints, UI surfaces, daily-brief sections, etc.)
 - Refactor that crosses ≥3 files or changes a public surface
 - Migration (Alembic schema changes, dep major bumps, vault layout changes)

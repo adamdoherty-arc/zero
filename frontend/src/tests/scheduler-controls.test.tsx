@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { render } from './test-utils'
 import { SchedulerTab } from '@/components/settings/SchedulerTab'
-import { EmailPage } from '@/pages/EmailPage'
 import {
   useSchedulerStatus,
   useSetAllSchedulerJobsEnabled,
@@ -18,18 +17,6 @@ vi.mock('@/hooks/useSystemApi', () => ({
   useSetSchedulerJobEnabled: vi.fn(),
   useSetSchedulerJobsEnabled: vi.fn(),
   useTriggerJob: vi.fn(),
-}))
-
-vi.mock('@/components/AccountSwitcher', () => ({
-  AccountSwitcher: () => <div>Account switcher</div>,
-}))
-
-vi.mock('@/components/GoogleOAuthButton', () => ({
-  GoogleOAuthButton: () => <div>Google OAuth</div>,
-}))
-
-vi.mock('@/components/email/EmailRulesPanel', () => ({
-  EmailRulesPanel: () => <div>Email Rules</div>,
 }))
 
 const schedulerStatus: SchedulerStatus = {
@@ -185,48 +172,5 @@ describe('SchedulerTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disable all jobs' }))
     expect(allMutate).toHaveBeenCalledTimes(1)
     expect(allMutate.mock.calls[0][0]).toEqual({ enabled: false })
-  })
-})
-
-describe('EmailPage Zero email reading switch', () => {
-  it('reflects the voice scheduler job and toggles reachy_email_nudge', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      const json = (body: unknown) => ({
-        ok: true,
-        status: 200,
-        json: async () => body,
-        text: async () => JSON.stringify(body),
-      } as Response)
-
-      if (url.includes('/api/google/auth/status')) {
-        return json({ connected: true })
-      }
-      if (url.includes('/api/email/messages')) {
-        return json([])
-      }
-      if (url.includes('/api/reachy/email/session')) {
-        return json({
-          state: 'awaiting_decision',
-          queue_length: 2,
-          active_email_id: 'email-1',
-          active_sender: 'Ada',
-          active_subject: 'Status',
-          reader_voice: 'en-GB-RyanNeural',
-          last_state_change: '2026-05-05T15:00:00Z',
-          suppressed_count: 1,
-        })
-      }
-      return json({})
-    })
-
-    render(<EmailPage />)
-
-    const voiceSwitch = await screen.findByRole('button', { name: 'Enable Zero email reading' })
-    expect(screen.getByText('Off')).toBeInTheDocument()
-    expect(await screen.findByText('awaiting decision - 2 queued')).toBeInTheDocument()
-
-    fireEvent.click(voiceSwitch)
-    expect(jobMutate).toHaveBeenCalledWith({ jobName: 'reachy_email_nudge', enabled: true })
   })
 })

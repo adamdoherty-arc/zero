@@ -4,10 +4,8 @@ import {
   CheckCircle2,
   Database,
   HardDrive,
-  Mic,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Volume2,
 } from 'lucide-react'
 import { useMeetingStewardStatus } from '@/hooks/useMeetingStewardStatusApi'
@@ -105,43 +103,6 @@ export function SystemStatusPage() {
       )}
 
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        <StatusCard
-          ok={data.host_agent?.ok ?? false}
-          title="Host agent"
-          icon={Sparkles}
-          body={data.host_agent?.url || 'host_agent'}
-          detail={
-            <>
-              wake mode: <span className="font-mono">{data.host_agent?.wake_mode ?? 'n/a'}</span>
-              <br />
-              recordings: <span className="font-mono">{data.host_agent?.recordings_dir ?? 'n/a'}</span>
-            </>
-          }
-        />
-        <StatusCard
-          ok={!data.companion?.error}
-          title="Companion mode"
-          icon={Mic}
-          body={data.companion?.mode ?? 'unknown'}
-          detail={
-            <>
-              transcribe_only:{' '}
-              <span className="font-mono">{String(data.companion?.transcribe_only)}</span>
-              <br />
-              meeting_active:{' '}
-              <span className="font-mono">{String(data.companion?.meeting_active)}</span>
-              {data.companion?.last_wake_at && (
-                <>
-                  <br />
-                  last wake:{' '}
-                  <span className="font-mono">
-                    {new Date(data.companion.last_wake_at).toLocaleTimeString()}
-                  </span>
-                </>
-              )}
-            </>
-          }
-        />
         <StatusCard
           ok={!data.approvals?.error}
           title="Approvals inbox"

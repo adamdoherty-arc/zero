@@ -1,11 +1,10 @@
 """
 Sight — wearable-agnostic vision provider layer.
 
-`SightProvider` is the single abstraction that Reachy's camera, a USB
-webcam, and (later) Meta Ray-Ban glasses all satisfy. The rest of Zero
-— vision VLM, ambient tick, voice loop — reads from
-`registry.get_active_provider()` and doesn't care where the frame
-came from.
+`SightProvider` is the single abstraction that a phone camera and
+Meta Ray-Ban glasses both satisfy. The rest of Zero — vision VLM,
+ambient tick — reads from `registry.get_active_provider()` and
+doesn't care where the frame came from.
 """
 
 from .base import SightProvider, SightStatus

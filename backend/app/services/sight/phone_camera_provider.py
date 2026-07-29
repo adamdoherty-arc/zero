@@ -3,11 +3,12 @@ PhoneCameraProvider — push-based sight feed from the user's phone.
 
 The mobile PWA companion page (/m/camera) captures frames via getUserMedia
 and POSTs them to /api/sight/phone_camera/ingest at ~1 fps.  Everything
-downstream (VLM, Reachy voice context, ambient ticks) consumes them through
-the standard SightProvider interface.
+downstream (VLM, ambient ticks) consumes them through the standard
+SightProvider interface.
 
-Primary camera = Reachy body camera (always default).
-Phone camera = secondary option, switched via POST /api/sight/select.
+Default sight provider (ZERO_SIGHT_DEFAULT_PROVIDER) as of the Reachy
+hardware removal (robot/Reachy control moved to a separate app, Zero
+Studio). meta_rayban is the other option, switched via POST /api/sight/select.
 """
 
 from __future__ import annotations

@@ -69,17 +69,6 @@ _BOOTSTRAP_TOPICS: list[dict[str, Any]] = [
         "aspects": ["technical", "security"],
     },
     {
-        "name": "Reachy Mini voice stack Parakeet Kokoro",
-        "description": "Local voice loop: Silero VAD, Parakeet TDT, Kokoro 82M TTS, LiveKit Agents with MCP.",
-        "search_queries": [
-            "Reachy Mini conversation app fastrtc",
-            "Parakeet TDT vs faster-whisper distil-large-v3",
-            "LiveKit Agents MCP native support 2026",
-            "Kokoro FastAPI TTS streaming",
-        ],
-        "aspects": ["technical", "latency"],
-    },
-    {
         "name": "pgvector partitioned retrieval hybrid BM25 dense",
         "description": "pgvector HNSW tuning, Reciprocal Rank Fusion with tsvector, partition routing.",
         "search_queries": [

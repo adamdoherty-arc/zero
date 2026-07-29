@@ -24,7 +24,6 @@ import httpx
 import structlog
 
 from app.infrastructure.config import get_settings
-from app.infrastructure.circuit_breaker import get_circuit_breaker
 
 logger = structlog.get_logger(__name__)
 
@@ -47,11 +46,6 @@ class OllamaClient:
         self._default_model = settings.vllm_chat_model
         self._default_timeout = settings.vllm_timeout
         self._client: Optional[httpx.AsyncClient] = None
-        self._breaker = get_circuit_breaker(
-            "ollama_shim",
-            failure_threshold=5,
-            recovery_timeout=120.0,
-        )
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the shared httpx client with connection pooling."""

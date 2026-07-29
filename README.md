@@ -1,8 +1,8 @@
 # Zero. Personal And Company AI Operating System
 
-Zero is Adam's chief-of-staff and the active software home for **ADA AI LLC Company OS**. The personality you hear through Reachy Mini ("Hey Zero") is Zero. It is a FastAPI backend on `:18792` plus a React/Vite UI on `:5173`, with PostgreSQL + pgvector for retrieval, a local vLLM stack for privacy-safe inference, and a shared LiteLLM router at `:4444` for cloud fallback.
+Zero is Adam's chief-of-staff and the active software home for **ADA AI LLC Company OS**. It is a FastAPI backend on `:18792` plus a React/Vite UI on `:5173`, with PostgreSQL + pgvector for retrieval, a local vLLM stack for privacy-safe inference, and a shared LiteLLM router at `:4444` for cloud fallback.
 
-Zero combines the personal assistant, second brain, company task cockpit, approvals, docs context, consulting / product / robotics operations, content automation, voice, vault, journaling, habits, goals, vision, ecosystem health, and Reachy Mini control into one operating surface.
+Zero combines the personal assistant, second brain, company task cockpit, approvals, docs context, consulting / product operations, content automation, vault, journaling, habits, goals, vision, and ecosystem health into one operating surface. Robot/Reachy hardware control moved to a separate app, **Zero Studio**, on 2026-07-11 — Zero is text/task-focused, no voice or robot surface.
 
 This file is the canonical source of truth for what Zero does and contains. It is intentionally self-contained: a new reader (human or agent) should be able to land here and not need to open another file to understand the project.
 
@@ -29,9 +29,7 @@ This file is the canonical source of truth for what Zero does and contains. It i
 
 ## What is Zero
 
-Zero is the **chief-of-staff**. It is Adam's interface to his own life and the active operating surface for Doherty Applied AI Company OS. The personality the user talks to through Reachy Mini ("Hey Zero") is Zero. Zero is *not* a coding orchestrator (that is Legion's job) and *not* a trader (that is Ada's job). When something requires deep code work or a trading decision, Zero **delegates** to Legion or Ada via MCP and summarizes the result back.
-
-**Naming boundary.** *Zero* is the assistant, product, and robot identity users see. *Reachy Mini* is the vendor / hardware platform. `reachy_*`, `ZERO_REACHY_*`, SDK names, daemon names, and DB / API compatibility identifiers stay in place until a deliberate compatibility migration is planned.
+Zero is the **chief-of-staff**. It is Adam's interface to his own life and the active operating surface for Doherty Applied AI Company OS. Zero is *not* a coding orchestrator (that is Legion's job) and *not* a trader (that is Ada's job). When something requires deep code work or a trading decision, Zero **delegates** to Legion or Ada via MCP and summarizes the result back.
 
 ## What Zero does
 
@@ -39,13 +37,12 @@ Zero owns the following domains end-to-end. Each row is the canonical file or se
 
 | Domain | Files / services |
 |---|---|
-| Voice & Reachy | `backend/app/services/reachy_*.py`, `voice_bridge_service.py`, `reachy_wake_word_service.py` |
 | Vault writes | `backend/app/services/vault_writer_service.py` (Stage 1: cyanheads MCP) |
 | Vault retrieval | `vault_indexer_service.py`, `vault_retrieval_service.py` (pgvector + BM25 + RRF + partitions) |
 | Calendar / email | `email_draft_service.py`, GCal MCP wiring (Stage 2) |
 | Journal / habits / goals | `journal_service.py`, `habit_service.py`, `goal_tracking_service.py` |
 | Daily routine | `daily_routine_service.py`, `morning_digest_service.py` |
-| Vision | `vision_service.py` + Reachy camera frames |
+| Vision | `vision_service.py` via the `sight` provider registry (phone camera, Meta Ray-Ban) |
 | Ecosystem health surfacing | `ecosystem_health_service.py` |
 | Company OS | `docs/company/`, `/company/*` UI routes, `/api/company/*` context and task surfaces |
 | Memory Vault | `/vault/00_Meta/_agent/memory_vault/`, `/api/memory-vault/*`, `vault_writer_service.py` |
@@ -73,7 +70,6 @@ graph TB
     subgraph Surfaces["User surfaces"]
         UI["React UI :5173"]
         API["REST :18792"]
-        Voice["Reachy Mini :8000<br/>(USB-C + REST)"]
         SDK["Claude Agent SDK<br/>(Discord / WhatsApp / Slack)"]
     end
 
@@ -112,14 +108,6 @@ graph TB
         CompanyApprovals["approval guardrails"]
     end
 
-    subgraph VoiceStack["Voice stack"]
-        Wake["reachy_wake_word_service<br/>('Hey Zero')"]
-        STT["faster-whisper STT<br/>(distil-large-v3)"]
-        TTS["tts_service<br/>(edge-tts / Piper / Kokoro target)"]
-        Loop["voice_loop_service<br/>+ voice_bridge_service"]
-        Reachy["reachy_service +<br/>persona / motion / emotion / vision"]
-    end
-
     subgraph LLM["LLM layer (all via LiteLLM :4444)"]
         Router["LiteLLM router :4444"]
         VLLMChat["vllm-chat :18800<br/>Qwen3-32B-AWQ"]
@@ -140,15 +128,10 @@ graph TB
     end
 
     UI --> API
-    Voice --> Wake --> STT --> Loop
-    Loop --> Router
     Router --> VLLMChat
     Router --> VLLMEmbed
     Router --> Cloud
     Router --> Ollama
-    Loop --> TTS --> Voice
-    Loop --> Reachy
-    Loop -->|append| Daily
 
     SDK --> API
 
@@ -179,20 +162,10 @@ graph TB
 
     style Vault fill:#f59e0b,color:#000
     style LLM fill:#2563eb,color:#fff
-    style VoiceStack fill:#dc2626,color:#fff
     style Cognition fill:#059669,color:#fff
 ```
 
 ## Major subsystems
-
-### Voice stack
-Reachy Mini hardware + wake word + STT + LLM + TTS + persona / motion / emotion / vision binding. Local-first: the default path runs entirely on the user's machine via vLLM.
-- `reachy_wake_word_service.py`. "Hey Zero" detection (openWakeWord).
-- `reachy_realtime/local_handler.py`. Streaming Whisper to vLLM `qwen3-chat` to Piper / edge-tts.
-- `voice_loop_service.py` + `voice_bridge_service.py`. Orchestration plus daily-note append.
-- `tts_service.py`. edge-tts now; Kokoro 82M is the Stage 5 target.
-- `InteractiveModeBar` (TopBar) is the one-click live-conversation toggle. Space toggles, Esc ends. 5-min idle auto-off for cost safety.
-- `FloatingVoiceButton` is classic push-to-talk only. Do **not** re-add realtime auto-promote (double WebSocket = double billing).
 
 ### Vault (read / write / contract)
 - Vault lives at `C:\code\vault\ObsidianZero`, mounted into the Zero container at `/vault:rw`. Zero is the only writer.
@@ -201,7 +174,6 @@ Reachy Mini hardware + wake word + STT + LLM + TTS + persona / motion / emotion 
 - `vault_writer_service.py`. Stage 1 routes external writes through cyanheads-obsidian MCP and respects the `agent_writable` whitelist.
 
 ### Cognition
-- `memory_facade.py`. Single retrieval contract spanning mem0, episodic, user, and blocks.
 - `daily_routine_service.py` + `morning_digest_service.py`. 07:00 server-local daily brief composer.
 - `reflection_service.py`. Sunday 22:00 weekly reflection drives closed-loop learning.
 
@@ -216,27 +188,11 @@ Reachy Mini hardware + wake word + STT + LLM + TTS + persona / motion / emotion 
 ### LLM layer
 All traffic flows through the shared LiteLLM router at `:4444` (config: `C:\code\shared-infra\litellm\config.yaml`). Local vLLM serves `qwen3-chat` / `qwen3-coder` on `:18800` and `qwen3-embed` on `:8001`. Cloud providers (Anthropic, Gemini, Kimi, MiniMax, OpenRouter) and Ollama act as fallback. The Bifrost client at `shared-bifrost:4445` wraps LiteLLM with cross-project skill routing, cost tracking, and shared rate-limit pooling; new code prefers Bifrost.
 
-### Meeting Steward
-- Reachy silent-listen plus wake gating plus notification fan-out.
-- `CompanionPolicy` (transcribe_only / meeting_active / last_wake_at), `notification_bus`, `/api/notifications/ws`.
+### Meeting Steward (dormant — unmounted from product UI 2026-06-20)
+- `notification_bus`, `/api/notifications/ws`.
 - Vision speaker ID via mediapipe face_detect + imagehash MVP embeddings + cosine match (faceprints pgvector(128) table).
 - Voice speaker ID via voiceprints + diarization (pyannote 3.3.2).
 - Unified `/identities` UI merges voiceprints + faceprints by `display_name`.
-
-## Voice stack
-
-```
-Reachy Mini mic (4x MEMS + DoA)
-  → Silero VAD (Stage 5 verify)
-  → openWakeWord ("Hey Zero")            [reachy_wake_word_service.py]
-  → faster-whisper distil-large-v3       [warmed at startup]
-  → voice_loop_service → LiteLLM :4444 → vLLM Qwen3-32B chat
-  → tts_service (Stage 5: Kokoro 82M via :8880)
-  → Reachy Mini speaker + reachy_motion_library / reachy_emotion_parser cues
-  → voice_bridge_service appends turn to today's daily note '## 🎙️'
-```
-
-The Reachy Mini daemon listens on host `:8000` (USB-C). Zero connects via `ZERO_REACHY_API_URL=http://host.docker.internal:8000`. The `host_agent` supervisor on `:18796` manages the daemon lifecycle via `/daemon/*`. The daemon is OFF by default; the user starts it from `/reachy` → `DaemonPanel`.
 
 ## Vault contract
 
@@ -287,7 +243,7 @@ All routes via shared LiteLLM at `:4444`. Use canonical names; the router maps t
 | Vision | `gemini-flash-latest` | Cloud, vision-capable (resolves to gemini-3.1-flash) |
 | Cloud fallback chain | `kimi-k2.5` → `minimax-m2` → `qwen3-chat` | Configured in LiteLLM `fallbacks` |
 
-**Provider quirks.** Kimi K2.5 / K2.6 require `temperature=1` exactly. `kimi_provider.py` clamps this. `LLMStatusBadge` in the TopBar reflects `GET /api/reachy-intent/providers/status` (1-token probes, 15s cache, 5s per-provider timeout). Green / amber / red tells the user which brain is active.
+**Provider quirks.** Kimi K2.5 / K2.6 require `temperature=1` exactly. `kimi_provider.py` clamps this.
 
 ## Storage
 
@@ -302,7 +258,7 @@ The former standalone `C:\code\company` project is a legacy archive. The former 
 
 ## Approval tiers
 
-- `read`. Anything Zero reads: GCal, Gmail, vault, Reachy camera, FRED via Ada, etc.
+- `read`. Anything Zero reads: GCal, Gmail, vault, phone camera, FRED via Ada, etc.
 - `write_local`. Vault `_agent/` writes, Postgres updates in Zero's own DB, journal append. Auto when salience ≥ 0.6 and not DND.
 - `write_external`. Discord / WhatsApp / Slack send via Claude Agent SDK, GCal event create, Gmail send, vault writes outside `_agent/`. Always `interrupt()`. Batched in DND.
 - `financial`. **NEVER.** If a financial action is needed, route through Ada's `interrupt()` flow.
@@ -332,7 +288,6 @@ Legion is Zero's sprint source of truth at `host.docker.internal:8005`, `project
 3. Open the UI:
    - http://localhost:5173 (dashboard)
    - http://localhost:5173/company (Company OS)
-   - http://localhost:5173/reachy (Reachy daemon + voice)
 4. Verify health:
    ```bash
    docker ps --format "table {{.Names}}\t{{.Status}}" | grep zero
@@ -341,18 +296,12 @@ Legion is Zero's sprint source of truth at `host.docker.internal:8005`, `project
    curl http://localhost:18800/v1/models
    ```
 
-The Reachy daemon is OFF by default. Open `/reachy` and click **Start daemon** in `DaemonPanel` to bring up Reachy hardware.
-
-For a desktop launcher: run `host_agent\install-shortcut.ps1` once. After that, double-click **Start Zero** on the desktop to bring up Docker, the API, the UI, and the host_agent foreground console; the launcher waits for `zero-api` health and then opens the dashboard.
-
 ## Ports
 
 | Port | Service |
 |---|---|
 | `5173` | Zero UI (React / Vite, container `zero-ui`) |
 | `18792` | Zero FastAPI backend (container `zero-api`) |
-| `18796` | host_agent (Windows host, supervises Reachy daemon) |
-| `8000` | Reachy Mini daemon (USB-C, Windows host) |
 | `4444` | Shared LiteLLM router (`shared-infra`) |
 | `4445` | Shared Bifrost client |
 | `18800` | vLLM chat (`qwen3-chat` / `qwen3-coder`) |
@@ -367,8 +316,6 @@ For a desktop launcher: run `host_agent\install-shortcut.ps1` once. After that, 
 zero/
 ├── backend/                # FastAPI app, services, routers, Alembic migrations (zero-api container)
 ├── frontend/               # React 19 + Vite (zero-ui container, /m/* mobile PWA)
-├── host_agent/             # Windows host supervisor for Reachy daemon (:18796)
-├── reachy_app/             # Reachy Mini installable app (motion library, persona, vision)
 ├── mcp_servers/            # MCP server implementations (zero_api_mcp, kimi_mcp)
 ├── microagents/            # Microagent orchestration
 ├── mobile/                 # Mobile / PWA support
@@ -380,7 +327,6 @@ zero/
 ├── docs/                   # 18 deep-dive markdown docs
 │   ├── ARCHITECTURE.md     # Mermaid + every subsystem in depth
 │   ├── SecondBrain.md      # Vault + retrieval deep-dive
-│   ├── reachy-roadmap.md   # Reachy Mini capability roadmap
 │   ├── MANAGEMENT-SYSTEMS-PLAN.md
 │   └── company/            # Company OS operating manual
 ├── workspace/              # Runtime workspace, agent outputs, meeting frames
@@ -414,12 +360,10 @@ zero/
 
 PR #1 is integrated as production slices only. These contracts block future regressions:
 
-1. **Identity.** The assistant and robot persona users interact with is Zero. Reachy Mini remains the vendor / hardware name and `reachy_*` remains the compatibility namespace for SDK, daemon, API, and DB identifiers.
-2. **Routes.** User-facing robot pages live under `/zero*`. Legacy `/reachy*` UI routes are compatibility redirects.
-3. **Memory Vault.** The PR's Memory Tree is canonically the Memory Vault. Production writes land under `/vault/00_Meta/_agent/memory_vault/`, not `backend/app/data/vault`. Internal writers add `partition: personal`, `agent_run_id`, `agent_writable: []`, unique part / hash filenames, and an audit footer. HTTP writes use `/api/memory-vault/*`. `/api/memory-tree/*` is a deprecated read / write-compatible alias only.
-4. **Approval gates.** Browser control, Telegram outbound send, trigger webhook / tool / agent actions, OpenHands dispatch, and HTTP Memory Vault writes must create approval records or return `approval_required` / `unavailable`. No silent external or local-write side effects.
-5. **Honest availability.** Gmail / Calendar integrations are connected only after real OAuth tokens exist. OpenHands and Meeting Agent stay unavailable unless explicitly enabled with real runtime drivers.
-6. **Shared routing.** Bifrost and LiteLLM are shared infrastructure. Zero may call configured gateway aliases but must not ship a local runtime Bifrost config. The live Bifrost config is `C:\code\shared-infra\bifrost\config.json`.
+1. **Memory Vault.** The PR's Memory Tree is canonically the Memory Vault. Production writes land under `/vault/00_Meta/_agent/memory_vault/`, not `backend/app/data/vault`. Internal writers add `partition: personal`, `agent_run_id`, `agent_writable: []`, unique part / hash filenames, and an audit footer. HTTP writes use `/api/memory-vault/*`. `/api/memory-tree/*` is a deprecated read / write-compatible alias only.
+2. **Approval gates.** Browser control, Telegram outbound send, trigger webhook / tool / agent actions, OpenHands dispatch, and HTTP Memory Vault writes must create approval records or return `approval_required` / `unavailable`. No silent external or local-write side effects.
+3. **Honest availability.** Gmail / Calendar integrations are connected only after real OAuth tokens exist. OpenHands and Meeting Agent stay unavailable unless explicitly enabled with real runtime drivers.
+4. **Shared routing.** Bifrost and LiteLLM are shared infrastructure. Zero may call configured gateway aliases but must not ship a local runtime Bifrost config. The live Bifrost config is `C:\code\shared-infra\bifrost\config.json`.
 
 ## Where to look next
 
@@ -441,7 +385,6 @@ This file is the hub. The spokes below go deeper on a single topic.
 | Database patterns (asyncpg, Pydantic, structlog, Alembic) | [.claude/rules/60-database.md](.claude/rules/60-database.md) |
 | Backend / frontend / voice / UX patterns | [.claude/rules/70-architecture.md](.claude/rules/70-architecture.md) |
 | Second-brain vault deep-dive | [docs/SecondBrain.md](docs/SecondBrain.md) |
-| Reachy Mini capability roadmap | [docs/reachy-roadmap.md](docs/reachy-roadmap.md) |
 | Company OS / management systems plan | [docs/MANAGEMENT-SYSTEMS-PLAN.md](docs/MANAGEMENT-SYSTEMS-PLAN.md) |
 | Self-improvement / agent grading | [docs/SELF_IMPROVEMENT_PROCESS.md](docs/SELF_IMPROVEMENT_PROCESS.md) |
 | Mobile PWA setup | [docs/mobile-pwa.md](docs/mobile-pwa.md) |

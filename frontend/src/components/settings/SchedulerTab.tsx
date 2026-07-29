@@ -186,7 +186,7 @@ export function SchedulerTab() {
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs">
                   Turns on every job. Writes an explicit override for all jobs, including
-                  ones disabled by default (e.g. tiktok_*, reachy_email_nudge).
+                  ones disabled by default (e.g. tiktok_*).
                 </TooltipContent>
               </Tooltip>
               <Tooltip>

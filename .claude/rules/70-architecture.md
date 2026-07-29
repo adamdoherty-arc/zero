@@ -31,19 +31,16 @@
 - **Mobile PWA**: Installable surface at `/m/*` for Android/iOS. Routes in `frontend/src/App.tsx`, layout in `frontend/src/layouts/MobileLayout.tsx`, service worker in `frontend/src/sw.ts` (hand-authored `injectManifest`). Guide: `docs/mobile-pwa.md`.
 - **Share Target**: `/share` consumes POSTs from the Android share sheet via the SW, forwards to `reference-videos/ingest-simple`.
 
-## Zero Voice UX (Reachy hardware)
+## Robot/Reachy removal (2026-07-11)
 
-- **Interactive Mode = primary voice surface.** `InteractiveModeBar` in the TopBar is the one-click live-conversation toggle (Local realtime by default; OpenAI Realtime / Gemini Live as explicit-only fallbacks). Space toggles, Esc ends. 5-min idle auto-off for cost safety.
-- **Local-first realtime.** The realtime path uses `reachy_realtime/local_handler.py` (streaming Whisper → vLLM qwen3-chat → Piper/edge-tts) by default. Cloud realtime backends are surfaced through the LLM badge popover but never auto-selected.
-- **FloatingVoiceButton is classic push-to-talk only** — do NOT re-add realtime auto-promote. Two WebSocket instances = double billing.
-- **LLMStatusBadge** in the TopBar is how the user picks/sees the active brain. Probe via `GET /api/reachy-intent/providers/status`.
+Robot/Reachy hardware control (Cockpit, daemon, motion library, teleop, camera, realtime voice chat, mascot) was hard-deleted from Zero and moved to a separate app, **Zero Studio**. Zero has no voice or camera surface anymore — it's text/task-focused. Don't re-add `InteractiveModeBar`, `FloatingVoiceButton`, `LLMStatusBadge`, `ReachyCameraViewer`, or `host_agent` here.
 
 ## Daily Brief & Supervisor (2026-05-09)
 
 - **Daily brief composer** runs at 07:00 server-local. Lands in the `/` dashboard tile (`DailyBrief` component) and is emailed when `ZERO_DAILY_BRIEF_TO` is set. Override hour with `ZERO_DAILY_BRIEF_HOUR/_MINUTE`; disable email-send with `ZERO_DAILY_BRIEF_EMAIL=0`.
 - **Weekly reflection** runs Sundays 22:00 — drives closed-loop learning via the existing `reflection_service`.
-- **Supervisor graph** at `backend/app/services/supervisor_graph.py` classifies user intent (calendar / email / company / bookkeeper / research / direct) and dispatches to the right handler. Realtime tools `delegate_research`, `draft_email`, `bookkeeping_query`, `supervisor_dispatch` are exposed in `backend/app/services/reachy_realtime/tools.py` so Reachy can spawn agents from voice.
-- **Email approval pool** at `/api/email/drafts/pool/*` — Reachy drafts, you approve. UI at `/email/drafts`. **Don't** auto-send drafts; the pool is the trust boundary.
+- **Supervisor graph** at `backend/app/services/supervisor_graph.py` classifies user intent (calendar / email / company / bookkeeper / research / direct) and dispatches to the right handler. New agent-dispatch actions go here as `supervisor_graph` handlers, not as one-off router endpoints.
+- **Email approval pool** at `/api/email/drafts/pool/*` — drafts land in a queue, you approve. UI at `/email/drafts`. **Don't** auto-send drafts; the pool is the trust boundary.
 
 ## Proactive monitoring
 

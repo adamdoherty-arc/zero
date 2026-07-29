@@ -57,7 +57,7 @@ class SightProvider(ABC):
     'paused' state.
     """
 
-    #: Stable identifier used as the URL segment, e.g. "reachy", "meta_rayban".
+    #: Stable identifier used as the URL segment, e.g. "phone_camera", "meta_rayban".
     name: str = "base"
 
     @abstractmethod

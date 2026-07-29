@@ -377,17 +377,26 @@ RULES:
 
     async def _execute_archive(self, email_id: str) -> dict:
         from app.services.gmail_service import get_gmail_service
-        await get_gmail_service().archive_email(email_id)
+        success = await get_gmail_service().archive_email(email_id)
+        if not success:
+            logger.warning("rule_action_archive_failed", email_id=email_id)
+            return {"message": "Failed to archive email", "success": False}
         return {"message": "Email archived"}
 
     async def _execute_star(self, email_id: str) -> dict:
         from app.services.gmail_service import get_gmail_service
-        await get_gmail_service().star_email(email_id, starred=True)
+        success = await get_gmail_service().star_email(email_id, starred=True)
+        if not success:
+            logger.warning("rule_action_star_failed", email_id=email_id)
+            return {"message": "Failed to star email", "success": False}
         return {"message": "Email starred"}
 
     async def _execute_mark_read(self, email_id: str) -> dict:
         from app.services.gmail_service import get_gmail_service
-        await get_gmail_service().mark_as_read(email_id)
+        success = await get_gmail_service().mark_as_read(email_id)
+        if not success:
+            logger.warning("rule_action_mark_read_failed", email_id=email_id)
+            return {"message": "Failed to mark email as read", "success": False}
         return {"message": "Email marked as read"}
 
     async def _execute_apply_label(self, email_id: str, params: dict) -> dict:

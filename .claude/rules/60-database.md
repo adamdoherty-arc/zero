@@ -56,8 +56,3 @@ alembic upgrade head
 alembic downgrade -1 && alembic upgrade head  # round-trip
 ```
 
-## Memory facade
-
-`backend/app/services/memory_facade.py` is the single retrieval contract — fan-in across mem0 / episodic / user / blocks. `local_handler.py` calls it at session start to seed the system prompt. Enable mem0 backend with `ZERO_MEMORY_USE_MEM0=1`.
-
-Use the facade — don't hit mem0 / episodic stores directly from handlers.

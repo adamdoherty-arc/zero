@@ -3,11 +3,6 @@ import { Search } from 'lucide-react'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { Separator } from '@/components/ui/separator'
 import { NotificationPanel } from './NotificationPanel'
-import { EyesOffButton } from '@/components/EyesOffButton'
-import { InteractiveModeBar } from '@/components/reachy/InteractiveModeBar'
-import { LLMStatusBadge } from '@/components/reachy/LLMStatusBadge'
-import { DaemonHealthBadge } from '@/components/reachy/DaemonHealthBadge'
-import { SpeakerOutputPill } from '@/components/reachy/SpeakerOutputPill'
 import { getActiveMode, getRouteLabel, navModes } from '@/config/navigation'
 import { cn } from '@/lib/utils'
 
@@ -45,11 +40,6 @@ export function TopBar({ onOpenCommandMenu }: TopBarProps) {
           </kbd>
         </button>
 
-        <InteractiveModeBar />
-        <SpeakerOutputPill />
-        <LLMStatusBadge />
-        <DaemonHealthBadge />
-        <EyesOffButton />
         <NotificationPanel />
       </div>
 

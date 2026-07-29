@@ -28,29 +28,16 @@ Pin via `ZERO_VLM_MODEL` env var only when a specific test needs a specific mode
 
 Zero now routes via the **Bifrost client at `shared-bifrost:4445`** for cross-project LLM gateway. Bifrost wraps LiteLLM with cross-project skill routing, cost tracking, and shared rate-limit pooling. Use Bifrost over direct LiteLLM calls for new code.
 
-## Local realtime (vLLM)
+## Local vLLM
 
 - Default chat model: `qwen3-chat` served by vLLM on `:18801`. `qwen3-chat` is the **stable gateway alias** — Bifrost maps it (and the legacy `Qwen3-32B-AWQ` name) to whatever vllm-chat currently serves (Qwen3.5-35B-A3B since 2026-06-11), so local model swaps don't require Zero code changes.
 - Default coder model: `qwen3-coder`.
 - Probe: `curl http://localhost:18801/v1/models`.
 
-The realtime voice path (Reachy) uses `reachy_realtime/local_handler.py` (streaming Whisper → vLLM qwen3-chat → Piper/edge-tts) by default. Cloud realtime backends (OpenAI Realtime, Gemini Live) are surfaced through the LLM badge popover but never auto-selected, even if their API keys are configured.
-
-Preferred-backend resolution lives in `backend/app/routers/reachy_realtime.py` `_enriched_config` — change there if the policy ever flips.
-
-## vLLM provider refactor + realtime config
-
-The vLLM provider was refactored to centralize realtime LLM routing config. Key change: realtime-specific routing (latency-optimized models, streaming defaults) is now resolved through `_enriched_config` rather than being scattered across handlers.
-
 ## Provider quirks
 
 - **Kimi K2.5/K2.6 require `temperature=1` EXACTLY.** `kimi_provider.py` clamps this for any `kimi-k2*` model. Don't pass other temps.
-- **LLMStatusBadge** in the TopBar reflects `GET /api/reachy-intent/providers/status` (1-token probes, 15s cache, 20s per-provider timeout). Green/amber/red dot tells the user which brain is active.
 
-## Whisper default
+## Whisper (meeting transcription)
 
-Bumped to `distil-large-v3` (~600MB faster-whisper). Override via `REACHY_LOCAL_WHISPER_MODEL`.
-
-## Realtime engine flag
-
-`REACHY_REALTIME_ENGINE` selects `legacy` (default) or `pipecat`. `pipecat` is a no-op safety alias until the Pipecat bridge lands — flipping it does not break voice.
+`meeting_processing_pipeline.py` uses `distil-large-v3` (~600MB faster-whisper) by default. Override via `REACHY_LOCAL_WHISPER_MODEL` env var — the name predates the 2026-07-11 robot removal but the var itself belongs to meeting transcription now, not Reachy.

@@ -10,7 +10,7 @@ When you discover ANY broken thing — a dead service, a 500, a stale config, a 
 
 - Diagnostic questions ("why is X not working?") → fix X, then explain.
 - Side-issues you spot while doing something else → fix them in-flight.
-- Services that died (Reachy daemon, host_agent, scheduler jobs, any container) → restart them.
+- Services that died (scheduler jobs, any container) → restart them.
 - Stale env, missing pip/npm packages, broken Docker builds → fix them.
 - Anything that prevents 100% functionality → fix it.
 

@@ -1,10 +1,15 @@
 """F-37 — one-screen view of meeting-steward health.
 
 Aggregates everything the user needs to know about Zero's meeting
-subsystem: companion policy + active meeting, pending approvals,
-recent notifications, host_agent + recording capability, transcript
-backlog, last janitor run, follow-up ledger size, open meeting-spawned
-tasks, privacy / consent policy snapshots.
+subsystem: pending approvals, recent notifications, recording
+capability, transcript backlog, last janitor run, follow-up ledger
+size, open meeting-spawned tasks, privacy / consent policy snapshots.
+
+Companion policy + host_agent were retired 2026-07-11 (robot/Reachy
+hardware control moved to a separate app, Zero Studio) — both report
+a static "retired" block instead of probing dead infrastructure, so
+this page's health badge doesn't permanently alarm on something that
+was removed on purpose.
 
 Pure aggregator — no side effects. Frontend polls this every 15 s.
 """
@@ -12,7 +17,6 @@ Pure aggregator — no side effects. Frontend polls this every 15 s.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -32,107 +36,12 @@ async def meeting_steward_status() -> dict[str, Any]:
         "issues": [],
     }
 
-    # Companion policy + active meeting
-    try:
-        from app.services.reachy_companion_service import (
-            get_reachy_companion_service,
-        )
-
-        policy = get_reachy_companion_service().get_policy()
-        out["companion"] = {
-            "mode": policy.mode,
-            "transcribe_only": policy.transcribe_only,
-            "meeting_active": policy.meeting_active,
-            "meeting_active_id": policy.meeting_active_id,
-            "last_wake_at": policy.last_wake_at.isoformat() if policy.last_wake_at else None,
-            "wake_response_window_s": policy.wake_response_window_s,
-        }
-    except Exception as exc:
-        out["companion"] = {"error": str(exc)}
-        out["issues"].append({"id": "companion", "detail": str(exc)})
-
-    # host_agent /health + Enhancement-09 /state snapshot
-    try:
-        import httpx
-
-        host_url = os.getenv("ZERO_HOST_AGENT_URL", "http://host.docker.internal:18796").rstrip("/")
-        async with httpx.AsyncClient(timeout=2.0) as c:
-            r = await c.get(f"{host_url}/health")
-            data = r.json() if r.status_code < 400 else {}
-            host_agent_block: dict[str, Any] = {
-                "ok": bool(data.get("ok")),
-                "wake_mode": data.get("wake", {}).get("mode"),
-                "recordings_dir": data.get("recordings_dir"),
-                "url": host_url,
-            }
-            # Pull persisted state if /state is exposed (Enhancement-09).
-            try:
-                s = await c.get(f"{host_url}/state")
-                if s.status_code < 400:
-                    sdata = s.json() or {}
-                    host_agent_block["state"] = sdata.get("state") or {}
-                    active = (host_agent_block["state"] or {}).get("active_recording")
-                    if active:
-                        # F-86: auto-recover stale active_recording. If
-                        # host_agent /health reports is_recording=false
-                        # AND the auto-recorder ledger has no entry that
-                        # matches this meeting_id still in window, the
-                        # flag is leftover from a crashed boot — clear it.
-                        recovered = False
-                        try:
-                            mid = str(active.get("meeting_id") or "")
-                            from app.services.meeting_auto_recorder_service import (
-                                get_meeting_auto_recorder_service,
-                            )
-
-                            marked = await get_meeting_auto_recorder_service().list_marked()
-                            is_active_marked = any(
-                                str(m.get("meeting_id") or "") == mid
-                                and m.get("started")
-                                and not m.get("stopped")
-                                and not m.get("skipped")
-                                for m in (marked or [])
-                            )
-                            if not is_active_marked:
-                                try:
-                                    cr = await c.post(
-                                        f"{host_url}/state/clear-active-recording",
-                                        timeout=2.0,
-                                    )
-                                    if cr.status_code < 400:
-                                        recovered = True
-                                        host_agent_block.setdefault(
-                                            "remediation",
-                                            [],
-                                        ).append("cleared_stale_active_recording")
-                                        logger.info(
-                                            "host_agent_active_recording_cleared",
-                                            meeting_id=mid,
-                                        )
-                                except Exception as exc:
-                                    logger.debug(
-                                        "stale_active_recording_clear_failed",
-                                        error=str(exc),
-                                    )
-                        except Exception as exc:
-                            logger.debug("stale_active_recording_check_failed", error=str(exc))
-                        if not recovered:
-                            out["issues"].append({
-                                "id": "host_agent_active_recording",
-                                "detail": (
-                                    f"host_agent still thinks meeting "
-                                    f"{active.get('meeting_id')} is recording — may be a "
-                                    "crashed capture from a prior boot."
-                                ),
-                            })
-            except Exception:
-                pass
-            out["host_agent"] = host_agent_block
-            if not data.get("ok"):
-                out["issues"].append({"id": "host_agent", "detail": f"status={r.status_code}"})
-    except Exception as exc:
-        out["host_agent"] = {"ok": False, "error": str(exc)}
-        out["issues"].append({"id": "host_agent", "detail": str(exc)})
+    # Companion policy + host_agent: retired 2026-07-11 (moved to Zero Studio).
+    # Static blocks, not probes — don't add to `issues`, so this page's
+    # health badge doesn't permanently alarm on infrastructure that was
+    # removed on purpose.
+    out["companion"] = {"retired": True, "note": "moved to Zero Studio"}
+    out["host_agent"] = {"retired": True, "note": "moved to Zero Studio"}
 
     # Pending approvals
     try:

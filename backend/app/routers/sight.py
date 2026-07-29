@@ -3,7 +3,7 @@ Sight API — wearable-agnostic vision endpoints.
 
   GET  /sight/providers            list providers + statuses + active id
   GET  /sight/active               status of the currently-active provider
-  POST /sight/select               {"provider": "reachy"} — switch active
+  POST /sight/select               {"provider": "phone_camera"} — switch active
   GET  /sight/{id}/status          detailed status
   GET  /sight/{id}/frame.jpg       single latest JPEG
   GET  /sight/{id}/mjpeg           live stream (multipart/x-mixed-replace)
@@ -37,7 +37,7 @@ router = APIRouter()
 
 
 class SelectRequest(BaseModel):
-    provider: str = Field(..., description="Provider id, e.g. 'reachy', 'meta_rayban'")
+    provider: str = Field(..., description="Provider id, e.g. 'phone_camera', 'meta_rayban'")
 
 
 class AudioChunkRequest(BaseModel):

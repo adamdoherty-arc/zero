@@ -78,7 +78,6 @@ export function useSetSchedulerJobEnabled() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
       queryClient.invalidateQueries({ queryKey: ['execution'] })
-      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
     },
   })
 }
@@ -94,7 +93,6 @@ export function useSetSchedulerJobsEnabled() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
       queryClient.invalidateQueries({ queryKey: ['execution'] })
-      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
     },
   })
 }
@@ -111,7 +109,6 @@ export function useSetAllSchedulerJobsEnabled() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: schedulerKeys.all })
       queryClient.invalidateQueries({ queryKey: ['execution'] })
-      queryClient.invalidateQueries({ queryKey: ['reachy-email-session'] })
     },
   })
 }

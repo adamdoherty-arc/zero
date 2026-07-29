@@ -394,14 +394,22 @@ class EmailAutomationService:
                 "reversible": action in ["archive", "flag", "mark_junk"]
             }
             
+            action_failed = False
+
             if action == "archive":
-                await gmail_service.archive_email(email_id)
-                logger.info("email_archived", email_id=email_id)
-                
+                if not await gmail_service.archive_email(email_id):
+                    logger.warning("email_archive_failed", email_id=email_id)
+                    action_failed = True
+                else:
+                    logger.info("email_archived", email_id=email_id)
+
             elif action == "flag" or action == "flag_important":
-                await gmail_service.star_email(email_id, starred=True)
-                logger.info("email_starred", email_id=email_id)
-                
+                if not await gmail_service.star_email(email_id, starred=True):
+                    logger.warning("email_star_failed", email_id=email_id)
+                    action_failed = True
+                else:
+                    logger.info("email_starred", email_id=email_id)
+
             elif action == "notify":
                 from app.services.notification_service import get_notification_service
                 notification_service = get_notification_service()
@@ -412,7 +420,7 @@ class EmailAutomationService:
                     source_id=email_id
                 )
                 logger.info("email_notification_sent", email_id=email_id)
-            
+
             elif action == "mark_spam" or action == "mark_junk":
                 # Add to junk senders list
                 rules = self._load_automation_rules()
@@ -420,20 +428,35 @@ class EmailAutomationService:
                 if sender and sender not in rules.get("junk_senders", []):
                     rules.setdefault("junk_senders", []).append(sender)
                     self.automation_rules_file.write_text(json.dumps(rules, indent=2))
-                await gmail_service.archive_email(email_id)
-                logger.info("email_marked_junk", email_id=email_id, sender=sender)
+                if not await gmail_service.archive_email(email_id):
+                    logger.warning("email_archive_failed", email_id=email_id, sender=sender)
+                    action_failed = True
+                else:
+                    logger.info("email_marked_junk", email_id=email_id, sender=sender)
                 history_entry["junk_sender"] = sender
-            
+
             elif action == "unsubscribe":
                 # Archive and mark sender for future unsubscribe
-                await gmail_service.archive_email(email_id)
-                logger.info("email_unsubscribed", email_id=email_id)
-            
-            # Save to history
+                if not await gmail_service.archive_email(email_id):
+                    logger.warning("email_archive_failed", email_id=email_id)
+                    action_failed = True
+                else:
+                    logger.info("email_unsubscribed", email_id=email_id)
+
+            # Save to history (marks failure so undo/audit trails can see it)
+            history_entry["status"] = "failed" if action_failed else "success"
             self._add_to_history(history_entry)
-            
-            state["status"] = "action_executed"
-            
+
+            if action_failed:
+                # _complete_node only special-cases status == "error" (anything
+                # else gets promoted to "completed"), so an "action_failed"
+                # value would be silently swallowed. Use the file's existing
+                # failure convention instead.
+                state["status"] = "error"
+                state["error"] = f"Gmail action '{action}' failed for email {email_id}"
+            else:
+                state["status"] = "action_executed"
+
         except Exception as e:
             logger.error("email_execute_action_error", error=str(e))
             state["status"] = "error"
@@ -594,7 +617,9 @@ class EmailAutomationService:
                 
             elif original_action == "flag":
                 # Remove star
-                await gmail_service.star_email(email_id, starred=False)
+                if not await gmail_service.star_email(email_id, starred=False):
+                    logger.warning("action_undo_unflag_failed", email_id=email_id)
+                    return {"status": "error", "message": "Failed to unflag email"}
                 logger.info("action_undone_unflagged", email_id=email_id)
                 
             elif original_action == "mark_junk":

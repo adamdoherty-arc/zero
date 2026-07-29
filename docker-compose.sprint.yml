@@ -43,14 +43,11 @@ services:
       - ./workspace:/app/workspace
       - ./config:/app/config
       - ./mcp_servers:/app/mcp_servers:ro
-      # Persona profiles + voice clone references — bind-mounted so edits
-      # made via PUT /api/reachy/realtime/profiles/{id}/voice (and the
-      # voice clone uploader) survive container rebuilds. Without this,
-      # voice.txt + model.txt edits from the Voice Settings UI would
-      # vanish on the next `docker compose build zero-api`.
-      - ./backend/app/data/reachy_profiles:/app/app/data/reachy_profiles
-      - ./backend/app/data/voice_clones:/app/app/data/voice_clones
       - ./backend/app/data/memory:/app/app/data/memory
+      # Motivation reels — rendered MP4s + procedural music beds persist
+      # across rebuilds so the review UI keeps working (migration 059).
+      - ./backend/app/data/reels:/app/app/data/reels
+      - ./backend/app/data/reel_music:/app/app/data/reel_music
       # Cross-project codebase access
       - C:/code/ADA:/projects/ada:ro
       - C:/code/fortressOS:/projects/fortressos:ro
@@ -92,13 +89,6 @@ services:
       # NVIDIA Build API — direct VLM primary (9 vision models, free credits).
       # Key originated in legion/.env; extended to shared use 2026-05-25.
       - NV_API_KEY=${NV_API_KEY:-}
-      # Reachy Mini + host audio agent (both run outside Docker on the Windows host)
-      - ZERO_REACHY_API_URL=${ZERO_REACHY_API_URL:-http://host.docker.internal:8000}
-      - ZERO_HOST_AGENT_URL=${ZERO_HOST_AGENT_URL:-http://host.docker.internal:18796}
-      - ZERO_REACHY_STATUS_CACHE_S=${ZERO_REACHY_STATUS_CACHE_S:-5.0}
-      - ZERO_REACHY_ASSISTANT_STATUS_CACHE_S=${ZERO_REACHY_ASSISTANT_STATUS_CACHE_S:-5.0}
-      - ZERO_REACHY_SPEAKER_SINK=${ZERO_REACHY_SPEAKER_SINK:-true}
-      - ZERO_REACHY_COMPANION_BODY_MOTION=${ZERO_REACHY_COMPANION_BODY_MOTION:-true}
       - ZERO_VLLM_CHAT_MODEL=${ZERO_VLLM_CHAT_MODEL:-vllm-local/Qwen3-32B-AWQ}
       # Bifrost fronts both vllm-local (chat) and embed-local. Model
       # strings are bifrost-prefixed verbatim.
@@ -147,22 +137,11 @@ services:
       - ZERO_WHISPER_DEVICE=${ZERO_WHISPER_DEVICE:-cpu}
       - ZERO_WHISPER_COMPUTE_TYPE=${ZERO_WHISPER_COMPUTE_TYPE:-int8}
       - ZERO_WHISPER_LANGUAGE=${ZERO_WHISPER_LANGUAGE:-en}
-      # Realtime voice STT model — local_handler.py defaults to distil-large-v3
-      # (~600 MB). Earlier override to `tiny` was a workaround for anonymous HF
-      # Hub rate-limiting on the blob download. Resolved 2026-05-18 by pre-caching
-      # the model in workspace/.hf-cache (bind-mounted below as HF_HOME), so
-      # faster-whisper loads from local disk on container start and never hits HF.
+      # Meeting transcription (meeting_processing_pipeline.py) reads this —
+      # name predates the robot removal but the var itself is Meeting
+      # Steward's, not Reachy's. distil-large-v3 pre-cached in
+      # workspace/.hf-cache (bind-mounted below as HF_HOME).
       - REACHY_LOCAL_WHISPER_MODEL=${REACHY_LOCAL_WHISPER_MODEL:-distil-large-v3}
-      # Interactive realtime voice STT model. zero-api has no GPU — distil-large-v3
-      # takes 9-15s on CPU and always exceeds the 8s timeout. distil-small.en
-      # (~250 MB, ~700 ms on CPU) is fast enough for real-time voice.
-      # Meeting transcription keeps using REACHY_LOCAL_WHISPER_MODEL (large model
-      # runs in host_agent which can access the GPU directly).
-      - REACHY_REALTIME_STT_MODEL=${REACHY_REALTIME_STT_MODEL:-distil-small.en}
-      # Voice loop is latency-bound — uses distil-small.en (~250 MB, ~700 ms
-      # STT) instead of distil-large-v3 (~600 MB, 9-15 s STT). Meeting
-      # transcription path stays on the large model via REACHY_LOCAL_WHISPER_MODEL.
-      - REACHY_VOICE_LOOP_WHISPER_MODEL=${REACHY_VOICE_LOOP_WHISPER_MODEL:-distil-small.en}
       # Local VLM: shared-infra `vllm-vlm` container serves Qwen2-VL-2B
       # AWQ through Bifrost. Override only when a specific test needs a
       # different model.

@@ -13,10 +13,9 @@ up vllm-vlm + set ZERO_VLM_MODEL=vllm-vlm/Qwen2-VL-2B-Instruct-AWQ once a
 bigger GPU or smaller brain frees ~3 GB of VRAM.
 
 Callers:
-  - reachy_vision_service.analyze_scene() — fuses MediaPipe + VLM.
   - ambient_vision_service (Phase 5 scheduler tick).
   - MCP describe_scene tool (Phase 6).
-  - reachy_chat_provider "what do you see?" intercept.
+  - carousel_v2.cheap_vlm_router (character-content image verification).
 """
 
 from __future__ import annotations

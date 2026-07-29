@@ -63,11 +63,6 @@ SEED_LOOPS: list[tuple[str, str, str, str, str, bool, str]] = [
      "manual", False,
      "Infrastructure-level Docker health audit with auto-fix for the Zero platform."),
 
-    ("zero-reachy-audit", "zero", "claude_skill",
-     "/projects/zero/.agents/skills/zero-reachy-audit/SKILL.md",
-     "manual", False,
-     "Audits the Zero <-> Reachy Mini integration across 6 capability dimensions."),
-
     ("zero-brain", "zero", "claude_skill",
      "/projects/zero/.agents/skills/zero-brain/SKILL.md",
      "manual", False,

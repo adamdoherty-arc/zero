@@ -3,9 +3,10 @@
 > Zero is Adam's chief-of-staff and the active home for ADA AI LLC
 > Company OS (see [`MANDATE.md`](../MANDATE.md)). FastAPI backend on `:18792`,
 > React/Vite UI on `:5173`. It combines the personal assistant, second brain,
-> company task cockpit, approvals, docs context, consulting/product/robotics
-> operations, content automation, voice, vault, journaling, habits, goals,
-> vision, ecosystem health, and Reachy Mini control.
+> company task cockpit, approvals, docs context, consulting/product
+> operations, content automation, vault, journaling, habits, goals,
+> vision, and ecosystem health. Robot/Reachy hardware control moved to a
+> separate app (Zero Studio) on 2026-07-11.
 
 ## Top-down view
 
@@ -14,7 +15,6 @@ graph TB
     subgraph Surfaces["User surfaces"]
         UI["React UI :5173"]
         API["REST :18792"]
-        Voice["Reachy Mini :8000<br/>(USB-C + REST)"]
         SDK["Claude Agent SDK<br/>(Discord / WhatsApp / Slack)"]
     end
 
@@ -53,14 +53,6 @@ graph TB
         CompanyApprovals["approval guardrails"]
     end
 
-    subgraph VoiceStack["Voice stack"]
-        Wake["reachy_wake_word_service<br/>('Hey Zero')"]
-        STT["faster-whisper STT<br/>(distil-large-v3)"]
-        TTS["tts_service<br/>(edge-tts / Piper / Kokoro target)"]
-        Loop["voice_loop_service<br/>+ voice_bridge_service"]
-        Reachy["reachy_service +<br/>persona / motion / emotion / vision"]
-    end
-
     subgraph LLM["LLM layer (all via LiteLLM :4444)"]
         Router["LiteLLM router :4444"]
         VLLMChat["vllm-chat :18800<br/>Qwen3-32B-AWQ"]
@@ -81,15 +73,10 @@ graph TB
     end
 
     UI --> API
-    Voice --> Wake --> STT --> Loop
-    Loop --> Router
     Router --> VLLMChat
     Router --> VLLMEmbed
     Router --> Cloud
     Router --> Ollama
-    Loop --> TTS --> Voice
-    Loop --> Reachy
-    Loop -->|append| Daily
 
     SDK --> API
 
@@ -120,7 +107,6 @@ graph TB
 
     style Vault fill:#f59e0b,color:#000
     style LLM fill:#2563eb,color:#fff
-    style VoiceStack fill:#dc2626,color:#fff
     style Cognition fill:#059669,color:#fff
 ```
 
@@ -144,25 +130,20 @@ Stage 1 replaces the filesystem-direct `vault_writer_service` with a cyanheads-o
 PR #1 is integrated as production slices only. These contracts are now part of
 the architecture and should block future regressions:
 
-1. **Identity:** the assistant and robot persona users interact with is Zero.
-   Reachy Mini remains the vendor/hardware name and `reachy_*` remains the
-   compatibility namespace for SDK, daemon, API, and DB identifiers.
-2. **Routes:** user-facing robot pages live under `/zero*`. Legacy `/reachy*`
-   UI routes are compatibility redirects.
-3. **Memory Vault:** the PR's Memory Tree is canonically the Memory Vault.
+1. **Memory Vault:** the PR's Memory Tree is canonically the Memory Vault.
    Production writes land under `/vault/00_Meta/_agent/memory_vault/`, not
    `backend/app/data/vault`. Internal writers add `partition: personal`,
    `agent_run_id`, `agent_writable: []`, unique part/hash filenames, and an
    audit footer. HTTP writes use `/api/memory-vault/*`; `/api/memory-tree/*`
    is a deprecated read/write-compatible alias only.
-4. **Approval gates:** browser control, Telegram outbound send, trigger
+2. **Approval gates:** browser control, Telegram outbound send, trigger
    webhook/tool/agent actions, OpenHands dispatch, and HTTP Memory Vault writes
    must create approval records or return `approval_required`/`unavailable`.
    They must not execute external/local-write side effects silently.
-5. **Honest availability:** Gmail/Calendar integrations are connected only
+3. **Honest availability:** Gmail/Calendar integrations are connected only
    after real OAuth tokens exist. OpenHands and Meeting Agent stay unavailable
    unless explicitly enabled with real runtime drivers.
-6. **Shared routing:** Bifrost and LiteLLM are shared infrastructure. Zero may
+4. **Shared routing:** Bifrost and LiteLLM are shared infrastructure. Zero may
    call configured gateway aliases, but must not ship a local runtime Bifrost
    config. The live Bifrost config is `C:\code\shared-infra\bifrost\config.json`.
 
@@ -187,25 +168,10 @@ Partitions:
 - `journal` = `20_Calendar/**` — time decay applied
 - `inbox` = `_Inbox/**` — surface most-recent strongly
 
-## Voice stack
-
-```
-Reachy Mini mic (4x MEMS + DoA)
-  → Silero VAD (Stage 5 verify)
-  → openWakeWord ("Hey Zero")  [reachy_wake_word_service.py]
-  → faster-whisper distil-large-v3                    [warmed at startup]
-  → voice_loop_service → LiteLLM :4444 → vLLM Qwen3-32B chat
-  → tts_service (Stage 5 → Kokoro 82M via :8880)
-  → Reachy Mini speaker + reachy_motion_library / reachy_emotion_parser cues
-  → voice_bridge_service appends turn to today's daily note '## 🎙️'
-```
-
-The Reachy Mini daemon listens on host `:8000` (USB-C). Zero connects via `ZERO_REACHY_API_URL=http://host.docker.internal:8000`. `ZeroHostAgent` Windows Scheduled Task supervises the hardware bridge on the host.
-
 ## 24/7 substrate (Zero side)
 
 - Backend container: `restart: unless-stopped` (docker-compose.sprint.yml).
-- APScheduler in-process with Postgres job store: morning digest, Zero memory compaction (6h), HA gesture watcher, Zero presence scheduler.
+- APScheduler in-process with Postgres job store: morning digest, weekly reflection.
 - Stage 0 adds: NSSM service `Zero-Stack` for unattended boot, ecosystem health watchdog writing to today's daily note.
 
 ## Storage

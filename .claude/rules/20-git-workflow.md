@@ -4,7 +4,6 @@
 
 - Prefix subject with the change category, matching the sprint taxonomy:
   - `feat:` — new feature
-  - `feat(reachy):` — Reachy / voice subsystem work
   - `fix:` — bug fix
   - `refactor:` — non-behavior code reshape
   - `perf:` — performance change

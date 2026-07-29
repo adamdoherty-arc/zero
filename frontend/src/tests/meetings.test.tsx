@@ -41,6 +41,10 @@ vi.mock('@/hooks/useMeetings', () => ({
   useUpdateMeetingPreferences: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
   useVoiceprints: vi.fn(() => ({ data: [], isPending: false })),
   useMeetingArtifactStats: vi.fn(() => ({ data: [], isPending: false })),
+  useMeetingSearchSpeakers: vi.fn(() => ({
+    data: { named: [], anonymous: [], since_days: 90 },
+    isPending: false,
+  })),
   meetingKeys: {
     all: ['meetings'],
     lists: () => ['meetings', 'list'],

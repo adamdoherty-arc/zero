@@ -17,7 +17,7 @@ Retired:
 - The daemon watchdog endpoint (`POST /daemon/watchdog`).
 - Legacy self-healing installers moved to `attic/autostart-legacy/`.
 
-The Docker stack IS the personal assistant. The robot (host_agent + Reachy daemon) is one subsystem inside it — turning the robot off must not take the assistant down.
+The Docker stack IS the personal assistant. Robot/Reachy hardware control (`host_agent` + Reachy daemon) moved to a separate app, **Zero Studio**, on 2026-07-11 — Zero no longer has a robot subsystem to manage.
 
 ## User-launched flow
 
@@ -26,11 +26,6 @@ The Docker stack uses `restart: unless-stopped` — containers auto-restart afte
 **Docker stack** (starts automatically via Docker Desktop's restart policy):
 - If containers are stopped: `docker compose -f docker-compose.sprint.yml up -d`
 - Or use Docker Desktop UI to start the stack.
-
-**Reachy/Robot** (optional, user-launched when robot is wanted):
-1. Run `host_agent\start-zero.bat` from the Zero directory in a terminal window. This starts the host_agent supervisor on :18796.
-2. Open `/reachy` in the dashboard and click **Start daemon** in `DaemonPanel` to bring up Reachy hardware.
-3. Closing the host_agent terminal window stops the robot cleanly.
 
 **No desktop shortcut required.** All management is via the Zero dashboard at `http://localhost:5173/` or Docker Desktop.
 
@@ -75,8 +70,4 @@ docker compose restart zero-gateway
 
 # Check vLLM served models (Qwen3-32B-AWQ)
 curl http://localhost:18801/v1/models
-
-# Tail host-agent / daemon logs
-Get-Content c:\code\zero\host_agent\logs\host-agent-foreground.log -Tail 20 -Wait
-Get-Content c:\code\zero\host_agent\logs\reachy-daemon-$(Get-Date -Format yyyyMMdd).log -Tail 20 -Wait
 ```

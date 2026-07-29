@@ -1,5 +1,6 @@
 """
-Vision Service — Process images from Reachy camera via multimodal LLM.
+Vision Service — Process images from the active sight provider via a
+multimodal LLM.
 
 Capabilities:
 - Describe what the camera sees
@@ -8,9 +9,14 @@ Capabilities:
 
 2026-04-28: stripped the dead Ollama branch (Ollama retired ecosystem-wide
 2026-04-27 — its 900s timeout was the root of the score_images hang). Both
-Reachy camera and carousel V2 Stage-8 now share the same cheap-VLM router
-(Kimi K2.6 → OpenRouter free pool → Gemini Flash) defined in
-``app.services.carousel_v2.cheap_vlm_router``.
+the sight-registry camera and carousel V2 Stage-8 now share the same
+cheap-VLM router (Kimi K2.6 → OpenRouter free pool → Gemini Flash) defined
+in ``app.services.carousel_v2.cheap_vlm_router``.
+
+Robot/Reachy hardware control moved to a separate app (Zero Studio); camera
+capture now goes through the wearable-agnostic ``sight`` registry
+(``app.services.sight.registry``), which still has ``meta_rayban`` and
+``phone_camera`` providers.
 """
 
 import base64
@@ -22,17 +28,17 @@ logger = structlog.get_logger(__name__)
 
 
 class VisionService:
-    """Process visual input from Reachy camera or uploaded images."""
+    """Process visual input from the active sight provider or uploaded images."""
 
     async def capture_and_describe(self, prompt: str = "Describe what you see.") -> Dict[str, Any]:
-        """Capture image from Reachy camera and describe it using vision LLM."""
+        """Capture a frame from the active sight provider and describe it using vision LLM."""
         try:
-            from app.services.reachy_service import get_reachy_service
-            reachy = get_reachy_service()
-            image_bytes = await reachy.capture_image()
+            from app.services.sight.registry import get_sight_registry
+            provider = get_sight_registry().get_active()
+            image_bytes = await provider.get_latest_frame() if provider else None
 
             if not image_bytes:
-                return {"error": "Could not capture image from Reachy camera", "available": False}
+                return {"error": "Could not capture image from the active sight provider", "available": False}
 
             return await self.describe_image(image_bytes, prompt)
         except Exception as e:
@@ -62,7 +68,7 @@ class VisionService:
             return {"error": f"vlm_router_unavailable: {exc}", "available": False}
 
         # The router's prompt is character-verification-shaped (returns JSON);
-        # for the Reachy free-form description path we wrap the user-supplied
+        # for the free-form description path we wrap the user-supplied
         # prompt and accept whatever the model emits.
         try:
             result = await verify_image(

@@ -29,7 +29,7 @@ from typing import Any, Optional
 import httpx
 import structlog
 
-from app.infrastructure.circuit_breaker import CircuitBreaker, CircuitBreakerError
+from app.infrastructure.circuit_breaker import CircuitBreakerError, get_circuit_breaker
 
 logger = structlog.get_logger(__name__)
 
@@ -57,11 +57,13 @@ class LoopReportSinkClient:
         self._min_interval_s = 1.0 / max(0.1, rate_limit_per_s)
         self._last_send_t = 0.0
         self._send_lock = asyncio.Lock()
-        self._breaker = CircuitBreaker(
-            name="legion-loop-sink",
+        # Go through the shared registry (not a bare CircuitBreaker(...))
+        # so this breaker is visible to /api/system/circuit-breakers,
+        # alerting, and the ops dashboard like every other named breaker.
+        self._breaker = get_circuit_breaker(
+            "legion-loop-sink",
             failure_threshold=3,
             recovery_timeout=60.0,
-            half_open_max_calls=1,
         )
 
     def _headers(self) -> dict[str, str]:

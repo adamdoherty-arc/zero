@@ -65,10 +65,6 @@ except SomeServiceError as e:
 
 Never keep an `AsyncSessionLocal` open across an LLM / subprocess / network await. Split into Tx-A (read), session-less await, Tx-C (write). Otherwise hourly Postgres idle-in-tx FATALs.
 
-## Realtime / vLLM routing
-
-Realtime config resolution lives in `backend/app/routers/reachy_realtime.py` `_enriched_config`. Don't sprinkle backend-pick logic across handlers — change it there.
-
 ## Testing
 
 - Unit tests live next to services in `backend/tests/`.

@@ -5,22 +5,10 @@ export interface MeetingStewardStatus {
   checked_at: string
   ok: boolean
   issues: Array<{ id: string; detail: string }>
-  companion?: {
-    mode?: string
-    transcribe_only?: boolean
-    meeting_active?: boolean
-    meeting_active_id?: string | null
-    last_wake_at?: string | null
-    wake_response_window_s?: number
-    error?: string
-  }
-  host_agent?: {
-    ok?: boolean
-    wake_mode?: string
-    recordings_dir?: string
-    url?: string
-    error?: string
-  }
+  /** Retired 2026-07-11 — robot/Reachy hardware control moved to Zero Studio. */
+  companion?: { retired?: boolean; note?: string }
+  /** Retired 2026-07-11 — robot/Reachy hardware control moved to Zero Studio. */
+  host_agent?: { retired?: boolean; note?: string }
   approvals?: { pending?: number; error?: string }
   notifications?: {
     recent_count?: number

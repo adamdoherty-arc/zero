@@ -31,15 +31,6 @@ cd backend && pytest tests/test_carousel_golden_v2.py -v
 
 The golden set lives at `backend/tests/fixtures/carousel_golden_v2/`. If you intentionally change carousel output, regenerate goldens with the documented refresh script and review the diff before committing.
 
-## Voice UX verification
-
-Reachy voice surface needs explicit verification because failures are silent:
-
-1. Open `/reachy` in the UI. Confirm `StreamingHealthCard` shows green for Robot / Daemon API / Video / Audio.
-2. If host_agent is unreachable, `HostAgentOfflineBanner` (amber) shows at the top. Restart via Reachy DaemonPanel "Start daemon" — don't reach for scheduled tasks.
-3. Trigger `InteractiveModeBar` (TopBar). Verify Local realtime path connects (Whisper → vLLM qwen3-chat → Piper/edge-tts).
-4. Check `LLMStatusBadge` — green dot means the active brain probe (1-token, 15s cache) is healthy.
-
 ## Proactive monitoring
 
 When starting a session or checking the system:
@@ -72,6 +63,7 @@ Before using Glob/Grep to explore the codebase, use QMD MCP tools for documentat
 - `qmd_multi_get "docs/product/*.md"` — retrieve multiple docs by pattern
 
 **When to use which:**
-- **QMD**: discovering relevant guides, "how does X work" questions across docs.
+- **Codegraph** (MANDATORY first for any code/symbol question): `codegraph_search` / `codegraph_context` / `codegraph_callers` / `codegraph_impact` / `codegraph_files` over ALL source — `.py` AND `.tsx`/`.ts` (the index covers both). Never Grep code as the first move. See `CLAUDE.md` › Code intelligence (codegraph).
+- **QMD**: discovering relevant guides, "how does X work" questions across `.md` docs.
 - **Direct Read**: when you know the exact file path.
-- **Glob/Grep**: searching `.py`/`.tsx` source code (QMD only indexes `.md`).
+- **Glob/Grep**: ONLY for free-text/logs/config/non-code, filename globbing, or a genuine codegraph miss (uncommitted file, index offline, 0 hits). Not the first tool for `.py`/`.tsx` symbols.

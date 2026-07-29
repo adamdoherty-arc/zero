@@ -24,8 +24,8 @@ ECOSYSTEM_SERVICES: Dict[str, Dict[str, str]] = {
     "vllm-chat": {"url": "http://vllm-chat:8000", "health": "/v1/models"},
     "vllm-embed": {"url": "http://vllm-embed:8001", "health": "/v1/models"},
     "shared-bifrost": {"url": "http://shared-bifrost:8080", "health": "/health"},
-    # Reachy daemon runs on the Windows host outside Docker.
-    "reachy": {"url": "http://host.docker.internal:8000", "health": "/api/daemon/status"},
+    # Reachy daemon entry removed — robot/Reachy hardware control moved to a
+    # separate app (Zero Studio); Zero no longer owns/probes that service.
 }
 
 TIMEOUT_SECONDS = 3.0

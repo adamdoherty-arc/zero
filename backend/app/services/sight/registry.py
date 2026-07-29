@@ -15,7 +15,6 @@ import structlog
 from .base import SightProvider, SightStatus
 from .meta_rayban_provider import MetaRayBanProvider
 from .phone_camera_provider import PhoneCameraProvider
-from .reachy_provider import ReachySightProvider
 
 logger = structlog.get_logger()
 
@@ -25,13 +24,15 @@ class SightRegistry:
 
     def __init__(self) -> None:
         self._providers: dict[str, SightProvider] = {}
-        self._active_id: str = os.getenv("ZERO_SIGHT_DEFAULT_PROVIDER", "reachy")
+        # Reachy provider removed — robot/Reachy hardware control moved to a
+        # separate app (Zero Studio). phone_camera is the most broadly
+        # available remaining default.
+        self._active_id: str = os.getenv("ZERO_SIGHT_DEFAULT_PROVIDER", "phone_camera")
         self._lock = asyncio.Lock()
         # Global kill switch — when True, every provider acts as if it has
         # no frames and no audio. Toggled via POST /api/sight/eyes-off.
         self._eyes_off: bool = False
 
-        self.register(ReachySightProvider())
         self.register(MetaRayBanProvider())
         self.register(PhoneCameraProvider())
 

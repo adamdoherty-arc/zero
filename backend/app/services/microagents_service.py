@@ -5,15 +5,15 @@ Adopted from the OpenHands microagents convention. A microagent is a
 Markdown file with YAML frontmatter:
 
     ---
-    name: reachy-motion
+    name: llm-routing
     type: knowledge
-    triggers: [reachy, antennas, motion, emotion, dance]
+    triggers: [llm, model, bifrost, vllm]
     agent: any
     ---
 
-    When Reachy needs to express something physical, prefer the
-    motion library at backend/app/services/reachy_motion_library.py.
-    81 emotion clips, 19 dances, each with semantic aliases.
+    Route LLM calls through the shared Bifrost gateway. Never hardcode
+    a pinned model name — use the configurable alias and let
+    shared-infra/litellm/config.yaml map it.
 
 Two scopes:
 
