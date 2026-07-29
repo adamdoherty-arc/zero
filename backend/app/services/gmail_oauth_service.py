@@ -241,7 +241,9 @@ class GmailOAuthService:
         # Resolve account email from Google so we can dedupe by (provider, email).
         from googleapiclient.discovery import build
         service = build("gmail", "v1", credentials=creds)
-        profile = service.users().getProfile(userId="me").execute()
+        profile = await asyncio.to_thread(
+                lambda: service.users().getProfile(userId="me").execute()
+            )
         email_address = profile.get("emailAddress", "unknown")
 
         # Upsert into oauth_accounts.

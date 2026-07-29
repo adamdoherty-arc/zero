@@ -4,6 +4,7 @@ Google Calendar service for calendar operations.
 Persistence layer uses PostgreSQL via SQLAlchemy async ORM.
 """
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -503,14 +504,16 @@ class CalendarService:
         time_max = (now + timedelta(days=days_ahead)).isoformat() + "Z"
 
         try:
-            results = service.events().list(
-                calendarId="primary",
-                timeMin=time_min,
-                timeMax=time_max,
-                maxResults=250,
-                singleEvents=True,
-                orderBy="startTime"
-            ).execute()
+            results = await asyncio.to_thread(
+                lambda: service.events().list(
+                    calendarId="primary",
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=250,
+                    singleEvents=True,
+                    orderBy="startTime",
+                ).execute()
+            )
 
             events = [self._event_to_model(e) for e in results.get("items", [])]
 
@@ -522,7 +525,7 @@ class CalendarService:
                     await session.merge(row)
 
             # Get calendars count
-            calendars = service.calendarList().list().execute()
+            calendars = await asyncio.to_thread(lambda: service.calendarList().list().execute())
 
             status = CalendarSyncStatus(
                 connected=True,
@@ -671,7 +674,9 @@ class CalendarService:
         if event_data.recurrence:
             body["recurrence"] = event_data.recurrence
 
-        result = service.events().insert(calendarId="primary", body=body).execute()
+        result = await asyncio.to_thread(
+            lambda: service.events().insert(calendarId="primary", body=body).execute()
+        )
 
         logger.info("calendar_event_created", event_id=result["id"])
         return self._event_to_model(result)
@@ -682,7 +687,9 @@ class CalendarService:
 
         # Get existing event
         try:
-            existing = service.events().get(calendarId="primary", eventId=event_id).execute()
+            existing = await asyncio.to_thread(
+                lambda: service.events().get(calendarId="primary", eventId=event_id).execute()
+            )
         except Exception:
             return None
 
@@ -706,7 +713,11 @@ class CalendarService:
             elif updates.end.date:
                 existing["end"] = {"date": updates.end.date}
 
-        result = service.events().update(calendarId="primary", eventId=event_id, body=existing).execute()
+        result = await asyncio.to_thread(
+            lambda: service.events()
+            .update(calendarId="primary", eventId=event_id, body=existing)
+            .execute()
+        )
 
         logger.info("calendar_event_updated", event_id=event_id)
         return self._event_to_model(result)
@@ -716,7 +727,9 @@ class CalendarService:
         service = await self._get_service()
 
         try:
-            service.events().delete(calendarId="primary", eventId=event_id).execute()
+            await asyncio.to_thread(
+                lambda: service.events().delete(calendarId="primary", eventId=event_id).execute()
+            )
             logger.info("calendar_event_deleted", event_id=event_id)
             return True
         except Exception as e:
@@ -727,7 +740,7 @@ class CalendarService:
         """Get list of calendars."""
         service = await self._get_service()
 
-        results = service.calendarList().list().execute()
+        results = await asyncio.to_thread(lambda: service.calendarList().list().execute())
         return [
             Calendar(
                 id=cal["id"],
@@ -767,14 +780,17 @@ class CalendarService:
         all_events = []
         for cal_id in calendar_ids:
             try:
-                results = service.events().list(
-                    calendarId=cal_id,
-                    timeMin=time_min.isoformat() + "Z",
-                    timeMax=time_max.isoformat() + "Z",
-                    singleEvents=True,
-                    orderBy="startTime",
-                    maxResults=100,
-                ).execute()
+                # Runs once per calendar, so inline this stalls the loop N times.
+                results = await asyncio.to_thread(
+                    lambda cid=cal_id: service.events().list(
+                        calendarId=cid,
+                        timeMin=time_min.isoformat() + "Z",
+                        timeMax=time_max.isoformat() + "Z",
+                        singleEvents=True,
+                        orderBy="startTime",
+                        maxResults=100,
+                    ).execute()
+                )
 
                 for event in results.get("items", []):
                     event["_calendar_id"] = cal_id

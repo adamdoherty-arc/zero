@@ -339,7 +339,22 @@ RULES:
         for action in rule.actions:
             try:
                 result = await self._execute_action(action, email_id, email_data)
-                results.append({"action": action.type, "status": "success", **result})
+                # Handlers signal a soft failure with success=False rather than
+                # raising (archive/star/mark_read/apply_label all do). Stamping
+                # "success" unconditionally reported every one of those as a
+                # successful action, so a rule that silently did nothing looked
+                # identical to one that worked.
+                ok = result.get("success", True)
+                if not ok:
+                    logger.warning(
+                        "rule_action_soft_failed",
+                        rule_id=rule.id,
+                        action=action.type,
+                        detail=result.get("message"),
+                    )
+                results.append(
+                    {"action": action.type, "status": "success" if ok else "error", **result}
+                )
             except Exception as e:
                 logger.error(
                     "rule_action_failed",
@@ -404,18 +419,11 @@ RULES:
         if not label:
             return {"message": "No label specified"}
         from app.services.gmail_service import get_gmail_service
-        gmail = get_gmail_service()
-        # Gmail API: modify labels
-        try:
-            service = gmail._get_service()
-            service.users().messages().modify(
-                userId="me",
-                id=email_id,
-                body={"addLabelIds": [label]}
-            ).execute()
-            return {"message": f"Label '{label}' applied"}
-        except Exception as e:
-            return {"message": f"Failed to apply label: {e}"}
+        success = await get_gmail_service().apply_label(email_id, label)
+        if not success:
+            logger.warning("rule_action_apply_label_failed", email_id=email_id, label=label)
+            return {"message": f"Failed to apply label '{label}'", "success": False}
+        return {"message": f"Label '{label}' applied"}
 
     async def _execute_notify(self, email_data: dict, params: dict) -> dict:
         from app.services.notification_service import get_notification_service

@@ -83,12 +83,22 @@ class GmailService:
         breaker, so ignore_exceptions can exempt it from counting toward the
         shared failure threshold. 401/403/429/5xx are left as-is and still
         count.
+
+        `fn` may be sync or async. A SYNC callable is run on a worker thread:
+        googleapiclient's `.execute()` is a blocking HTTP call, and every caller
+        here used to hand this an `async def` that called it inline, so each one
+        blocked the event loop for the duration of a Gmail round-trip. sync_inbox
+        did it once per message.
         """
+        import inspect
+
         from googleapiclient.errors import HttpError
 
         async def _wrapped():
             try:
-                return await fn()
+                if inspect.iscoroutinefunction(fn):
+                    return await fn()
+                return await asyncio.to_thread(fn)
             except HttpError as e:
                 if getattr(e, "resp", None) and int(e.resp.status) == 404:
                     raise GmailStaleIdError(str(e)) from e
@@ -382,7 +392,7 @@ Reply with ONLY the category name, nothing else."""
 
         try:
             # Get message list (through circuit breaker)
-            async def _list_messages():
+            def _list_messages():
                 return service.users().messages().list(
                     userId="me",
                     q=query,
@@ -397,12 +407,17 @@ Reply with ONLY the category name, nothing else."""
 
             for msg_ref in messages:
                 try:
-                    # Fetch full message
-                    msg = service.users().messages().get(
-                        userId="me",
-                        id=msg_ref["id"],
-                        format="full"
-                    ).execute()
+                    # Fetch full message. Offloaded: this is the one call in the
+                    # sweep that runs once PER MESSAGE, so leaving it inline
+                    # stalled the event loop for a full Gmail round-trip times
+                    # max_results on every sync.
+                    msg = await asyncio.to_thread(
+                        lambda mid=msg_ref["id"]: service.users().messages().get(
+                            userId="me",
+                            id=mid,
+                            format="full",
+                        ).execute()
+                    )
 
                     headers = self._parse_headers(msg.get("payload", {}).get("headers", []))
                     text_body, html_body = self._decode_body(msg.get("payload", {}))
@@ -477,7 +492,7 @@ Reply with ONLY the category name, nothing else."""
                         continue
 
             # Get profile for email address
-            async def _get_profile():
+            def _get_profile():
                 return service.users().getProfile(userId="me").execute()
 
             profile = await self._breaker_call(_get_profile)
@@ -588,7 +603,7 @@ Reply with ONLY the category name, nothing else."""
         """Get Gmail labels."""
         service = await self._get_gmail_service()
 
-        async def _fetch_labels():
+        def _fetch_labels():
             results = service.users().labels().list(userId="me").execute()
             labels = []
 
@@ -611,12 +626,36 @@ Reply with ONLY the category name, nothing else."""
 
         return await self._breaker_call(_fetch_labels)
 
+    async def apply_label(self, email_id: str, label_id: str) -> bool:
+        """Add a label to a message.
+
+        email_rule_service used to inline this against `gmail._get_service()`, a
+        method that has never existed on this class -- the AttributeError was
+        caught locally and returned as a dict, so the rule dispatcher recorded
+        status="success" for an action that did nothing, every time.
+        """
+        try:
+            service = await self._get_gmail_service()
+
+            def _apply():
+                service.users().messages().modify(
+                    userId="me",
+                    id=email_id,
+                    body={"addLabelIds": [label_id]},
+                ).execute()
+
+            await self._breaker_call(_apply)
+            return True
+        except Exception as e:
+            logger.error("apply_label_failed", email_id=email_id, label=label_id, error=str(e))
+            return False
+
     async def mark_as_read(self, email_id: str) -> bool:
         """Mark email as read."""
         try:
             service = await self._get_gmail_service()
 
-            async def _mark_read():
+            def _mark_read():
                 service.users().messages().modify(
                     userId="me",
                     id=email_id,
@@ -645,7 +684,7 @@ Reply with ONLY the category name, nothing else."""
         try:
             service = await self._get_gmail_service()
 
-            async def _archive():
+            def _archive():
                 service.users().messages().modify(
                     userId="me",
                     id=email_id,
@@ -679,7 +718,7 @@ Reply with ONLY the category name, nothing else."""
         try:
             service = await self._get_gmail_service()
 
-            async def _trash():
+            def _trash():
                 service.users().messages().modify(
                     userId="me",
                     id=email_id,
@@ -743,7 +782,7 @@ Reply with ONLY the category name, nothing else."""
             if thread_id:
                 payload["threadId"] = thread_id
 
-            async def _send():
+            def _send():
                 return service.users().messages().send(userId="me", body=payload).execute()
 
             sent = await self._breaker_call(_send)
@@ -766,7 +805,7 @@ Reply with ONLY the category name, nothing else."""
             service = await self._get_gmail_service()
             body = {"addLabelIds": ["STARRED"]} if starred else {"removeLabelIds": ["STARRED"]}
 
-            async def _star():
+            def _star():
                 service.users().messages().modify(
                     userId="me",
                     id=email_id,

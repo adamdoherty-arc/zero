@@ -22,12 +22,27 @@ import time
 from functools import lru_cache
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple, Union
 
+import httpx
 import structlog
 
 from app.infrastructure.llm_router import get_llm_router
 from app.models.llm import parse_provider_model
 
 logger = structlog.get_logger(__name__)
+
+
+def _describe_exc(e: BaseException) -> str:
+    """Render an exception so the type survives even when the message is empty.
+
+    Every httpx transport exception -- ReadTimeout, ConnectTimeout, PoolTimeout,
+    WriteTimeout, ReadError, ConnectError, RemoteProtocolError -- has an EMPTY
+    str(), so `error=str(e)` logs `error=''` for the most common LLM failure mode
+    there is. Measured live on 2026-07-29: a gateway hang produced
+    `llm_primary_failed ... error= transient=False`, which is zero diagnostic
+    signal about a 45-second timeout. Always carry the class name.
+    """
+    msg = str(e)
+    return f"{type(e).__name__}: {msg}" if msg else type(e).__name__
 
 
 # Records the model that ACTUALLY served the most recent chat() call on THIS
@@ -617,13 +632,20 @@ class UnifiedLLMClient:
                     )
                 except Exception as e:
                     last_error = e
-                    err_s = str(e)
-                    transient = (
+                    err_s = _describe_exc(e)
+                    # Transport failures are classified by TYPE, not by message.
+                    # httpx.ReadTimeout, ConnectTimeout, PoolTimeout, WriteTimeout,
+                    # ReadError, ConnectError and RemoteProtocolError ALL stringify
+                    # to the empty string, so the substring tests below could never
+                    # match any of them -- every transport error was scored
+                    # transient=False and skipped the retry the docstring above
+                    # promises. PoolTimeout is the gateway pool-exhaustion signature
+                    # specifically, i.e. the one case retrying helps most.
+                    transient = isinstance(
+                        e, (httpx.TimeoutException, httpx.TransportError)
+                    ) or (
+                        # status-code cases only ever appear as message text
                         "Server disconnected" in err_s
-                        or "ReadError" in err_s
-                        or "ConnectError" in err_s
-                        or "RemoteProtocolError" in err_s
-                        or "ReadTimeout" in err_s
                         or "429" in err_s
                         or "Too Many Requests" in err_s
                         or "502" in err_s
@@ -659,7 +681,7 @@ class UnifiedLLMClient:
                         "llm_fallback_failed",
                         provider=fb_provider,
                         model=fb_model,
-                        error=str(e),
+                        error=_describe_exc(e),
                     )
 
             # Bifrost-Chain-03 (2026-05-25): final-tier emergency fallback through
