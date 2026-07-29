@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Plus, Sparkles, ExternalLink, Trash2, RefreshCw, Search } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Plus, Sparkles, ExternalLink, Trash2, RefreshCw, Search, BookOpen, Paperclip, FileText } from 'lucide-react'
 
 import {
   usePersonalWorkItems,
@@ -13,14 +13,27 @@ import {
   usePersonalSeedVAStatus,
   useSeedVAClaim,
   usePersonalTaskEvents,
+  usePersonalTaskAttachments,
+  useUploadPersonalTaskAttachment,
+  useDeletePersonalTaskAttachment,
+  attachmentFileUrl,
 } from '@/hooks/usePersonalWorkItemsApi'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TaskNotesPanel } from '@/components/TaskNotesPanel'
+import { getGuideAnchorForTask } from '@/config/vaClaimGuide'
 import type { Task, TaskPriority, TaskStatus } from '@/types'
 
 const ALL_TOPICS = '__all__'
-const VA_TOPIC = 'VA Disability'
+const VA_TOPIC = 'VA Claim'
+
+interface PersonalBoardPageProps {
+  /** When set, the board is locked to a single topic: the topic picker is hidden
+   *  and this value drives the filter (used for the dedicated /va-claim tab). */
+  lockedTopic?: string
+  /** Optional in-page heading shown when lockedTopic is set. */
+  title?: string
+}
 
 const COLUMNS: Array<{ status: TaskStatus; label: string; tone: string }> = [
   { status: 'backlog', label: 'Backlog', tone: 'border-gray-700 bg-gray-900/40' },
@@ -43,10 +56,10 @@ function phaseTag(task: Task): string | null {
   return tag.replace('phase:', '').replace('d', ' days').replace('reference', 'reference')
 }
 
-export function PersonalBoardPage() {
+export function PersonalBoardPage({ lockedTopic, title }: PersonalBoardPageProps = {}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const topicParam = searchParams.get('topic')
-  const currentTopic = topicParam || ALL_TOPICS
+  const currentTopic = lockedTopic ?? (topicParam || ALL_TOPICS)
 
   const [search, setSearch] = useState('')
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
@@ -59,10 +72,21 @@ export function PersonalBoardPage() {
     return f
   }, [currentTopic, search])
 
-  const { data: tasks = [], isLoading } = usePersonalWorkItems(filters)
-  const { data: topics = [] } = usePersonalTopics()
+  const { data: rawTasks = [], isLoading } = usePersonalWorkItems(filters)
+  const { data: rawTopics = [] } = usePersonalTopics()
   const { data: vaSeedStatus } = usePersonalSeedVAStatus()
   const seedVA = useSeedVAClaim()
+
+  // VA Claim now has its own dedicated tab (/va-claim) — the generic personal
+  // board never shows VA tasks or offers VA Claim as a topic, regardless of URL params.
+  const tasks = useMemo(
+    () => (lockedTopic ? rawTasks : rawTasks.filter((t) => (t.domain || '').toLowerCase() !== VA_TOPIC.toLowerCase())),
+    [rawTasks, lockedTopic],
+  )
+  const topics = useMemo(
+    () => (lockedTopic ? rawTopics : rawTopics.filter((t) => t.topic.toLowerCase() !== VA_TOPIC.toLowerCase())),
+    [rawTopics, lockedTopic],
+  )
 
   const setTopic = (t: string) => {
     const next = new URLSearchParams(searchParams)
@@ -79,42 +103,61 @@ export function PersonalBoardPage() {
     return grouped
   }, [tasks])
 
+  // VA seeding/empty-state only applies on the dedicated /va-claim tab now.
   const showVAEmptyState =
-    currentTopic === VA_TOPIC && tasks.length === 0 && !isLoading && vaSeedStatus && !vaSeedStatus.has_va_tasks
-  const showGlobalEmptyState =
-    currentTopic === ALL_TOPICS && tasks.length === 0 && !isLoading && vaSeedStatus && !vaSeedStatus.has_va_tasks
+    !!lockedTopic && currentTopic === VA_TOPIC && tasks.length === 0 && !isLoading && vaSeedStatus && !vaSeedStatus.has_va_tasks
 
   // Auto-redirect to VA topic right after seeding so the user lands on the new board.
   useEffect(() => {
-    if (seedVA.isSuccess && seedVA.data && seedVA.data.created > 0) {
+    if (!lockedTopic && seedVA.isSuccess && seedVA.data && seedVA.data.created > 0) {
       setTopic(VA_TOPIC)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedVA.isSuccess])
 
+  // Deep-link support: /va-claim?task=<id> (used by the VA Claim Guide's
+  // "Open this task on the board" links) opens that task's detail dialog.
+  useEffect(() => {
+    const taskId = searchParams.get('task')
+    if (!taskId) return
+    const found = tasks.find((t) => t.id === taskId)
+    if (found) setSelectedTask(found)
+    const next = new URLSearchParams(searchParams)
+    next.delete('task')
+    setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks])
+
   return (
     <div className="page-content space-y-4">
+      {lockedTopic && title && (
+        <div>
+          <h1 className="text-2xl font-semibold text-white">{title}</h1>
+          <p className="text-sm text-gray-400">
+            Your VA disability claim board. All claim tasks, narratives, and next steps in one place.
+          </p>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase tracking-wider text-gray-500">Topic</span>
-          <Select value={currentTopic} onValueChange={setTopic}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="All topics" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TOPICS}>All topics</SelectItem>
-              {topics.map((t) => (
-                <SelectItem key={t.topic} value={t.topic}>
-                  {t.topic} <span className="text-gray-500 ml-1">({t.open}/{t.total})</span>
-                </SelectItem>
-              ))}
-              {!topics.find((t) => t.topic === VA_TOPIC) && (
-                <SelectItem value={VA_TOPIC}>{VA_TOPIC} (not seeded)</SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-        </div>
+        {!lockedTopic && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wider text-gray-500">Topic</span>
+            <Select value={currentTopic} onValueChange={setTopic}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="All topics" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TOPICS}>All topics</SelectItem>
+                {topics.map((t) => (
+                  <SelectItem key={t.topic} value={t.topic}>
+                    {t.topic} <span className="text-gray-500 ml-1">({t.open}/{t.total})</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md">
           <Search className="w-4 h-4 text-gray-500" />
@@ -134,19 +177,19 @@ export function PersonalBoardPage() {
           New Task
         </button>
 
-        {vaSeedStatus && !vaSeedStatus.has_va_tasks && (
+        {lockedTopic && vaSeedStatus && !vaSeedStatus.has_va_tasks && (
           <button
             onClick={() => seedVA.mutate()}
             disabled={seedVA.isPending}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"
           >
             <Sparkles className="w-4 h-4" />
-            {seedVA.isPending ? 'Seeding VA playbook...' : 'Seed VA Disability Playbook'}
+            {seedVA.isPending ? 'Seeding VA playbook...' : 'Seed VA Claim Playbook'}
           </button>
         )}
       </div>
 
-      {currentTopic !== ALL_TOPICS && (
+      {!lockedTopic && currentTopic !== ALL_TOPICS && (
         <div className="text-sm text-gray-400 flex items-center gap-3">
           <span>
             Showing <span className="text-white font-medium">{currentTopic}</span> only.{' '}
@@ -158,15 +201,19 @@ export function PersonalBoardPage() {
         </div>
       )}
 
+      {lockedTopic && isLoading && (
+        <div className="text-sm text-gray-500 italic">loading…</div>
+      )}
+
       {currentTopic === ALL_TOPICS && isLoading && (
         <div className="text-sm text-gray-500 italic">loading personal board…</div>
       )}
 
       {/* Empty states */}
-      {(showVAEmptyState || showGlobalEmptyState) && (
+      {showVAEmptyState && (
         <div className="glass-card p-8 text-center">
           <Sparkles className="w-10 h-10 mx-auto text-indigo-400 mb-3" />
-          <h2 className="text-xl font-semibold mb-2">Set up the VA Disability Claim Playbook</h2>
+          <h2 className="text-xl font-semibold mb-2">Set up the VA Claim Playbook</h2>
           <p className="text-gray-400 max-w-2xl mx-auto mb-6">
             Seeds ~22 tasks broken into phases (7 days / 30 days / 60 days / 90 days / reference). Includes three "living narrative"
             tasks for GERD, Anxiety, and Tinnitus that you refine over time — every edit creates an audit-trail event.
@@ -176,25 +223,30 @@ export function PersonalBoardPage() {
             disabled={seedVA.isPending}
             className="px-6 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
           >
-            {seedVA.isPending ? 'Seeding...' : 'Seed VA Disability Playbook'}
+            {seedVA.isPending ? 'Seeding...' : 'Seed VA Claim Playbook'}
           </button>
         </div>
       )}
 
       {/* Topic-specific empty hint (when seed has already run but this topic has zero items) */}
-      {!showVAEmptyState && !showGlobalEmptyState && !isLoading && tasks.length === 0 && currentTopic !== ALL_TOPICS && (
+      {!showVAEmptyState && !isLoading && tasks.length === 0 && currentTopic !== ALL_TOPICS && (
         <div className="glass-card p-6 text-center text-sm text-gray-400">
           No tasks yet under <span className="text-white font-medium">{currentTopic}</span>. Click{' '}
-          <span className="text-indigo-400">+ New Task</span> to add one, or{' '}
-          <button onClick={() => setTopic(ALL_TOPICS)} className="text-indigo-400 hover:underline">
-            switch back to all topics
-          </button>
+          <span className="text-indigo-400">+ New Task</span> to add one
+          {!lockedTopic && (
+            <>
+              , or{' '}
+              <button onClick={() => setTopic(ALL_TOPICS)} className="text-indigo-400 hover:underline">
+                switch back to all topics
+              </button>
+            </>
+          )}
           .
         </div>
       )}
 
       {/* Kanban */}
-      {!showVAEmptyState && !showGlobalEmptyState && (
+      {!showVAEmptyState && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           {COLUMNS.map((col) => {
             const items = columns[col.status] || []
@@ -236,6 +288,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   const phase = phaseTag(task)
   const isNarrative = (task.tags || []).includes('narrative')
   const isPinned = (task.tags || []).includes('pinned')
+  const guideAnchor = getGuideAnchorForTask(task.id)
   return (
     <button
       onClick={onClick}
@@ -254,8 +307,77 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
         {phase && <span className="px-1.5 py-0.5 rounded border border-gray-700 text-gray-400">{phase}</span>}
         {isNarrative && <span className="px-1.5 py-0.5 rounded border border-purple-700 text-purple-300">narrative</span>}
         {task.domain && <span className="text-gray-500">{task.domain}</span>}
+        {guideAnchor && (
+          <Link
+            to={`/va-claim/guide#${guideAnchor}`}
+            onClick={(e) => e.stopPropagation()}
+            className="ml-auto inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+          >
+            <BookOpen className="w-3 h-3" /> Guide
+          </Link>
+        )}
       </div>
     </button>
+  )
+}
+
+function TaskAttachments({ taskId }: { taskId: string }) {
+  const { data: attachments = [], isLoading } = usePersonalTaskAttachments(taskId)
+  const upload = useUploadPersonalTaskAttachment()
+  const remove = useDeletePersonalTaskAttachment()
+
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) upload.mutate({ taskId, file })
+    e.target.value = ''
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs uppercase tracking-wider text-gray-500">Attachments</div>
+        <label className="inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 cursor-pointer">
+          <Paperclip className="w-3.5 h-3.5" />
+          {upload.isPending ? 'Uploading...' : 'Attach file'}
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp,image/heic"
+            className="hidden"
+            onChange={onPick}
+            disabled={upload.isPending}
+          />
+        </label>
+      </div>
+      {upload.isError && (
+        <div className="text-xs text-rose-400 mb-2">{(upload.error as Error).message}</div>
+      )}
+      <div className="space-y-1">
+        {attachments.map((a) => (
+          <div key={a.id} className="flex items-center gap-2 text-sm">
+            <a
+              href={attachmentFileUrl(a.url)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 truncate min-w-0"
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{a.filename}</span>
+            </a>
+            <span className="text-xs text-gray-600 shrink-0">{Math.max(1, Math.round(a.size_bytes / 1024))} KB</span>
+            <button
+              onClick={() => remove.mutate({ taskId, attachmentId: a.id })}
+              className="ml-auto text-gray-600 hover:text-rose-400 shrink-0"
+              title="Remove attachment"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+        {!isLoading && attachments.length === 0 && (
+          <div className="text-xs text-gray-600 italic">No attachments yet — scans, photos, or PDFs (10MB max).</div>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -346,6 +468,14 @@ function TaskDetailDialog({ task, onClose }: { task: Task | null; onClose: () =>
                 {t}
               </span>
             ))}
+            {getGuideAnchorForTask(task.id) && (
+              <Link
+                to={`/va-claim/guide#${getGuideAnchorForTask(task.id)}`}
+                className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-indigo-700 text-indigo-400 hover:bg-indigo-950/40"
+              >
+                <BookOpen className="w-3.5 h-3.5" /> Read the full guide for this task
+              </Link>
+            )}
           </div>
 
           <div>
@@ -381,6 +511,8 @@ function TaskDetailDialog({ task, onClose }: { task: Task | null; onClose: () =>
               </div>
             </div>
           )}
+
+          <TaskAttachments taskId={task.id} />
 
           <TaskNotesPanel taskId={task.id} scope="personal" />
 

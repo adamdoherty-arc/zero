@@ -18,9 +18,9 @@ from typing import Any, Optional
 
 from sqlalchemy import func, or_, select, text
 
-from app.db.models import CompanyTaskEventModel, TaskModel
+from app.db.models import CompanyTaskEventModel, TaskAttachmentModel, TaskModel
 from app.infrastructure.database import get_session
-from app.models.task import CompanyTaskEvent, Task, TaskCreate, TaskStatus, TaskUpdate
+from app.models.task import CompanyTaskEvent, Task, TaskAttachment, TaskCreate, TaskStatus, TaskUpdate
 from app.services.task_service import get_task_service
 
 
@@ -294,6 +294,84 @@ class PersonalWorkItemService:
             session.add(row)
             await session.flush()
             return CompanyTaskEvent.model_validate(row, from_attributes=True)
+
+    def _attachment_to_schema(self, row: TaskAttachmentModel) -> TaskAttachment:
+        return TaskAttachment(
+            id=row.id,
+            task_id=row.task_id,
+            filename=row.filename,
+            content_type=row.content_type,
+            size_bytes=row.size_bytes,
+            url=f"/api/personal/work-items/{row.task_id}/attachments/{row.id}/file",
+            uploaded_by=row.uploaded_by,
+            created_at=row.created_at,
+        )
+
+    async def list_attachments(self, task_id: str) -> list[TaskAttachment]:
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(TaskAttachmentModel)
+                    .where(TaskAttachmentModel.task_id == task_id)
+                    .order_by(TaskAttachmentModel.created_at.desc())
+                )
+            ).scalars().all()
+        return [self._attachment_to_schema(row) for row in rows]
+
+    async def get_attachment(self, task_id: str, attachment_id: str) -> Optional[TaskAttachmentModel]:
+        async with get_session() as session:
+            row = await session.get(TaskAttachmentModel, attachment_id)
+            if not row or row.task_id != task_id:
+                return None
+            return row
+
+    async def create_attachment(
+        self,
+        task_id: str,
+        *,
+        filename: str,
+        content_type: str,
+        size_bytes: int,
+        storage_path: str,
+        actor: str = "user",
+    ) -> TaskAttachment:
+        attachment_id = f"tatt-{uuid.uuid4().hex[:12]}"
+        async with get_session() as session:
+            row = TaskAttachmentModel(
+                id=attachment_id,
+                task_id=task_id,
+                filename=filename,
+                content_type=content_type,
+                size_bytes=size_bytes,
+                storage_path=storage_path,
+                uploaded_by=actor,
+            )
+            session.add(row)
+            await session.flush()
+            created = self._attachment_to_schema(row)
+        await self.record_event(
+            task_id, "attachment_added", actor=actor, summary=f"Attached {filename}",
+        )
+        return created
+
+    async def delete_attachment(self, task_id: str, attachment_id: str, *, actor: str = "user") -> bool:
+        async with get_session() as session:
+            row = await session.get(TaskAttachmentModel, attachment_id)
+            if not row or row.task_id != task_id:
+                return False
+            filename = row.filename
+            storage_path = row.storage_path
+            await session.delete(row)
+            await session.flush()
+        from pathlib import Path as _Path
+        try:
+            _Path(storage_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+        await self.record_event(
+            task_id, "attachment_removed", actor=actor, summary=f"Removed attachment {filename}",
+        )
+        return True
 
 
 _singleton: Optional[PersonalWorkItemService] = None

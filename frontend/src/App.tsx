@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { NotificationListener } from '@/components/NotificationListener'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
@@ -12,7 +12,6 @@ import { MobileReviewPage } from '@/pages/MobileReviewPage'
 import { MobileVideosPage } from '@/pages/MobileVideosPage'
 import { MobileCharactersPage } from '@/pages/MobileCharactersPage'
 import MobileCameraPage from '@/pages/MobileCameraPage'
-import MascotPopout from '@/pages/MascotPopout'
 import { MobileOnboardingPage } from '@/pages/MobileOnboardingPage'
 import { SharePage } from '@/pages/SharePage'
 import { BoardPage } from '@/pages/BoardPage'
@@ -42,6 +41,7 @@ import { TikTokShopPage } from '@/pages/TikTokShopPage'
 import { ProductDetailPage } from '@/pages/ProductDetailPage'
 
 import { ContentAgentPage } from '@/pages/ContentAgentPage'
+import { ReelsPage } from '@/pages/ReelsPage'
 import { PredictionMarketsPage } from '@/pages/PredictionMarketsPage'
 import { LlcGuidancePage } from '@/pages/LlcGuidancePage'
 import { ExecutionDashboardPage } from '@/pages/ExecutionDashboardPage'
@@ -52,6 +52,7 @@ import { AiCompanyPage } from '@/pages/AiCompanyPage'
 import { DeepResearchPage } from '@/pages/DeepResearchPage'
 import { CompanyOsPage } from '@/pages/CompanyOsPage'
 import { PersonalBoardPage } from '@/pages/PersonalBoardPage'
+import { VaClaimGuidePage } from '@/pages/VaClaimGuidePage'
 import { ExperimentLabPage } from '@/pages/ExperimentLabPage'
 import { LoopsPage } from '@/pages/LoopsPage'
 import { SkillsPage } from '@/pages/SkillsPage'
@@ -68,13 +69,6 @@ import { CharacterContentLayout } from '@/layouts/CharacterContentLayout'
 import BrainDashboardPage from '@/pages/BrainDashboardPage'
 import EmployeeDashboardPage from '@/pages/EmployeeDashboardPage'
 import BrainEmployeePage from '@/pages/BrainEmployeePage'
-import { ReachyMotionLibraryPage } from '@/pages/ReachyMotionLibraryPage'
-import { ReachyLegacyConsolePage } from '@/pages/ReachyLegacyConsolePage'
-import { ReachyTeleopPage } from '@/pages/ReachyTeleopPage'
-import { ReachyHomeAssistantPage } from '@/pages/ReachyHomeAssistantPage'
-import { ReachyVoiceSettingsPage } from '@/pages/ReachyVoiceSettingsPage'
-import { ReachyRadioPage } from '@/pages/ReachyRadioPage'
-import { ReachyMemoryPage } from '@/pages/ReachyMemoryPage'
 import { MealsPage } from '@/pages/MealsPage'
 import { DraftsInbox } from '@/components/email/DraftsInbox'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -115,7 +109,6 @@ function App() {
             <Route path="camera" element={<MobileCameraPage />} />
           </Route>
           <Route path="/m/onboarding" element={<MobileOnboardingPage />} />
-          <Route path="/m/mascot" element={<MascotPopout />} />
           <Route path="/share" element={<SharePage />} />
 
           <Route element={<DashboardLayout />}>
@@ -151,6 +144,7 @@ function App() {
             <Route path="/tiktok-shop/product/:productId" element={<ErrorBoundary pageName="ProductDetail"><ProductDetailPage /></ErrorBoundary>} />
 
             <Route path="/content-agent" element={<ContentAgentPage />} />
+            <Route path="/reels" element={<ErrorBoundary pageName="Reels"><ReelsPage /></ErrorBoundary>} />
             <Route path="/prediction-markets" element={<PredictionMarketsPage />} />
             <Route path="/llc-guidance" element={<LlcGuidancePage />} />
             <Route path="/execution-dashboard" element={<ExecutionDashboardPage />} />
@@ -159,6 +153,8 @@ function App() {
             <Route path="/ai-company" element={<AiCompanyPage />} />
             <Route path="/deep-research" element={<DeepResearchPage />} />
             <Route path="/personal/board" element={<PersonalBoardPage />} />
+            <Route path="/va-claim" element={<PersonalBoardPage lockedTopic="VA Claim" title="VA Claim" />} />
+            <Route path="/va-claim/guide" element={<VaClaimGuidePage />} />
             <Route path="/company" element={<CompanyOsPage section="overview" />} />
             <Route path="/company/operator" element={<CompanyOsPage section="operator" />} />
             <Route path="/company/tasks" element={<CompanyOsPage section="tasks" />} />
@@ -184,19 +180,6 @@ function App() {
             <Route path="/brain" element={<BrainDashboardPage />} />
             <Route path="/brain/employee" element={<BrainEmployeePage />} />
             <Route path="/employee" element={<EmployeeDashboardPage />} />
-            <Route path="/zero" element={<ReachyMotionLibraryPage />} />
-            <Route path="/zero/legacy" element={<ReachyLegacyConsolePage />} />
-            <Route path="/zero/teleop" element={<ReachyTeleopPage />} />
-            <Route path="/zero/home-assistant" element={<ReachyHomeAssistantPage />} />
-            <Route path="/zero/voice-settings" element={<ReachyVoiceSettingsPage />} />
-            <Route path="/zero/radio" element={<ReachyRadioPage />} />
-            <Route path="/zero/memory" element={<ReachyMemoryPage />} />
-            <Route path="/reachy" element={<Navigate to="/zero" replace />} />
-            <Route path="/reachy/teleop" element={<Navigate to="/zero/teleop" replace />} />
-            <Route path="/reachy/home-assistant" element={<Navigate to="/zero/home-assistant" replace />} />
-            <Route path="/reachy/voice-settings" element={<Navigate to="/zero/voice-settings" replace />} />
-            <Route path="/reachy/radio" element={<Navigate to="/zero/radio" replace />} />
-            <Route path="/reachy/memory" element={<Navigate to="/zero/memory" replace />} />
             <Route path="/meals" element={<ErrorBoundary pageName="Meals"><MealsPage /></ErrorBoundary>} />
             <Route path="/characters" element={<CharacterContentLayout />}>
               <Route index element={<ErrorBoundary pageName="CharacterContent"><CharacterContentPage /></ErrorBoundary>} />

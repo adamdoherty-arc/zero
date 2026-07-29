@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Activity,
-  AudioLines,
+  Award,
   Banknote,
   BarChart3,
   Bot,
@@ -16,14 +16,13 @@ import {
   Cog,
   Cpu,
   FileText,
+  Film,
   FlaskConical,
   FolderGit2,
-  Gamepad2,
   Gavel,
   GitBranch,
   Globe,
   HeartPulse,
-  Home,
   Inbox,
   LayoutDashboard,
   Mail,
@@ -46,7 +45,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-export type NavModeKey = 'personal' | 'company' | 'robot' | 'systems' | 'content'
+export type NavModeKey = 'personal' | 'va' | 'company' | 'systems' | 'content'
 
 export interface NavMode {
   key: NavModeKey
@@ -69,7 +68,7 @@ export interface NavSection {
 
 export const navModes: NavMode[] = [
   { key: 'personal', label: 'Personal', href: '/ask-zero' },
-  { key: 'robot', label: 'Robot', href: '/zero' },
+  { key: 'va', label: 'VA Claim', href: '/va-claim' },
   { key: 'company', label: 'Company', href: '/company' },
   { key: 'systems', label: 'Systems', href: '/operations' },
   { key: 'content', label: 'Content', href: '/tiktok-shop' },
@@ -93,6 +92,14 @@ export const navSections: NavSection[] = [
       { label: 'Integrations', href: '/integrations', icon: Plug },
       { label: 'Memory Vault', href: '/memory-vault', icon: FolderGit2 },
       { label: 'OpenHands', href: '/openhands', icon: Cpu },
+    ],
+  },
+  {
+    label: 'VA Claim',
+    mode: 'va',
+    items: [
+      { label: 'Board', href: '/va-claim', icon: Award },
+      { label: 'Guide', href: '/va-claim/guide', icon: FileText },
     ],
   },
   {
@@ -123,18 +130,6 @@ export const navSections: NavSection[] = [
       { label: 'LLC Guidance', href: '/llc-guidance', icon: Gavel },
       { label: 'Deep Research', href: '/deep-research', icon: Search },
       { label: 'CRM', href: '/crm', icon: Briefcase },
-    ],
-  },
-  {
-    label: 'Robot',
-    mode: 'robot',
-    items: [
-      { label: 'Cockpit', href: '/zero', icon: Bot, aliases: ['reachy'] },
-      { label: 'Memory', href: '/zero/memory', icon: Brain, aliases: ['reachy memory'] },
-      { label: 'Radio', href: '/zero/radio', icon: Radio, aliases: ['reachy radio'] },
-      { label: 'Teleop', href: '/zero/teleop', icon: Gamepad2, aliases: ['reachy teleop'] },
-      { label: 'Home Assistant', href: '/zero/home-assistant', icon: Home, aliases: ['reachy home assistant'] },
-      { label: 'Voice Settings', href: '/zero/voice-settings', icon: AudioLines, aliases: ['reachy voice settings'] },
     ],
   },
   {
@@ -175,6 +170,7 @@ export const navSections: NavSection[] = [
       { label: 'TikTok Shop', href: '/tiktok-shop', icon: ShoppingBag },
       { label: 'Characters', href: '/characters', icon: Clapperboard },
       { label: 'Character Autopilot', href: '/characters/autopilot', icon: Sparkles },
+      { label: 'Reels', href: '/reels', icon: Film },
       { label: 'Content Agent', href: '/content-agent', icon: Sparkles },
       { label: 'Predictions', href: '/prediction-markets', icon: TrendingUp },
       { label: 'Money Maker', href: '/money-maker', icon: Zap },

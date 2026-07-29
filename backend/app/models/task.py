@@ -221,3 +221,16 @@ class CompanyAgentQuestionAnswer(BaseModel):
 
     answer: str = Field(..., min_length=1)
     answered_by: str = Field(default="dashboard", max_length=100)
+
+
+class TaskAttachment(BaseModel):
+    """A file attached to a task (scan, photo, PDF)."""
+
+    id: str
+    task_id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    url: str
+    uploaded_by: str
+    created_at: datetime

@@ -157,6 +157,9 @@ export function useAudioDevices() {
 }
 
 // ---- Reachy status ----
+// Kept for MeetingRecordingControls (components/meetings/), which prefers the
+// Reachy mic when a robot is connected. Not used by anything in the removed
+// robot/Reachy UI surface.
 export interface ReachyStatus {
   connected: boolean
   daemon?: Record<string, unknown>

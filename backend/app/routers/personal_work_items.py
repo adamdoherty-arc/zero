@@ -11,13 +11,17 @@ the user refines over time by editing their description.
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path as _Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.infrastructure.auth import require_auth
-from app.models.task import Task, TaskCategory, TaskCreate, TaskPriority, TaskSource, TaskStatus, TaskUpdate
+from app.infrastructure.auth import require_auth, require_auth_flex
+from app.infrastructure.config import get_workspace_path
+from app.models.task import Task, TaskAttachment, TaskCategory, TaskCreate, TaskPriority, TaskSource, TaskStatus, TaskUpdate
 from app.services.personal_work_item_service import get_personal_work_item_service
 
 
@@ -42,7 +46,7 @@ class NoteRequest(BaseModel):
     note: str = Field(..., min_length=1, max_length=4000)
 
 
-VA_TOPIC = "VA Disability"
+VA_TOPIC = "VA Claim"
 
 
 class SeedVAResponse(BaseModel):
@@ -93,7 +97,7 @@ async def va_seed_status():
 async def seed_va(req: ActorRequest | None = None) -> SeedVAResponse:
     """Idempotently create the VA disability claim task tree.
 
-    Skips items whose title already exists under the VA Disability topic, so
+    Skips items whose title already exists under the VA Claim topic, so
     running this twice is safe — useful for adding new seed items later.
     """
     actor = req.actor if req else "user"
@@ -225,7 +229,100 @@ async def delete_work_item(task_id: str):
 
 
 # -----------------------------------------------------------------------------
-# VA Disability Claim seed — handlers are declared up top (before /{task_id})
+# Attachments — scans/photos/PDFs attached to a task (e.g. a DD-214 scan).
+# Stored under the workspace volume so files survive a container rebuild
+# (unlike backend/uploads/* used by the character-content uploader).
+# -----------------------------------------------------------------------------
+
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+ALLOWED_ATTACHMENT_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"}
+
+
+@router.get("/{task_id}/attachments")
+async def list_attachments(task_id: str):
+    service = get_personal_work_item_service()
+    if not await service.get_work_item(task_id):
+        raise HTTPException(404, f"Personal work item {task_id} not found")
+    return await service.list_attachments(task_id)
+
+
+@router.post("/{task_id}/attachments")
+async def upload_attachment(task_id: str, file: UploadFile = File(...)):
+    service = get_personal_work_item_service()
+    if not await service.get_work_item(task_id):
+        raise HTTPException(404, f"Personal work item {task_id} not found")
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_ATTACHMENT_TYPES:
+        raise HTTPException(400, "Only PDF or image (jpeg/png/webp/heic) files are accepted")
+
+    body = await file.read()
+    if not body:
+        raise HTTPException(400, "uploaded file is empty")
+    if len(body) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(413, "file exceeds 10MB limit")
+
+    ext_map = {
+        "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png",
+        "image/webp": "webp", "image/heic": "heic",
+    }
+    ext = ext_map[content_type]
+    dest_dir = get_workspace_path(f"personal/task_attachments/{task_id}")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}.{ext}"
+    dest_path = dest_dir / stored_name
+    try:
+        dest_path.write_bytes(body)
+    except OSError:
+        raise HTTPException(500, "failed to persist uploaded file")
+
+    return await service.create_attachment(
+        task_id,
+        filename=file.filename or stored_name,
+        content_type=content_type,
+        size_bytes=len(body),
+        storage_path=str(dest_path),
+        actor="user",
+    )
+
+
+@router.delete("/{task_id}/attachments/{attachment_id}")
+async def delete_attachment(task_id: str, attachment_id: str):
+    service = get_personal_work_item_service()
+    ok = await service.delete_attachment(task_id, attachment_id, actor="user")
+    if not ok:
+        raise HTTPException(404, "Attachment not found")
+    return {"status": "deleted", "attachment_id": attachment_id}
+
+
+# Separate router: browsers can't set an Authorization header on <a href>/<img>
+# tags, so this file-serving endpoint accepts ?token= as well (require_auth_flex),
+# same convention as character_reference_videos.file_router.
+file_router = APIRouter(
+    prefix="/api/personal/work-items",
+    tags=["personal-work-items"],
+    dependencies=[Depends(require_auth_flex)],
+)
+
+
+@file_router.get("/{task_id}/attachments/{attachment_id}/file")
+async def serve_attachment(task_id: str, attachment_id: str):
+    service = get_personal_work_item_service()
+    row = await service.get_attachment(task_id, attachment_id)
+    if not row:
+        raise HTTPException(404, "Attachment not found")
+    path = _Path(row.storage_path)
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "Attachment file missing on disk")
+    return FileResponse(
+        path=str(path),
+        media_type=row.content_type,
+        filename=row.filename,
+    )
+
+
+# -----------------------------------------------------------------------------
+# VA Claim seed — handlers are declared up top (before /{task_id})
 # so FastAPI route ordering stays unambiguous. Only the seed data lives here.
 # -----------------------------------------------------------------------------
 

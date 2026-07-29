@@ -44,6 +44,17 @@ export interface PersonalSeedVAStatus {
   topic: string
 }
 
+export interface PersonalTaskAttachment {
+  id: string
+  task_id: string
+  filename: string
+  content_type: string
+  size_bytes: number
+  url: string
+  uploaded_by: string
+  created_at: string
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${url}`, {
     headers: {
@@ -75,6 +86,7 @@ export const personalWorkItemKeys = {
   topics: () => [...personalWorkItemKeys.all, 'topics'] as const,
   events: (taskId?: string) => [...personalWorkItemKeys.all, 'events', taskId] as const,
   seedStatus: () => [...personalWorkItemKeys.all, 'seedStatus'] as const,
+  attachments: (taskId?: string) => [...personalWorkItemKeys.all, 'attachments', taskId] as const,
 }
 
 function invalidate(qc: ReturnType<typeof useQueryClient>) {
@@ -181,4 +193,55 @@ export function useSeedVAClaim() {
       }),
     onSuccess: () => invalidate(qc),
   })
+}
+
+export function usePersonalTaskAttachments(taskId?: string) {
+  return useQuery({
+    queryKey: personalWorkItemKeys.attachments(taskId),
+    queryFn: () => fetchJson<PersonalTaskAttachment[]>(`/api/personal/work-items/${taskId}/attachments`),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useUploadPersonalTaskAttachment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ taskId, file }: { taskId: string; file: File }) => {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`/api/personal/work-items/${taskId}/attachments`, {
+        method: 'POST',
+        headers: { ...getAuthHeaders() },
+        body: form,
+      })
+      if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`)
+      return res.json() as Promise<PersonalTaskAttachment>
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: personalWorkItemKeys.attachments(vars.taskId) })
+    },
+  })
+}
+
+export function useDeletePersonalTaskAttachment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, attachmentId }: { taskId: string; attachmentId: string }) =>
+      fetchJson<{ status: string; attachment_id: string }>(
+        `/api/personal/work-items/${taskId}/attachments/${attachmentId}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: personalWorkItemKeys.attachments(vars.taskId) })
+    },
+  })
+}
+
+/** Attachment file URLs are auth-gated but browsers can't set Authorization
+ *  headers on <a href>/<img> — append the bearer token as ?token= instead
+ *  (backend accepts either via require_auth_flex). */
+export function attachmentFileUrl(url: string): string {
+  const token = getAuthHeaders().Authorization?.replace('Bearer ', '') ?? ''
+  const sep = url.includes('?') ? '&' : '?'
+  return token ? `${url}${sep}token=${encodeURIComponent(token)}` : url
 }

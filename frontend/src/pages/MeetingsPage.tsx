@@ -15,6 +15,7 @@ import {
   ListTodo,
   FileText,
   MessageSquare,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -42,6 +43,7 @@ import { useMeetingRecordingStore } from '@/store/meetingRecordingStore'
 import { MeetingRecordingControls } from '@/components/meetings/MeetingRecordingControls'
 import { LLMTaskPicker } from '@/components/meetings/LLMTaskPicker'
 import { LiveTranscriptModelPicker } from '@/components/meetings/LiveTranscriptModelPicker'
+import { VoiceEnrollmentPanel } from '@/components/meetings/VoiceEnrollmentPanel'
 import { toast } from '@/hooks/use-toast'
 import type { MeetingStatus } from '@/types/meeting'
 
@@ -56,6 +58,7 @@ const STATUS_COLORS: Record<MeetingStatus, string> = {
 export function MeetingsPage() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [search, setSearch] = useState('')
+  const [voiceEnrollOpen, setVoiceEnrollOpen] = useState(false)
 
   const { data, isPending } = useMeetings({ status: statusFilter, limit: 50 })
   const stopRecording = useStopRecording()
@@ -238,12 +241,13 @@ export function MeetingsPage() {
               )}
             </div>
           ) : (
-            <Link
-              to="/zero/voice-settings"
+            <button
+              type="button"
+              onClick={() => setVoiceEnrollOpen(true)}
               className="text-sm text-amber-300 hover:text-amber-200 underline-offset-2 hover:underline"
             >
               Enroll yourself {'->'}
-            </Link>
+            </button>
           )}
         </div>
         <div className="glass-card px-3 py-2">
@@ -463,6 +467,30 @@ export function MeetingsPage() {
               </Card>
             </Link>
           ))}
+        </div>
+      )}
+
+      {voiceEnrollOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setVoiceEnrollOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-gray-900 border border-gray-700 rounded-lg p-5 w-full max-w-md"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-white">Voice enrollment</h2>
+              <button
+                type="button"
+                onClick={() => setVoiceEnrollOpen(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <VoiceEnrollmentPanel />
+          </div>
         </div>
       )}
     </div>

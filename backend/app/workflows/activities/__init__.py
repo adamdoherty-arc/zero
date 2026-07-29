@@ -22,6 +22,7 @@ from app.workflows.activities import (
     skeptic,
     topic,
 )
+from app.workflows.activities.reels import REEL_ACTIVITIES
 
 ALL_ACTIVITIES = [
     topic.select_topic,
@@ -36,4 +37,5 @@ ALL_ACTIVITIES = [
     publish.publish_to_tiktok,
     analytics.schedule_polls,
     legacy.legacy_generate,
+    *REEL_ACTIVITIES,
 ]

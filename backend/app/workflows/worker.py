@@ -27,6 +27,7 @@ from app.workflows.carousel_workflow import (
     GenerateCarouselWorkflow,
     LegacyCarouselWorkflow,
 )
+from app.workflows.reel_workflow import GenerateMotivationReelWorkflow
 from app.workflows.client import get_temporal_client
 
 logger = structlog.get_logger(__name__)
@@ -58,7 +59,8 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=queue,
-        workflows=[GenerateCarouselWorkflow, LegacyCarouselWorkflow],
+        workflows=[GenerateCarouselWorkflow, LegacyCarouselWorkflow,
+                   GenerateMotivationReelWorkflow],
         activities=ALL_ACTIVITIES,
         max_concurrent_activities=max_concurrent_activities,
         max_concurrent_workflow_tasks=max_concurrent_workflows,
