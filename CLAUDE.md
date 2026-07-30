@@ -69,9 +69,12 @@ Per-project CLI:
 mcp codegraph call codegraph_status                                # warm-up / health (run first)
 mcp codegraph call codegraph_search --arg query=<symbol>           # what/where is X
 mcp codegraph call codegraph_context --arg query=<feature-area>    # survey a feature/area
-mcp codegraph call codegraph_callers --arg name=<symbol>           # who calls X
-mcp codegraph call codegraph_callees --arg name=<symbol>           # what X calls
-mcp codegraph call codegraph_impact --arg name=<symbol>            # blast radius of changing X
+# NOTE: the arg is `symbol`, NOT `name`. `--arg name=X` fails with
+# "Error: symbol must be a non-empty string" (verified 2026-07-30) and reads as a
+# codegraph outage, which is exactly how a session drifts back to Grep.
+mcp codegraph call codegraph_callers --arg symbol=<symbol>          # who calls X
+mcp codegraph call codegraph_callees --arg symbol=<symbol>          # what X calls
+mcp codegraph call codegraph_impact --arg symbol=<symbol>           # blast radius of changing X
 mcp codegraph call codegraph_files --arg path=<dir>                # what's in a directory
 ```
 
