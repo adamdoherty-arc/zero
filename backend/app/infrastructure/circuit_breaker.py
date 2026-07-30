@@ -190,6 +190,22 @@ class CircuitBreaker:
             elif self.stats.consecutive_failures >= self.failure_threshold:
                 self._transition(CircuitState.OPEN)
 
+    async def record_success(self):
+        """Record a successful call made OUTSIDE of `call()`.
+
+        Manual-mode counterpart to `call()`, for callers whose failure policy is
+        richer than "any exception counts". `unified_llm_client` is the motivating
+        case: whether an LLM failure is *transient* depends on both exception type
+        and message text (429/502/503/504 arrive as message content), which the
+        type-based `ignore_exceptions` tuple cannot express. Such callers drive the
+        same state machine explicitly instead of forking it.
+        """
+        await self._on_success()
+
+    async def record_failure(self):
+        """Record a failed call made OUTSIDE of `call()`. See `record_success()`."""
+        await self._on_failure()
+
     async def reset(self):
         """Manually reset the circuit breaker to CLOSED."""
         async with self._lock:

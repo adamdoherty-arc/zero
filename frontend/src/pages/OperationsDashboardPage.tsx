@@ -119,9 +119,14 @@ function KpiStrip({ kpis }: { kpis: OperationsKpis }) {
 
 // ─── Service Health Row ──────────────────────────────────────────────
 
+// 'disabled'/'retired' mean intentionally not running (searxng off since
+// 2026-05-27, ollama retired) — grey, not a red outage dot.
+const INACTIVE_STATUSES = new Set(['disabled', 'retired'])
+
 function statusDot(status: string): string {
   if (status === 'ok') return 'bg-green-500'
   if (status === 'degraded') return 'bg-yellow-500'
+  if (INACTIVE_STATUSES.has(status)) return 'bg-gray-500'
   return 'bg-red-500'
 }
 

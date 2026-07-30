@@ -6,7 +6,7 @@ Models for episodic memory, outcomes, prompt evolution, benchmarks, and learning
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -239,6 +239,13 @@ class ContentExperimentCreate(BaseModel):
     control_config: Dict[str, Any]
     variant_config: Dict[str, Any]
     sample_size_target: int = 10
+
+
+class ContentExperimentObservation(BaseModel):
+    """One scored sample for a single experiment arm."""
+    arm: Literal["control", "variant"]
+    score: float
+    metrics: Optional[Dict[str, Any]] = None
 
 
 class ContentExperiment(BaseModel):

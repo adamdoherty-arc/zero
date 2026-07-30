@@ -71,6 +71,40 @@ def get_last_served_model() -> Optional[str]:
 # - Morning peak cascading failures (9 AM: 4+ jobs fire simultaneously)
 _LLM_SEMAPHORE = asyncio.Semaphore(int(os.getenv("ZERO_LLM_CONCURRENCY", "4")))
 
+# Primary-provider availability breaker (2026-07-30).
+#
+# The shared vLLM lane runs at max_num_seqs=1 behind Bifrost's only
+# concurrency=1 lane, so ONE long generation head-of-line-blocks every project
+# (see shared-infra/.env VLLM_MAX_NUM_SEQS — pinned to 1 because every attempt to
+# raise it wedged the host GPU driver, once needing a full reboot). During such a
+# stall this client was the amplifier: each logical call fired 3 primary attempts,
+# and every attempt injected ANOTHER request into the very single-slot lane it was
+# timing out on. Measured 2026-07-30: 07:12->08:09, ~60 consecutive failures
+# against 2 successes, latencies 23-126s, while a direct vLLM completion answered
+# in 0.517s.
+#
+# So: trip a per-provider breaker after N consecutive TRANSIENT failures and skip
+# the primary entirely while it is open — the call goes straight to its fallback
+# chain instead of burning 3 timeouts first. This both bounds Zero's own latency
+# and removes retry load from the shared lane, which is what lets it drain.
+_LLM_BREAKER_THRESHOLD = int(os.getenv("ZERO_LLM_BREAKER_THRESHOLD", "5"))
+_LLM_BREAKER_RECOVERY_S = float(os.getenv("ZERO_LLM_BREAKER_RECOVERY_S", "60"))
+
+
+def _primary_breaker(provider_name: str):
+    """Per-provider availability breaker for the PRIMARY attempt path.
+
+    Keyed by provider (not model): gateway saturation is a property of the
+    gateway, so every model behind a stalled Bifrost should fail over together.
+    """
+    from app.infrastructure.circuit_breaker import get_circuit_breaker
+
+    return get_circuit_breaker(
+        f"llm_primary:{provider_name}",
+        failure_threshold=_LLM_BREAKER_THRESHOLD,
+        recovery_timeout=_LLM_BREAKER_RECOVERY_S,
+    )
+
 
 class StructuredOutputError(Exception):
     """Raised when structured output parsing fails after retries."""
@@ -620,16 +654,49 @@ class UnifiedLLMClient:
             #  - HTTP 502/503/504 (upstream transient unavailability)
             # Exponential backoff (1s, 2s, 4s) so a brief rate-limit window doesn't
             # cascade into the fallback chain (which may be misconfigured / cost more).
-            max_attempts = 3
+            #
+            # Skipped entirely while the primary breaker is OPEN (see
+            # _primary_breaker): retrying into a stalled single-slot lane is what
+            # turns a gateway stall into a Zero-wide outage. After
+            # recovery_timeout the breaker self-transitions to HALF_OPEN, where we
+            # spend exactly ONE attempt as a recovery probe rather than 3.
+            from app.infrastructure.circuit_breaker import (
+                CircuitBreakerError,
+                CircuitState,
+            )
+
+            breaker = _primary_breaker(provider_name)
+            breaker_state = breaker.state  # may auto-transition OPEN -> HALF_OPEN
+
+            if breaker_state == CircuitState.OPEN:
+                max_attempts = 0
+                # Carry a real reason so a total failure downstream doesn't report
+                # "Last error: None" and hide that the primary was never tried.
+                last_error = CircuitBreakerError(breaker.name, breaker_state)
+                logger.warning(
+                    "llm_primary_breaker_open",
+                    provider=provider_name,
+                    model=model_name,
+                    consecutive_failures=breaker.stats.consecutive_failures,
+                    recovery_timeout_s=_LLM_BREAKER_RECOVERY_S,
+                    action="skipping primary, going straight to fallback chain",
+                )
+            elif breaker_state == CircuitState.HALF_OPEN:
+                max_attempts = 1  # single recovery probe
+            else:
+                max_attempts = 3
+
             for attempt in range(max_attempts):
                 try:
-                    return await self._call_provider(
+                    result = await self._call_provider(
                         provider_name, model_name, messages,
                         task_type, temperature, max_tokens,
                         json_mode=json_mode,
                         thinking_mode=thinking_mode,
                         reasoning=reasoning,
                     )
+                    await breaker.record_success()
+                    return result
                 except Exception as e:
                     last_error = e
                     err_s = _describe_exc(e)
@@ -660,6 +727,21 @@ class UnifiedLLMClient:
                         transient=transient,
                         error=err_s,
                     )
+                    # Only downstream-unhealth signals count toward the breaker.
+                    # A caller's own bad request (400, malformed prompt) must not
+                    # trip a shared breaker and fail over every OTHER call.
+                    if transient:
+                        await breaker.record_failure()
+                        if breaker.state == CircuitState.OPEN:
+                            logger.warning(
+                                "llm_primary_breaker_tripped",
+                                provider=provider_name,
+                                model=model_name,
+                                consecutive_failures=breaker.stats.consecutive_failures,
+                                threshold=_LLM_BREAKER_THRESHOLD,
+                                action="abandoning remaining primary attempts",
+                            )
+                            break  # stop amplifying load onto a stalled lane
                     if attempt < max_attempts - 1 and transient:
                         await asyncio.sleep(2 ** attempt)  # 1s, 2s, 4s
                         continue

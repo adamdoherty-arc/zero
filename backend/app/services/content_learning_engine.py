@@ -12,7 +12,8 @@ from typing import List, Optional, Dict, Any
 from functools import lru_cache
 
 import structlog
-from sqlalchemy import select, update, func as sql_func
+from sqlalchemy import literal, select, update, func as sql_func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 
 from app.infrastructure.database import get_session
@@ -291,6 +292,112 @@ class ContentLearningEngine:
             created_at=now,
         )
 
+    async def record_experiment_observation(
+        self,
+        experiment_id: str,
+        arm: str,
+        score: float,
+        metrics: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Append one observation to an experiment's control or variant arm.
+
+        This is the middle step of the A/B loop, and until now it did not exist.
+        `run_content_experiment` created every experiment with control_results=[]
+        and variant_results=[], and `check_experiments` only completes an
+        experiment once BOTH arms reach sample_size_target — but nothing in the
+        codebase ever appended to either arm. Net effect: every experiment created
+        through POST /api/brain/experiments sat "active" forever, and the
+        experiment dashboards counted them as live work that could never conclude.
+
+        The append is done SERVER-SIDE with the Postgres `||` jsonb operator rather
+        than read-modify-write in Python: two observations landing concurrently
+        (the scheduler sweep plus an operator POST) would otherwise both read the
+        same array and the second write would silently drop the first.
+        """
+        arm = (arm or "").strip().lower()
+        if arm not in ("control", "variant"):
+            raise ValueError(f"arm must be 'control' or 'variant', got {arm!r}")
+
+        column = (
+            ContentExperimentModel.control_results
+            if arm == "control"
+            else ContentExperimentModel.variant_results
+        )
+
+        try:
+            observation = {
+                "score": float(score),
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"score must be numeric, got {score!r}") from e
+        if metrics:
+            observation["metrics"] = metrics
+
+        async with get_session() as session:
+            existing = await session.execute(
+                select(ContentExperimentModel).where(
+                    ContentExperimentModel.id == experiment_id
+                )
+            )
+            exp = existing.scalar_one_or_none()
+            if exp is None:
+                raise ValueError(f"experiment {experiment_id} not found")
+            # Appending to a concluded experiment would silently change the
+            # recorded winner's evidence after the fact.
+            if exp.status != "active":
+                raise ValueError(
+                    f"experiment {experiment_id} is {exp.status}, not active"
+                )
+
+            await session.execute(
+                update(ContentExperimentModel)
+                .where(ContentExperimentModel.id == experiment_id)
+                .values(
+                    {
+                        # Bind real Python lists, NOT json.dumps() strings. A str
+                        # bound to a JSONB param is encoded as a JSON *scalar
+                        # string*, so `|| '[{...}]'` appends one text element
+                        # instead of an object — the arm then holds strings, every
+                        # ContentExperiment validation fails, and get_experiments'
+                        # defensive except returns [] (blanking the whole list API).
+                        column: sql_func.coalesce(
+                            column, literal([], JSONB)
+                        ).concat(literal([observation], JSONB))
+                    }
+                )
+            )
+            await session.commit()
+
+            refreshed = await session.execute(
+                select(
+                    ContentExperimentModel.control_results,
+                    ContentExperimentModel.variant_results,
+                    ContentExperimentModel.sample_size_target,
+                ).where(ContentExperimentModel.id == experiment_id)
+            )
+            control_rows, variant_rows, target = refreshed.one()
+
+        control_n = len(control_rows or [])
+        variant_n = len(variant_rows or [])
+        target = target or 10
+
+        logger.info(
+            "content_experiment_observation_recorded",
+            id=experiment_id, arm=arm, score=score,
+            control_n=control_n, variant_n=variant_n, target=target,
+        )
+
+        return {
+            "experiment_id": experiment_id,
+            "arm": arm,
+            "control_n": control_n,
+            "variant_n": variant_n,
+            "sample_size_target": target,
+            # check_experiments (scheduler) concludes it on the next sweep.
+            "ready_to_conclude": control_n >= target and variant_n >= target,
+        }
+
     async def check_experiments(self) -> List[Dict]:
         """Check active experiments for completion."""
         try:
@@ -388,23 +495,35 @@ class ContentLearningEngine:
                 result = await session.execute(query)
                 rows = result.scalars().all()
 
-                return [
-                    ContentExperiment(
-                        id=r.id, name=r.name, hypothesis=r.hypothesis,
-                        experiment_type=r.experiment_type,
-                        control_config=r.control_config,
-                        variant_config=r.variant_config,
-                        status=r.status,
-                        sample_size_target=r.sample_size_target,
-                        control_results=r.control_results or [],
-                        variant_results=r.variant_results or [],
-                        conclusion=r.conclusion,
-                        winner=r.winner,
-                        created_at=r.created_at,
-                        completed_at=r.completed_at,
-                    )
-                    for r in rows
-                ]
+                # Per-row isolation (same lesson as Fix-126 in check_experiments).
+                # These rows carry externally-written JSONB arms, so ONE malformed
+                # row used to raise out of the whole list comprehension into the
+                # defensive `except` below and return [] — blanking the entire
+                # experiments API and dashboard rather than hiding one bad row.
+                # Observed live 2026-07-30 with string-typed arm elements.
+                experiments = []
+                for r in rows:
+                    try:
+                        experiments.append(ContentExperiment(
+                            id=r.id, name=r.name, hypothesis=r.hypothesis,
+                            experiment_type=r.experiment_type,
+                            control_config=r.control_config,
+                            variant_config=r.variant_config,
+                            status=r.status,
+                            sample_size_target=r.sample_size_target,
+                            control_results=r.control_results or [],
+                            variant_results=r.variant_results or [],
+                            conclusion=r.conclusion,
+                            winner=r.winner,
+                            created_at=r.created_at,
+                            completed_at=r.completed_at,
+                        ))
+                    except Exception as row_err:
+                        logger.warning(
+                            "content_experiment_row_skipped",
+                            id=getattr(r, "id", None), error=str(row_err),
+                        )
+                return experiments
         except Exception as e:  # defensive DB fallback — transient DB error must return [], not raise
             logger.error("get_experiments_failed", error=str(e))
             return []

@@ -860,7 +860,26 @@ async def health_ready():
     # falsely marking the container unhealthy *because the robot is off* — a
     # robot-off-safe regression. All three are non-blocking: they report
     # degraded/unavailable but never flip is_ready.
+    #
+    # Probe timeouts (2026-07-30): local_llm + legion were 2s, which reported
+    # "unavailable" for dependencies that were provably HEALTHY. These probes are
+    # awaited on the SAME event loop as everything else, so while the loop is
+    # congested — app boot, or a shared-gateway stall pinning background jobs — a
+    # 2s budget expires before the request is even dispatched. Measured this run:
+    # /health/ready said local_llm=unavailable legion=unavailable, while the exact
+    # same two GETs run in a fresh process against the same URLs returned 200 in
+    # 0.03s, and a direct probe from inside the container returned 200 for both.
+    # That false negative cost real diagnostic time (it reads as "Bifrost and
+    # Legion are down" when the truth is "this process was too busy to ask"), so
+    # give the single-request probes 5s.
+    #
+    # The ceiling is Docker's healthcheck timeout (10s, see docker-compose):
+    # worst case here is max(5s local_llm, 5s legion, 2x2s searxng) ~= 5s because
+    # asyncio.gather runs them concurrently. searxng stays at 2s per path since it
+    # tries two paths SEQUENTIALLY (5s each would be 10s and blow the budget).
     import httpx
+
+    _PROBE_TIMEOUT_S = 5.0
 
     async def _check_local_llm() -> str:
         # Ollama was retired in favor of the shared Bifrost route; the brain path
@@ -876,7 +895,7 @@ async def health_ready():
             base = settings.vllm_chat_url.rstrip("/")
             if base.endswith("/v1"):
                 base = base[: -len("/v1")]  # /v1 -> gateway root
-            async with httpx.AsyncClient(timeout=2) as client:
+            async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
                 resp = await client.get(f"{base}/health/liveliness")
                 return "ok" if resp.status_code == 200 else "degraded"
         except Exception:
@@ -884,13 +903,23 @@ async def health_ready():
 
     async def _check_legion() -> str:
         try:
-            async with httpx.AsyncClient(timeout=2) as client:
+            async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
                 resp = await client.get(f"{settings.legion_api_url}/health")
                 return "ok" if resp.status_code == 200 else "degraded"
         except Exception:
             return "unavailable"
 
     async def _check_searxng() -> str:
+        # SearXNG ships DISABLED: docker-compose.searxng.yml pins
+        # profiles: ["disabled"] (operator request 2026-05-27 — it crash-looped on
+        # a DuckDuckGo CAPTCHA). Probing an intentionally-absent service reported
+        # "degraded" on every single readiness call, which (a) is not a real signal
+        # and trains readers to ignore the field, and (b) was the DOMINANT cost of
+        # /health/ready: two sequential 2s connect timeouts = 4.0s of the 4.02s
+        # total, on an endpoint Docker polls every 30s. Report it honestly and skip
+        # the probe. Set ZERO_SEARXNG_ENABLED=1 when re-enabling the container.
+        if os.getenv("ZERO_SEARXNG_ENABLED", "0").lower() in ("0", "false", ""):
+            return "disabled"
         try:
             async with httpx.AsyncClient(timeout=2) as client:
                 for path in ["/healthz", "/status"]:

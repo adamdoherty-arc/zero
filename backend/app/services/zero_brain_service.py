@@ -561,6 +561,14 @@ class ZeroBrainService:
             name=name, sample_size_target=sample_size,
         )
 
+    async def record_experiment_observation(
+        self, experiment_id: str, arm: str, score: float,
+        metrics: Optional[Dict] = None,
+    ) -> Dict:
+        return await self._content.record_experiment_observation(
+            experiment_id=experiment_id, arm=arm, score=score, metrics=metrics,
+        )
+
     async def get_prompt_variants(
         self, task_type: Optional[str] = None
     ) -> List[PromptVariant]:

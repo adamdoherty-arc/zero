@@ -1,6 +1,11 @@
 import { useSchedulerStatus, useSchedulerAudit, useHealthReady, useTriggerJob } from '@/hooks/useSystemApi'
 import { useSystemMetrics, useDiskStatus, useAlertingStatus } from '@/hooks/useHealthApi'
 
+// Dependency states that mean "intentionally not running", not "broken". Rendering
+// these red made a deliberately-disabled optional service (searxng, off since
+// 2026-05-27) look like an outage on every page load.
+const INACTIVE_STATUSES = new Set(['disabled', 'retired'])
+
 export function SystemHealthPage() {
   const { data: health } = useHealthReady()
   const { data: scheduler } = useSchedulerStatus()
@@ -36,13 +41,21 @@ export function SystemHealthPage() {
                 ? 'border-green-500/30 bg-green-500/5'
                 : status === 'degraded'
                 ? 'border-yellow-500/30 bg-yellow-500/5'
+                : INACTIVE_STATUSES.has(status)
+                ? 'border-gray-600/30 bg-gray-600/5'
                 : 'border-red-500/30 bg-red-500/5'
             }`}
           >
             <div className="flex items-center gap-2">
               <div
                 className={`h-2.5 w-2.5 rounded-full ${
-                  status === 'ok' ? 'bg-green-500' : status === 'degraded' ? 'bg-yellow-500' : 'bg-red-500'
+                  status === 'ok'
+                    ? 'bg-green-500'
+                    : status === 'degraded'
+                    ? 'bg-yellow-500'
+                    : INACTIVE_STATUSES.has(status)
+                    ? 'bg-gray-500'
+                    : 'bg-red-500'
                 }`}
               />
               <span className="text-sm font-medium text-white capitalize">{name}</span>

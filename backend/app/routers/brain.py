@@ -6,13 +6,14 @@ calibration, prompt evolution, and content insights.
 """
 
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.infrastructure.auth import require_auth
 from app.services.zero_brain_service import get_zero_brain_service
 from app.models.brain import (
     BrainStatus, BenchmarkSnapshot, EpisodicMemory,
     MemorySearchResult, LearningCycle, ContentExperiment,
-    ContentExperimentCreate, PromptVariant, PromptRun,
+    ContentExperimentCreate, ContentExperimentObservation,
+    PromptVariant, PromptRun,
 )
 
 router = APIRouter(
@@ -272,6 +273,30 @@ async def create_experiment(
         sample_size=data.sample_size_target,
     )
     return exp.model_dump()
+
+
+@router.post("/experiments/{experiment_id}/observations")
+async def record_experiment_observation(
+    experiment_id: str,
+    data: ContentExperimentObservation,
+) -> Dict[str, Any]:
+    """Append one scored observation to an experiment's control or variant arm.
+
+    Completes the A/B loop: create (POST /experiments) -> observe (here) ->
+    conclude (scheduler's check_experiments sweep, once BOTH arms reach
+    sample_size_target). Without this endpoint every created experiment stayed
+    "active" forever because nothing could ever populate an arm.
+    """
+    svc = get_zero_brain_service()
+    try:
+        return await svc.record_experiment_observation(
+            experiment_id=experiment_id,
+            arm=data.arm,
+            score=data.score,
+            metrics=data.metrics,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/experiments/{experiment_id}")

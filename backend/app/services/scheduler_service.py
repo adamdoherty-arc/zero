@@ -622,7 +622,20 @@ DAILY_SCHEDULE = {
     },
     # Vault indexer â€” SecondBrain Phase 2
     "vault_reindex_tick": {
-        "cron": "*/2 * * * *",  # Every 2 minutes
+        # 2026-07-30: */2 -> */10. The walk scans the WHOLE vault (18,843 files)
+        # on every tick and averaged 58.4s over 118 runs in 4 hours (max 104.8s)
+        # to find, typically, files_changed=1. At a 2-minute cron that is a ~48%
+        # duty cycle of continuous file I/O on the API event loop, and it was the
+        # measured cause of app-wide stalls: /health/live (a bare `return
+        # {"alive": True}`, no I/O at all) timed out at 25s, the readiness probes'
+        # 2s budgets expired against HEALTHY dependencies, and APScheduler logged
+        # "Run time of job ... was missed by 0:00:20". */10 cuts the duty cycle ~5x
+        # to under 10%. Cost: a vault edit is searchable within 10 minutes instead
+        # of 2, which is well inside the tolerance for a personal knowledge vault.
+        # The real end-state is an mtime-indexed incremental walk (or a watchdog
+        # observer) rather than a full rescan; until then, do not lower this back
+        # toward */2 without first making the scan incremental.
+        "cron": "*/10 * * * *",
         "description": "Walk the Obsidian vault for changed markdown files, re-chunk and re-embed into vault_chunks",
         "enabled": True
     },
