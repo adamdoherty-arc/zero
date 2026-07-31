@@ -73,7 +73,7 @@ class BifrostProvider(BaseLLMProvider):
         return headers
 
     @staticmethod
-    def _message_content(message: dict) -> str:
+    def _message_content(message: dict, finish_reason: str | None = None) -> str:
         content = message.get("content") or ""
         if isinstance(content, list):
             parts: list[str] = []
@@ -91,12 +91,32 @@ class BifrostProvider(BaseLLMProvider):
         # return the answer in `reasoning` / `reasoning_content` with
         # `content=""`. Bifrost passes that field through. Treat reasoning
         # as the answer when content is empty, rather than raising —
-        # callers (Reachy probes, RAG, etc.) expect a string, not an
-        # exception about which JSON bucket the upstream populated.
-        reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
-        if isinstance(reasoning, str) and reasoning.strip():
-            return reasoning.strip()
-        raise RuntimeError("Bifrost response did not include assistant content.")
+        # callers (RAG, probes, etc.) expect a string, not an exception about
+        # which JSON bucket the upstream populated.
+        #
+        # BUT ONLY when the model actually finished. `finish_reason == "length"`
+        # means the token budget ran out MID-THOUGHT: the reasoning block is a
+        # truncated internal monologue and `content` was never reached, so there
+        # is no answer in the response to salvage. Returning the monologue hands
+        # the caller the model's thinking AS the answer, and nothing downstream
+        # can tell the difference. Measured live 2026-07-31 against
+        # groq/openai/gpt-oss-120b through the shared gateway:
+        #   max_tokens=8   -> finish_reason=length, content='',
+        #                     reasoning='The user asks: "Reply with exactly: OK"...'
+        #   max_tokens=300 -> finish_reason=stop,   content='OK'
+        # i.e. the user-visible reply for any truncated call was literally
+        # 'The user says: ...'. Raise instead, so the fallback chain gets its
+        # turn and a real answer can still be produced.
+        if str(finish_reason or "").lower() != "length":
+            reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+            if isinstance(reasoning, str) and reasoning.strip():
+                return reasoning.strip()
+            raise RuntimeError("Bifrost response did not include assistant content.")
+        raise RuntimeError(
+            "Bifrost response was truncated before any content was produced "
+            "(finish_reason=length); the reasoning block is an unfinished "
+            "internal monologue, not an answer. Raise max_tokens for this call."
+        )
 
     async def chat(
         self,
@@ -114,7 +134,8 @@ class BifrostProvider(BaseLLMProvider):
         )
         response.raise_for_status()
         data = response.json()
-        return self._message_content(data["choices"][0]["message"])
+        choice = data["choices"][0]
+        return self._message_content(choice["message"], choice.get("finish_reason"))
 
     async def chat_stream(
         self,
@@ -141,8 +162,13 @@ class BifrostProvider(BaseLLMProvider):
             # user got a silent blank reply. Buffer reasoning and, only if no
             # content ever arrived, emit it at the end — so real answers stream
             # live and the thinking is never leaked when content is present.
+            # ...and mirror the truncation guard too: a stream that ends with
+            # finish_reason=length never reached its content, so the buffered
+            # reasoning is an unfinished monologue. Emitting it streams the
+            # model's thinking to the user as the reply (see _message_content).
             saw_content = False
             reasoning_parts: List[str] = []
+            truncated = False
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -153,7 +179,10 @@ class BifrostProvider(BaseLLMProvider):
                     import json
 
                     data = json.loads(data_str)
-                    delta = data.get("choices", [{}])[0].get("delta", {})
+                    choice = data.get("choices", [{}])[0]
+                    if str(choice.get("finish_reason") or "").lower() == "length":
+                        truncated = True
+                    delta = choice.get("delta", {})
                     content = delta.get("content") or ""
                     if content:
                         saw_content = True
@@ -165,8 +194,16 @@ class BifrostProvider(BaseLLMProvider):
                 except Exception as e:  # noqa: BLE001
                     logger.debug("bifrost_stream_chunk_parse_failed", error=str(e))
                     continue
-            if not saw_content and reasoning_parts:
+            if not saw_content and reasoning_parts and not truncated:
                 yield "".join(reasoning_parts)
+            elif not saw_content and truncated:
+                logger.warning(
+                    "bifrost_stream_truncated_before_content",
+                    model=model,
+                    max_tokens=max_tokens,
+                    reasoning_chars=sum(len(p) for p in reasoning_parts),
+                    action="suppressed unfinished reasoning; no answer was produced",
+                )
 
     async def is_healthy(self) -> bool:
         try:

@@ -891,15 +891,54 @@ async def health_ready():
         # vllm-local. Probe Bifrost's liveliness endpoint instead: 200 in ~10ms,
         # no virtual key needed, same gateway-reachability granularity as
         # _check_legion / _check_searxng.
+        #
+        # Fix-159 (2026-07-31): liveliness alone is REACHABILITY, not
+        # capability, and the difference is not academic. Zero ran for over 24
+        # hours at an 87.8% LLM failure rate (622 failed / 86 succeeded) while
+        # this probe reported "ok" the entire time, because Bifrost's
+        # /health/liveliness answers 200 in ~10ms whether or not any lane can
+        # actually complete a request. A probe that cannot go red during a
+        # total outage of the thing it probes is worse than no probe: it
+        # actively certifies the broken state.
+        #
+        # The fix deliberately does NOT issue a synthetic completion. The lane
+        # being probed is single-slot, and the outage above was CAUSED by
+        # queueing pressure on it -- a probe firing a completion every 30s
+        # (Docker's healthcheck interval) would add load in exactly the
+        # circumstance it is meant to detect. Instead, read the outcome the
+        # client has ALREADY observed on real traffic: the per-provider
+        # availability breaker. It trips on consecutive transient failures, so
+        # OPEN is a measured statement that recent real calls failed. Cost is
+        # an in-memory field read, and peek_state (not state) is used so the
+        # probe cannot consume the breaker's recovery slot.
         try:
             base = settings.vllm_chat_url.rstrip("/")
             if base.endswith("/v1"):
                 base = base[: -len("/v1")]  # /v1 -> gateway root
             async with httpx.AsyncClient(timeout=_PROBE_TIMEOUT_S) as client:
                 resp = await client.get(f"{base}/health/liveliness")
-                return "ok" if resp.status_code == 200 else "degraded"
+            if resp.status_code != 200:
+                return "degraded"
         except Exception:
             return "unavailable"
+
+        try:
+            from app.infrastructure.circuit_breaker import CircuitState
+            from app.infrastructure.unified_llm_client import (
+                get_primary_breaker_states,
+            )
+
+            open_lanes = [
+                name
+                for name, state in get_primary_breaker_states().items()
+                if state is CircuitState.OPEN
+            ]
+            if open_lanes:
+                # Gateway answers, but the lane real traffic uses is not serving.
+                return "degraded"
+        except Exception:  # noqa: BLE001 — never let observability fail readiness
+            pass
+        return "ok"
 
     async def _check_legion() -> str:
         try:
@@ -950,6 +989,27 @@ async def health_ready():
     checks["legion"] = legion_res
     checks["searxng"] = searxng_res
     checks["search_infra"] = search_infra_res
+
+    # The emergency (last-resort) LLM tier, reported separately because its
+    # health is invisible in `local_llm`: the chain only reaches it once every
+    # other provider has failed, so a dead last line stays hidden until the
+    # exact moment it is needed. Zero's bearer token silently fell out of sync
+    # with shared-freellmapi's rotated unified key and the tier 401'd on every
+    # call for an unknown period with nothing reporting it (Fix-159).
+    try:
+        from app.infrastructure.freellm_client import (
+            freellm_auth_state,
+            is_freellm_available,
+        )
+
+        if is_freellm_available():
+            checks["llm_emergency_tier"] = "ok"
+        elif freellm_auth_state()["at"] is not None:
+            checks["llm_emergency_tier"] = "auth_rejected"
+        else:
+            checks["llm_emergency_tier"] = "unconfigured"
+    except Exception:  # noqa: BLE001 — observability must not fail readiness
+        checks["llm_emergency_tier"] = "unknown"
 
     status_code = 200 if is_ready else 503
     return JSONResponse(

@@ -101,6 +101,18 @@ class CircuitBreaker:
             self._transition(CircuitState.HALF_OPEN)
         return self._state
 
+    @property
+    def peek_state(self) -> CircuitState:
+        """Current state WITHOUT the OPEN -> HALF_OPEN auto-transition.
+
+        For observers -- health probes, dashboards, telemetry -- that must not
+        change what they measure. Reading ``state`` from a readiness endpoint
+        would flip an OPEN breaker to HALF_OPEN and hand the recovery-probe slot
+        to a health check instead of to real traffic, so the probe itself would
+        decide when recovery is attempted.
+        """
+        return self._state
+
     def _transition(self, new_state: CircuitState):
         old = self._state
         self._state = new_state

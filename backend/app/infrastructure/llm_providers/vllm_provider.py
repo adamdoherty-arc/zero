@@ -154,13 +154,24 @@ class VllmProvider(BaseLLMProvider):
             # chat_template_kwargs, Qwen3.6 emits the answer into
             # reasoning_content / reasoning while leaving content empty.
             # _strip_think still removes any leaked <think> tags inline.
-            msg = data["choices"][0]["message"]
-            content = (
-                msg.get("content")
-                or msg.get("reasoning_content")
-                or msg.get("reasoning")
-                or ""
-            )
+            #
+            # Gated on finish_reason for the same reason as
+            # BifrostProvider._message_content: `length` means the budget ran
+            # out mid-thought, so reasoning holds an unfinished monologue rather
+            # than the answer, and substituting it hands the caller the model's
+            # thinking. The reasoning_pad above makes truncation less likely
+            # here than on the gateway path, not impossible.
+            choice = data["choices"][0]
+            msg = choice["message"]
+            content = msg.get("content") or ""
+            if not str(content).strip():
+                if str(choice.get("finish_reason") or "").lower() == "length":
+                    raise VLLMClientError(
+                        "vLLM response was truncated before any content was "
+                        "produced (finish_reason=length); the reasoning block is "
+                        "an unfinished internal monologue, not an answer."
+                    )
+                content = msg.get("reasoning_content") or msg.get("reasoning") or ""
             return _strip_think(content)
 
         return await self._breaker.call(_call)

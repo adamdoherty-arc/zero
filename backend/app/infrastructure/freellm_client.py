@@ -74,9 +74,57 @@ def _bearer_token() -> str:
     )
 
 
+# Set once, per process, the first time freellmapi rejects our bearer token.
+# See is_freellm_available() for why presence of a token is not availability.
+_AUTH_REJECTED: dict[str, Any] = {"at": None, "status": None, "token_suffix": None}
+
+
+def note_auth_rejected(status: int, token: str) -> None:
+    """Latch the tier OFF after freellmapi rejects our credentials.
+
+    A 401/403 is not transient and not per-request: the token either matches
+    freellmapi's unified key or it never will, for the life of this process.
+    Without the latch, every single LLM call in Zero spends a full round-trip
+    on a tier that is guaranteed to refuse it -- and because the emergency tier
+    sits at the END of the chain, that cost is paid precisely when everything
+    else has already failed and latency matters most.
+    """
+    if _AUTH_REJECTED["at"] is not None:
+        return
+    _AUTH_REJECTED.update(
+        {"at": time.time(), "status": status, "token_suffix": (token or "")[-6:]}
+    )
+    logger.error(
+        "freellm_auth_rejected_tier_disabled",
+        status=status,
+        token_suffix=(token or "")[-6:],
+        action=(
+            "emergency LLM tier DISABLED for this process. freellmapi rejected "
+            "our unified bearer token. Fix: copy the current key from "
+            "shared-freellmapi (settings.unified_api_key) into "
+            "ZERO_FREELLM_BEARER_TOKEN and restart."
+        ),
+    )
+
+
+def freellm_auth_state() -> dict[str, Any]:
+    """Expose the latch for health/readiness reporting."""
+    return dict(_AUTH_REJECTED)
+
+
 def is_freellm_available() -> bool:
-    """True if a freellmapi bearer token is set (ZERO_FREELLM_BEARER_TOKEN or FREELLM_BEARER_TOKEN)."""
-    return bool(_bearer_token())
+    """True if freellmapi is usable: a token is set AND has not been rejected.
+
+    The token-presence check alone was a probe that always passed. Measured
+    2026-07-31: Zero's ZERO_FREELLM_BEARER_TOKEN still held a key that had been
+    rotated out of shared-freellmapi at some point -- Legion, ADA and
+    shared-infra/.env all carried the current one, Zero alone was stale -- so
+    every completion returned `HTTP 401 Invalid API key` while this function
+    cheerfully returned True. The emergency tier had been dead for an unknown
+    period and nothing anywhere said so, because "a token is configured" was
+    being treated as "the tier works".
+    """
+    return bool(_bearer_token()) and _AUTH_REJECTED["at"] is None
 
 
 class FreeLLMAPIClient:
@@ -184,6 +232,10 @@ class FreeLLMAPIClient:
 
         if resp.status_code >= 400:
             body = resp.text[:300]
+            if resp.status_code in (401, 403):
+                # Credentials, not capacity: latch the tier off rather than
+                # re-paying this round-trip on every subsequent LLM call.
+                note_auth_rejected(resp.status_code, self.bearer_token)
             raise RuntimeError(
                 f"freellmapi HTTP {resp.status_code} via {routing['routed_via'] or '?'}: {body}"
             )
@@ -198,12 +250,29 @@ class FreeLLMAPIClient:
             raise RuntimeError("freellmapi response had no choices")
         first = choices[0]
         message = first.get("message") or {}
-        content = (
-            message.get("content")
-            or message.get("reasoning_content")
-            or message.get("reasoning")
-            or ""
-        )
+        content = message.get("content") or ""
+        if not str(content).strip():
+            # Same truncation guard as BifrostProvider._message_content and
+            # VLLMProvider.chat -- this is the THIRD path in Zero that
+            # substitutes `reasoning` for an empty `content`, and freellmapi
+            # routes to whichever free-tier provider is up, so a reasoning model
+            # can appear here at any time without warning. Verified live
+            # 2026-07-31 immediately after the key rotation: freellmapi routed to
+            # zhipu/glm-4.5-flash, which at max_tokens=64 returned
+            # content='' and reasoning starting 'Hmm, the user just wants me
+            # to reply with exactly "OK"...'. `length` means the budget ran out
+            # mid-thought, so there is no answer in the payload and returning
+            # the monologue hands the caller the model's thinking as the reply.
+            if str(first.get("finish_reason") or "").lower() == "length":
+                raise RuntimeError(
+                    f"freellmapi response via {routing['routed_via'] or '?'} was "
+                    "truncated before any content was produced "
+                    "(finish_reason=length); the reasoning block is an "
+                    "unfinished internal monologue, not an answer."
+                )
+            content = (
+                message.get("reasoning_content") or message.get("reasoning") or ""
+            )
 
         usage = data.get("usage") or {}
         tokens_input = int(usage.get("prompt_tokens") or 0)

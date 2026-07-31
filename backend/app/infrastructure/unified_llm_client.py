@@ -106,12 +106,41 @@ def _primary_breaker(provider_name: str):
     )
 
 
+def get_primary_breaker_states() -> Dict[str, Any]:
+    """Observed state of every primary-path breaker, keyed by provider.
+
+    For health/readiness reporting: this is the only signal Zero has that
+    distinguishes "the gateway answers pings" from "the gateway serves
+    completions", and it is free because it is derived from real traffic that
+    already happened. Uses ``peek_state`` so an observer cannot trigger the
+    OPEN -> HALF_OPEN transition it is trying to observe.
+    """
+    from app.infrastructure.circuit_breaker import all_circuit_breakers
+
+    prefix = "llm_primary:"
+    return {
+        name[len(prefix):]: breaker.peek_state
+        for name, breaker in all_circuit_breakers().items()
+        if name.startswith(prefix)
+    }
+
+
 class StructuredOutputError(Exception):
     """Raised when structured output parsing fails after retries."""
 
     def __init__(self, message: str, raw_response: str = ""):
         super().__init__(message)
         self.raw_response = raw_response
+
+
+class AllProvidersFailedError(Exception):
+    """Every tier of the provider chain refused or failed the call.
+
+    A distinct type so callers can tell "the model answered, badly" (retrying
+    with a corrective prompt may help) from "nothing answered at all" (retrying
+    only adds load). ``structured_chat`` keys its retry decision off this: see
+    the comment there for the 429 self-amplification it prevents.
+    """
 
 
 def _strip_code_fences(text: str) -> str:
@@ -361,8 +390,34 @@ class UnifiedLLMClient:
 
             except StructuredOutputError:
                 raise
+            except AllProvidersFailedError as e:
+                # STOP. This retry loop exists to correct a MODEL behaviour --
+                # "you returned prose instead of JSON, here is the error, try
+                # again" -- and the corrective prompt above addresses exactly
+                # that. Provider exhaustion is a different failure: no model
+                # ever saw the prompt, so there is nothing to correct and the
+                # retry cannot succeed. It is not merely useless, it is harmful:
+                # each pass re-traverses the whole chain, so a rate-limited
+                # fallback gets hit 3x per logical call and the 429 that caused
+                # the failure is made worse BY the response to it.
+                #
+                # Measured on 2026-07-31: with the primary breaker OPEN, every
+                # structured call spent 3 attempts x (1 groq 429 + 1 freellm
+                # 401). 488 of the prior 24h's 622 failures were those 429s --
+                # roughly 3x what the actual call volume warranted, sustained at
+                # ~16/hour for over 24 hours. Failing fast on the first
+                # exhaustion cuts that contribution by two thirds.
+                last_error = _describe_exc(e)
+                logger.warning(
+                    "structured_chat_providers_exhausted",
+                    attempt=attempt + 1,
+                    error=last_error,
+                    action="not retrying — no provider answered, so there is "
+                           "no invalid response to correct",
+                )
+                break
             except Exception as e:
-                last_error = str(e)
+                last_error = _describe_exc(e)
                 logger.warning(
                     "structured_chat_call_failed",
                     attempt=attempt + 1,
@@ -807,7 +862,11 @@ class UnifiedLLMClient:
                         last_error = e
                         logger.warning("freellm_chain_failed", error=str(e))
 
-            raise Exception(f"All LLM providers failed. Last error: {last_error}")
+            raise AllProvidersFailedError(
+                f"All LLM providers failed. Last error: {_describe_exc(last_error)}"
+                if last_error is not None
+                else "All LLM providers failed (no provider was even attempted)."
+            )
 
     async def _call_provider(
         self,
@@ -903,7 +962,16 @@ class UnifiedLLMClient:
                 return result
         except Exception as e:
             success = False
-            error_msg = str(e)
+            # _describe_exc, not str(e): the DURABLE record is the one that has
+            # to survive. Every httpx transport exception stringifies to "", so
+            # `error_message=str(e)` wrote an EMPTY STRING into llm_usage for the
+            # single most common LLM failure there is. Measured 2026-07-31: 132
+            # of the prior 24h's 622 failure rows carried error_message='' —
+            # unreadable in postmortem, and the log line right beside them
+            # already carried the type because the 2026-07-29 fix was applied to
+            # the logger and not here. A row that records THAT a call failed but
+            # not HOW is what made a 24h outage take a live probe to diagnose.
+            error_msg = _describe_exc(e)
             raise
         finally:
             elapsed_ms = (time.monotonic() - t0) * 1000
