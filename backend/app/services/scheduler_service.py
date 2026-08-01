@@ -1,4 +1,4 @@
-﻿"""
+"""
 Daily Automation Scheduler Service for ZERO.
 
 Handles scheduled automation tasks including:
@@ -167,7 +167,6 @@ JOB_CATEGORIES = {
 JOB_CATEGORY_PREFIXES = (
     ("tiktok_", "TikTok"),
     ("meal_", "Meals"),
-    ("prediction_", "Predictions"),
     ("company_", "Company"),
     ("character_", "Character Content"),
     ("carousel_", "Character Content"),
@@ -3914,99 +3913,12 @@ Have a great evening!"""
         except Exception as e:
             logger.error("content_trend_research_failed", error=str(e))
 
-    # ============================================
-    # PREDICTION MARKET INTELLIGENCE
-    # ============================================
-
-    async def _run_prediction_market_sync(self):
-        """Sync Kalshi + Polymarket markets."""
-        logger.info("running_prediction_market_sync")
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            svc = get_prediction_market_service()
-            kalshi = await svc.sync_kalshi_markets()
-            polymarket = await svc.sync_polymarket_markets()
-            logger.info("prediction_market_sync_complete", kalshi=kalshi, polymarket=polymarket)
-        except Exception as e:
-            logger.error("prediction_market_sync_failed", error=str(e))
-
-    async def _run_prediction_price_snapshot(self):
-        """Capture prediction market price snapshots."""
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            svc = get_prediction_market_service()
-            result = await svc.capture_price_snapshots()
-            logger.info("prediction_price_snapshot_complete", count=result.get("snapshots_created", 0))
-        except Exception as e:
-            logger.error("prediction_price_snapshot_failed", error=str(e))
-
-    async def _run_prediction_bettor_discovery(self):
-        """Discover and update top prediction market bettors."""
-        logger.info("running_prediction_bettor_discovery")
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            svc = get_prediction_market_service()
-            result = await svc.discover_top_bettors()
-            await svc.update_bettor_stats()
-            logger.info("prediction_bettor_discovery_complete", result=result)
-        except Exception as e:
-            logger.error("prediction_bettor_discovery_failed", error=str(e))
-
-    async def _run_prediction_research(self):
-        """SearXNG prediction market research."""
-        logger.info("running_prediction_research")
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            svc = get_prediction_market_service()
-            result = await svc.research_market_insights()
-            logger.info("prediction_research_complete", findings=result.get("findings_count", 0))
-        except Exception as e:
-            logger.error("prediction_research_failed", error=str(e))
-
-    async def _run_prediction_push_to_ada(self):
-        """Push prediction market data to ADA."""
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            svc = get_prediction_market_service()
-            result = await svc.push_to_ada()
-            logger.info("prediction_push_to_ada_complete", result=result)
-        except Exception as e:
-            logger.error("prediction_push_to_ada_failed", error=str(e))
-
-    async def _run_prediction_quality_check(self):
-        """Prediction market quality + Legion progress report."""
-        logger.info("running_prediction_quality_check")
-        try:
-            from app.services.prediction_market_service import get_prediction_market_service
-            from app.services.prediction_legion_manager import get_prediction_legion_manager
-            svc = get_prediction_market_service()
-            mgr = get_prediction_legion_manager()
-
-            quality = await svc.get_quality_report()
-            legion = await mgr.report_legion_quality()
-
-            # Alert to Discord if issues detected
-            issues = []
-            collection = quality.get("collection_health", {})
-            if collection.get("sync_success_rate_24h", 1.0) < 0.9:
-                issues.append(f"Sync success rate: {collection.get('sync_success_rate_24h', 0):.0%}")
-            if legion.get("quality_score", 100) < 50:
-                issues.append(f"Legion quality score: {legion.get('quality_score', 0):.0f}/100")
-
-            if issues:
-                await self._send_to_discord(
-                    "âš ï¸ Prediction Market Issues",
-                    "\n".join(issues),
-                    color=0xFF9900
-                )
-
-            logger.info(
-                "prediction_quality_check_complete",
-                legion_score=legion.get("quality_score", 0),
-                issues=len(issues),
-            )
-        except Exception as e:
-            logger.error("prediction_quality_check_failed", error=str(e))
+    # PREDICTION MARKET INTELLIGENCE -- removed 2026-08-01 (Fix-160).
+    # Six handlers lived here calling prediction_market_service /
+    # prediction_legion_manager, both deliberately deleted on 2026-05-18 (S2.5)
+    # when prediction/whale data moved to ADA. None were ever in the job map, so
+    # they had no trigger; they only stood as dead code that would ImportError on
+    # the tombstones the moment anyone registered them.
 
     # ============================================
     # LLM BUDGET RESET
