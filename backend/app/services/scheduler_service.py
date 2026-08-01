@@ -78,7 +78,6 @@ JOB_CATEGORIES = {
         "daily_improvement_execute",
         "daily_improvement_verify",
         "enhancement_scan",
-        "legion_enhancement_sync",
     ],
     "Monitoring": [
         "health_aggregation",
@@ -90,7 +89,7 @@ JOB_CATEGORIES = {
         "approvals_expire_stale",
         "drift_scan_tick",
     ],
-    "Tasks": ["task_worker", "task_progress_check", "blocked_task_escalation", "smart_suggestions", "reminder_check"],
+    "Tasks": ["task_worker", "task_progress_check", "blocked_task_escalation", "reminder_check"],
     "Research": ["research_daily", "research_weekly_deep_dive", "rules_recalibration"],
     "Second Brain": ["vault_reindex_tick", "vault_task_sync_tick", "morning_digest_tick", "weekly_review_tick", "drift_scan_tick"],
     "Loops": ["loop_tick_5min", "loop_judge_15min", "loop_promote_hourly", "loop_crosspoll_30m", "loop_health_5min"],
@@ -302,11 +301,6 @@ DAILY_SCHEDULE = {
         "description": "Process new emails through automation workflow",
         "enabled": True
     },
-    "legion_enhancement_sync": {
-        "cron": "30 9 * * *",  # 9:30 AM daily (superseded by autonomous_enhancement_cycle)
-        "description": "Auto-create Legion tasks from enhancement signals",
-        "enabled": False
-    },
     "email_to_tasks": {
         "cron": "0 10 * * *",  # 10:00 AM daily
         "description": "Convert email action items to Legion tasks",
@@ -315,11 +309,6 @@ DAILY_SCHEDULE = {
     "blocked_task_escalation": {
         "cron": "0 14 * * *",  # 2:00 PM daily
         "description": "Escalate blocked Legion tasks via Discord",
-        "enabled": True
-    },
-    "smart_suggestions": {
-        "cron": "55 6 * * *",  # 6:55 AM daily (before briefing)
-        "description": "Generate cross-project smart task suggestions",
         "enabled": True
     },
     "research_daily": {
@@ -1438,10 +1427,8 @@ class SchedulerService:
             "gmail_digest": self._run_gmail_digest,
             "notification_events_janitor": self._run_notification_events_janitor,
             "email_automation_check": self._run_email_automation_check,
-            "legion_enhancement_sync": self._run_legion_enhancement_sync,
             "email_to_tasks": self._run_email_to_tasks,
             "blocked_task_escalation": self._run_blocked_task_escalation,
-            "smart_suggestions": self._run_smart_suggestions,
             "research_daily": self._run_research_daily,
             "research_weekly_deep_dive": self._run_research_weekly_deep_dive,
             # Ecosystem (S70)
@@ -2893,16 +2880,18 @@ Have a great evening!"""
     # LEGION INTEGRATION HANDLERS (Sprint 43)
     # ============================================
 
-    async def _run_legion_enhancement_sync(self):
-        """Auto-create Legion tasks from high-confidence enhancement signals."""
-        logger.info("running_legion_enhancement_sync")
-        try:
-            from app.services.legion_integration_service import get_legion_integration_service
-            svc = get_legion_integration_service()
-            result = await svc.auto_create_enhancement_tasks()
-            logger.info("legion_enhancement_sync_complete", tasks_created=result.get("tasks_created", 0))
-        except Exception as e:
-            logger.error("legion_enhancement_sync_failed", error=str(e))
+    # NOTE (Fix-160, 2026-08-01): these handlers re-raise after logging. They used
+    # to swallow the exception, which meant `_run_with_audit` never saw a failure
+    # and recorded status="completed" -- so when their shared service module was
+    # replaced by a broken stub, every run for ~5.5 months logged an error line
+    # and an audit row saying it succeeded. Log for the detail, raise for the audit.
+    #
+    # Removed here rather than repaired, because each had no reachable purpose:
+    #   _run_legion_enhancement_sync -- enabled:False, superseded by
+    #       autonomous_enhancement_cycle, which calls the same service method.
+    #   _run_meeting_prep -- never present in the job map, so it had no trigger.
+    #   _run_smart_suggestions -- briefing_service._generate_ai_suggestions
+    #       computes the same thing inline at 07:00; its cache had no readers.
 
     async def _run_email_to_tasks(self):
         """Convert email action items to Legion tasks."""
@@ -2914,17 +2903,7 @@ Have a great evening!"""
             logger.info("email_to_tasks_complete", tasks_created=result.get("tasks_created", 0))
         except Exception as e:
             logger.error("email_to_tasks_failed", error=str(e))
-
-    async def _run_meeting_prep(self):
-        """Create prep tasks for upcoming meetings."""
-        logger.info("running_meeting_prep")
-        try:
-            from app.services.legion_integration_service import get_legion_integration_service
-            svc = get_legion_integration_service()
-            result = await svc.create_meeting_prep_tasks()
-            logger.info("meeting_prep_complete", tasks_created=result.get("tasks_created", 0))
-        except Exception as e:
-            logger.error("meeting_prep_failed", error=str(e))
+            raise
 
     async def _run_blocked_task_escalation(self):
         """Escalate blocked Legion tasks via Discord."""
@@ -2936,17 +2915,7 @@ Have a great evening!"""
             logger.info("blocked_task_escalation_complete", escalated=result.get("escalated", 0))
         except Exception as e:
             logger.error("blocked_task_escalation_failed", error=str(e))
-
-    async def _run_smart_suggestions(self):
-        """Generate cross-project smart task suggestions for briefing."""
-        logger.info("running_smart_suggestions")
-        try:
-            from app.services.legion_integration_service import get_legion_integration_service
-            svc = get_legion_integration_service()
-            result = await svc.generate_smart_suggestions()
-            logger.info("smart_suggestions_complete", suggestions=len(result.get("suggestions", [])))
-        except Exception as e:
-            logger.error("smart_suggestions_failed", error=str(e))
+            raise
 
     async def _run_research_daily(self):
         """Daily research cycle - scan topics and discover new findings."""
@@ -3144,6 +3113,7 @@ Have a great evening!"""
             )
         except Exception as e:
             logger.error("autonomous_enhancement_cycle_failed", error=str(e))
+            raise  # Fix-160: let _run_with_audit record this as failed, not completed
 
     async def _run_qa_verification(self):
         """Daily QA verification of all systems."""

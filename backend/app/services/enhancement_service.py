@@ -27,11 +27,16 @@ from app.models.task import TaskCreate, TaskCategory, TaskPriority, TaskSource
 logger = structlog.get_logger()
 
 # Multi-project scan configuration: project name -> scan dirs + Legion project ID
+# legion_id values verified against Legion's projects table (2026-08-01, Fix-160):
+#   1 Legion | 5 ADA Trading Platform | 6 FortressOS Job Platform | 7 Zero Personal Assistant
+# Every id here was previously off by one INTO A REAL NEIGHBOURING PROJECT, so any
+# consumer would have filed silently into the wrong backlog: zero->8 "AI Content
+# Tools", ada->6 "FortressOS", fortressos->7 "Zero", legion->3 "GPU Manager".
 SCAN_PROJECTS = {
-    "zero": {"dirs": ["backend", "frontend", "skills"], "legion_id": 8},
-    "ada": {"dirs": ["src", "backend", "frontend"], "legion_id": 6},
-    "fortressos": {"dirs": ["src", "backend", "frontend"], "legion_id": 7},
-    "legion": {"dirs": ["backend", "src"], "legion_id": 3},
+    "zero": {"dirs": ["backend", "frontend", "skills"], "legion_id": 7},
+    "ada": {"dirs": ["src", "backend", "frontend"], "legion_id": 5},
+    "fortressos": {"dirs": ["src", "backend", "frontend"], "legion_id": 6},
+    "legion": {"dirs": ["backend", "src"], "legion_id": 1},
 }
 
 
@@ -212,7 +217,14 @@ class EnhancementService:
     ) -> List[EnhancementSignal]:
         """Synchronous directory scan (runs in a thread pool)."""
         signals = []
-        skip_dirs = {"node_modules", "__pycache__", ".git", "dist", "build", ".venv", "venv", ".tox"}
+        # `_archive` / `attic` hold retired code kept for reference. Scanning them
+        # files TODO signals against code nobody runs, and the auto-fix loop then
+        # edits archived files -- 40 of 741 live signals pointed into `_archive`
+        # before this exclusion (Fix-160).
+        skip_dirs = {
+            "node_modules", "__pycache__", ".git", "dist", "build",
+            ".venv", "venv", ".tox", "_archive", "attic",
+        }
         max_file_size = 512 * 1024  # Skip files > 512KB
 
         for scan_dir in scan_dirs:
