@@ -1,5 +1,5 @@
 ﻿"""
-Tests for the Meeting Agent service. These run without Playwright installed â€”
+Tests for the Meeting Agent service. These run without Playwright installed —
 the driver path stays "unavailable" but every other side-effect (persistence,
 Memory Vault ingestion, summary writes) is exercised.
 """
@@ -83,7 +83,7 @@ class TestSpeakWithoutDriver:
         monkeypatch.setattr(mod, "_DATA_DIR", tmp_path)
         svc = mod.MeetingAgentService()
         session = asyncio.run(svc.join("https://meet.google.com/test"))
-        # Without Playwright the status is "error" â€” speak should report
+        # Without Playwright the status is "error" — speak should report
         # unavailable rather than crash.
         result = asyncio.run(svc.speak(session.id, "hello"))
         assert result["status"] == "unavailable"

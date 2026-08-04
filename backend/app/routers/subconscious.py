@@ -1,5 +1,5 @@
 ﻿"""
-Subconscious API â€” idle reflection loop.
+Subconscious API — idle reflection loop.
 
 The subconscious is a background loop that wakes every ``interval_minutes``
 while the user is idle, walks recent vault writes + active integrations, and

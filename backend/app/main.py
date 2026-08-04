@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize PostgreSQL database
     from app.infrastructure.database import init_database, close_database, create_tables
-    import app.db.models  # noqa: F401 â€” register ORM models with Base.metadata
+    import app.db.models  # noqa: F401 — register ORM models with Base.metadata
     try:
         await init_database(settings.postgres_url)
         await create_tables()
@@ -233,7 +233,7 @@ async def lifespan(app: FastAPI):
     from app.infrastructure.startup import run_startup_checks
     checks_passed = await run_startup_checks()
     if not checks_passed:
-        logger.error("CRITICAL: Startup checks failed â€” some features may not work correctly")
+        logger.error("CRITICAL: Startup checks failed — some features may not work correctly")
 
     # Start the daily automation scheduler (skip in research mode to prevent conflicts)
     research_mode = os.environ.get("ZERO_RESEARCH_MODE", "").lower() in ("1", "true", "yes")
@@ -259,7 +259,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Failed to start scheduler", error=str(e))
 
         # Integrations auto-fetch loop (20-min walk over every connected
-        # service â†’ Memory Vault). Off by default; ZERO_AUTO_FETCH_AUTOSTART=1
+        # service → Memory Vault). Off by default; ZERO_AUTO_FETCH_AUTOSTART=1
         # to enable on every boot, or hit /api/integrations/auto-fetch/start.
         try:
             if os.environ.get("ZERO_AUTO_FETCH_AUTOSTART", "").lower() in ("1", "true"):
@@ -278,7 +278,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("subconscious_autostart_failed", error=str(e))
 
-        # Telegram channel â€” starts itself iff TELEGRAM_BOT_TOKEN is set.
+        # Telegram channel — starts itself iff TELEGRAM_BOT_TOKEN is set.
         # Default handler writes inbound messages to the Memory Vault.
         try:
             from app.services.telegram_channel_service import (
@@ -291,7 +291,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("telegram_channel_start_failed", error=str(e))
 
-        # Daily brief â€” composes the morning report and emails it. Runs at
+        # Daily brief — composes the morning report and emails it. Runs at
         # 07:00 server-local time. Hour overridable via ZERO_DAILY_BRIEF_HOUR.
         try:
             from app.services.scheduler_service import get_scheduler_service
@@ -307,7 +307,7 @@ async def lifespan(app: FastAPI):
                     if os.environ.get("ZERO_DAILY_BRIEF_EMAIL", "1") not in ("0", "false", "no"):
                         await get_digest_email_service().send(
                             markdown=payload.markdown,
-                            subject=f"Daily brief â€” {payload.date}",
+                            subject=f"Daily brief — {payload.date}",
                         )
                 except Exception as exc:
                     logger.warning("daily_brief_job_failed", error=str(exc))
@@ -328,7 +328,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Failed to schedule daily brief", error=str(e))
 
-        # Weekly reflection â€” drives the closed-loop learning. Sunday 22:00.
+        # Weekly reflection — drives the closed-loop learning. Sunday 22:00.
         try:
             from app.services.scheduler_service import get_scheduler_service
             sched = get_scheduler_service().scheduler
@@ -478,7 +478,7 @@ async def lifespan(app: FastAPI):
     # Start Discord bot (Claude Agent SDK messaging bridge)
     # NOTE: The bot uses claude-agent-sdk which requires the `claude` CLI binary.
     # With the Max plan, auth is handled by the local Claude Code installation.
-    # In Docker, `claude` CLI isn't available â€” run the bot standalone on the host:
+    # In Docker, `claude` CLI isn't available — run the bot standalone on the host:
     #   cd backend && python -m app.services.discord_bot
     discord_task = None
     try:
@@ -809,14 +809,14 @@ async def health():
 
 @app.get("/health/live")
 async def health_live():
-    """Liveness probe â€” process is running."""
+    """Liveness probe — process is running."""
     return {"alive": True}
 
 
 @app.get("/health/ready")
 async def health_ready():
     """
-    Readiness probe â€” checks critical dependencies.
+    Readiness probe — checks critical dependencies.
     Used by Docker health checks to determine if container is healthy.
     Returns 503 if any critical dependency is down.
     """

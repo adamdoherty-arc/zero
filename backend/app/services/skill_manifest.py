@@ -1,13 +1,13 @@
 ﻿"""
-Skill manifest spec â€” extended from Zero's existing ``_meta.json`` to match
+Skill manifest spec — extended from Zero's existing ``_meta.json`` to match
 the openhuman skill manifest pattern: declare auth requirements, platforms,
 triggers, and tool surface so a skill is both discoverable AND sandboxable.
 
 A skill lives at ``skills/<slug>/`` (or any registered root) with:
 
-    SKILL.md         â€” human-readable docs / system prompt
-    skill.json       â€” extended manifest (this module's schema)
-    _meta.json       â€” legacy slim metadata (still honored; auto-migrated)
+    SKILL.md         — human-readable docs / system prompt
+    skill.json       — extended manifest (this module's schema)
+    _meta.json       — legacy slim metadata (still honored; auto-migrated)
 
 This module parses, validates, and migrates legacy meta files into the
 extended manifest shape without breaking anything currently shipped.
@@ -116,7 +116,7 @@ def validate(raw: dict) -> ValidationResult:
     else:
         for scope in auth:
             if scope not in KNOWN_AUTH_SCOPES:
-                warnings.append(f"unknown auth scope '{scope}' â€” may be ignored by sandbox")
+                warnings.append(f"unknown auth scope '{scope}' — may be ignored by sandbox")
 
     # Platforms
     platforms = raw.get("platforms", ["any"]) or ["any"]
@@ -213,8 +213,8 @@ def load_from_dir(skill_dir: Path) -> tuple[Optional[SkillManifest], ValidationR
     """Load a skill manifest from disk. Returns (manifest, validation).
 
     Search order:
-      1. ``skill.json`` â€” extended manifest (preferred)
-      2. ``_meta.json`` â€” legacy; auto-migrated
+      1. ``skill.json`` — extended manifest (preferred)
+      2. ``_meta.json`` — legacy; auto-migrated
     """
     slug = skill_dir.name
     extended = skill_dir / "skill.json"

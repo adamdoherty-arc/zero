@@ -1,4 +1,4 @@
-﻿# Adoption report â€” openhuman + OpenHands â†’ Zero
+﻿# Adoption report — openhuman + OpenHands → Zero
 
 **Branch:** `claude/review-openhuman-features-7dbWv`
 **Date:** 2026-05-13
@@ -37,9 +37,9 @@ exposes a REST surface plus, where applicable, a frontend page.
 
 | Sha | Headline | Lines |
 |---|---|---|
-| `2d8204a` | Initial openhuman adoption â€” mascot, memory tree, integrations, meeting agent | +6119 |
-| `fb6ab46` | First audit: cloud visemes, daily digest, personalityâ†’vault, narrator, agent_alerts, all personas migrated | +654 |
-| `185ef88` | Second audit: reachy_memoryâ†’vault, more TokenJuice helpers, wake-word note hook | +275 |
+| `2d8204a` | Initial openhuman adoption — mascot, memory tree, integrations, meeting agent | +6119 |
+| `fb6ab46` | First audit: cloud visemes, daily digest, personality→vault, narrator, agent_alerts, all personas migrated | +654 |
+| `185ef88` | Second audit: reachy_memory→vault, more TokenJuice helpers, wake-word note hook | +275 |
 | `4a83928` | Bifrost client + companion promotion + skills registry + browser-control + Telegram | +1950 |
 | `a6a685a` | OpenHands SDK adapter + microagents + 6 seed microagents + UI page | +1300 |
 | **HEAD** | Microagent injection into realtime composer + OpenHands dispatch | +220 |
@@ -53,13 +53,13 @@ exposes a REST surface plus, where applicable, a frontend page.
 - **SVG mascot** at `frontend/src/components/reachy/Mascot/` with 8
   visemes (`REST`, `A`, `E`, `I`, `O`, `U`, `M`, `F`) defined as
   `{openness, width}` 2D params. Mouth path is a parametric quadratic
-  BÃ©zier; body bobs subtly while speaking to mirror Reachy's head
+  Bézier; body bobs subtly while speaking to mirror Reachy's head
   wobble in spirit.
 - **`useMascot` hook** with three-layer viseme stream:
   1. Backend-emitted `mascot.viseme` frames (preferred)
   2. Streaming-text character walker (16 chars/sec)
   3. Procedural breathing fallback
-- **Face state machine** maps `SessionPhase` â†’ idle / listening /
+- **Face state machine** maps `SessionPhase` → idle / listening /
   thinking / speaking / concerned.
 - **`MascotDock`** floats globally in `DashboardLayout` whenever a
   realtime voice session is active. Pop-out button opens `/m/mascot`
@@ -70,15 +70,15 @@ exposes a REST surface plus, where applicable, a frontend page.
   - OpenAI Realtime: energy-driven `viseme_from_pcm_rms()` per chunk
     (cloud has no phoneme alignment).
   - Gemini Live: same RMS-driven pattern.
-- **MascotPopout** route works without parent tab â€” shows
-  "Waiting for Zero sessionâ€¦" until a broadcast arrives.
+- **MascotPopout** route works without parent tab — shows
+  "Waiting for Zero session…" until a broadcast arrives.
 
 ### 3.2 Memory Vault + Obsidian-compatible vault (T1.2, T3.3)
 
 - **3 tree types**: Source (`L0`/`L1`/`L2` per source), Topic
   (per-entity), Global (daily digest).
-- **`chunker.py`** splits on paragraph â†’ sentence â†’ hard-cut boundaries,
-  â‰¤3000 tokens per chunk.
+- **`chunker.py`** splits on paragraph → sentence → hard-cut boundaries,
+  ≤3000 tokens per chunk.
 - **`vault.py`** writes Obsidian-compatible Markdown with YAML
   frontmatter (partition, agent_run_id, agent_writable, source, level,
   title, created, tags, parent, token_count), unique part/hash filenames,
@@ -92,7 +92,7 @@ exposes a REST surface plus, where applicable, a frontend page.
   `vault/global/{yyyymmdd}.md`.
 - **REST surface**: `/api/memory-vault/{stats,search,entry,chunks,global-digest}`.
   `/api/memory-tree/*` remains a deprecated compatibility alias.
-- **MemoryVaultPage** at `/memory-vault` â€” search box, scope filter,
+- **MemoryVaultPage** at `/memory-vault` — search box, scope filter,
   per-source/topic/level counts, modal entry viewer.
 - **`reachy_memory.save_summary()` now mirrors** every Tier-3 episodic
   snapshot into the vault under `sources/episodic_{persona}/L0/`.
@@ -101,7 +101,7 @@ exposes a REST surface plus, where applicable, a frontend page.
 
 ### 3.3 TokenJuice compaction (T1.3)
 
-- `tokenjuice_compactor.py` â€” HTML â†’ Markdown, URL shortening with
+- `tokenjuice_compactor.py` — HTML → Markdown, URL shortening with
   footnote, ANSI / CR-progress strip, dup-run collapse, oversized
   head + tail trim.
 - **Auto-detect** kind from content (`html` / `terminal` / `json` /
@@ -120,8 +120,8 @@ exposes a REST surface plus, where applicable, a frontend page.
 
 ### 3.4 Integrations + auto-fetch (T1.4)
 
-- **`composio_provider.py`** â€” Composio SDK wrapper with graceful
-  degradation (no SDK or no `COMPOSIO_API_KEY` â†’ reports
+- **`composio_provider.py`** — Composio SDK wrapper with graceful
+  degradation (no SDK or no `COMPOSIO_API_KEY` → reports
   `is_available=False`).
 - **12-app seed catalog**: Gmail, Calendar, Drive, GitHub, Linear,
   Slack, Notion, Stripe, Jira, HubSpot, Discord, Zoom. Adding more
@@ -131,13 +131,13 @@ exposes a REST surface plus, where applicable, a frontend page.
   Gmail/Calendar require real OAuth; Composio-only apps stay unavailable
   until per-tool calls are added.
 - **REST**: `/api/integrations/{,/status,/connect,/disconnect/{id},/sync/{id},/auto-fetch/{start,stop}}`.
-- **IntegrationsPage** at `/integrations` â€” grouped by category,
+- **IntegrationsPage** at `/integrations` — grouped by category,
   connect/disconnect/sync-now buttons, auto-fetch toggle, last-fetched
   relative timestamps.
 
 ### 3.5 Hint-based LLM routing (T1.5)
 
-- **`llm_hints.py`** â€” 12-hint taxonomy:
+- **`llm_hints.py`** — 12-hint taxonomy:
   - Local-eligible: `hint:reaction`, `classify`, `format`,
     `sentiment`, `summarize`, `medium`, `tool_lite`, `reflection`.
   - Cloud-only: `hint:reasoning`, `agentic`, `coding`, `vision`.
@@ -158,7 +158,7 @@ User clarified Bifrost is **shared infra** Zero talks to (not bundles).
 - **Bifrost runtime config is not shipped in Zero.** The live shared config is
   `C:\code\shared-infra\bifrost\config.json`; Zero only owns the client and
   contract expectations.
-- **`bifrost_client.py`** â€” thin OpenAI-compat client. Reads
+- **`bifrost_client.py`** — thin OpenAI-compat client. Reads
   `BIFROST_GATEWAY_URL` at call time, honors `BIFROST_TOKEN` for auth,
   reports `is_available()=False` cleanly when unset.
 - **Contract test** (`test_bifrost_contract.py`) keeps Zero from adding local
@@ -176,31 +176,31 @@ User clarified Bifrost is **shared infra** Zero talks to (not bundles).
   explorer, narrator, sally, wellness, **buddy** (new child-companion
   reference persona based on openhuman's "Buddy the Robot" SOUL.md).
 - **`safety_rules_from_soul()`** extracts NEVER-BREAK rules (eg.
-  "never move faster than walking speed" â†’ consulted by the motion
+  "never move faster than walking speed" → consulted by the motion
   layer before physical commands).
 
 ### 3.8 Meeting Agent (T2.1)
 
-- **`meeting_agent_service.py`** â€” joins Meet / Zoom URLs (regex-
+- **`meeting_agent_service.py`** — joins Meet / Zoom URLs (regex-
   validated). Playwright when installed; structured "unavailable"
   otherwise.
 - **Transcript ingestion** writes per-meeting chunks under
   `vault/sources/meeting_{id}/L0/` with `transcript` tag.
 - **Wake-word handler**: scans every transcript chunk for
-  `Hey Zero, take a note: â€¦` / `Ok Zero, record this: â€¦` /
-  `Hey Zero, note: â€¦` and pulls the body into
+  `Hey Zero, take a note: …` / `Ok Zero, record this: …` /
+  `Hey Zero, note: …` and pulls the body into
   `vault/topics/meeting_notes_{id}/`.
-- **Narrator persona auto-fires on `leave()`** â€” assembles the
+- **Narrator persona auto-fires on `leave()`** — assembles the
   narrator's SOUL.md prompt via `hint:summarize`, prefers Bifrost
   when reachable, writes an L1 summary chunk.
 - **REST**: `/api/meeting-agent/{status,sessions,sessions/{id},
   sessions/{id}/{speak,leave,ingest}}`.
-- **MeetingAgentPage** at `/meeting-agent` â€” drop a URL, list active
+- **MeetingAgentPage** at `/meeting-agent` — drop a URL, list active
   sessions, speak button, leave button, status pills.
 
 ### 3.9 Subconscious loop (T2.2)
 
-- **`subconscious_loop.py`** â€” background `asyncio` task waking every
+- **`subconscious_loop.py`** — background `asyncio` task waking every
   N minutes (default 15) when there's been fresh vault activity.
 - **Walks recent vault + connected integrations**, asks the local
   LLM via `hint:reflection`, persists JSON insight to the vault under
@@ -215,7 +215,7 @@ User clarified Bifrost is **shared infra** Zero talks to (not bundles).
 
 ### 3.10 Triggers pipeline (T3.1)
 
-- **`triggers_service.py`** â€” declarative eventâ†’action rules.
+- **`triggers_service.py`** — declarative event→action rules.
 - **Predicate matcher**: `any_of`, `all_of`, `*_contains`, `*_equals`,
   `*_in`, plain equality.
 - **Action types**: `vault_write`, `tool`, `webhook`, `agent_prompt`.
@@ -231,25 +231,25 @@ User clarified Bifrost is **shared infra** Zero talks to (not bundles).
 
 ### 3.12 Skills registry (audit-2 A)
 
-- **`skill_manifest.py`** â€” extended manifest spec mirroring openhuman:
+- **`skill_manifest.py`** — extended manifest spec mirroring openhuman:
   slug, name, version, description, **15 known auth scopes**
   (fs_read/write, net_outbound, shell, browser, memory_read/write,
   calendar, gmail, github, linear, slack, notion, tts, motion),
   **4 platforms** (darwin/linux/windows/any), **5 trigger kinds**
   (manual/schedule/event/voice/trigger_rule), sandbox bounds.
 - **Auto-migrates legacy `_meta.json`** into the extended shape on
-  the fly â€” no churn for existing skills.
+  the fly — no churn for existing skills.
 - **REST**: `/api/skills/{,/{slug},/validate,/third-party-registry}`.
 - **`skills/third-party-skills.json`** seeded with the 3
   openhuman-skills exemplars (server-ping, notion, gmail).
 
 ### 3.13 Browser / computer-use (audit-2 B)
 
-- **`browser_control_service.py`** â€” Playwright when installed,
+- **`browser_control_service.py`** — Playwright when installed,
   structured "unavailable" otherwise.
 - Actions: open / click / type / extract_text / screenshot / close.
 - **`BROWSER_CONTROL_ALLOWLIST` env** locks the agent to specific URL
-  prefixes â€” a runaway loop can't crawl the open internet.
+  prefixes — a runaway loop can't crawl the open internet.
 - **`extract_text` runs through TokenJuice** so page bodies don't
   drown the LLM in nav chrome.
 - **5 MB screenshot cap** prevents memory blow-up.
@@ -257,7 +257,7 @@ User clarified Bifrost is **shared infra** Zero talks to (not bundles).
 
 ### 3.14 Telegram 2-way channel (audit-2 C)
 
-- **`telegram_channel_service.py`** â€” raw `httpx` Bot API client +
+- **`telegram_channel_service.py`** — raw `httpx` Bot API client +
   long-poll loop. Reads `TELEGRAM_BOT_TOKEN` at call time. Empty
   text + over-length messages clamped.
 - **Default handler** writes inbound to `vault/sources/telegram/L0/`.
@@ -280,7 +280,7 @@ User asked specifically for OpenHands.
   Vault approval contract.
 - **Persistent**: tasks survive restarts via
   `backend/app/data/openhands/tasks.json`.
-- **`microagents_service.py`** â€” Markdown + YAML frontmatter parser
+- **`microagents_service.py`** — Markdown + YAML frontmatter parser
   (both inline `[a, b]` and block `- a` list styles). Two scopes:
   `microagents/` (public) and `.openhands/microagents/` (repo).
 - **`compose_context_for(text)`** returns a single ready-to-inject
@@ -288,14 +288,14 @@ User asked specifically for OpenHands.
 - **6 seed microagents**: `reachy-motion`, `zero-python`,
   `zero-frontend`, `memory-vault`, `llm-routing`, `zero-deploy`.
 - **REST**: `/api/openhands/*` + `/api/microagents/*`.
-- **OpenHandsTasksPage** at `/openhands` â€” instruction box, workspace
+- **OpenHandsTasksPage** at `/openhands` — instruction box, workspace
   picker, task list with status pills, event drawer.
 - **Microagent injection wired into**:
-  - `resolve_instructions(profile_id, seed_text=...)` â€” realtime
+  - `resolve_instructions(profile_id, seed_text=...)` — realtime
     sessions get triggered context at session start.
-  - `compose_turn_context(text)` â€” chat / classic-voice paths can
+  - `compose_turn_context(text)` — chat / classic-voice paths can
     inject per-turn.
-  - `OpenHandsRuntimeService.dispatch()` â€” prepends matching
+  - `OpenHandsRuntimeService.dispatch()` — prepends matching
     microagents to every task instruction.
 
 ---
@@ -309,19 +309,19 @@ each documented in the relevant commit message:
    `InteractiveModeBar`.** The bar is a small chip; embedding a face
    would cramp it. The popout (`/m/mascot`) handles the desktop-app
    style.
-2. **Mascot doesn't proxy raw 6-DoF head wobble** â€” instead the SVG
-   body bobs via `sin(t) Ã— openness` while speaking. Same intent
+2. **Mascot doesn't proxy raw 6-DoF head wobble** — instead the SVG
+   body bobs via `sin(t) × openness` while speaking. Same intent
    (visible motion while talking) without a new event channel.
 3. **`tool_output_helpers.py` placed flat at `services/`** instead
-   of `services/tools/` â€” `tools/` doesn't exist in this repo.
-4. **`useMascot.ts` (not `useReachyMascot.ts`)** â€” lives under
+   of `services/tools/` — `tools/` doesn't exist in this repo.
+4. **`useMascot.ts` (not `useReachyMascot.ts`)** — lives under
    `Mascot/` so the prefix would be redundant.
 5. **Subconscious built as parallel loop, not "promoted" from
-   companion** â€” companion service's nudge state machine still owns
+   companion** — companion service's nudge state machine still owns
    mode policy. Subconscious consults it (`action_allowed`,
    per-mode budget) but doesn't absorb it. Better separation of
    concerns; both can evolve independently.
-6. **Bifrost is shared infra Zero talks to, not bundled** â€” the
+6. **Bifrost is shared infra Zero talks to, not bundled** — the
    YAML is a contract, the client is the integration. The contract
    test enforces parity with `llm_hints.py`.
 
@@ -369,86 +369,86 @@ approved:
 
 ```
 backend/app/
-â”œâ”€â”€ infrastructure/
-â”‚   â”œâ”€â”€ bifrost_client.py
-â”‚   â””â”€â”€ llm_hints.py
-â”œâ”€â”€ routers/
-â”‚   â”œâ”€â”€ browser_control.py
-â”‚   â”œâ”€â”€ integrations.py
-â”‚   â”œâ”€â”€ meeting_agent.py
-â”‚   â”œâ”€â”€ memory_tree.py
-â”‚   â”œâ”€â”€ openhands.py
-â”‚   â”œâ”€â”€ skill_registry.py
-â”‚   â”œâ”€â”€ subconscious.py
-â”‚   â”œâ”€â”€ telegram_channel.py
-â”‚   â””â”€â”€ triggers.py
-â””â”€â”€ services/
-    â”œâ”€â”€ browser_control_service.py
-    â”œâ”€â”€ integrations/
-    â”‚   â”œâ”€â”€ auto_fetch_loop.py
-    â”‚   â””â”€â”€ composio_provider.py
-    â”œâ”€â”€ meeting_agent_service.py
-    â”œâ”€â”€ memory_tree/
-    â”‚   â”œâ”€â”€ chunker.py
-    â”‚   â”œâ”€â”€ service.py
-    â”‚   â””â”€â”€ vault.py
-    â”œâ”€â”€ microagents_service.py
-    â”œâ”€â”€ openhands_runtime_service.py
-    â”œâ”€â”€ reachy_realtime/
-    â”‚   â””â”€â”€ visemes.py
-    â”œâ”€â”€ skill_manifest.py
-    â”œâ”€â”€ soul_md.py
-    â”œâ”€â”€ subconscious_loop.py
-    â”œâ”€â”€ telegram_channel_service.py
-    â”œâ”€â”€ tokenjuice_compactor.py
-    â”œâ”€â”€ tool_output_helpers.py
-    â””â”€â”€ triggers_service.py
+├── infrastructure/
+│   ├── bifrost_client.py
+│   └── llm_hints.py
+├── routers/
+│   ├── browser_control.py
+│   ├── integrations.py
+│   ├── meeting_agent.py
+│   ├── memory_tree.py
+│   ├── openhands.py
+│   ├── skill_registry.py
+│   ├── subconscious.py
+│   ├── telegram_channel.py
+│   └── triggers.py
+└── services/
+    ├── browser_control_service.py
+    ├── integrations/
+    │   ├── auto_fetch_loop.py
+    │   └── composio_provider.py
+    ├── meeting_agent_service.py
+    ├── memory_tree/
+    │   ├── chunker.py
+    │   ├── service.py
+    │   └── vault.py
+    ├── microagents_service.py
+    ├── openhands_runtime_service.py
+    ├── reachy_realtime/
+    │   └── visemes.py
+    ├── skill_manifest.py
+    ├── soul_md.py
+    ├── subconscious_loop.py
+    ├── telegram_channel_service.py
+    ├── tokenjuice_compactor.py
+    ├── tool_output_helpers.py
+    └── triggers_service.py
 
 frontend/src/
-â”œâ”€â”€ components/reachy/
-â”‚   â”œâ”€â”€ HintPresetPicker.tsx
-â”‚   â””â”€â”€ Mascot/
-â”‚       â”œâ”€â”€ Mascot.tsx
-â”‚       â”œâ”€â”€ MascotDock.tsx
-â”‚       â”œâ”€â”€ MascotSVG.tsx
-â”‚       â”œâ”€â”€ index.ts
-â”‚       â”œâ”€â”€ useMascot.ts
-â”‚       â””â”€â”€ visemes.ts
-â””â”€â”€ pages/
-    â”œâ”€â”€ IntegrationsPage.tsx
-    â”œâ”€â”€ MascotPopout.tsx
-    â”œâ”€â”€ MeetingAgentPage.tsx
-    â”œâ”€â”€ MemoryVaultPage.tsx
-    â””â”€â”€ OpenHandsTasksPage.tsx
+├── components/reachy/
+│   ├── HintPresetPicker.tsx
+│   └── Mascot/
+│       ├── Mascot.tsx
+│       ├── MascotDock.tsx
+│       ├── MascotSVG.tsx
+│       ├── index.ts
+│       ├── useMascot.ts
+│       └── visemes.ts
+└── pages/
+    ├── IntegrationsPage.tsx
+    ├── MascotPopout.tsx
+    ├── MeetingAgentPage.tsx
+    ├── MemoryVaultPage.tsx
+    └── OpenHandsTasksPage.tsx
 
 microagents/
-â”œâ”€â”€ llm-routing.md
-â”œâ”€â”€ memory-vault.md
-â”œâ”€â”€ reachy-motion.md
-â”œâ”€â”€ zero-frontend.md
-â””â”€â”€ zero-python.md
+├── llm-routing.md
+├── memory-vault.md
+├── reachy-motion.md
+├── zero-frontend.md
+└── zero-python.md
 
 .openhands/microagents/
-â””â”€â”€ zero-deploy.md
+└── zero-deploy.md
 
 shared-infra/bifrost/ (not shipped by Zero; live config is in C:\code\shared-infra)
 
 skills/
-â””â”€â”€ third-party-skills.json
+└── third-party-skills.json
 
 backend/app/data/reachy_profiles/
-â”œâ”€â”€ assistant/SOUL.md          (migrated)
-â”œâ”€â”€ buddy/                      (new)
-â”‚   â”œâ”€â”€ SOUL.md
-â”‚   â”œâ”€â”€ tools.txt
-â”‚   â””â”€â”€ voice.txt
-â”œâ”€â”€ coach/SOUL.md              (migrated)
-â”œâ”€â”€ companion/SOUL.md          (migrated)
-â”œâ”€â”€ deep_work/SOUL.md          (migrated)
-â”œâ”€â”€ explorer/SOUL.md           (migrated)
-â”œâ”€â”€ narrator/SOUL.md           (migrated)
-â”œâ”€â”€ sally/SOUL.md              (migrated)
-â””â”€â”€ wellness/SOUL.md           (migrated)
+├── assistant/SOUL.md          (migrated)
+├── buddy/                      (new)
+│   ├── SOUL.md
+│   ├── tools.txt
+│   └── voice.txt
+├── coach/SOUL.md              (migrated)
+├── companion/SOUL.md          (migrated)
+├── deep_work/SOUL.md          (migrated)
+├── explorer/SOUL.md           (migrated)
+├── narrator/SOUL.md           (migrated)
+├── sally/SOUL.md              (migrated)
+└── wellness/SOUL.md           (migrated)
 ```
 
 ---
@@ -487,18 +487,18 @@ Things that would unlock the next wave of value with relatively little
 effort:
 
 1. **Wire OpenHands runtime into the existing `agent_company` /
-   `council` paths** â€” Zero's existing council already orchestrates
+   `council` paths** — Zero's existing council already orchestrates
    research agents; OpenHands plugs in as the "executor" role for
    code tasks.
-2. **Microagent UI editor** at `/microagents` â€” list, preview, edit,
+2. **Microagent UI editor** at `/microagents` — list, preview, edit,
    test triggers. Right now microagents are file-edited only.
 3. **Composio per-tool wiring** for the top-5 connectors (Linear,
-   Notion, Slack, GitHub, Stripe) â€” replace the stub bodies in
+   Notion, Slack, GitHub, Stripe) — replace the stub bodies in
    `auto_fetch_loop._fetch_body()` with real `call_tool()` invocations.
-4. **Meeting-agent audio pipe** â€” once a host with Playwright +
+4. **Meeting-agent audio pipe** — once a host with Playwright +
    virtual-audio is available, the stub heartbeat becomes a real
    frame pump into the local handler.
-5. **Triggers UI** at `/triggers` â€” declarative eventâ†’action rules
+5. **Triggers UI** at `/triggers` — declarative event→action rules
    exist in the backend, but only via API. A small UI would let
    users build "when X, do Y" automations without curling.
 

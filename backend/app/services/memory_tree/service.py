@@ -1,11 +1,11 @@
 ﻿"""
-Memory Vault service â€” public surface for callers.
+Memory Vault service — public surface for callers.
 
 Three operations:
 
-    write_chunk(source, body, level=0, title=...)  â†’ append to L0
-    summarize_source(source)  â†’ roll L0 chunks into an L1 summary
-    write_global_digest(...)  â†’ store the daily global digest
+    write_chunk(source, body, level=0, title=...)  → append to L0
+    summarize_source(source)  → roll L0 chunks into an L1 summary
+    write_global_digest(...)  → store the daily global digest
 
     search(query, scope="source|topic|global", source=..., limit=10)
 
@@ -241,7 +241,7 @@ class MemoryTreeService:
         entity: Optional[str] = None,
         limit: int = 10,
     ) -> list[SearchHit]:
-        """Keyword search across the vault. ``scope`` âˆˆ {None, source, topic, global}."""
+        """Keyword search across the vault. ``scope`` ∈ {None, source, topic, global}."""
         if not query.strip():
             return []
         return await asyncio.get_event_loop().run_in_executor(

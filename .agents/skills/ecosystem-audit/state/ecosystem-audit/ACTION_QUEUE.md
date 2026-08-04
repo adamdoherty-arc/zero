@@ -1,13 +1,13 @@
 ﻿# Action queue
 
-Items requiring `write_external` or `financial` tier â€” never auto-applied by
+Items requiring `write_external` or `financial` tier — never auto-applied by
 this skill. Each item is queued by an audit run and dequeued when the
 corresponding code lands. Items are dedupd across runs by `id`.
 
 Format:
 
 ```
-### Q<n> â€” <title> [<tier>] [<severity>]
+### Q<n> — <title> [<tier>] [<severity>]
 - **Source run**: <date>
 - **Where**: <file:line> or <path>
 - **Suggested fix**: <one paragraph>
@@ -16,41 +16,41 @@ Format:
 
 ---
 
-### Q1 â€” Auto-register `register_llm_ops_jobs()` at Legion startup [write_external] [high]
+### Q1 — Auto-register `register_llm_ops_jobs()` at Legion startup [write_external] [high]
 
 - **Source run**: 2026-04-28
 - **Where**: [c:/code/Legion/backend/main.py](c:/code/Legion/backend/main.py) lifespan, after `scheduler_service.schedule_daily_prompts()`
 - **Resolved 2026-04-28**: Edited `Legion/backend/main.py` to import and call `register_llm_ops_jobs(scheduler_service)` immediately after `scheduler_service.schedule_daily_prompts()`. Errors are caught and logged but don't crash startup. **Verified live 2026-04-28**: `legion-backend` restarted; stdout shows `[OK] LLM-Ops jobs registered (7): llm_ops.monitor.hourly, llm_ops.curator.hourly, llm_ops.monitor.daily, llm_ops.researcher.daily, llm_ops.curator.daily, llm_ops.report.daily, llm_ops.planner.daily`. Hourly monitor + curator will fire at the next `:05` and `:15` of the hour.
 - **Status**: resolved + verified live
 
-### Q2 â€” Move Ada APScheduler to `SQLAlchemyJobStore` [write_external] [high]
+### Q2 — Move Ada APScheduler to `SQLAlchemyJobStore` [write_external] [high]
 
 - **Source run**: 2026-04-28
-- **Where**: [c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py](c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py) â€” APScheduler in-memory.
-- **Resolved 2026-04-28**: Edited `enhanced_daily_report_scheduler.py` to import `SQLAlchemyJobStore` and `get_database_url`, added a `_build_sync_db_url()` helper that strips `+asyncpg` so APScheduler can use psycopg2, and instantiated the scheduler with `jobstores={"default": SQLAlchemyJobStore(...)}` (table `ada_apscheduler_jobs`). Falls back to in-memory if the DB URL is unreachable. Also refactored job target from a bound method (`self._generate_enhanced_report`) to a string reference (`"...:_run_enhanced_report_job"`) because SQLAlchemyJobStore pickles its target and bound methods drag in the unpicklable `AsyncIOScheduler`. **Note**: `daily_briefing_scheduler.py` does not use APScheduler â€” it's a DIY async loop with persistent state via `notification_coordinator`, so survival across restarts is already handled. **Verified live 2026-04-28**: `ada_apscheduler_jobs` table exists in `adam` DB; row `enhanced_daily_report` persisted with `next_run_time=1777498200` (2026-04-29 17:30 ET, today's 5:30 PM has passed). Job will survive `ada-backend` restarts. **Side-fix while activating**: `backend/services/daily_report_rag_indexer.py` had a stale import `from src.rag.agentic_rag import AgenticRAG, get_rag` â€” the symbols are actually `AgenticRAGOrchestrator` and `get_agentic_rag`. Fixed via aliased import; this had been silently breaking the scheduler init for weeks (the real reason "schedulers shipped, schedulers didn't fire").
+- **Where**: [c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py](c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py) — APScheduler in-memory.
+- **Resolved 2026-04-28**: Edited `enhanced_daily_report_scheduler.py` to import `SQLAlchemyJobStore` and `get_database_url`, added a `_build_sync_db_url()` helper that strips `+asyncpg` so APScheduler can use psycopg2, and instantiated the scheduler with `jobstores={"default": SQLAlchemyJobStore(...)}` (table `ada_apscheduler_jobs`). Falls back to in-memory if the DB URL is unreachable. Also refactored job target from a bound method (`self._generate_enhanced_report`) to a string reference (`"...:_run_enhanced_report_job"`) because SQLAlchemyJobStore pickles its target and bound methods drag in the unpicklable `AsyncIOScheduler`. **Note**: `daily_briefing_scheduler.py` does not use APScheduler — it's a DIY async loop with persistent state via `notification_coordinator`, so survival across restarts is already handled. **Verified live 2026-04-28**: `ada_apscheduler_jobs` table exists in `adam` DB; row `enhanced_daily_report` persisted with `next_run_time=1777498200` (2026-04-29 17:30 ET, today's 5:30 PM has passed). Job will survive `ada-backend` restarts. **Side-fix while activating**: `backend/services/daily_report_rag_indexer.py` had a stale import `from src.rag.agentic_rag import AgenticRAG, get_rag` — the symbols are actually `AgenticRAGOrchestrator` and `get_agentic_rag`. Fixed via aliased import; this had been silently breaking the scheduler init for weeks (the real reason "schedulers shipped, schedulers didn't fire").
 - **Status**: resolved + verified live
 
-### Q3 â€” Pipe Ada daily/weekly report output to vault [write_external] [high]
+### Q3 — Pipe Ada daily/weekly report output to vault [write_external] [high]
 
 - **Source run**: 2026-04-28
 - **Where**: [c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py](c:/code/ADA/backend/services/enhanced_daily_report_scheduler.py)
 - **Resolved 2026-04-28**: Added `_format_briefing_for_vault()` (markdown rendering) and `_post_report_to_vault()` (httpx POST to Zero's `POST /api/vault/propose`). Hooked into `_generate_enhanced_report()` as a non-blocking `asyncio.create_task` so vault outages can't break the trading flow. Lands at `00_Meta/_agent/trading/<YYYY-MM-DD>-daily.md` (the agent-owned namespace, no whitelist needed). **Verified live 2026-04-28**: `ZERO_GATEWAY_TOKEN` and `ZERO_API_URL` added to `c:\code\ADA\.env` and wired into `docker-compose.yml` `backend.environment` block. Smoke-test invocation produced `vault_post_succeeded rel_path=00_Meta/_agent/trading/2026-04-28-daily.md`; file present on disk and contains the rendered markdown with audit footer. Vault-write failures still log-and-skip rather than crashing the trading flow.
 - **Status**: resolved + verified live
 
-### Q4 â€” Replace env-var gate with `interrupt()` in `broker_orders.py` [financial] [critical]
+### Q4 — Replace env-var gate with `interrupt()` in `broker_orders.py` [financial] [critical]
 
 - **Source run**: 2026-04-28
 - **Where**: [c:/code/ADA/backend/routers/broker_orders.py](c:/code/ADA/backend/routers/broker_orders.py)
-- **Resolved 2026-04-28**: Added a defensive multi-factor gate (LangGraph `interrupt()` analog for a FastAPI endpoint, since the trading_council subgraph that would normally surface live orders to the approval queue is Stage 2 work). Three gates in series for live execution: (1) `ROBINHOOD_PAPER_TRADING` env var must NOT be `"true"`, (2) request body must carry `confirm_live: true`, (3) request body must carry an `approval_token` from `POST /broker/request-live-approval`. Tokens are 32-byte URL-safe, single-use, TTL 300s, bound to (symbol, contracts) so a token for AAPL/1 cannot execute MSFT/100. Every live attempt â€” accepted or rejected â€” is structured-logged. New module-level constants `LIVE_APPROVAL_TTL_S` and `_live_approval_store` (in-memory, intentionally fail-closed across uvicorn workers). New endpoint `POST /broker/request-live-approval` issues tokens. Verified: `python -c "import ast; ast.parse(...)"` clean; `broker_orders.router` already registered at `Ada/backend/main.py:2894`. Tradier path (`backend/services/execution/tradier_service.py`) is hardcoded sandbox-only â€” no live capability â€” so no gate needed there. **Verification**: with `ROBINHOOD_PAPER_TRADING=false`, `POST /broker/execute/csp` without `confirm_live`/`approval_token` returns `OrderResult(success=false, status=rejected_no_approval)`; valid token flow returns `success=true`. Tradier remains sandbox-only. **The trading_council subgraph (Stage 2) will eventually replace this guard with the canonical LangGraph `interrupt()` pattern.**
+- **Resolved 2026-04-28**: Added a defensive multi-factor gate (LangGraph `interrupt()` analog for a FastAPI endpoint, since the trading_council subgraph that would normally surface live orders to the approval queue is Stage 2 work). Three gates in series for live execution: (1) `ROBINHOOD_PAPER_TRADING` env var must NOT be `"true"`, (2) request body must carry `confirm_live: true`, (3) request body must carry an `approval_token` from `POST /broker/request-live-approval`. Tokens are 32-byte URL-safe, single-use, TTL 300s, bound to (symbol, contracts) so a token for AAPL/1 cannot execute MSFT/100. Every live attempt — accepted or rejected — is structured-logged. New module-level constants `LIVE_APPROVAL_TTL_S` and `_live_approval_store` (in-memory, intentionally fail-closed across uvicorn workers). New endpoint `POST /broker/request-live-approval` issues tokens. Verified: `python -c "import ast; ast.parse(...)"` clean; `broker_orders.router` already registered at `Ada/backend/main.py:2894`. Tradier path (`backend/services/execution/tradier_service.py`) is hardcoded sandbox-only — no live capability — so no gate needed there. **Verification**: with `ROBINHOOD_PAPER_TRADING=false`, `POST /broker/execute/csp` without `confirm_live`/`approval_token` returns `OrderResult(success=false, status=rejected_no_approval)`; valid token flow returns `success=true`. Tradier remains sandbox-only. **The trading_council subgraph (Stage 2) will eventually replace this guard with the canonical LangGraph `interrupt()` pattern.**
 - **Verified live 2026-04-28**: `POST /broker/request-live-approval` issues a 32-byte token, expires in 300s, returns the expected JSON shape including `paper_mode_currently`. Gate logic unit-tested with `ROBINHOOD_PAPER_TRADING=false` env override:
-   - Happy path (matching symbol+contracts) â†’ `True ok`
-   - Replay attack (token already consumed) â†’ `False approval_token already used (single-use)`
-   - Wrong symbol (token AAPL, request TSLA) â†’ `False approval_token bound to TSLA, request is AAPL`
-   - Wrong contracts (token 2, request 5) â†’ `False approval_token bound to 2 contracts, request is 5`
-   - Empty token â†’ `False missing approval_token`
+   - Happy path (matching symbol+contracts) → `True ok`
+   - Replay attack (token already consumed) → `False approval_token already used (single-use)`
+   - Wrong symbol (token AAPL, request TSLA) → `False approval_token bound to TSLA, request is AAPL`
+   - Wrong contracts (token 2, request 5) → `False approval_token bound to 2 contracts, request is 5`
+   - Empty token → `False missing approval_token`
 - **Status**: resolved + verified live (defensive gate); to be revisited when trading_council subgraph ships
 
-### Q5 â€” Add TikTok OAuth creds + flip dry-run off [write_external] [high â€” Adam-blocking]
+### Q5 — Add TikTok OAuth creds + flip dry-run off [write_external] [high — Adam-blocking]
 
 - **Source run**: 2026-04-28
 - **Where**: `c:\code\zero\.env` (creds), [c:/code/zero/backend/app/workflows/activities/publish.py:101](c:/code/zero/backend/app/workflows/activities/publish.py#L101)
@@ -62,7 +62,7 @@ Format:
   to mock IDs. This is the highest-leverage user-blocking item this run.
 - **Status**: open
 
-### Q6 â€” Wire Legion remediation-sprint auto-execution [write_external] [medium]
+### Q6 — Wire Legion remediation-sprint auto-execution [write_external] [medium]
 
 - **Source run**: 2026-04-28
 - **Where**: `Legion/backend/app/services/autonomous_executor.py` + new
@@ -76,7 +76,7 @@ Format:
   explicitly called out.
 - **Status**: open
 
-### Q7 â€” Add daemon heartbeat surface [write_external] [medium]
+### Q7 — Add daemon heartbeat surface [write_external] [medium]
 
 - **Source run**: 2026-04-28
 - **Where**: new Postgres `daemon_heartbeats` migration + tiny middleware in
@@ -94,39 +94,39 @@ Format:
   `supervised_daemon.py` UPSERTs after each run. Expose `/api/daemon-status`
   on `legion-backend`. Morning brief reads it for the daily note's
   `## System Health` block. The new architecture-master daily report (built
-  this run) reads it for its "Daemon heartbeat status" section â€” until Q7
+  this run) reads it for its "Daemon heartbeat status" section — until Q7
   ships, that section will read "blocked on Q7."
 - **Status**: open
 
-### Q8 â€” Fix llm_ops cron timezones [write_external] [low]
+### Q8 — Fix llm_ops cron timezones [write_external] [low]
 
 - **Source run**: 2026-04-28
 - **Where**: [c:/code/Legion/backend/app/scheduler/llm_ops_jobs.py](c:/code/Legion/backend/app/scheduler/llm_ops_jobs.py)
 - **Suggested fix**: MANDATE specifies ET; current code uses UTC (`08:10 UTC`
-  â‰  `03:00 ET`). Either explicitly set `timezone='America/New_York'` on
+  ≠ `03:00 ET`). Either explicitly set `timezone='America/New_York'` on
   the scheduler and convert all hour values, or document the offset in a
   comment so the next reader doesn't get confused. Recommend the explicit
-  timezone â€” UTC drift on DST is silent.
+  timezone — UTC drift on DST is silent.
 - **Status**: open
 
-### Q9 â€” Refresh Legion mandate prose [write_external] [low]
+### Q9 — Refresh Legion mandate prose [write_external] [low]
 
 - **Source run**: 2026-04-28
 - **Where**: `c:\code\Legion\MANDATE.md`
-- **Resolved 2026-04-28**: Two edits â€” (1) "What Legion owns" table row for llm-ops now points to actual `backend/app/agents/llm_ops/` and notes the auto-registered scheduler from Q1; (2) "LLM-Ops responsibility" section description updated to "running since 2026-04-24" instead of pointing at non-existent `backend/app/subgraphs/llm_ops.py`. Verbatim canonical blockquote at line 3 is preserved unchanged.
+- **Resolved 2026-04-28**: Two edits — (1) "What Legion owns" table row for llm-ops now points to actual `backend/app/agents/llm_ops/` and notes the auto-registered scheduler from Q1; (2) "LLM-Ops responsibility" section description updated to "running since 2026-04-24" instead of pointing at non-existent `backend/app/subgraphs/llm_ops.py`. Verbatim canonical blockquote at line 3 is preserved unchanged.
 - **Status**: resolved
 
-### Q10 â€” Run NSSM service installers + reboot [write_external] [high]
+### Q10 — Run NSSM service installers + reboot [write_external] [high]
 
 - **Source run**: 2026-04-28
 - **Where**: `c:\code\scripts\nssm\install-services.ps1`,
   `c:\code\scripts\register-morning-brief.ps1`
 - **Suggested fix**: Per the active 12-week plan's "Stage 0 verification gate
-  â€” REMAINING" section, these scripts ship but require Administrator + reboot.
+  — REMAINING" section, these scripts ship but require Administrator + reboot.
   Run `powershell -ExecutionPolicy Bypass -File <script>` as Admin, reboot,
   confirm `Get-Service Legion-Stack, Zero-Stack, SharedInfra-Stack,
   Reachy-Daemon, Health-Watchdog` all show `Running`. Without this the
-  ecosystem doesn't survive an unattended reboot â€” manual `start-ecosystem.bat`
+  ecosystem doesn't survive an unattended reboot — manual `start-ecosystem.bat`
   is currently the only path.
 - **Status**: open
 

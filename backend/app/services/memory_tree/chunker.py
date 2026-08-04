@@ -1,7 +1,7 @@
 ﻿"""
 Token-aware chunking for Memory Vault.
 
-openhuman target is "â‰¤3k tokens per chunk". We approximate token count as
+openhuman target is "≤3k tokens per chunk". We approximate token count as
 chars/4 (good middle for English + code, see tokenjuice_compactor.py for the
 same convention). Chunks split on paragraph then sentence boundaries so the
 LLM never sees a sentence cut in half.
@@ -26,7 +26,7 @@ class Chunk:
 
 
 def chunk_text(text: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[Chunk]:
-    """Split a long text into ``Chunk`` instances, each â‰¤ ``max_tokens``.
+    """Split a long text into ``Chunk`` instances, each ≤ ``max_tokens``.
 
     Splitting prefers paragraph boundaries, falls back to sentences, and as
     a last resort hard-cuts on a character boundary.
@@ -53,7 +53,7 @@ def chunk_text(text: str, max_tokens: int = DEFAULT_MAX_TOKENS) -> list[Chunk]:
 
     for para in paragraphs:
         if len(para) > max_chars:
-            # Paragraph itself is too big â€” split by sentence.
+            # Paragraph itself is too big — split by sentence.
             flush()
             sentences = _SENTENCE_SPLIT.split(para)
             sub_buf: list[str] = []

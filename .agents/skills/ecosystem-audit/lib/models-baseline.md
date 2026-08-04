@@ -6,7 +6,7 @@ and [shared-infra/README.md](../../../../shared-infra/README.md).
 Audit Phase E reads `c:\code\shared-infra\docker-compose.vllm.yml` plus
 `:4444/v1/models` and `:18800/v1/models` and diffs against this table.
 
-## Local â€” llama.cpp + vLLM on RTX 5090
+## Local — llama.cpp + vLLM on RTX 5090
 
 | Canonical name | Container | Image / source | Quant | VRAM (approx) | Notes |
 |---|---|---|---|---|---|
@@ -50,7 +50,7 @@ Retired flags (2026-05-17 llama.cpp era, kept here for emergency rollback):
 
 Conditions to re-attempt: (a) clean AWQ port without multimodal config (watch `huggingface.co/Qwen/Qwen3.6-35B-A3B-AWQ` for an official one), OR (b) move vllm-embed to Ollama on host to free its 1.5 GB and run vllm-chat solo, OR (c) vLLM > 0.20 with Blackwell-MoE-aware cudagraph budgeting.
 
-## Cloud â€” passthrough via LiteLLM proxy
+## Cloud — passthrough via LiteLLM proxy
 
 | Canonical name | Provider | Use |
 |---|---|---|
@@ -67,11 +67,11 @@ Conditions to re-attempt: (a) clean AWQ port without multimodal config (watch `h
 
 Per [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md):
 
-- `partition: trading` â€” **decisions** must route local (qwen3-chat). Synthesis
+- `partition: trading` — **decisions** must route local (qwen3-chat). Synthesis
   may go cloud.
-- `partition: personal` â€” local default, cloud allowed for synthesis (no PII).
-- `partition: zero-dev` â€” cloud allowed (Anthropic).
-- `partition: work` â€” must not exist in this ecosystem; hard-drop.
+- `partition: personal` — local default, cloud allowed for synthesis (no PII).
+- `partition: zero-dev` — cloud allowed (Anthropic).
+- `partition: work` — must not exist in this ecosystem; hard-drop.
 
 ## Pin / version invariants
 
@@ -94,9 +94,9 @@ Per [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md):
 
 | Candidate | Source | Size / quant | Why it might beat current | Eval set |
 |---|---|---|---|---|
-| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | HF | 30B total / 3B active | Code-specialist MoE; vLLM benches 1,157 tok/s at MCR=16 with sub-second TTFT on 5090 â€” dedicated `qwen3-coder` alias instead of aliasing to chat | code_review |
-| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | HF | 109B / 8B active, ~24 GB at Q4 | Highest reasoning ceiling on 32 GB hardware; "dense-7B speed with much larger reasoning quality" (18â€“22 tok/s); use as deep-thinker alias | reasoning |
-| `deepseek-ai/DeepSeek-R1-Distill-Llama-70B` | HF | 70B at Q4, ~28 GB tight | Reasoning specialist; 15â€“18 tok/s on 5090; tight VRAM but works | reasoning |
+| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | HF | 30B total / 3B active | Code-specialist MoE; vLLM benches 1,157 tok/s at MCR=16 with sub-second TTFT on 5090 — dedicated `qwen3-coder` alias instead of aliasing to chat | code_review |
+| `meta-llama/Llama-4-Scout-17B-16E-Instruct` | HF | 109B / 8B active, ~24 GB at Q4 | Highest reasoning ceiling on 32 GB hardware; "dense-7B speed with much larger reasoning quality" (18–22 tok/s); use as deep-thinker alias | reasoning |
+| `deepseek-ai/DeepSeek-R1-Distill-Llama-70B` | HF | 70B at Q4, ~28 GB tight | Reasoning specialist; 15–18 tok/s on 5090; tight VRAM but works | reasoning |
 
 Proposal: [vault: 00_Meta/_agent/proposals/model-swap-qwen3.6-moe.md](../../../../vault/ObsidianZero/00_Meta/_agent/proposals/model-swap-qwen3.6-moe.md)
 Research: [state/ecosystem-audit/research/models/2026-04-27.md](../../state/ecosystem-audit/research/models/2026-04-27.md)
@@ -105,9 +105,9 @@ Research: [state/ecosystem-audit/research/models/2026-04-27.md](../../state/ecos
 
 When research/models writes a candidate row, it must include:
 1. Source URL (HF / NVIDIA NGC / vendor blog).
-2. Size + quant (must fit â‰¤30 GB VRAM at the chosen quant).
-3. License (Apache-2.0, MIT, Llama-CLA, Qwen â€” note any non-commercial clauses).
-4. One-line "why it might beat the current registry" â€” be specific (e.g., "15%
+2. Size + quant (must fit ≤30 GB VRAM at the chosen quant).
+3. License (Apache-2.0, MIT, Llama-CLA, Qwen — note any non-commercial clauses).
+4. One-line "why it might beat the current registry" — be specific (e.g., "15%
    lower p95 latency than `qwen3-chat` on `reasoning.json` at the same quality bar").
 5. Eval set the candidate should be tested against from `Legion/backend/app/eval/`
    (`vault_qa.json`, `code_review.json`, `reasoning.json`, `summary.json`).

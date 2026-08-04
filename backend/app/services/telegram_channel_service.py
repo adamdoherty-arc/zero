@@ -1,15 +1,15 @@
 ﻿"""
 Telegram 2-way messaging channel.
 
-openhuman ships Telegram as its primary messaging channel â€” 80+ actions,
+openhuman ships Telegram as its primary messaging channel — 80+ actions,
 2-way, runs through user-encrypted credentials. Zero already has a Discord
 bot; this module adds the Telegram counterpart.
 
 Behavior:
-  â€¢ If ``TELEGRAM_BOT_TOKEN`` is set, the service starts a long-poll loop
+  • If ``TELEGRAM_BOT_TOKEN`` is set, the service starts a long-poll loop
     that delivers inbound messages to a registered handler.
-  â€¢ Outbound messages go through the Bot API (``sendMessage``).
-  â€¢ No third-party SDK required â€” uses raw httpx against api.telegram.org.
+  • Outbound messages go through the Bot API (``sendMessage``).
+  • No third-party SDK required — uses raw httpx against api.telegram.org.
 
 Privacy: tokens never sit on disk. The service reads ``TELEGRAM_BOT_TOKEN``
 from env at every poll, so rotating the token requires only a restart.
@@ -124,7 +124,7 @@ class TelegramChannelService:
         if not text:
             return {"ok": False, "error": "empty text"}
         if len(text) > MAX_MESSAGE_LEN:
-            text = text[: MAX_MESSAGE_LEN - 3] + "â€¦"
+            text = text[: MAX_MESSAGE_LEN - 3] + "…"
 
         import httpx
         params = {"chat_id": chat_id, "text": text}

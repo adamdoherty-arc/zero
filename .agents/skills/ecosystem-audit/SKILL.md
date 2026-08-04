@@ -67,23 +67,23 @@ or `financial`.
    - [docs/company/architecture.md](../../../docs/company/architecture.md)
    - [README.md](../../../README.md)
 3. Load the skill's extracted source-of-truth from `lib/`:
-   - `lib/canonical-mandates.md` â€” verbatim mandate quotes for Zero/Legion/Ada
-   - `lib/port-map.md` â€” the canonical port table
-   - `lib/managed-projects.md` â€” registry of projects (path, mandate file, compose, ports)
-   - `lib/plugin-baseline.md` â€” required Obsidian community plugins
-   - `lib/models-baseline.md` â€” the LiteLLM/vLLM canonical model registry
+   - `lib/canonical-mandates.md` — verbatim mandate quotes for Zero/Legion/Ada
+   - `lib/port-map.md` — the canonical port table
+   - `lib/managed-projects.md` — registry of projects (path, mandate file, compose, ports)
+   - `lib/plugin-baseline.md` — required Obsidian community plugins
+   - `lib/models-baseline.md` — the LiteLLM/vLLM canonical model registry
 4. Load skill state:
    - `state/ecosystem-audit/INSIGHTS.md` (entire file)
    - `state/ecosystem-audit/ACTION_QUEUE.md` (entire file)
    - `state/ecosystem-audit/EVOLUTION.md` (any check additions from past runs)
    - The two most recent files under `state/ecosystem-audit/runs/`
-5. Decide branch: if `state/ecosystem-audit/baseline/` is empty â†’ **first run**,
-   jump to "First-run flow" at the bottom, then return here for Phases Bâ€“J.
+5. Decide branch: if `state/ecosystem-audit/baseline/` is empty → **first run**,
+   jump to "First-run flow" at the bottom, then return here for Phases B–J.
    Otherwise continue.
 6. Skim AgenticOs.md and SecondBrain.md ONLY if `INSIGHTS.md` references them
-   for an open thread. They are 50 KB+ each â€” do not load them blindly.
+   for an open thread. They are 50 KB+ each — do not load them blindly.
 
-## Phase B â€” Per-project doc parity (parallel)
+## Phase B — Per-project doc parity (parallel)
 
 Spawn three Explore agents in **one message, parallel**, one per project. Each
 agent's prompt:
@@ -131,22 +131,22 @@ Run these checks. PowerShell tool is fine for Windows-native health checks.
    - `curl -m 5 http://localhost:18792/healthz` (Zero)
    - `curl -m 5 http://localhost:8005/healthz` (Legion)
    - `curl -m 5 http://localhost:8006/healthz` (Ada)
-5. Reachy `:8000` collision check â€” if `:8000` answers and is **not** Reachy
+5. Reachy `:8000` collision check — if `:8000` answers and is **not** Reachy
    (no `/api/info` or wrong banner), this is the documented vLLM/Reachy
    collision. Flag as critical.
 
-**Self-heal**: nothing here auto-runs. All findings â†’ queue with severity
+**Self-heal**: nothing here auto-runs. All findings → queue with severity
 `{ok | degraded | down | port-collision}`.
 
-## Phase D â€” Obsidian vault verification
+## Phase D — Obsidian vault verification
 
 Vault root: `c:\code\vault\ObsidianZero\`.
 
 1. Required ACE+JD folders: `00_Meta`, `10_Atlas`, `20_Calendar`, `30_Efforts`,
    `40_Resources`, `_Inbox`, `Zero`. For each missing folder, create it with a
-   `.gitkeep`. (Self-heal â€” write_local in vault structure, not constitutional.)
-2. Read `00_Meta\AGENTS.md` (vault constitution). If missing â†’ queue (do not
-   auto-write â€” it is load-bearing).
+   `.gitkeep`. (Self-heal — write_local in vault structure, not constitutional.)
+2. Read `00_Meta\AGENTS.md` (vault constitution). If missing → queue (do not
+   auto-write — it is load-bearing).
 3. Read `.obsidian/community-plugins.json` and diff against
    `lib/plugin-baseline.md`. For each missing plugin, write a proposal:
    ```
@@ -158,14 +158,14 @@ Vault root: `c:\code\vault\ObsidianZero\`.
 4. Obsidian Git liveness: read `.obsidian/plugins/obsidian-git/data.json` if
    present, and check the most recent commit time on the vault repo
    (`git -C c:/code/vault/ObsidianZero log -1 --format=%ai`). If silent >24h
-   â†’ queue.
+   → queue.
 5. Confirm `40_Resources/llm-models.md` exists. If missing, scaffold it from
-   `lib/models-baseline.md` (this is the Legion LLM-ops journal â€”
+   `lib/models-baseline.md` (this is the Legion LLM-ops journal —
    write_local, agent-owned namespace per Legion mandate).
 
-## Phase E â€” vLLM, LiteLLM, model registry
+## Phase E — vLLM, LiteLLM, model registry
 
-1. Read `c:\code\shared-infra\docker-compose.vllm.yml` â€” extract `image:` and
+1. Read `c:\code\shared-infra\docker-compose.vllm.yml` — extract `image:` and
    `command:` for each service. Diff served models against `lib/models-baseline.md`.
 2. `curl -m 5 http://localhost:4444/v1/models` and `:18800/v1/models`. Confirm
    canonical names resolve: `qwen3-chat` and `qwen3-embed`. Flag `qwen3-coder`
@@ -176,18 +176,18 @@ Vault root: `c:\code\vault\ObsidianZero\`.
    [MANDATE.md invariant #7](../../../docs/company/mandate.md): must be
    `main-v1.83.7-stable` or newer in the 1.83 stable line. Versions `1.82.7`
    / `1.82.8` were compromised, and versions `<=1.81.14` carry April 2026
-   CVEs. Any match to those windows â†’ escalate as **critical** in the report.
+   CVEs. Any match to those windows → escalate as **critical** in the report.
 4. VRAM (best-effort, skip on failure):
    ```bash
    nvidia-smi --query-gpu=memory.used,memory.total,name --format=csv,noheader
    ```
    Compare to the 22 GB pinned / 10 GB headroom budget from ARCHITECTURE.md.
 
-## Phase F â€” Per-project freshness
+## Phase F — Per-project freshness
 
 For each project in `lib/managed-projects.md`:
-1. `git -C <path> log -1 --format='%ai|%h|%s'` â€” last commit. If `auto_learn: true`
-   and the last commit is >14 days old â†’ queue as "stale".
+1. `git -C <path> log -1 --format='%ai|%h|%s'` — last commit. If `auto_learn: true`
+   and the last commit is >14 days old → queue as "stale".
 2. **Ada-specific**:
    - Read `c:\code\ADA\requirements.docker.txt` (and `requirements.txt` if exists).
      For `tradier`, `alpaca-trade-api`, `robin-stocks`, capture installed
@@ -195,30 +195,30 @@ For each project in `lib/managed-projects.md`:
    - Grep `c:\code\ADA\backend\routers\broker_orders.py` for any
      `place_live_order` path. Confirm an `interrupt()` or env-var gate is
      present on every code path that places live orders. If a path lacks a
-     gate â†’ queue as **critical** (this is the paper-default invariant).
+     gate → queue as **critical** (this is the paper-default invariant).
 3. **Legion-specific**: confirm `Legion/backend/app/services/legion_config.py`
    declares the MANAGED_PROJECTS registry consistent with `lib/managed-projects.md`.
 4. **Zero-specific**: confirm `c:\code\zero\backend\app\services\vault_writer_service.py`
-   exists (it is the choke point for vault writes â€” Legion routes through it).
-   Missing or renamed â†’ queue.
+   exists (it is the choke point for vault writes — Legion routes through it).
+   Missing or renamed → queue.
 
-## Phase G â€” Live research (parallel WebSearch)
+## Phase G — Live research (parallel WebSearch)
 
 Spawn four Agent calls in **one message, parallel**, each with subagent_type
 `general-purpose`. Each writes its own findings file directly:
 
-1. **Models** â†’ `state/ecosystem-audit/research/models/<YYYY-MM-DD>.md`.
+1. **Models** → `state/ecosystem-audit/research/models/<YYYY-MM-DD>.md`.
    Search HuggingFace + NVIDIA NVFP4 namespace + Qwen / Llama / DeepSeek
-   release feeds in the last 7 days. Filter to RTX 5090 fit (â‰¤32 GB VRAM at
-   â‰¥4-bit, supports vLLM or TensorRT-LLM). Top 5 candidates with link, size,
+   release feeds in the last 7 days. Filter to RTX 5090 fit (≤32 GB VRAM at
+   ≥4-bit, supports vLLM or TensorRT-LLM). Top 5 candidates with link, size,
    quant, and one-line "why it might beat current registry."
-2. **PKM** â†’ `state/ecosystem-audit/research/pkm/<YYYY-MM-DD>.md`. New
+2. **PKM** → `state/ecosystem-audit/research/pkm/<YYYY-MM-DD>.md`. New
    Obsidian community plugins, Letta/Mem0/LangMem releases, retrieval
    technique papers/blogs (contextual retrieval, hybrid, rerankers). Top 5.
-3. **Desktop control** â†’ `state/ecosystem-audit/research/desktop-control/<YYYY-MM-DD>.md`.
-   UFOÂ³ release notes, Codex Computer Use Windows status, ChatGPT Agent
+3. **Desktop control** → `state/ecosystem-audit/research/desktop-control/<YYYY-MM-DD>.md`.
+   UFO³ release notes, Codex Computer Use Windows status, ChatGPT Agent
    connector adds. Anything new that lets Legion reach into more applications.
-4. **Supply chain** â†’ `state/ecosystem-audit/research/supply-chain/<YYYY-MM-DD>.md`.
+4. **Supply chain** → `state/ecosystem-audit/research/supply-chain/<YYYY-MM-DD>.md`.
    PyPI/npm advisories for `litellm`, `langgraph`, `pydantic-ai`, `langfuse`,
    any `mcp-*` server. Watch for the LiteLLM compromise pattern.
 
@@ -226,28 +226,28 @@ After agents return, promote actionable items to `ACTION_QUEUE.md` and append
 candidate models to `c:\code\vault\ObsidianZero\40_Resources\llm-models.md`
 under a `## Candidates` section (one row per candidate; not a swap).
 
-## Phase H â€” Self-heal pass
+## Phase H — Self-heal pass
 
 Apply ONLY actions in this whitelist:
 
 | Action | Tier | Auto |
 |---|---|---|
-| Patch verbatim mandate quote in per-project `MANDATE.md` | write_local | âœ“ |
-| Create missing vault ACE+JD folder + `.gitkeep` | write_local | âœ“ |
-| Scaffold `40_Resources/llm-models.md` if absent | write_local | âœ“ |
-| Write to `00_Meta/_agent/proposals/*.md` | write_local | âœ“ |
-| Update `state/ecosystem-audit/{INSIGHTS,ACTION_QUEUE,EVOLUTION}.md` | local | âœ“ |
-| Write `state/ecosystem-audit/runs/<ts>.md` | local | âœ“ |
-| Write `state/ecosystem-audit/research/*/<date>.md` | local | âœ“ |
-| Edit any code file in zero/Legion/ADA repos | write_external | âœ— queue |
-| `docker compose up/down/restart` anything | write_external | âœ— queue |
-| Apply LiteLLM model swap | write_external | âœ— queue |
-| Install Obsidian community plugin | write_external | âœ— queue |
-| `git push`, `gh pr create` | write_external | âœ— queue |
+| Patch verbatim mandate quote in per-project `MANDATE.md` | write_local | ✓ |
+| Create missing vault ACE+JD folder + `.gitkeep` | write_local | ✓ |
+| Scaffold `40_Resources/llm-models.md` if absent | write_local | ✓ |
+| Write to `00_Meta/_agent/proposals/*.md` | write_local | ✓ |
+| Update `state/ecosystem-audit/{INSIGHTS,ACTION_QUEUE,EVOLUTION}.md` | local | ✓ |
+| Write `state/ecosystem-audit/runs/<ts>.md` | local | ✓ |
+| Write `state/ecosystem-audit/research/*/<date>.md` | local | ✓ |
+| Edit any code file in zero/Legion/ADA repos | write_external | ✗ queue |
+| `docker compose up/down/restart` anything | write_external | ✗ queue |
+| Apply LiteLLM model swap | write_external | ✗ queue |
+| Install Obsidian community plugin | write_external | ✗ queue |
+| `git push`, `gh pr create` | write_external | ✗ queue |
 
 Every auto-write must end with the audit footer.
 
-## Phase I â€” Run report
+## Phase I — Run report
 
 Write `state/ecosystem-audit/runs/<YYYY-MM-DD-HHMM>.md`:
 
@@ -259,7 +259,7 @@ ended: <iso8601 ET>
 phase_durations: {B: ..s, C: ..s, ...}
 ---
 
-# Ecosystem audit â€” <date>
+# Ecosystem audit — <date>
 
 ## TL;DR
 - 5 lines max. Top item first.
@@ -272,7 +272,7 @@ phase_durations: {B: ..s, C: ..s, ...}
 - **F (project freshness)**: ...
 
 ## Self-healed
-- file:line â€” what changed (link).
+- file:line — what changed (link).
 
 ## Queued
 - New items added to ACTION_QUEUE.md (count + titles).
@@ -293,15 +293,15 @@ phase_durations: {B: ..s, C: ..s, ...}
 <!-- agent-run-id: <uuid> source: ecosystem-audit at: <iso8601> -->
 ```
 
-## Phase J â€” INSIGHTS & EVOLUTION
+## Phase J — INSIGHTS & EVOLUTION
 
 1. Compare current findings against the previous run report.
 2. Promote into `INSIGHTS.md` any finding that has now appeared in **two** consecutive
    runs (it is a real pattern). Demote / strike out items resolved this run.
 3. If during the run the user added a new check ("also confirm X"), append a
    dated entry to `EVOLUTION.md`. Phase A on subsequent runs will load it.
-4. Print a one-screen summary to the user (â‰¤30 lines): "Run N complete.
-   Healed X. Queued Y. Research filed at Z. Top item: â€¦."
+4. Print a one-screen summary to the user (≤30 lines): "Run N complete.
+   Healed X. Queued Y. Research filed at Z. Top item: …."
 
 If interrupts are allowed (not DND) and there is exactly one blocking
 ambiguity, ask via `AskUserQuestion`. Otherwise log it under "Open questions"
@@ -316,7 +316,7 @@ When `state/ecosystem-audit/baseline/` is empty:
    state/ecosystem-audit/baseline/snapshot-<date>.json
    ```
    Capture: SHA-256 of each docs/*.md; verbatim mandate quotes from
-   docs/company/mandate.md (lines 7â€“29); the port table from README.md; current
+   docs/company/mandate.md (lines 7–29); the port table from README.md; current
    `.obsidian/community-plugins.json` if vault healthy else the SecondBrain.md
    plugin baseline; `docker ps` output; `:4444/v1/models` output if reachable.
 2. The `lib/*.md` files in this skill are pre-populated by the human installer -

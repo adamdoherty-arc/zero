@@ -1,5 +1,5 @@
 ﻿"""
-Subconscious loop â€” background self-reflection while the user is away.
+Subconscious loop — background self-reflection while the user is away.
 
 openhuman calls this the "subconscious"; Zero's equivalent: an idle-aware
 ``asyncio`` task that wakes every ``interval_minutes``, looks at recent
@@ -12,7 +12,7 @@ UI can show "what Zero has been thinking about" without a DB read.
 
 Cheap by default: uses the local provider unless the active hint preset
 overrides. Skips a tick if there's been no fresh vault activity in the
-window â€” no point reflecting on nothing.
+window — no point reflecting on nothing.
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ class SubconsciousLoop:
     def _build_prompt(self, signals: dict) -> str:
         bullets = "\n".join(f"- {t}" for t in signals.get("recent_titles", []))
         return (
-            "You are Zero's subconscious â€” a quiet, reflective layer that "
+            "You are Zero's subconscious — a quiet, reflective layer that "
             "operates while the user is away. Look at the recent activity "
             "below and produce ONE small insight that might be useful to "
             "surface later. Be specific, brief, and only output JSON.\n\n"
@@ -238,7 +238,7 @@ class SubconsciousLoop:
         )
 
         # Surface to the user only when the insight proposes an action.
-        # Observation-only ticks are vault-only â€” we don't want to spam
+        # Observation-only ticks are vault-only — we don't want to spam
         # agent_alerts with every idle reflection.
         if not insight.get("suggested_action"):
             return

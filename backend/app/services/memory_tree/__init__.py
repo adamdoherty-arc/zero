@@ -1,5 +1,5 @@
 ﻿"""
-Memory Vault â€” hierarchical, Obsidian-compatible long-term memory.
+Memory Vault — hierarchical, Obsidian-compatible long-term memory.
 
 Adopted from the openhuman convention (Source / Topic / Global trees with
 Karpathy-style obsidian-wiki backing). Re-implemented for Zero so the

@@ -1,5 +1,5 @@
 ﻿"""
-Third-party integrations layer â€” Composio-backed connectors + auto-fetch.
+Third-party integrations layer — Composio-backed connectors + auto-fetch.
 
 Architecture mirrors openhuman's: a single provider abstraction
 (``composio_provider``) handles OAuth + tool dispatch, and a scheduler

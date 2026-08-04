@@ -1,5 +1,5 @@
 ﻿"""
-Meeting Agent â€” Zero joins a Google Meet / Zoom call as a real participant.
+Meeting Agent — Zero joins a Google Meet / Zoom call as a real participant.
 
 Inspired by openhuman's Meeting Agent. The agent:
 
@@ -103,7 +103,7 @@ class MeetingAgentService:
         self._tasks: dict[str, asyncio.Task] = {}
 
     # ------------------------------------------------------------------
-    # Driver init (Playwright â€” optional)
+    # Driver init (Playwright — optional)
     # ------------------------------------------------------------------
 
     def _init_driver(self):
@@ -119,7 +119,7 @@ class MeetingAgentService:
         return self._enabled
 
     # ------------------------------------------------------------------
-    # host_agent proxy (F-19) â€” preferred path on Windows
+    # host_agent proxy (F-19) — preferred path on Windows
     # ------------------------------------------------------------------
 
     async def _host_agent_call(
@@ -300,9 +300,9 @@ class MeetingAgentService:
     # ------------------------------------------------------------------
 
     async def _driver_lifecycle(self, session: MeetingSession, display_name: str) -> None:
-        """Drive Playwright through the join â†’ listen â†’ leave lifecycle.
+        """Drive Playwright through the join → listen → leave lifecycle.
 
-        Kept minimal â€” real audio capture requires platform setup; we mark
+        Kept minimal — real audio capture requires platform setup; we mark
         the session active so the rest of the system can integrate with it.
         """
         try:
@@ -354,7 +354,7 @@ class MeetingAgentService:
                 try:
                     await tree.write_topic(
                         entity=f"meeting_notes_{session.id}",
-                        body=f"From meeting '{session.title}' â€” speaker: {speaker or 'unknown'}\n\n{note}",
+                        body=f"From meeting '{session.title}' — speaker: {speaker or 'unknown'}\n\n{note}",
                         title=note[:60],
                         tags=["meeting", "wake-word", "note"],
                     )
@@ -376,12 +376,12 @@ class MeetingAgentService:
 
         # Ask the narrator persona (via hint:summarize) to write a real
         # summary over the transcript chunks. Falls back to a header-only
-        # stub if the LLM isn't reachable â€” the L1 file still lands.
+        # stub if the LLM isn't reachable — the L1 file still lands.
         summary_body = await self._narrator_summarize(session) or (
-            f"_(LLM unavailable â€” see ``meeting_{session.id}`` source for full transcript.)_"
+            f"_(LLM unavailable — see ``meeting_{session.id}`` source for full transcript.)_"
         )
         body = (
-            f"# Meeting summary â€” {session.title}\n\n"
+            f"# Meeting summary — {session.title}\n\n"
             f"- URL: {session.url}\n"
             f"- Joined: {session.joined_at}\n"
             f"- Ended: {session.ended_at}\n"
@@ -393,7 +393,7 @@ class MeetingAgentService:
             f"meeting_{session.id}",
             body,
             level=1,
-            title=f"{session.title} â€” summary",
+            title=f"{session.title} — summary",
             tags=["meeting", "summary", "narrator"],
         )
 
@@ -426,7 +426,7 @@ class MeetingAgentService:
         )
         prompt = (
             f"{system_prompt}\n\n"
-            f"Summarize the meeting transcript below in 3â€“5 bullet points. "
+            f"Summarize the meeting transcript below in 3–5 bullet points. "
             f"Highlight decisions, owners, and follow-ups. Title: {session.title}.\n\n"
             f"---\nTranscript snippets:\n{joined}\n---"
         )
@@ -443,7 +443,7 @@ class MeetingAgentService:
             logger.debug("meeting_agent_narrator_route_failed", error=str(e))
             return None
 
-        # Prefer the Bifrost gateway when it's running (shared infra) â€”
+        # Prefer the Bifrost gateway when it's running (shared infra) —
         # it handles fallbacks + circuit breakers + budget caps centrally.
         # Falls back to a prompt-only return when neither Bifrost nor a
         # direct provider call is wired here (the existing behavior).
@@ -458,7 +458,7 @@ class MeetingAgentService:
                         {
                             "role": "user",
                             "content": (
-                                "Summarize the meeting transcript below in 3â€“5 "
+                                "Summarize the meeting transcript below in 3–5 "
                                 "bullet points. Highlight decisions, owners, and "
                                 f"follow-ups. Title: {session.title}.\n\n"
                                 f"Transcript snippets:\n{joined}"
@@ -522,7 +522,7 @@ def _extract_take_a_note(text: str) -> Optional[str]:
     """Pull a 'Hey Zero, take a note: ...' instruction from raw transcript.
 
     Returns the note body without the trigger phrase, or None if no trigger
-    is present. Tuned for spoken-language sloppiness â€” accepts "Hey Zero, take
+    is present. Tuned for spoken-language sloppiness — accepts "Hey Zero, take
     a note that ...", "OK Zero, record this: ...", etc.
     """
     if not text:

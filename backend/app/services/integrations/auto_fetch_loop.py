@@ -1,5 +1,5 @@
 ﻿"""
-Auto-fetch loop â€” walks every connected integration on a configurable
+Auto-fetch loop — walks every connected integration on a configurable
 cadence (openhuman uses 20 min) and feeds the result into the Memory Vault.
 
 Decoupled from the Composio provider so the loop also covers Zero-native
@@ -191,7 +191,7 @@ class AutoFetchLoop:
                 logger.debug("calendar_autofetch_skipped", error=str(e))
                 return ""
 
-        # Composio-backed integrations â€” placeholder body until we wire
+        # Composio-backed integrations — placeholder body until we wire
         # the SDK's per-tool calls. The act of writing a chunk still lets
         # the user see in the UI that the loop is alive.
         logger.info("auto_fetch_skipped_unwired_connector", integration=integration_id)

@@ -45,7 +45,7 @@ _MAX_EVENTS = 200
 
 @dataclass
 class OpenHandsTask:
-    """One task dispatch â€” maps to an OpenHands conversation."""
+    """One task dispatch — maps to an OpenHands conversation."""
 
     id: str
     instruction: str
@@ -121,7 +121,7 @@ class OpenHandsRuntimeService:
         if workspace not in {"local", "docker"}:
             raise ValueError(f"workspace must be 'local' or 'docker', got {workspace!r}")
 
-        # Inject microagent context â€” same trigger-based pattern OpenHands
+        # Inject microagent context — same trigger-based pattern OpenHands
         # uses natively, just sourced from Zero's own ``microagents/`` tree.
         final_instruction = instruction
         try:
@@ -200,7 +200,7 @@ class OpenHandsRuntimeService:
             self._save()
             await self._record_event(task, {"type": "start", "instruction": task.instruction})
 
-            # Workspace selection. The SDK names vary by version â€” we probe
+            # Workspace selection. The SDK names vary by version — we probe
             # both shapes and pick whichever is present.
             workspace_cls = None
             try:
@@ -272,7 +272,7 @@ class OpenHandsRuntimeService:
                 from app.services.memory_tree import get_memory_tree
                 tree = get_memory_tree()
                 body = (
-                    f"# OpenHands task â€” {task.id}\n\n"
+                    f"# OpenHands task — {task.id}\n\n"
                     f"- Status: {task.status}\n"
                     f"- Workspace: {task.workspace}\n"
                     f"- Model: {task.model or '(default)'}\n"

@@ -6,7 +6,7 @@ incorporates the additions on subsequent runs.
 
 ---
 
-## 2026-04-28 â€” Run 1 baseline
+## 2026-04-28 — Run 1 baseline
 
 No new checks added beyond the skill default. Future-state pointers:
 

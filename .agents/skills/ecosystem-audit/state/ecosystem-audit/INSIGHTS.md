@@ -1,4 +1,4 @@
-﻿# Ecosystem audit â€” recurring insights
+﻿# Ecosystem audit — recurring insights
 
 This file accumulates patterns that appear in **two or more consecutive runs**.
 First-run observations land in `runs/<date>.md` only. They get promoted here on
@@ -7,7 +7,7 @@ not the firehose.
 
 ---
 
-## Run 1 â€” 2026-04-28 â€” baseline established
+## Run 1 — 2026-04-28 — baseline established
 
 First formal run. Skill state did not previously exist (was scaffolded this
 run). Lib files (`canonical-mandates.md`, `port-map.md`, `managed-projects.md`,
@@ -19,8 +19,8 @@ human installer / prior partial work; treated as authoritative.
 These will be promoted to permanent insights only if Run 2 sees them again.
 
 1. **Pattern: schedulers shipped, schedulers don't fire.** Three independent
-   confirmations this run â€” Ada daily-briefing, Ada enhanced post-market
-   report, Legion `llm_ops` â€” all defined cron jobs but `register_*_jobs()` is
+   confirmations this run — Ada daily-briefing, Ada enhanced post-market
+   report, Legion `llm_ops` — all defined cron jobs but `register_*_jobs()` is
    never called from the FastAPI lifespan. Watch Run 2 for whether this
    recurs after Q1/Q2 land.
 
@@ -31,7 +31,7 @@ These will be promoted to permanent insights only if Run 2 sees them again.
 
 3. **Pattern: gate-by-env-var instead of `interrupt()`.** Ada
    `broker_orders.py` gates live orders on `ROBINHOOD_PAPER_TRADING` env var
-   only â€” no LangGraph `interrupt()`. This is a `financial`-tier MANDATE
+   only — no LangGraph `interrupt()`. This is a `financial`-tier MANDATE
    violation. Q4 is the fix.
 
 4. **Pattern: lib registry drift caught only manually.** Lib `port-map.md` says
@@ -43,11 +43,11 @@ These will be promoted to permanent insights only if Run 2 sees them again.
 
 - All five canonical models reachable: `qwen3-chat`, `qwen3-coder`,
   `Qwen/Qwen3-Embedding-0.6B` resolved on `:18800` and `:8001`.
-- LiteLLM image pinned to `1.83.7-stable` â€” satisfies MANDATE invariant #7
-  (â‰¥1.81.14, not in compromised 1.82.7/1.82.8 window).
-- Vault git is live (last commit â‰¤24h ago).
+- LiteLLM image pinned to `1.83.7-stable` — satisfies MANDATE invariant #7
+  (≥1.81.14, not in compromised 1.82.7/1.82.8 window).
+- Vault git is live (last commit ≤24h ago).
 - All three project mandates verbatim against canonical.
-- Reachy daemon owns `:8000` correctly (banner confirms â€” "Reachy Mini
+- Reachy daemon owns `:8000` correctly (banner confirms — "Reachy Mini
   dashboard").
 - All 7 Tier-1 + 2 of 3 Tier-2 plugins present in vault (only `bases` missing,
   proposal already filed `plugin-bases-builtin-note.md`).
