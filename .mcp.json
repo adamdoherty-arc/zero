@@ -2,45 +2,74 @@
   "mcpServers": {
     "playwright": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@playwright/mcp@latest"
+      ]
     },
     "qmd": {
       "command": "bash",
-      "args": ["C:\\Users\\hadam\\.bun\\install\\global\\node_modules\\qmd\\qmd", "mcp"],
+      "args": [
+        "C:\\Users\\hadam\\.bun\\install\\global\\node_modules\\qmd\\qmd",
+        "mcp"
+      ],
       "env": {
         "HOME": "C:\\Users\\hadam"
       }
     },
     "memory": {
       "command": "npx",
-      "args": ["-y", "@anthropic/memory-mcp"],
+      "args": [
+        "-y",
+        "@anthropic/memory-mcp"
+      ],
       "env": {
         "MEMORY_DB_PATH": "C:\\code\\zero\\workspace\\memory\\claude-memory.db"
       }
     },
     "zero-mcp": {
-      "command": "python",
-      "args": ["C:\\code\\zero\\mcp_servers\\zero_api_mcp.py"]
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "C:\\code\\zero\\mcp_servers\\zero_api_mcp.py"
+      ]
     },
     "zero-company": {
-      "command": "python",
-      "args": ["C:\\code\\zero\\mcp_servers\\zero_company_mcp.py"]
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "C:\\code\\zero\\mcp_servers\\zero_company_mcp.py"
+      ]
     },
     "legion-mcp": {
-      "command": "python",
-      "args": ["C:\\code\\Legion\\mcp_servers\\legion_mcp.py"]
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "C:\\code\\Legion\\mcp_servers\\legion_mcp.py"
+      ]
     },
     "ada-mcp": {
-      "command": "python",
-      "args": ["C:\\code\\ADA\\mcp_servers\\ada_mcp.py"]
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "-m",
+        "src.ada.mcp.mcp_server_v2"
+      ],
+      "cwd": "C:\\code\\ADA",
+      "env": {
+        "PYTHONPATH": "C:\\code\\ADA"
+      }
     },
     "kimi-llm": {
-      "command": "python",
-      "args": ["C:\\code\\zero\\mcp_servers\\kimi_mcp.py"]
+      "command": "C:\\Python314\\python.exe",
+      "args": [
+        "C:\\code\\zero\\mcp_servers\\kimi_mcp.py"
+      ]
     },
     "cyanheads-obsidian": {
       "command": "cmd",
-      "args": ["/c", "obsidian-mcp-server"],
+      "args": [
+        "/c",
+        "obsidian-mcp-server"
+      ],
       "env": {
         "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
         "OBSIDIAN_BASE_URL": "https://127.0.0.1:27124"
@@ -48,7 +77,13 @@
     },
     "postgres-mcp": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "@modelcontextprotocol/server-postgres", "postgresql://zero:zero_dev@localhost:5434/zero"]
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://zero:zero_dev@localhost:5434/zero"
+      ]
     }
   }
 }
