@@ -227,6 +227,21 @@ class EnhancementService:
         }
         max_file_size = 512 * 1024  # Skip files > 512KB
 
+        # The signal pipeline must not scan itself. Its own source is full of
+        # comments that NAME the markers while describing how they are routed
+        # ("# FIXME with good confidence -> auto-fix", "# Security issues always
+        # get human review"), and the extractor cannot tell prose-about-a-marker
+        # from a real marker. Both of those lines were filed as live signals and
+        # reached Legion as tasks in sprint 13275 on 2026-08-01. Same reasoning
+        # as the `_archive` exclusion above: never generate work about the
+        # machinery that generates the work.
+        self_referential = {
+            "enhancement_service.py",
+            "daily_improvement_service.py",
+            "continuous_enhancement_service.py",
+            "task_execution_service.py",
+        }
+
         for scan_dir in scan_dirs:
             if not scan_dir.exists():
                 continue
@@ -237,6 +252,8 @@ class EnhancementService:
                 if file_path.suffix not in self.scan_extensions:
                     continue
                 if any(part in skip_dirs for part in file_path.parts):
+                    continue
+                if file_path.name in self_referential:
                     continue
 
                 try:

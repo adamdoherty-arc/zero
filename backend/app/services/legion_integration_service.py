@@ -464,6 +464,33 @@ Return ONLY the JSON array, no other text."""
             if current:
                 return current
 
+            # Reuse an existing OPEN container before opening another one.
+            # get_current_sprint only matches status="active", but these
+            # containers are filed as "planned" and never started, so that
+            # lookup missed on every run and a fresh "<title> - <date>" sprint
+            # was created each day. Four had accumulated for project 7 by
+            # 2026-08-04, each holding a few pending tasks, with nothing
+            # bounding the growth. Match on the title stem so today's tasks
+            # land in the container already holding the same kind of work,
+            # newest first so the reused row is the most recent one.
+            try:
+                open_sprints = await legion.list_sprints(
+                    project_id=project_id, status="planned", limit=100
+                )
+            except Exception:
+                open_sprints = []
+            for sprint in sorted(
+                open_sprints or [], key=lambda s: s.get("id") or 0, reverse=True
+            ):
+                name = sprint.get("name") or ""
+                if f": {title} - " in name or name.endswith(f": {title}"):
+                    logger.info(
+                        "reusing_open_auto_sprint",
+                        sprint_id=sprint.get("id"),
+                        name=name,
+                    )
+                    return sprint
+
             sprint_data = {
                 "category": category,
                 "title": f"{title} - {datetime.utcnow().strftime('%Y-%m-%d')}",
