@@ -73,6 +73,16 @@ class TaskExecutionService:
     and reports progress through notifications.
     """
 
+    # Directory names this service must never write into, whatever the planner
+    # proposes: VCS metadata, retired code kept only for reference, and vendored
+    # trees. Matched per path segment (not as a substring) so a legitimate file
+    # like "app/services/archive_service.py" is unaffected.
+    _NEVER_WRITE_PARTS = frozenset({
+        ".git", ".hg", ".svn", ".claude",
+        "_archive", ".archive", "attic",
+        "node_modules", ".venv", "venv", "__pycache__",
+    })
+
     def __init__(self):
         self._storage = JsonStorage(get_workspace_path("agent"))
         self._current_task: Optional[Dict[str, Any]] = None
@@ -89,7 +99,7 @@ class TaskExecutionService:
             "max_ollama_retries": 2,
             "ollama_timeout": 120,
             "protected_paths": [
-                "infrastructure/", "migrations/", ".env",
+                "infrastructure/", "migrations/", "alembic/", ".env",
                 "docker-compose", "Dockerfile", ".lock",
             ],
             "coding_model": None,  # resolved via LLM router (task_type=coding)
@@ -270,6 +280,10 @@ class TaskExecutionService:
             # Get next queued task
             queue_data = await self._storage.read("queue.json")
             queue = queue_data.get("tasks", [])
+
+            if await self._reclaim_orphaned_tasks(queue):
+                await self._storage.write("queue.json", {"tasks": queue})
+
             queued = [t for t in queue if t.get("status") == "queued"]
 
             if not queued:
@@ -288,6 +302,50 @@ class TaskExecutionService:
 
             # Execute
             await self.execute_task(task)
+
+    async def _reclaim_orphaned_tasks(self, queue: List[Dict[str, Any]]) -> bool:
+        """
+        Fail any queue row left in `running` state by a process that died.
+
+        execute_task clears the queue row in its `finally`, so the only way a
+        row stays `running` is the process ending mid-execution — a container
+        restart, or shutdown cancelling the two-minute tick. check_and_execute
+        then picks only `queued` rows, so the leftover is never retried, never
+        completes, and never surfaces anywhere: it is stranded permanently.
+        Three had accumulated by 2026-08-04, two of them writing into Legion.
+
+        This runs only while the service is idle and holds no current task, so
+        a `running` row seen here cannot belong to a live execution. Rows are
+        failed rather than requeued because these tasks write files, and
+        replaying a half-applied plan from step 1 would re-apply the steps that
+        already landed. Mutates `queue` in place; returns True if it changed.
+        """
+        current_id = (self._current_task or {}).get("task_id")
+        orphans = [
+            t for t in queue
+            if t.get("status") == "running" and t.get("task_id") != current_id
+        ]
+        if not orphans:
+            return False
+
+        now = datetime.utcnow().isoformat()
+        for task in orphans:
+            task["status"] = "failed"
+            task["completed_at"] = now
+            task["result"] = {
+                "error": "orphaned: the execution process ended before this task finished"
+            }
+            await self._move_to_history(task)
+            logger.warning(
+                "orphaned_task_reclaimed",
+                task_id=task.get("task_id"),
+                title=task.get("title"),
+                project_path=task.get("project_path"),
+            )
+
+        orphan_ids = {t.get("task_id") for t in orphans}
+        queue[:] = [t for t in queue if t.get("task_id") not in orphan_ids]
+        return True
 
     async def execute_task(self, task: Dict[str, Any]):
         """Execute a single task end-to-end."""
@@ -510,21 +568,86 @@ Example: [{{"action":"create_file","file_path":"src/hello.py","description":"Cre
     # STEP EXECUTION
     # ========================================
 
+    def _resolve_target(
+        self, project_path: str, file_path: str
+    ) -> tuple[Optional[Path], str, str]:
+        """
+        Turn an LLM-proposed step path into a real filesystem target, or refuse.
+
+        `step.file_path` is untrusted model output, and this service runs
+        unattended every two minutes (see check_and_execute) against repos that
+        docker-compose.sprint.yml bind-mounts READ-WRITE into the container
+        (C:/code/zero -> /projects/zero:rw, C:/code/Legion -> /projects/legion:rw,
+        the Obsidian vault -> /vault:rw). Every rule below exists because the
+        naive `Path(project_path) / file_path` this replaces had none of them:
+
+          - an absolute `file_path` silently DISCARDS project_path under pathlib
+            join semantics, so a single hallucinated "/projects/legion/..." step
+            wrote straight into a different project's repo;
+          - `..` segments walked out of the root the same way;
+          - enhancement signals carry source_file="/projects/zero/<rel>", so the
+            planner echoes a "projects/zero/" prefix that then gets joined ONTO
+            project_path. That double-prefix is what fabricated
+            C:/code/zero/projects/zero/skills/_archive/hn/scripts/ on 2026-08-01.
+
+        Returns (target, root_relative_posix_path, "") on success, or
+        (None, "", reason) on refusal.
+        """
+        raw = (file_path or "").strip().replace("\\", "/")
+        if not raw:
+            return None, "", "empty file path"
+
+        # Absolute in either POSIX (/x) or Windows (C:/x) form — never honoured,
+        # because an absolute right-hand side replaces the root entirely.
+        if raw.startswith("/") or re.match(r"^[A-Za-z]:", raw):
+            return None, "", f"absolute path refused: {file_path}"
+
+        root = Path(project_path).resolve() if project_path else Path.cwd().resolve()
+
+        parts = [p for p in raw.split("/") if p not in ("", ".")]
+
+        # Drop a leading "projects/<slug>/" that merely repeats the root we are
+        # already joining against; keep it otherwise (a real ./projects dir).
+        if len(parts) >= 2 and parts[0] == "projects" and parts[1].lower() == root.name.lower():
+            parts = parts[2:]
+
+        if not parts:
+            return None, "", "path resolves to the project root"
+        if ".." in parts:
+            return None, "", f"parent traversal refused: {file_path}"
+
+        blocked = sorted({p.lower() for p in parts} & self._NEVER_WRITE_PARTS)
+        if blocked:
+            return None, "", f"non-writable directory '{blocked[0]}' in path: {file_path}"
+
+        target = (root / Path(*parts)).resolve()
+        try:
+            rel = target.relative_to(root).as_posix()
+        except ValueError:
+            return None, "", f"escapes project root: {file_path}"
+
+        return target, rel, ""
+
     async def _execute_step(self, step: ExecutionStep, task: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single step: generate code and write it."""
-        file_path = step.file_path
         project_path = task.get("project_path", "")
 
-        # Safety: check protected paths
-        for pattern in self._settings.get("protected_paths", []):
-            if pattern in file_path:
-                return {"message": f"Skipped — protected path: {pattern}", "file_written": False}
+        # Containment first: everything downstream operates on the resolved
+        # target, so protected-path patterns are matched against the path we
+        # will actually write rather than the string the planner handed us.
+        full_path, rel_path, refusal = self._resolve_target(project_path, step.file_path)
+        if refusal:
+            logger.warning(
+                "step_path_refused",
+                file=step.file_path,
+                project_path=project_path,
+                reason=refusal,
+            )
+            return {"message": f"Skipped — {refusal}", "file_written": False}
 
-        # Resolve full path
-        if project_path:
-            full_path = Path(project_path) / file_path
-        else:
-            full_path = Path(file_path)
+        for pattern in self._settings.get("protected_paths", []):
+            if pattern in rel_path:
+                return {"message": f"Skipped — protected path: {pattern}", "file_written": False}
 
         if step.action == "create_file":
             return await self._create_file(full_path, step)
@@ -562,8 +685,18 @@ Rules:
         if line_count > max_lines:
             raise Exception(f"Generated code too long ({line_count} lines, max {max_lines})")
 
-        # Create parent directories
-        await asyncio.to_thread(full_path.parent.mkdir, parents=True, exist_ok=True)
+        # Create parent directories, capped at ONE new level. An unbounded
+        # mkdir(parents=True) turns a single hallucinated path segment into a
+        # whole fabricated directory tree inside a live repo — that is how
+        # projects/zero/skills/_archive/hn/scripts/ appeared on 2026-08-01.
+        parent = full_path.parent
+        if not parent.exists():
+            if not parent.parent.exists():
+                raise Exception(
+                    f"Refusing to create nested directories for {step.file_path}: "
+                    f"{parent} sits under a parent that does not exist"
+                )
+            await asyncio.to_thread(parent.mkdir, parents=False, exist_ok=True)
 
         # Write file
         await asyncio.to_thread(full_path.write_text, code, encoding="utf-8")
@@ -574,8 +707,15 @@ Rules:
     async def _modify_file(self, full_path: Path, step: ExecutionStep) -> Dict[str, Any]:
         """Read, modify, and write an existing file."""
         if not full_path.exists():
-            # If file doesn't exist, treat as create
-            return await self._create_file(full_path, step)
+            # A modify_file step whose target does not exist means the planner
+            # invented the path. Silently promoting it to create_file (the old
+            # behaviour) is what let a bogus directory tree be materialised from
+            # a bad path string; record the miss and let the step fail instead.
+            logger.warning("modify_target_missing", file=step.file_path, path=str(full_path))
+            return {
+                "message": f"Skipped — modify target does not exist: {step.file_path}",
+                "file_written": False,
+            }
 
         # Read existing content
         original = await asyncio.to_thread(full_path.read_text, encoding="utf-8")
@@ -653,12 +793,32 @@ Rules:
     # ========================================
 
     def _validate_code(self, code: str, file_path: str):
-        """Validate generated code syntax."""
+        """
+        Validate generated code syntax for every format we can cheaply parse.
+
+        Config formats matter as much as Python here: a malformed .json/.yaml
+        written by the model breaks the next boot rather than the next import,
+        and nothing downstream re-reads it before the container restarts.
+        """
         if file_path.endswith(".py"):
             try:
                 ast.parse(code)
             except SyntaxError as e:
                 raise Exception(f"Python syntax error: {e}")
+        elif file_path.endswith(".json"):
+            try:
+                json.loads(code)
+            except ValueError as e:
+                raise Exception(f"JSON syntax error: {e}")
+        elif file_path.endswith((".yaml", ".yml")):
+            try:
+                import yaml
+
+                yaml.safe_load(code)
+            except ImportError:
+                pass  # PyYAML absent — fall back to no validation for YAML
+            except Exception as e:
+                raise Exception(f"YAML syntax error: {e}")
 
     def _clean_code_response(self, response: str) -> str:
         """Clean LLM response: strip markdown fences and artifacts."""
