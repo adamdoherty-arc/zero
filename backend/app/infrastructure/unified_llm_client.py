@@ -200,6 +200,57 @@ def _try_recover_json(text: str) -> Optional[Union[dict, list]]:
     return None
 
 
+def _coerce_to_schema_shape(
+    result: Union[dict, list], output_schema: Optional[Union[dict, list]]
+) -> Union[dict, list]:
+    """
+    Honour the SHAPE the caller asked for: a list schema must yield a list.
+
+    Models answer a list-shaped schema with a bare object whenever they produce
+    exactly one result, and with a wrapper ({"learnings": [...]}) whenever they
+    decide to nest. Callers wrote `if isinstance(result, list)` and silently
+    dropped everything else, so a single result became no result at all.
+
+    This has now bitten twice. Run 868a8df4 (2026-08-01) found `email_to_tasks`
+    extracting 0 items from an unmistakably actionable email. Run c214aef9
+    (2026-08-06) found `reflect_on_decisions` analysing 20 decisions and storing
+    0 learnings on every 8-hourly run, because a single-learning reply is a bare
+    item dict and the unwrap branch only looked for wrapper keys. Seven of the
+    eight list-schema call sites had the same hole, so normalise once here rather
+    than patch each one and wait for the eighth.
+
+    Disambiguation: an object sharing any key with the schema exemplar is an
+    ITEM; a single-key object whose value is a list is a WRAPPER.
+    """
+    if not isinstance(output_schema, list) or not isinstance(result, dict):
+        return result
+
+    exemplar = output_schema[0] if output_schema and isinstance(output_schema[0], dict) else {}
+    item_keys = set(exemplar.keys())
+    if item_keys and item_keys & set(result.keys()):
+        return [result]
+
+    if len(result) == 1:
+        (only_value,) = result.values()
+        if isinstance(only_value, list):
+            return only_value
+
+    for wrapper_key in ("results", "items", "data"):
+        nested = result.get(wrapper_key)
+        if isinstance(nested, list):
+            return nested
+
+    # Unrecognised object against a list schema. Hand it back as a single item
+    # rather than dropping it: callers filter on the fields they need, so a bad
+    # guess costs nothing while a silent [] costs the whole call.
+    logger.warning(
+        "structured_chat_unrecognised_object_for_list_schema",
+        keys=list(result.keys()),
+        expected_keys=sorted(item_keys),
+    )
+    return [result] if result else []
+
+
 class UnifiedLLMClient:
     """Routes LLM calls to the best provider with fallback and cost tracking."""
 
@@ -379,7 +430,7 @@ class UnifiedLLMClient:
                 if result is not None:
                     # Record structured output metrics
                     self._record_structured_metrics(True, attempt, task_type)
-                    return result
+                    return _coerce_to_schema_shape(result, output_schema)
 
                 last_error = "Response is not valid JSON"
                 logger.warning(

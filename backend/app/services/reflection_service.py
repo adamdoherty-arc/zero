@@ -11,7 +11,14 @@ from functools import lru_cache
 
 import structlog
 
-from app.infrastructure.unified_llm_client import get_unified_llm_client
+from app.infrastructure.unified_llm_client import (
+    _coerce_to_schema_shape,
+    get_unified_llm_client,
+)
+
+# One definition, used for BOTH the request and the response normalisation, so
+# the shape we ask for and the shape we accept can never drift apart.
+_LEARNING_SCHEMA = [{"learning": "string", "confidence": "number"}]
 
 logger = structlog.get_logger(__name__)
 
@@ -281,30 +288,20 @@ class ReflectionService:
                     f"Extract 3-5 meta-learnings. What patterns emerge? "
                     f"What should change going forward?"
                 ),
-                output_schema=[{"learning": "string", "confidence": "number"}],
+                output_schema=_LEARNING_SCHEMA,
                 task_type="analysis",
                 temperature=0.2,
             )
 
-            # structured_chat may hand back a top-level list OR a dict wrapper
-            # (e.g. {"learnings": [...]}); unwrap the dict so meta-learnings
-            # aren't silently dropped for the learn loop.
-            if isinstance(result, dict):
-                unwrapped = (
-                    result.get("learnings")
-                    or result.get("results")
-                    or result.get("items")
-                )
-                if unwrapped is None and result:
-                    # RFL-8 (supervise 3c3ade8e): structured_chat handed back a dict
-                    # whose wrapper key isn't one we recognize, so every meta-learning
-                    # is silently dropped to []. Surface the actual keys so the drop is
-                    # diagnosable instead of an invisible learnings_stored=0.
-                    logger.warning(
-                        "reflection_dict_wrapper_unrecognized",
-                        keys=list(result.keys()),
-                    )
-                result = unwrapped or []
+            # `structured_chat` already normalises a list-shaped schema, but run
+            # it again here so the guarantee holds for any caller that stubs the
+            # client. Both shapes are real: a wrapper ({"learnings": [...]}) was
+            # Gap #6, and a BARE ITEM ({"learning": ..., "confidence": ...}) is
+            # what a single-learning reply looks like. The old code recognised
+            # only the wrapper, logged `reflection_dict_wrapper_unrecognized` for
+            # the item, and dropped it -- so the loop analysed 20 decisions and
+            # stored 0 learnings, every 8 hours, for as long as the log retains.
+            result = _coerce_to_schema_shape(result, _LEARNING_SCHEMA)
             if isinstance(result, list):
                 return [
                     item.get("learning", "")

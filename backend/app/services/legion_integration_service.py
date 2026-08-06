@@ -249,6 +249,24 @@ class LegionIntegrationService:
         if not emails:
             return {"status": "no_emails", "tasks_created": 0}
 
+        # Nothing marks these emails read, so every daily run saw the SAME unread
+        # inbox, paid for an LLM extraction per message, and re-filed the same
+        # action items into a fresh sprint. By 2026-08-06 that had produced three
+        # sprints holding 23 tasks, of which "Re-request access to
+        # demo@jhu-wd-sandbox.edu" appeared five times and the AI-Interviewer
+        # workflow review five more. Remember what has been processed, and never
+        # file a title the sprint already carries (Fix-163).
+        processed_ids = await self._load_processed_email_ids()
+        fresh = [e for e in emails if e.id not in processed_ids]
+        if not fresh:
+            logger.info("email_to_tasks_all_processed", emails_checked=len(emails))
+            return {
+                "status": "completed",
+                "emails_checked": len(emails),
+                "emails_skipped": len(emails),
+                "tasks_created": 0,
+            }
+
         tasks_created = 0
         sprint = await self._get_or_create_sprint(
             legion, ZERO_PROJECT_ID, "Plan", "Auto: Email Action Items"
@@ -256,19 +274,34 @@ class LegionIntegrationService:
         if not sprint:
             return {"status": "no_sprint", "tasks_created": 0}
 
-        for email in emails:
+        existing_titles = await self._existing_task_titles(legion, sprint["id"])
+        newly_processed: List[str] = []
+        duplicates_skipped = 0
+
+        for email in fresh:
             if tasks_created >= MAX_TASKS_PER_RUN:
                 break
 
             action_items = await self._extract_action_items(email)
+            # Mark processed even with no action items: a second extraction of a
+            # message that yielded nothing costs another LLM call for the same
+            # nothing.
+            newly_processed.append(email.id)
             if not action_items:
                 continue
 
             for item in action_items:
                 if tasks_created >= MAX_TASKS_PER_RUN:
                     break
+                title = f"[Email] {str(item.get('action', ''))[:100]}"
+                # The model paraphrases the same action differently run to run, so
+                # the id check alone would not have caught the observed duplicates.
+                normalised = " ".join(title.lower().split())
+                if normalised in existing_titles:
+                    duplicates_skipped += 1
+                    continue
                 task_data = {
-                    "title": f"[Email] {str(item.get('action', ''))[:100]}",
+                    "title": title,
                     "description": (
                         f"From: {email.from_address}\n"
                         f"Subject: {email.subject}\n"
@@ -280,15 +313,104 @@ class LegionIntegrationService:
                 }
                 try:
                     await legion.create_task(sprint["id"], task_data)
+                    existing_titles.add(normalised)
                     tasks_created += 1
                 except Exception as e:
                     logger.warning("email_task_create_failed", error=str(e))
 
-        logger.info("email_to_tasks", emails_checked=len(emails), tasks_created=tasks_created)
+        await self._save_processed_email_ids(processed_ids, newly_processed)
+
+        logger.info(
+            "email_to_tasks",
+            emails_checked=len(emails),
+            emails_skipped=len(emails) - len(fresh),
+            tasks_created=tasks_created,
+            duplicates_skipped=duplicates_skipped,
+        )
         return {
             "status": "completed",
             "emails_checked": len(emails),
+            "emails_skipped": len(emails) - len(fresh),
             "tasks_created": tasks_created,
+            "duplicates_skipped": duplicates_skipped,
+        }
+
+    # Bound the remembered set: unread mail is a moving window, so an unbounded
+    # list would grow forever to answer a question only ever asked about the most
+    # recent messages.
+    _PROCESSED_EMAIL_MEMORY = 500
+
+    async def _load_processed_email_ids(self) -> set:
+        """Email ids already converted to tasks, from ServiceConfigModel."""
+        from app.infrastructure.database import get_session
+        from app.db.models import ServiceConfigModel
+
+        try:
+            async with get_session() as session:
+                row = (
+                    await session.execute(
+                        select(ServiceConfigModel).where(
+                            ServiceConfigModel.service_name == "email_to_tasks"
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    return set()
+                return set((row.config or {}).get("processed_email_ids", []))
+        except Exception as e:
+            # Degrade to the old re-process behaviour rather than skipping the
+            # run: duplicate tasks are recoverable, a silent no-op is not.
+            logger.warning("email_processed_ids_load_failed", error=str(e))
+            return set()
+
+    async def _save_processed_email_ids(self, previous: set, newly: List[str]) -> None:
+        if not newly:
+            return
+        from app.infrastructure.database import get_session
+        from app.db.models import ServiceConfigModel
+        from sqlalchemy import update as sa_update
+
+        # Newest last, so the trim below drops the oldest.
+        merged = [e for e in previous if e not in set(newly)] + list(newly)
+        merged = merged[-self._PROCESSED_EMAIL_MEMORY:]
+        try:
+            async with get_session() as session:
+                row = (
+                    await session.execute(
+                        select(ServiceConfigModel).where(
+                            ServiceConfigModel.service_name == "email_to_tasks"
+                        )
+                    )
+                ).scalar_one_or_none()
+                if row is None:
+                    session.add(
+                        ServiceConfigModel(
+                            service_name="email_to_tasks",
+                            config={"processed_email_ids": merged},
+                        )
+                    )
+                else:
+                    config = dict(row.config or {})
+                    config["processed_email_ids"] = merged
+                    await session.execute(
+                        sa_update(ServiceConfigModel)
+                        .where(ServiceConfigModel.service_name == "email_to_tasks")
+                        .values(config=config)
+                    )
+        except Exception as e:
+            logger.warning("email_processed_ids_save_failed", error=str(e))
+
+    async def _existing_task_titles(self, legion, sprint_id: Any) -> set:
+        """Normalised titles already in the sprint, for duplicate suppression."""
+        try:
+            tasks = await legion.list_tasks(sprint_id)
+        except Exception as e:
+            logger.warning("email_existing_titles_failed", error=str(e))
+            return set()
+        return {
+            " ".join(str(t.get("title", "")).lower().split())
+            for t in (tasks or [])
+            if t.get("title")
         }
 
     async def _extract_action_items(self, email) -> List[Dict[str, Any]]:

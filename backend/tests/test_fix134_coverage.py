@@ -341,11 +341,31 @@ async def test_reflect_analyze_exception_breaks_gracefully(monkeypatch):
     assert out["iterations"] == 0
 
 
-async def test_reflect_on_decisions_unrecognized_wrapper_returns_empty(monkeypatch):
-    """RFL-8: unknown dict wrapper drops to [] (logged), never raises."""
+async def test_reflect_on_decisions_recovers_unknown_wrapper(monkeypatch):
+    """
+    An unknown wrapper key is recovered, not dropped (Fix-164 — was RFL-8).
+
+    RFL-8 originally asserted `== []` here: a wrapper whose key was not in a
+    hardcoded allow-list was discarded. But this payload is a well-formed
+    learning that merely arrived under a name nobody had listed, and discarding
+    it is the same lossy behaviour that left the reflection loop analysing 20
+    decisions and storing 0 learnings every 8 hours. A single-key object whose
+    value is a list is a wrapper regardless of what the model called it.
+    """
     class _Fake:
         async def structured_chat(self, **kw):
             return {"unexpected_key": [{"learning": "hidden"}]}
+
+    _patch_llm(monkeypatch, _Fake())
+    out = await rs.ReflectionService().reflect_on_decisions([{"action_type": "x"}], "ops")
+    assert out == ["hidden"]
+
+
+async def test_reflect_on_decisions_object_with_no_learning_yields_empty(monkeypatch):
+    """Recovery is not credulity: an object carrying no learning still gives []."""
+    class _Fake:
+        async def structured_chat(self, **kw):
+            return {"totally": "unexpected"}
 
     _patch_llm(monkeypatch, _Fake())
     out = await rs.ReflectionService().reflect_on_decisions([{"action_type": "x"}], "ops")

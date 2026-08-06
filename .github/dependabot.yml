@@ -1,0 +1,65 @@
+# Automated dependency updates for Zero.
+#
+# Closes the most-duplicated item in the auto-filed security backlog: "Configure
+# Dependabot" appeared in all four of sprints 13291 / 13302 / 13400 / 13472
+# before they were consolidated onto 13302 (supervise c214aef9).
+#
+# Companion to .github/workflows/security-scan.yml, which runs pip-audit against
+# backend/requirements.txt. That reports known vulnerabilities; this opens the
+# PRs that fix them.
+
+version: 2
+updates:
+  # ---- Python backend -------------------------------------------------------
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    labels: [dependencies, python, security]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # One PR for the routine patch churn, so security bumps stay legible
+      # instead of being buried in a queue of point releases.
+      patch-updates:
+        patterns: ['*']
+        update-types: [patch]
+
+  # ---- React / Vite frontend ------------------------------------------------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 5
+    labels: [dependencies, javascript, security]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      patch-updates:
+        patterns: ['*']
+        update-types: [patch]
+      dev-minor:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  # ---- GitHub Actions themselves --------------------------------------------
+  # Pinned action versions rot silently and are a supply-chain surface in their
+  # own right; security-scan.yml alone references four third-party actions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 3
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: chore
+      include: scope

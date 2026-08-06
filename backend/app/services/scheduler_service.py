@@ -5803,14 +5803,28 @@ Have a great evening!"""
 
     async def _run_brain_reflection(self):
         logger.info("running_brain_reflection")
+        from app.infrastructure.unified_llm_client import _describe_exc
+
         try:
             from app.services.zero_brain_service import get_zero_brain_service
             svc = get_zero_brain_service()
             result = await svc.run_reflection()
-            logger.info("brain_reflection_complete",
-                       learnings=len(result.get("learnings", [])))
+            # Log the whole outcome, not just the learning count. `learnings=0`
+            # alone cannot distinguish "nothing had happened worth reflecting on"
+            # from "we analysed 20 decisions and threw every one of the results
+            # away" -- and for as long as the logs retain, it was the second.
+            # decisions_analyzed is what makes those two cases distinguishable.
+            logger.info(
+                "brain_reflection_complete",
+                learnings=len(result.get("learnings", [])),
+                status=result.get("status", "reflected"),
+                decisions_analyzed=result.get("decisions_analyzed", 0),
+                learnings_stored=result.get("learnings_stored", 0),
+                duplicates_skipped=result.get("duplicates_skipped", 0),
+            )
         except Exception as e:
-            logger.error("brain_reflection_failed", error=str(e))
+            logger.error("brain_reflection_failed", error=_describe_exc(e))
+            raise
 
     async def _run_brain_memory_cleanup(self):
         logger.info("running_brain_memory_cleanup")

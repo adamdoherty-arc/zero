@@ -8,7 +8,9 @@ Persistence: PostgreSQL via SQLAlchemy async (EnhancementSignalModel, ServiceCon
 
 import asyncio
 import hashlib
+import io
 import re
+import tokenize
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -17,7 +19,8 @@ from functools import lru_cache
 from pathlib import Path
 import structlog
 
-from sqlalchemy import select, update, func as sa_func
+from sqlalchemy import select, update, func as sa_func, case as sa_case
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.infrastructure.database import get_session
 from app.infrastructure.config import get_workspace_path, get_settings
@@ -235,11 +238,17 @@ class EnhancementService:
         # reached Legion as tasks in sprint 13275 on 2026-08-01. Same reasoning
         # as the `_archive` exclusion above: never generate work about the
         # machinery that generates the work.
+        # The regression test that guards this exclusion is pipeline machinery
+        # too: it can only assert "a marker here must NOT be filed" by containing
+        # the markers. It was scanned, filed at critical/95, converted to a Legion
+        # task, and the executor rewrote its fixtures -- leaving a test that
+        # asserted nothing (Fix-162).
         self_referential = {
             "enhancement_service.py",
             "daily_improvement_service.py",
             "continuous_enhancement_service.py",
             "task_execution_service.py",
+            "test_enhancement_self_scan.py",
         }
 
         for scan_dir in scan_dirs:
@@ -289,8 +298,22 @@ class EnhancementService:
         """Extract signals from a single file with context-aware filtering."""
         signals = []
         lines = content.split('\n')
+        comment_lines = self._comment_line_numbers(file_path, content)
 
         for line_num, line in enumerate(lines, 1):
+            # A marker is only a marker when it is in a REAL comment. Scanning raw
+            # text matches markers inside docstrings and string literals too, and
+            # that is not a hypothetical: every one of Zero's own live signals on
+            # 2026-08-06 pointed at `tests/test_enhancement_self_scan.py` -- the
+            # regression test written to prevent exactly this. Its module
+            # docstring QUOTES the markers (line 5) and its fixtures pass them as
+            # string arguments (lines 36-37). All four were filed at
+            # security/critical/95 and fixme/high/100, two were converted to
+            # Legion tasks, and the executor rewrote the test's fixtures -- so the
+            # guard was neutered by the loop it guards against (Fix-162).
+            if comment_lines is not None and line_num not in comment_lines:
+                continue
+
             for pattern, signal_type, severity in self.todo_patterns:
                 match = re.search(pattern, line, re.IGNORECASE)
                 if match:
@@ -327,6 +350,29 @@ class EnhancementService:
 
         return signals
 
+    @staticmethod
+    def _comment_line_numbers(file_path: str, content: str) -> Optional[set]:
+        """
+        Line numbers that hold a real comment token.
+
+        Python is tokenized, so docstrings and string literals are excluded by
+        construction. Returns None for languages we cannot tokenize (and for
+        Python that fails to parse, e.g. a partially-written file), which tells
+        the caller to fall back to scanning every line.
+        """
+        if not file_path.endswith(".py"):
+            return None
+
+        try:
+            return {
+                tok.start[0]
+                for tok in tokenize.generate_tokens(io.StringIO(content).readline)
+                if tok.type == tokenize.COMMENT
+            }
+        except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+            # Unparseable source: fall back rather than silently scanning nothing.
+            return None
+
     def _is_false_positive(self, file_path: str, line: str, message: str, signal_type: SignalType) -> bool:
         """Filter out non-actionable signals that are documentation or comments about concepts."""
         # Skip signals in protected infrastructure paths
@@ -352,10 +398,12 @@ class EnhancementService:
         if len(message) < 5:
             return True
 
-        # Skip test files that contain pattern comments for testing purposes
+        # Skip test files that contain pattern comments for testing purposes.
+        # This covers EVERY signal type, not just TODO/DEPRECATED: the guard-test
+        # signals that started Fix-162 were fixme/high and security/critical, so
+        # they walked straight past the narrower version of this check.
         if '/tests/' in file_path or '\\tests\\' in file_path or '_test.' in file_path:
-            if signal_type in (SignalType.TODO, SignalType.DEPRECATED):
-                return True
+            return True
 
         # Skip SECURITY signals that are just section headers (e.g., "# SECURITY: Notes on...")
         if signal_type == SignalType.SECURITY:
@@ -431,66 +479,73 @@ class EnhancementService:
         new_count = 0
 
         async with get_session() as session:
-            # Fetch existing signal IDs and their statuses in one query
+            # Count what is genuinely new BEFORE writing, for the return value.
             existing_ids = {s.id for s in signals}
             if existing_ids:
                 result = await session.execute(
-                    select(
-                        EnhancementSignalModel.id,
-                        EnhancementSignalModel.status,
-                    ).where(EnhancementSignalModel.id.in_(existing_ids))
+                    select(EnhancementSignalModel.id).where(
+                        EnhancementSignalModel.id.in_(existing_ids)
+                    )
                 )
-                existing_map: Dict[str, str] = {row.id: row.status for row in result.all()}
+                already_present = {row for row in result.scalars().all()}
             else:
-                existing_map = {}
+                already_present = set()
+            new_count = len(existing_ids - already_present)
 
+            # Upsert rather than read-then-insert. Signal ids are a deterministic
+            # hash of file:line:message, so two scans that overlap in time derive
+            # the SAME id, both read "not present", and the second insert violates
+            # enhancement_signals_pkey -- which aborts the whole scan, not just the
+            # row. That happened on 2026-08-04 (SIG_4da7108f8b52) and took the
+            # 09:00 multi-project scan down with it. ON CONFLICT makes a re-detect
+            # a no-op update instead of a crash.
             for s in signals:
-                existing_status = existing_map.get(s.id)
-
-                if existing_status is not None:
-                    # Signal exists -- update fields but preserve status if converted/dismissed
-                    preserved_status = (
-                        existing_status
-                        if existing_status in ("converted", "dismissed")
-                        else s.status
+                stmt = pg_insert(EnhancementSignalModel).values(
+                    id=s.id,
+                    type=s.type.value,
+                    message=s.message,
+                    severity=s.severity.value,
+                    source_file=s.source_file,
+                    line_number=s.line_number,
+                    context=s.context,
+                    status=s.status,
+                    confidence=s.confidence,
+                    impact_score=s.impact_score,
+                    risk_score=s.risk_score,
+                    priority_score=s.priority_score,
+                    project_name=s.project_name,
+                    detected_at=s.detected_at,
+                )
+                await session.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=[EnhancementSignalModel.id],
+                        set_={
+                            "type": stmt.excluded.type,
+                            "message": stmt.excluded.message,
+                            "severity": stmt.excluded.severity,
+                            "source_file": stmt.excluded.source_file,
+                            "line_number": stmt.excluded.line_number,
+                            "context": stmt.excluded.context,
+                            "confidence": stmt.excluded.confidence,
+                            "impact_score": stmt.excluded.impact_score,
+                            "risk_score": stmt.excluded.risk_score,
+                            "priority_score": stmt.excluded.priority_score,
+                            "project_name": stmt.excluded.project_name,
+                            # A human/agent decision on this signal outranks a
+                            # re-detect: never resurrect a converted or dismissed
+                            # row back to pending.
+                            "status": sa_case(
+                                (
+                                    EnhancementSignalModel.status.in_(
+                                        ("converted", "dismissed")
+                                    ),
+                                    EnhancementSignalModel.status,
+                                ),
+                                else_=stmt.excluded.status,
+                            ),
+                        },
                     )
-                    await session.execute(
-                        update(EnhancementSignalModel)
-                        .where(EnhancementSignalModel.id == s.id)
-                        .values(
-                            type=s.type.value,
-                            message=s.message,
-                            severity=s.severity.value,
-                            source_file=s.source_file,
-                            line_number=s.line_number,
-                            context=s.context,
-                            status=preserved_status,
-                            confidence=s.confidence,
-                            impact_score=s.impact_score,
-                            risk_score=s.risk_score,
-                            priority_score=s.priority_score,
-                            project_name=s.project_name,
-                        )
-                    )
-                else:
-                    # New signal -- insert
-                    session.add(EnhancementSignalModel(
-                        id=s.id,
-                        type=s.type.value,
-                        message=s.message,
-                        severity=s.severity.value,
-                        source_file=s.source_file,
-                        line_number=s.line_number,
-                        context=s.context,
-                        status=s.status,
-                        confidence=s.confidence,
-                        impact_score=s.impact_score,
-                        risk_score=s.risk_score,
-                        priority_score=s.priority_score,
-                        project_name=s.project_name,
-                        detected_at=s.detected_at,
-                    ))
-                    new_count += 1
+                )
 
             # Update scan metadata in ServiceConfigModel
             now_iso = datetime.now(timezone.utc).isoformat()
