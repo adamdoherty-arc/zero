@@ -98,6 +98,14 @@ class TaskExecutionService:
             "max_lines_per_file": 200,
             "max_ollama_retries": 2,
             "ollama_timeout": 120,
+            # Fix-163: hard ceiling on a single task's end-to-end execution.
+            # execute_task was unbounded and is awaited inline by
+            # check_and_execute while holding self._lock, so one wedged task
+            # (a stalled LLM call, a subprocess that never returns) parked the
+            # executor permanently: every later 2-min tick saw is_busy() and
+            # returned. _reclaim_orphaned_tasks only recovers rows stranded by
+            # process DEATH, so a live-but-hung executor was invisible to it.
+            "task_timeout_seconds": 1800,  # 30 min
             "protected_paths": [
                 "infrastructure/", "migrations/", "alembic/", ".env",
                 "docker-compose", "Dockerfile", ".lock",
@@ -300,8 +308,20 @@ class TaskExecutionService:
             # Update queue
             await self._storage.write("queue.json", {"tasks": queue})
 
-            # Execute
-            await self.execute_task(task)
+            # Execute under a hard timeout. wait_for cancels execute_task on
+            # expiry and waits for its finally to unwind, so the queue row is
+            # still moved to history and self._status returns to IDLE — the
+            # executor frees itself instead of staying busy forever.
+            timeout_s = self._settings.get("task_timeout_seconds") or 1800
+            try:
+                await asyncio.wait_for(self.execute_task(task), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                logger.error(
+                    "task_execution_timeout",
+                    task_id=task.get("task_id", "unknown"),
+                    title=task.get("title", "Untitled"),
+                    timeout_seconds=timeout_s,
+                )
 
     async def _reclaim_orphaned_tasks(self, queue: List[Dict[str, Any]]) -> bool:
         """
@@ -358,22 +378,27 @@ class TaskExecutionService:
         self._steps = []
         self._should_stop = False
 
-        # Log execution start
         try:
-            from app.services.activity_log_service import get_activity_log_service
-            activity_log = get_activity_log_service()
-            project = self._extract_project_name(title)
-            await activity_log.log_event(
-                "execute_start", project, f"Started: {title}",
-                details={"task_id": task_id}, source="task_executor",
-            )
-        except Exception:
-            pass
+            # Fix-163: the start-up notice used to run BEFORE this try, after
+            # _current_task was already set. A timeout landing in those awaits
+            # (they do real file I/O and an outbound notify, so they are not
+            # instant) skipped the finally entirely and left the executor
+            # wedged busy — the very state the timeout exists to prevent.
+            # Everything after _current_task is assigned now lives in here.
+            try:
+                from app.services.activity_log_service import get_activity_log_service
+                activity_log = get_activity_log_service()
+                project = self._extract_project_name(title)
+                await activity_log.log_event(
+                    "execute_start", project, f"Started: {title}",
+                    details={"task_id": task_id}, source="task_executor",
+                )
+            except Exception:
+                pass
 
-        await self._notify(f"Started: {title}", f"Zero is now working on: {task.get('description', '')[:200]}")
-        await self._save_current_state()
+            await self._notify(f"Started: {title}", f"Zero is now working on: {task.get('description', '')[:200]}")
+            await self._save_current_state()
 
-        try:
             # Phase 1: Plan
             self._status = ExecutionStatus.PLANNING
             await self._save_current_state()
@@ -448,6 +473,21 @@ class TaskExecutionService:
                 f"Complete: {title}",
                 f"{completed_steps}/{len(self._steps)} steps done, {files_modified} files modified"
             )
+
+        except asyncio.CancelledError:
+            # Fix-163: raised when check_and_execute's wait_for hits
+            # task_timeout_seconds. CancelledError derives from BaseException,
+            # so the generic handler below never saw it and a timed-out task
+            # would have been filed to history with no status and no reason.
+            # Record the cause, then re-raise so cancellation is not swallowed;
+            # the finally block still performs the normal cleanup.
+            self._status = ExecutionStatus.FAILED
+            task["status"] = "failed"
+            task["completed_at"] = datetime.utcnow().isoformat()
+            task["result"] = {"error": "cancelled: exceeded task_timeout_seconds"}
+            task["execution_log"] = [s.to_dict() for s in self._steps]
+            logger.error("task_execution_cancelled", task_id=task_id, title=title)
+            raise
 
         except Exception as e:
             self._status = ExecutionStatus.FAILED

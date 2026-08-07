@@ -190,6 +190,14 @@ services:
       - ZERO_R2_BUCKET=${ZERO_R2_BUCKET:-}
       - ZERO_R2_PUBLIC_DOMAIN=${ZERO_R2_PUBLIC_DOMAIN:-}
     restart: unless-stopped
+    # Fix-163: graceful_shutdown() in main.py stops the scheduler, which waits
+    # for in-flight jobs for up to 30s, then drains the Discord bot, the
+    # integrations auto-fetch loop, the subconscious loop, Telegram, the LLM
+    # client and the DB pool. Docker's default grace is 10s, so every stop
+    # SIGKILLed the API mid-drain (exit 137 on 2026-08-06T19:56:50Z while
+    # zero-ui and zero-postgres both exited 0). 45s covers the 30s job wait
+    # plus the serial closes with headroom.
+    stop_grace_period: 45s
     depends_on:
       zero-postgres:
         condition: service_healthy

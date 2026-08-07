@@ -510,15 +510,22 @@ async def lifespan(app: FastAPI):
     # active-agents to /api/projects/{id}/heartbeat every 30s so Legion's
     # S9 dashboard + S20 health score have a fresh signal. Fire-and-forget:
     # any failure is logged but never raised into Zero's main loop.
+    # Fix-163: keep the handle. The task used to be created and dropped, so
+    # nothing could stop it: during shutdown it kept polling every 30s after
+    # close_database() had already disposed the pool, which is where the
+    # "RuntimeError: Database not initialized" lines in the 2026-08-06 stop
+    # came from.
+    _heartbeat_task: asyncio.Task | None = None
     try:
         from app.services.legion_heartbeat_emitter import start_heartbeat_loop
-        asyncio.create_task(start_heartbeat_loop(), name="legion_heartbeat")
+        _heartbeat_task = asyncio.create_task(
+            start_heartbeat_loop(), name="legion_heartbeat"
+        )
         logger.info("legion_heartbeat_emitter_started")
     except Exception as _hb_exc:
         logger.warning("legion_heartbeat_emitter_failed", error=str(_hb_exc)[:200])
 
     # Register graceful shutdown
-    import signal
     _shutting_down = False
 
     async def graceful_shutdown():
@@ -570,6 +577,19 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+        # Fix-163: stop the Legion heartbeat emitter BEFORE disposing the pool.
+        # It runs on a 30s timer and touches the DB, so leaving it alive across
+        # close_database() is what produced the "Database not initialized"
+        # tracebacks during shutdown.
+        if _heartbeat_task is not None and not _heartbeat_task.done():
+            _heartbeat_task.cancel()
+            try:
+                await _heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+
         # Close database connections
         try:
             await close_database()
@@ -578,17 +598,25 @@ async def lifespan(app: FastAPI):
 
         logger.info("Graceful shutdown complete")
 
-    try:
-        loop = asyncio.get_event_loop()
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda: asyncio.create_task(graceful_shutdown()))
-    except (NotImplementedError, AttributeError):
-        # Windows doesn't support add_signal_handler
-        pass
-
+    # Fix-163: do NOT install our own SIGTERM/SIGINT handlers here.
+    #
+    # uvicorn.run() calls Server.serve(), which runs install_signal_handlers()
+    # BEFORE it starts the lifespan. Registering our own handler from inside
+    # lifespan startup therefore REPLACED uvicorn's, so `should_exit` was never
+    # set: on SIGTERM the API ran graceful_shutdown() (closing the DB pool) but
+    # uvicorn kept serving, background loops kept running against a closed pool
+    # ("RuntimeError: Database not initialized" from the heartbeat emitter), and
+    # the process never exited. Docker SIGKILLed it every time.
+    #
+    # Measured 2026-08-07 against the pre-fix image: `docker stop -t 60
+    # zero-api` took the full 62s and still exited 137, which is why the
+    # 2026-08-06T19:56:50Z stop killed the API while zero-ui and zero-postgres
+    # exited 0. Letting uvicorn own the signal means should_exit is set, the
+    # server drains connections, the lifespan context exits, and the single
+    # shutdown path below runs exactly once.
     yield
 
-    # Normal shutdown path (lifespan exit)
+    # Normal shutdown path (lifespan exit) — now the ONLY path.
     await graceful_shutdown()
 
 
