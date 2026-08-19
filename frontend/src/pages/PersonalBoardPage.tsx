@@ -39,6 +39,9 @@ const COLUMNS: Array<{ status: TaskStatus; label: string; tone: string }> = [
   { status: 'backlog', label: 'Backlog', tone: 'border-gray-700 bg-gray-900/40' },
   { status: 'todo', label: 'To Do', tone: 'border-blue-800 bg-blue-950/30' },
   { status: 'in_progress', label: 'In Progress', tone: 'border-amber-800 bg-amber-950/30' },
+  // Submitted-and-waiting is a real state on a claim board (records requests,
+  // VA processing) and was previously unreachable — no column, no select option.
+  { status: 'on_hold', label: 'Waiting', tone: 'border-violet-800 bg-violet-950/30' },
   { status: 'blocked', label: 'Blocked', tone: 'border-rose-800 bg-rose-950/30' },
   { status: 'done', label: 'Done', tone: 'border-emerald-800 bg-emerald-950/30' },
 ]
@@ -215,8 +218,9 @@ export function PersonalBoardPage({ lockedTopic, title }: PersonalBoardPageProps
           <Sparkles className="w-10 h-10 mx-auto text-indigo-400 mb-3" />
           <h2 className="text-xl font-semibold mb-2">Set up the VA Claim Playbook</h2>
           <p className="text-gray-400 max-w-2xl mx-auto mb-6">
-            Seeds ~22 tasks broken into phases (7 days / 30 days / 60 days / 90 days / reference). Includes three "living narrative"
-            tasks for GERD, Anxiety, and Tinnitus that you refine over time — every edit creates an audit-trail event.
+            Seeds the full playbook, broken into phases (7 days / 30 days / 60 days / 90 days / reference). Includes "living narrative"
+            tasks for GERD, Anxiety, Tinnitus, Hearing Loss, and Migraines that you refine over time — every edit creates an
+            audit-trail event. Re-running is safe: existing tasks are matched by title and skipped.
           </p>
           <button
             onClick={() => seedVA.mutate()}
@@ -247,7 +251,7 @@ export function PersonalBoardPage({ lockedTopic, title }: PersonalBoardPageProps
 
       {/* Kanban */}
       {!showVAEmptyState && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
           {COLUMNS.map((col) => {
             const items = columns[col.status] || []
             return (
@@ -270,6 +274,21 @@ export function PersonalBoardPage({ lockedTopic, title }: PersonalBoardPageProps
         </div>
       )}
 
+      {/* Archived has no kanban column, so without this an archived task would
+          disappear from the board with no way to reopen it from the UI. */}
+      {!showVAEmptyState && (columns.archived || []).length > 0 && (
+        <div className="rounded-lg border border-gray-800 bg-gray-900/40 p-3">
+          <h3 className="font-semibold text-sm text-gray-400 mb-3">
+            Archived <span className="text-xs text-gray-600">({columns.archived.length})</span>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            {columns.archived.map((task) => (
+              <TaskCard key={task.id} task={task} onClick={() => setSelectedTask(task)} />
+            ))}
+          </div>
+        </div>
+      )}
+
       <TaskDetailDialog
         task={selectedTask}
         onClose={() => setSelectedTask(null)}
@@ -288,7 +307,7 @@ function TaskCard({ task, onClick }: { task: Task; onClick: () => void }) {
   const phase = phaseTag(task)
   const isNarrative = (task.tags || []).includes('narrative')
   const isPinned = (task.tags || []).includes('pinned')
-  const guideAnchor = getGuideAnchorForTask(task.id)
+  const guideAnchor = getGuideAnchorForTask(task)
   return (
     <button
       onClick={onClick}
@@ -468,9 +487,9 @@ function TaskDetailDialog({ task, onClose }: { task: Task | null; onClose: () =>
                 {t}
               </span>
             ))}
-            {getGuideAnchorForTask(task.id) && (
+            {getGuideAnchorForTask(task) && (
               <Link
-                to={`/va-claim/guide#${getGuideAnchorForTask(task.id)}`}
+                to={`/va-claim/guide#${getGuideAnchorForTask(task)}`}
                 className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-indigo-700 text-indigo-400 hover:bg-indigo-950/40"
               >
                 <BookOpen className="w-3.5 h-3.5" /> Read the full guide for this task

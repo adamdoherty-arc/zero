@@ -97,21 +97,39 @@ async def va_seed_status():
 async def seed_va(req: ActorRequest | None = None) -> SeedVAResponse:
     """Idempotently create the VA disability claim task tree.
 
-    Skips items whose title already exists under the VA Claim topic, so
-    running this twice is safe — useful for adding new seed items later.
+    Skips items already present under the VA Claim topic, so running this twice
+    is safe — useful for adding new seed items later.
+
+    Identity is the ``guide:<anchor>`` tag, NOT the title. Titles get edited as
+    the claim evolves (task #4 was retitled from "Request OMPF + Service
+    Treatment Records" to reflect that the veteran holds the original STR), and
+    a title-keyed seeder then treats the retitled task as missing and creates a
+    duplicate. Title matching is retained only as a fallback for any seed item
+    that has no guide anchor.
     """
     actor = req.actor if req else "user"
     service = get_personal_work_item_service()
 
     existing = await service.list_work_items(topic=VA_TOPIC, limit=1000, include_archived=True)
     existing_titles = {t.title.strip().lower() for t in existing}
+    existing_anchors = {
+        tag for t in existing for tag in (t.tags or []) if tag.startswith("guide:")
+    }
+
+    def _already_present(item: dict[str, Any]) -> bool:
+        anchor = next(
+            (tag for tag in item.get("tags", []) if tag.startswith("guide:")), None
+        )
+        if anchor:
+            return anchor in existing_anchors
+        return item["title"].strip().lower() in existing_titles
 
     created: list[Task] = []
     skipped = 0
     seed = _va_seed_tasks()
     for index, item in enumerate(seed):
         title = item["title"]
-        if title.strip().lower() in existing_titles:
+        if _already_present(item):
             skipped += 1
             continue
         payload = TaskCreate(
@@ -351,7 +369,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.IN_PROGRESS,
-            "tags": ["phase:reference", "pinned"],
+            "tags": ["phase:reference", "pinned", "guide:strategy"],
             "links": [
                 {"label": "VA accreditation search", "url": "https://www.va.gov/ogc/apps/accreditation/"},
                 {"label": "VA.gov", "url": "https://www.va.gov"},
@@ -374,7 +392,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.CRITICAL,
             "status": TaskStatus.TODO,
-            "tags": ["phase:7d", "action:filing"],
+            "tags": ["phase:7d", "action:filing", "guide:intent-to-file"],
             "links": [
                 {"label": "File ITF online", "url": "https://www.va.gov/resources/your-intent-to-file-a-va-claim/"},
                 {"label": "Form 21-0966 PDF", "url": "https://www.vba.va.gov/pubs/forms/VBA-21-0966-ARE.pdf"},
@@ -392,7 +410,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.TODO,
-            "tags": ["phase:7d", "action:accounts"],
+            "tags": ["phase:7d", "action:accounts", "guide:digital-accounts"],
             "links": [
                 {"label": "VA.gov", "url": "https://www.va.gov"},
                 {"label": "MyHealtheVet", "url": "https://www.myhealth.va.gov"},
@@ -420,7 +438,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.TODO,
-            "tags": ["phase:7d", "action:records"],
+            "tags": ["phase:7d", "action:records", "guide:ompf-strs"],
             "links": [
                 {"label": "milConnect", "url": "https://milconnect.dmdc.osd.mil"},
                 {"label": "eVetRecs", "url": "https://vetrecs.archives.gov"},
@@ -440,7 +458,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.TODO,
-            "tags": ["phase:7d", "action:healthcare"],
+            "tags": ["phase:7d", "action:healthcare", "guide:va-health-care"],
             "links": [
                 {"label": "Apply for VA health care", "url": "https://www.va.gov/health-care/apply/"},
             ],
@@ -465,7 +483,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.TODO,
-            "tags": ["phase:30d", "action:vso"],
+            "tags": ["phase:30d", "action:vso", "guide:cvso-poa"],
             "links": [
                 {"label": "VA accreditation search", "url": "https://www.va.gov/ogc/apps/accreditation/"},
                 {"label": "Duval CVSO", "url": "https://www.coj.net/departments/military-affairs-and-veterans-department"},
@@ -477,11 +495,14 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             "description": (
                 "**This is the single biggest move you can make to raise the GI rating.**\n\n"
                 "**Why it matters:** Under the new DC 7206 (effective May 19, 2024, 89 Fed. Reg. 19743), the rating ladder is keyed to documented esophageal stricture/dilatation:\n"
-                "  - 10% — daily PPI to control symptoms, otherwise asymptomatic\n"
-                "  - 30% — dilatation 3+/year, OR dilatation with steroids ≥1/yr, OR stent placement\n"
-                "  - 50% — dilatation ≤2 times/year\n"
-                "  - 80% — aspiration, undernutrition, substantial weight loss, surgical correction, or PEG\n\n"
-                "**Without an EGD on record, the rater can default to 10%.** With documented stricture and any dilatation history, 30%+ is reachable. With dilatation ≤2x/yr, 50% is on the table.\n\n"
+                "  - 0% — documented history without daily symptoms or daily medication\n"
+                "  - 10% — stricture requiring daily medication to control dysphagia, otherwise asymptomatic\n"
+                "  - 30% — recurrent stricture requiring dilatation **no more than 2 times per year**\n"
+                "  - 50% — recurrent or refractory stricture requiring dilatation **3 or more times per year**, OR steroid-assisted dilatation at least once a year, OR stent placement\n"
+                "  - 80% — recurrent/refractory stricture causing dysphagia with aspiration, undernutrition, and/or substantial weight loss, plus surgical correction or PEG\n\n"
+                "**CORRECTED 2026-08-03 — the earlier version of this ladder had 30% and 50% swapped.** "
+                "**More frequent dilatation supports a HIGHER rating, not a lower one.** Every dilatation, every steroid-assisted procedure, and every food impaction requiring intervention must be in the record with a date — do NOT under-report frequency at the C&P exam. Verified against 38 C.F.R. 4.114 (DC 7206 rates by reference to DC 7203).\n\n"
+                "**Without an EGD on record, the rater can default to 10%** no matter how severe the symptoms are.\n\n"
                 "**Action:** Get a GI consult through VA (once VA health care is approved) OR a private gastroenterologist. Ask specifically for:\n"
                 "  - Upper endoscopy (EGD) with biopsies\n"
                 "  - Barium swallow (esophagram) if dysphagia is prominent\n"
@@ -490,7 +511,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.TODO,
-            "tags": ["phase:30d", "action:medical", "rating-lever"],
+            "tags": ["phase:30d", "action:medical", "rating-lever", "guide:gi-consult"],
             "links": [],
         },
         {
@@ -510,7 +531,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.TODO,
-            "tags": ["phase:30d", "action:evidence"],
+            "tags": ["phase:30d", "action:evidence", "guide:buddy-statements"],
             "links": [
                 {"label": "Form 21-10210 PDF", "url": "https://www.vba.va.gov/pubs/forms/VBA-21-10210-ARE.pdf"},
             ],
@@ -528,7 +549,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.TODO,
-            "tags": ["phase:30d", "action:evidence"],
+            "tags": ["phase:30d", "action:evidence", "guide:personal-statement"],
             "links": [
                 {"label": "Form 21-4138 PDF", "url": "https://www.vba.va.gov/pubs/forms/VBA-21-4138-ARE.pdf"},
             ],
@@ -551,7 +572,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:60d", "action:evidence"],
+            "tags": ["phase:60d", "action:evidence", "guide:evidence-packet"],
             "links": [],
         },
         {
@@ -574,7 +595,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:60d", "action:nexus"],
+            "tags": ["phase:60d", "action:nexus", "guide:gi-nexus"],
             "links": [],
         },
         {
@@ -591,7 +612,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:60d", "action:nexus"],
+            "tags": ["phase:60d", "action:nexus", "guide:anxiety-nexus"],
             "links": [],
         },
         {
@@ -607,7 +628,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.LOW,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:60d", "action:evidence", "condition:tinnitus"],
+            "tags": ["phase:60d", "action:evidence", "condition:tinnitus", "guide:ae-rating"],
             "links": [],
         },
         # ---- Phase: 90 days ----------------------------------------------------------
@@ -634,7 +655,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.CRITICAL,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:90d", "action:filing"],
+            "tags": ["phase:90d", "action:filing", "guide:form-526ez"],
             "links": [
                 {"label": "Form 21-526EZ PDF", "url": "https://www.vba.va.gov/pubs/forms/VBA-21-526EZ-ARE.pdf"},
             ],
@@ -662,7 +683,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:90d", "action:exam"],
+            "tags": ["phase:90d", "action:exam", "guide:cp-exams"],
             "links": [
                 {"label": "Public DBQs", "url": "https://www.benefits.va.gov/compensation/dbq_publicdbqs.asp"},
             ],
@@ -700,7 +721,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:90d", "action:exam"],
+            "tags": ["phase:90d", "action:exam", "guide:symptom-log"],
             "links": [],
         },
         # ---- Phase: Reference — narrative / living docs --------------------------------
@@ -733,7 +754,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.IN_PROGRESS,
-            "tags": ["phase:reference", "narrative", "condition:gi", "pinned"],
+            "tags": ["phase:reference", "narrative", "condition:gi", "pinned", "guide:narrative-gerd"],
             "links": [],
         },
         {
@@ -767,7 +788,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.IN_PROGRESS,
-            "tags": ["phase:reference", "narrative", "condition:anxiety", "pinned"],
+            "tags": ["phase:reference", "narrative", "condition:anxiety", "pinned", "guide:narrative-anxiety"],
             "links": [],
         },
         {
@@ -796,7 +817,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.HIGH,
             "status": TaskStatus.IN_PROGRESS,
-            "tags": ["phase:reference", "narrative", "condition:tinnitus", "pinned"],
+            "tags": ["phase:reference", "narrative", "condition:tinnitus", "pinned", "guide:narrative-tinnitus"],
             "links": [],
         },
         {
@@ -804,12 +825,22 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             "description": (
                 "**Use this to track which scenario you're tracking toward as evidence comes in.**\n\n"
                 "**38 C.F.R. § 4.25 combined rating math (whole-person rule, largest first):**\n\n"
-                "| Scenario | GERD/HH | Anxiety | Tinnitus | Combined | 2026 monthly (single, no deps) |\n"
-                "|---|---|---|---|---|---|\n"
-                "| Pessimistic | 10% | 0–30% | 10% | 20%–40% | $356–$795 |\n"
-                "| **Likely** | **30%** | **30%** | **10%** | **~50%** | **$1,132.90** |\n"
-                "| Strong | 50% | 50% | 10% | ~70% | $1,808.45 |\n\n"
-                "**Math example (Likely scenario):** 100 − 30 = 70 → 70 − (30% of 70 = 21) = 49 → 49 − (10% of 49 = 4.9) = 44.1 → rounded to nearest 10% → **50%**.\n\n"
+                "The rating is **100 minus remaining efficiency**, rounded to the nearest 10 ONCE, at the very end. "
+                "An earlier version of this tracker reported remaining efficiency as if it were the rating, which understated every scenario by a full bracket.\n\n"
+                "| Scenario | GERD | Anxiety | Migraine | Tinnitus | Hearing | Scars | Combined | 2026 monthly (single, no deps) |\n"
+                "|---|---|---|---|---|---|---|---|---|\n"
+                "| Conservative | 10% | 30% | 0% | 10% | 0% | 0% | **40%** | $795.84 |\n"
+                "| **Likely** | **30%** | **30%** | **30%** | **10%** | 0% | **10%** | **70%** | **$1,808.45** |\n"
+                "| Strong | 50% | 50% | 30% | 10% | 10% | 10% | **90%** | $2,362.30 |\n\n"
+                "**Worked example (Likely):** largest first — 30, 30, 30, 10, 10.\n"
+                "  - 30% leaves 70 efficient\n"
+                "  - 30% of 70 = 21 → 49 efficient\n"
+                "  - 30% of 49 = 14.7 → 34.3 efficient\n"
+                "  - 10% of 34.3 = 3.43 → 30.87 efficient\n"
+                "  - 10% of 30.87 = 3.09 → 27.78 efficient\n"
+                "  - Combined = 100 − 27.78 = 72.2 → rounds to **70%**\n\n"
+                "**What the added conditions are worth.** The original three-condition claim (GERD + anxiety + tinnitus) tops out at 60% Likely / 80% Strong. "
+                "Adding migraines and surgical scars moves Likely to 70% — $1,435.02 → $1,808.45, about **$373/month**. Hearing loss frequently rates 0%, but a 0% rating still establishes service connection, which turns any future worsening into a simple increase rather than a fresh claim.\n\n"
                 "---\n\n"
                 "**2026 VA compensation rates (single veteran, no dependents)** — effective Dec. 1, 2025, reflecting the 2.8% COLA:\n\n"
                 "| Rating | Monthly |\n"
@@ -830,7 +861,7 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.IN_PROGRESS,
-            "tags": ["phase:reference", "tracker", "pinned"],
+            "tags": ["phase:reference", "tracker", "pinned", "guide:rating-tracker"],
             "links": [],
         },
         {
@@ -860,12 +891,104 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
             ),
             "priority": TaskPriority.MEDIUM,
             "status": TaskStatus.BACKLOG,
-            "tags": ["phase:reference", "contingency"],
+            "tags": ["phase:reference", "contingency", "guide:after-decision"],
             "links": [
                 {"label": "VA accreditation search", "url": "https://www.va.gov/ogc/apps/accreditation/"},
                 {"label": "CCK Law", "url": "https://cck-law.com"},
                 {"label": "Hill & Ponton", "url": "https://www.hillandponton.com"},
                 {"label": "Berry Law", "url": "https://ptsdlawyers.com"},
+            ],
+        },
+        # ---- Added conditions: hearing loss + migraines --------------------------------
+        {
+            "title": "Log every headache — rating driver for DC 8100 (migraines)",
+            "description": (
+                "**Start today. Migraines are rated almost entirely on the frequency of *prostrating* attacks, and that record can only be built forward in time.**\n\n"
+                "Under 38 C.F.R. § 4.124a, DC 8100:\n"
+                "  - **0%** — less frequent attacks\n"
+                "  - **10%** — characteristic prostrating attacks averaging one in 2 months over the last several months\n"
+                "  - **30%** — characteristic prostrating attacks occurring on an average **once a month** over the last several months\n"
+                "  - **50%** — very frequent, completely prostrating and prolonged attacks productive of **severe economic inadaptability**\n\n"
+                "**'Prostrating' is the whole ballgame.** It means the attack forces you to stop what you are doing and lie down in a dark, quiet room. A headache you power through does not count. Record it in those terms when it is true.\n\n"
+                "**One line per headache:**\n"
+                "  - Date and start time\n"
+                "  - Duration\n"
+                "  - Did you have to stop activity and lie down? (this is the prostrating question — answer it explicitly every time)\n"
+                "  - Symptoms: light sensitivity, sound sensitivity, nausea, vomiting, aura, visual disturbance\n"
+                "  - Medication taken and whether it worked\n"
+                "  - Work impact: late, left early, missed the whole day, or none\n\n"
+                "**Also get them treated.** Self-reported headaches with no treatment record are weak evidence. A PCP or neurology note saying 'reports 3-4 prostrating migraines per month' is worth far more than a private log alone — and the log is what produces that sentence at the appointment.\n\n"
+                "Bring the log to the neurology C&P exam."
+            ),
+            "priority": TaskPriority.CRITICAL,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:evidence", "rating-lever", "condition:migraine", "guide:headache-log"],
+            "links": [
+                {"label": "38 C.F.R. § 4.124a (DC 8100)", "url": "https://www.law.cornell.edu/cfr/text/38/4.124a"},
+            ],
+        },
+        {
+            "title": "Narrative — Bilateral hearing loss (Navy AE noise exposure) (LIVING DOC)",
+            "description": (
+                "*Edit this description over time. Each save creates an audit-trail event.*\n\n"
+                "**Current narrative (v0 — draft):**\n\n"
+                "\"I served as an Aviation Electrician's Mate (AE) and worked flight-line and hangar-deck aircraft electrical systems, including engine run-ups and turn-ups, aboard [SHIP] and at [SHORE COMMAND]. Hearing protection was issued but was inadequate or impractical during [SPECIFIC SITUATIONS — e.g., troubleshooting with the aircraft running, intercom communication, emergency flight-deck response].\n\n"
+                "I began noticing difficulty hearing during service. Today I have trouble [SPECIFIC EXAMPLES — e.g., following conversation in restaurants or any room with background noise; hearing my [spouse/children] from another room; understanding people on the phone]. I run the television at a volume others say is too loud. I frequently ask people to repeat themselves. My [spouse/family] has commented on it.\"\n\n"
+                "**Why this rides along with the tinnitus claim at almost no extra cost:**\n"
+                "  - Tinnitus is capped at a flat 10% under DC 6260. Hearing loss is a **separate** rating under DC 6100.\n"
+                "  - The in-service noise exposure concession already granted for tinnitus (VBA Fast Letter 10-35: every Navy 'Aviation' rating = 'Highly Probable') covers hearing loss too — it is the same exposure.\n"
+                "  - The audiologist performs the audiogram at the Audio C&P exam anyway. It only gets adjudicated if hearing loss is **listed as a claimed condition** on the 21-526EZ.\n\n"
+                "**Set expectations honestly:** VA hearing loss must first qualify as a disability under 38 C.F.R. § 3.385 — an auditory threshold of 40 dB or greater at 500, 1000, 2000, 3000, or 4000 Hz; or 26 dB or greater at three of those frequencies; or Maryland CNC speech recognition under 94%. Many veterans rate 0%. A 0% rating is still worth having: it establishes service connection, which makes any future worsening a simple increase rather than a fresh claim.\n\n"
+                "**TODO — fill in:** specific ship/squadron names and dates; aircraft types; concrete situations where hearing protection was inadequate; onset timeline; specific present-day examples of difficulty hearing; whether anyone has remarked on it."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.IN_PROGRESS,
+            "tags": ["phase:reference", "narrative", "condition:hearing", "pinned", "guide:narrative-hearing-loss"],
+            "links": [
+                {"label": "38 C.F.R. § 3.385 (hearing-loss threshold)", "url": "https://www.law.cornell.edu/cfr/text/38/3.385"},
+                {"label": "38 C.F.R. § 4.85 (evaluating hearing impairment)", "url": "https://www.law.cornell.edu/cfr/text/38/4.85"},
+            ],
+        },
+        {
+            "title": "Narrative — Migraine headaches (LIVING DOC)",
+            "description": (
+                "*Edit this description over time. Each save creates an audit-trail event.*\n\n"
+                "**Current narrative (v0 — draft):**\n\n"
+                "\"I began experiencing severe headaches [IN SERVICE / approximately YEAR] while assigned to [SHIP/SQUADRON/STATION]. [DESCRIBE ANY IN-SERVICE TRIGGER OR TREATMENT — e.g., reported to sick call, treated with (medication), associated with (head injury / noise / sleep deprivation / the GI condition or its medications)].\n\n"
+                "The headaches are [DESCRIBE — e.g., one-sided, throbbing, behind the eye], and come with [light sensitivity / sound sensitivity / nausea / vomiting / visual aura]. When one starts I have to [stop what I am doing and lie down in a dark room / leave work / cancel plans]. They last approximately [DURATION] and occur roughly [X] times per month.\n\n"
+                "I am currently [treated with MEDICATION by PROVIDER / not receiving treatment]. In the last 12 months they have caused me to [miss X workdays / leave early X times / cancel commitments].\"\n\n"
+                "**Establish the theory of service connection — pick the one the records support:**\n"
+                "  1. **Direct** — headaches began in service and have continued since (§ 3.303). Strongest if the STR shows any sick-call entry for headaches.\n"
+                "  2. **Secondary** (§ 3.310) — headaches proximately due to, or aggravated by, an already-claimed condition. Both anxiety and chronic sleep disruption are recognized headache drivers, and some medications list headache as a common adverse effect.\n"
+                "  3. **Aggravation** — pre-existing headaches made permanently worse by service.\n\n"
+                "**TODO — fill in:** onset timeline and whether any in-service sick-call entry exists (check the STR once scanned); frequency and duration; whether attacks are prostrating and how often; current treatment and prescriber; documented work impact; which service-connection theory the evidence actually supports."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.IN_PROGRESS,
+            "tags": ["phase:reference", "narrative", "condition:migraine", "pinned", "guide:narrative-migraines"],
+            "links": [
+                {"label": "38 C.F.R. § 4.124a (DC 8100)", "url": "https://www.law.cornell.edu/cfr/text/38/4.124a"},
+                {"label": "38 C.F.R. § 3.310 (secondary service connection)", "url": "https://www.law.cornell.edu/cfr/text/38/3.310"},
+            ],
+        },
+        {
+            "title": "Claim migraine headaches on the 21-526EZ (DC 8100)",
+            "description": (
+                "Missing from the original playbook entirely, and it is one of the higher-value conditions available.\n\n"
+                "**Why it matters:** migraines rate 0 / 10 / 30 / 50% under DC 8100. A 30% rating is realistic with a documented average of one prostrating attack per month, and 30% is the same bracket as the GI condition and anxiety — it is not a rounding error in the combined-rating math.\n\n"
+                "**Three things have to be true, and each has its own task:**\n"
+                "  1. **A current diagnosis** — see a PCP or neurologist and get 'migraine' (or 'headache disorder') written in the chart. Without a diagnosis there is nothing to rate.\n"
+                "  2. **A documented frequency of prostrating attacks** — the headache log task feeds this.\n"
+                "  3. **A service-connection theory** — direct (onset in service, § 3.303) or secondary to an already-claimed condition (§ 3.310). The narrative task works this out.\n\n"
+                "**Action:** list 'migraine headaches' as a claimed condition on the 21-526EZ. If claiming it as secondary, name the primary condition in exactly the same wording used to list that primary elsewhere on the form — a wording mismatch is a common and entirely avoidable own-goal.\n\n"
+                "**Request a neurology C&P exam** (Headaches DBQ). Bring the headache log."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:30d", "action:filing", "condition:migraine", "guide:migraines"],
+            "links": [
+                {"label": "Public DBQs", "url": "https://www.benefits.va.gov/compensation/dbq_publicdbqs.asp"},
+                {"label": "38 C.F.R. § 4.124a (DC 8100)", "url": "https://www.law.cornell.edu/cfr/text/38/4.124a"},
             ],
         },
     ]
