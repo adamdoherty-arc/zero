@@ -991,5 +991,269 @@ def _va_seed_tasks() -> list[dict[str, Any]]:
                 {"label": "38 C.F.R. § 4.124a (DC 8100)", "url": "https://www.law.cornell.edu/cfr/text/38/4.124a"},
             ],
         },
+        # ---- Lifted from live board (added via API after the original seed) ----------
+        {
+            "title": "Log every food impaction and painful-swallow episode — RATING EVIDENCE",
+            "description": (
+                "**Start today. This is the highest-value unrecorded evidence in the entire claim.**\n"
+                "\n"
+                "Adam reports near-daily painful swallowing and frequent, painful food impactions — and none of it exists in any medical record. Under the corrected DC 7206 ladder, dysphagia severity and dilatation frequency are what separate 10% from 30% from 50%.\n"
+                "\n"
+                "**Keep a running log with one line per episode:**\n"
+                "- Date and approximate time\n"
+                "- What food was being eaten\n"
+                "- How long it was stuck\n"
+                "- What resolved it (water, waiting, regurgitating, an ER or clinic visit)\n"
+                "- Pain level 1-10\n"
+                "- Whether anyone witnessed it\n"
+                "\n"
+                "**Any episode severe enough to consider going in — go in.** An ER or urgent-care record documenting an impaction is worth more to this claim than a hundred lines of self-report, and if it results in a dilatation it moves the rating bracket directly.\n"
+                "\n"
+                "Bring the log to the GI consult and to the GI C&P exam."
+            ),
+            "priority": TaskPriority.CRITICAL,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:evidence", "rating-lever", "guide:impaction-log"],
+            "links": [],
+        },
+        {
+            "title": "Submit VA Form 21-4142 / 21-4142a (authorization for private records)",
+            "description": (
+                "Missing from the original playbook. VA Form 21-4142 plus 21-4142a authorizes VA to request medical records directly from **private** providers.\n"
+                "\n"
+                "**Why it matters:** the playbook has Adam personally chasing every private record. Filing 4142 makes VA do the chasing and closes gaps he does not know about. It is a standard component of a Fully Developed Claim and costs nothing to include.\n"
+                "\n"
+                "**List every private provider on it:** the gastroenterologist, the PCP, the anxiety prescriber, and any urgent care or ER visited for reflux or a food impaction.\n"
+                "\n"
+                "Submit it with the 21-526EZ, or earlier through the CVSO."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:30d", "action:evidence", "guide:form-4142"],
+            "links": [],
+        },
+        {
+            "title": "Claim hearing loss alongside tinnitus",
+            "description": (
+                "Missing from the original playbook.\n"
+                "\n"
+                "Tinnitus is capped at a flat 10% under DC 6260 — that is the ceiling no matter how severe it is. **Hearing loss is a separate rating under DC 6100**, and it rides on the exact same in-service noise-exposure concession already granted to carrier aviation ratings under VBA Fast Letter 10-35.\n"
+                "\n"
+                "The audiogram happens at the Audio C&P exam anyway. The only thing required is that hearing loss be listed as a claimed condition on the 21-526EZ so the examiner evaluates and the rater adjudicates it.\n"
+                "\n"
+                "**Action:** add \"bilateral hearing loss\" to the conditions claimed on the 21-526EZ, and request an audiogram at the C&P."
+            ),
+            "priority": TaskPriority.MEDIUM,
+            "status": TaskStatus.BACKLOG,
+            "tags": ["phase:60d", "action:filing", "condition:tinnitus", "guide:hearing-loss"],
+            "links": [],
+        },
+        {
+            "title": "Confirm prior VA claim history before filing",
+            "description": (
+                "Missing from the original playbook — and it changes the entire filing path if the answer is yes.\n"
+                "\n"
+                "**Question to answer:** has Adam ever filed a VA disability claim before, at any point since separation, for any condition?\n"
+                "\n"
+                "- **If no** — proceed with the 21-526EZ as an original claim, exactly as planned.\n"
+                "- **If yes and it was denied** — a brand-new claim is the wrong instrument. The correct path is a Supplemental Claim (VA Form 20-0995) with new and relevant evidence, or a Higher-Level Review. Filing a new claim on a previously denied condition can forfeit the earlier effective date, which is where the back pay lives.\n"
+                "\n"
+                "**How to check:** VA.gov claim status page, or ask the CVSO to pull the file at the 21-22 appointment. Resolve this before anything is submitted."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:filing", "guide:prior-claim-history"],
+            "links": [],
+        },
+        {
+            "title": "Monthly weight and symptom-frequency log",
+            "description": (
+                "Missing from the original playbook.\n"
+                "\n"
+                "The 80% level under DC 7206 turns on aspiration, undernutrition, or **substantial weight loss** — and nobody is recording weight. There is no way to prove a downward trend later without a baseline started now.\n"
+                "\n"
+                "**Record on the first of each month:**\n"
+                "- Weight\n"
+                "- Nights per week woken by reflux\n"
+                "- Painful-swallow episodes per week\n"
+                "- Food impactions that month\n"
+                "- Panic episodes per week\n"
+                "- Current medications and doses\n"
+                "\n"
+                "Costs nothing, takes two minutes, and it is the only evidence that can support the top bracket or a future increase. Also serves as the source data for the C&P symptom log."
+            ),
+            "priority": TaskPriority.MEDIUM,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:reference", "tracker", "action:evidence", "guide:weight-log"],
+            "links": [],
+        },
+        {
+            "title": "Dental erosion — document as a GERD secondary",
+            "description": (
+                "Missing from the original playbook. Low value on its own, but cheap and corroborating.\n"
+                "\n"
+                "Chronic acid reflux erodes tooth enamel. A dentist noting acid erosion does two things: it opens a small secondary claim, and — more usefully — it is objective third-party corroboration that the reflux is severe and long-standing, which supports the primary GI rating.\n"
+                "\n"
+                "**Action:** at the next dental visit, ask the dentist to note any acid erosion in the chart explicitly, and request a copy."
+            ),
+            "priority": TaskPriority.LOW,
+            "status": TaskStatus.BACKLOG,
+            "tags": ["phase:60d", "action:evidence", "guide:dental-erosion"],
+            "links": [],
+        },
+        {
+            "title": "Inventory every in-service surgery from the NPRC records",
+            "description": (
+                "**Adam reports that every surgery he has ever had was performed while in the Navy.** The original playbook only tracked the Nissen fundoplication. Any other in-service surgery is potentially its own service-connected condition with its own rating, and none of them are currently claimed.\n"
+                "\n"
+                "**As soon as the NPRC records are downloaded, build a table:**\n"
+                "\n"
+                "| Surgery | Date | Facility | Surgeon | Residuals today |\n"
+                "|---|---|---|---|---|\n"
+                "\n"
+                "**For every surgery found, ask three questions:**\n"
+                "1. Does it still cause symptoms, pain, limited motion, scarring, or numbness today?\n"
+                "2. Is there a surgical scar? Scars are separately ratable under 38 C.F.R. 4.118 (DC 7800-7805) — painful or unstable scars rate on their own, and this is one of the most commonly overlooked ratings.\n"
+                "3. Did it lead to anything downstream (adhesions, hernia, chronic pain, nerve damage)?\n"
+                "\n"
+                "**Anything that answers yes gets added to the 21-526EZ before filing.** Adding conditions before submission costs nothing; adding them after means a new claim and a later effective date."
+            ),
+            "priority": TaskPriority.CRITICAL,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:records", "rating-lever", "guide:surgery-inventory"],
+            "links": [],
+        },
+        {
+            "title": "Request the full C-file (VA Form 20-10206)",
+            "description": (
+                "Missing from the original playbook.\n"
+                "\n"
+                "The C-file is everything VA holds on Adam. It is separate from the NPRC service records that just arrived. If any prior claim, rating, or VA correspondence exists, it is in there — and a Veterans Guardian email in his inbox asking for past rating decision letters suggests there may be history he has forgotten.\n"
+                "\n"
+                "**How to request:**\n"
+                "- Fastest: submit the FOIA/Privacy Act request online through VA.gov\n"
+                "- Or VA Form 20-10206, mailed to Department of Veterans Affairs, Evidence Intake Center, PO Box 4444, Janesville, WI 53547-4444, or faxed to (844) 531-7818\n"
+                "- **The form requires a wet signature — a typed signature is rejected**\n"
+                "\n"
+                "**Timeline: 5 to 8 months by mail**, so file it now and let it run in the background. Requesting only specific documents rather than the entire file is faster.\n"
+                "\n"
+                "The CVSO can also often pull the file directly at the 21-22 appointment, which is far quicker."
+            ),
+            "priority": TaskPriority.MEDIUM,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:30d", "action:records", "guide:c-file"],
+            "links": [],
+        },
+        {
+            "title": "Add in-service surgical scars to the claim (38 C.F.R. 4.118)",
+            "description": (
+                "Commonly missed, easy to claim, and Adam has at minimum the laparoscopic port scars from the Nissen fundoplication plus whatever else the records show.\n"
+                "\n"
+                "**Ratable under DC 7800-7805:**\n"
+                "- Scars that are painful on examination rate under DC 7804 — one or two painful scars is 10%, three or four is 20%, five or more is 30%\n"
+                "- Scars that are unstable (frequent loss of skin covering) rate higher\n"
+                "- Deep, non-linear scars rate by area under DC 7801\n"
+                "\n"
+                "**Action:** photograph every surgical scar with a ruler for scale, note whether each is painful to the touch, and list them as claimed conditions on the 21-526EZ. Mention them at the C&P exam — examiners will not evaluate a scar that was never claimed."
+            ),
+            "priority": TaskPriority.MEDIUM,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:60d", "action:filing", "guide:surgical-scars"],
+            "links": [],
+        },
+        {
+            "title": "Scan the original service treatment record — DO NOT MAIL THE ORIGINAL",
+            "description": (
+                "**Adam holds the ORIGINAL STR. This is almost certainly why NPRC has nothing on file — it was released to him at separation.**\n"
+                "\n"
+                "**Rules:**\n"
+                "1. **Never mail the original to VA.** Records mailed in routinely do not come back, and there is no second original. Submit scans only.\n"
+                "2. Scan every page, both sides, in page order, at 300 dpi minimum. A phone scanning app is fine if the text is fully legible.\n"
+                "3. Save as one combined PDF plus a backup copy somewhere off the machine.\n"
+                "4. Store the paper original somewhere fireproof and dry.\n"
+                "5. If VA ever demands a certified copy, the CVSO can certify against the original — you still never surrender it.\n"
+                "\n"
+                "**Then read it for these specific items and record where each one appears:**\n"
+                "- The isoniazid (INH) prescription — date, prescriber, and the reason it was given\n"
+                "- Hiatal hernia workup — upper GI series, EGD, or manometry\n"
+                "- Every sick call entry for stomach, reflux, or swallowing complaints\n"
+                "- Pre-operative clearance notes\n"
+                "- Post-operative follow-up notes\n"
+                "- Audiograms at entrance and separation — a threshold shift between them supports both tinnitus and a hearing loss claim\n"
+                "- Any mental health or sleep complaints\n"
+                "- Any OTHER surgery or procedure\n"
+                "\n"
+                "These fill every remaining TODO in the three narrative living docs except the operative report itself."
+            ),
+            "priority": TaskPriority.CRITICAL,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:records", "guide:scan-str"],
+            "links": [],
+        },
+        {
+            "title": "Re-request the operative report from NPRC BY HOSPITAL NAME — the first request was doomed",
+            "description": (
+                "**Why case C-0007768198 came back empty, and how to fix it.**\n"
+                "\n"
+                "Per NARA, NPRC files inpatient and clinical records **by the name of the hospitalizing facility and the year of treatment — NOT by the veteran name**. A request submitted under a veteran name searches the personnel and outpatient files only, so it will never surface an inpatient surgical record. That is exactly what happened.\n"
+                "\n"
+                "**The Nissen fundoplication operative report is an inpatient record.** It is the single most important document in the GI claim: it establishes the in-service surgical event that the entire direct service connection theory rests on.\n"
+                "\n"
+                "**Submit a NEW request providing:**\n"
+                "- Name and location of the hospitalizing facility (e.g. Naval Hospital Jacksonville, Naval Medical Center Portsmouth — get the exact name from the STR or from memory)\n"
+                "- The YEAR of the hospitalization\n"
+                "- Type of treatment (laparoscopic Nissen fundoplication, hiatal hernia repair)\n"
+                "- Full name, SSN, and status\n"
+                "\n"
+                "Submit online at vetrecs.archives.gov or by mail to NPRC, 1 Archives Drive, St. Louis MO 63138. NPRC general line 1-866-272-6272; case-specific line (314) 801-0800.\n"
+                "\n"
+                "**Do this in parallel with everything else — it has the longest lead time of anything on the board.**"
+            ),
+            "priority": TaskPriority.CRITICAL,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:7d", "action:records", "rating-lever", "guide:operative-report"],
+            "links": [],
+        },
+        {
+            "title": "Request STRs from Navy Medicine Records Activity (NMRA) as a backstop",
+            "description": (
+                "Belt-and-braces. Even holding the original, a VA-sourced copy closes any argument that the file is incomplete, and NMRA may hold material that never made it into the copy released at separation.\n"
+                "\n"
+                "**For a separation on or after 1 Jan 2014:**\n"
+                "Navy Medicine Records Activity, BUMED Detachment\n"
+                "1222 Spruce Street, Room 9.308\n"
+                "Saint Louis, MO 63103\n"
+                "Email: usn.ncr.bumedfchva.mbx.nmra-roi@health.mil\n"
+                "Release of Information: 667-892-3443\n"
+                "Form: SF-180 **or** DD Form 2870 (November 2023 version). Requesting release to a third party additionally requires DD Form 3130.\n"
+                "\n"
+                "**For a separation between 31 Jan 1994 and 31 Dec 2013**, the NPRC letter instead directs to:\n"
+                "Department of Veterans Affairs, ATTN: Release of Information, Claims Intake Center, PO Box 4444, Janesville WI 53547-4444, fax 844-531-7818.\n"
+                "\n"
+                "**Check the DD-214 for the actual separation date before choosing which one applies.**"
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:30d", "action:records", "guide:nmra-backstop"],
+            "links": [],
+        },
+        {
+            "title": "Ask the CVSO whether VA already holds the service treatment records",
+            "description": (
+                "**Possibly the fastest route of all, and it costs one question.**\n"
+                "\n"
+                "The NPRC letter states: if a VA claim was filed, the service member health record may already have been sent to the VA Regional Office serving the veteran. VA also routinely pulls STRs itself once a claim is filed.\n"
+                "\n"
+                "Since the Intent to File went in on 12 May 2026, VA may already have requested and received the file.\n"
+                "\n"
+                "**At the Duval CVSO appointment (904-255-5550), ask them to check directly whether the STRs are already in the VA system.** If they are, the entire records chase collapses to nothing and the claim can move immediately to the nexus letter and the EGD.\n"
+                "\n"
+                "VA general line for the same question: 1-800-827-1000."
+            ),
+            "priority": TaskPriority.HIGH,
+            "status": TaskStatus.TODO,
+            "tags": ["phase:30d", "action:vso", "guide:cvso-str-check"],
+            "links": [],
+        },
     ]
     return items
