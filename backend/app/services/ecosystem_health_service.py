@@ -21,7 +21,9 @@ ECOSYSTEM_SERVICES: Dict[str, Dict[str, str]] = {
     "ada": {"url": "http://host.docker.internal:8006", "health": "/api/health"},
     "legion": {"url": "http://host.docker.internal:8005", "health": "/health"},
     # vLLM + Bifrost: zero-api joins shared-infra network — use service DNS names.
-    "vllm-chat": {"url": "http://vllm-chat:8000", "health": "/v1/models"},
+    # Key kept as "vllm-chat" (dashboards/alerts key on it); target is the
+    # qwen38-chat container that replaced it (Migration-20, 2026-08-31).
+    "vllm-chat": {"url": "http://qwen38-chat:18020", "health": "/v1/models"},
     "vllm-embed": {"url": "http://vllm-embed:8001", "health": "/v1/models"},
     "shared-bifrost": {"url": "http://shared-bifrost:8080", "health": "/health"},
     # Reachy daemon entry removed — robot/Reachy hardware control moved to a

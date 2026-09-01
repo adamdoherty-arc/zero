@@ -8,11 +8,11 @@ If a future migration renames a model, this file is the one place to update.
 from __future__ import annotations
 
 # ---- Local LLM (chat) ----------------------------------------------------
-# Served by shared-infra/vllm-chat. Bifrost vllm-local provider routes to
-# http://vllm-chat:8000. qwen3-chat is the STABLE gateway alias — Bifrost maps
-# it (and the legacy "Qwen3-32B-AWQ" name) to whatever vllm-chat currently
-# serves (Qwen3.5-35B-A3B GPTQ, 64K ctx, tools, since 2026-06-11), so local
-# model swaps never require a Zero code change again.
+# Served by shared-infra/qwen38-chat (Migration-20, 2026-08-31). Bifrost's
+# vllm-local provider routes to http://qwen38-chat:18020 (host 18801).
+# qwen3-chat is the STABLE gateway alias — Bifrost remaps it (and every other
+# legacy name) to whatever the engine currently serves (qwen3.8-27b, 65K ctx,
+# tools), so local model swaps never require a Zero code change again.
 LOCAL_CHAT = "vllm-local/qwen3-chat"
 
 # ---- Local embeddings -----------------------------------------------------
