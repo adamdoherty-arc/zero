@@ -234,7 +234,7 @@ async def sprints_next_priority(
     """Top-priority PLANNED Zero sprints, proxied from Legion :8005.
     Zero is project_id=7 in Legion (corrected from 8 on 2026-05-17)."""
     base = os.getenv("LEGION_API_URL", "http://host.docker.internal:8005").rstrip("/")
-    project_id = int(os.getenv("ZERO_LEGION_PROJECT_ID", "7"))
+    project_id = int(os.getenv("ZERO_LEGION_PROJECT_ID", "26"))
     params: dict[str, Any] = {"project_id": project_id, "limit": limit}
     if source_prefix:
         params["source_prefix"] = source_prefix

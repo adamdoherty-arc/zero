@@ -36,7 +36,7 @@ LEGION_LOOPS_BASE_URL = os.getenv(
 LEGION_LOOPS_TOKEN = os.getenv("LEGION_LOOPS_TOKEN") or os.getenv(
     "ZERO_GATEWAY_TOKEN"
 )
-LEGION_PROJECT_ID = int(os.getenv("LEGION_PROJECT_ID_ZERO", "7"))
+LEGION_PROJECT_ID = int(os.getenv("LEGION_PROJECT_ID_ZERO", "26"))
 HEARTBEAT_ENABLED = (
     os.getenv("LEGION_HEARTBEAT_ENABLED", "true").lower()
     not in ("0", "false", "no")

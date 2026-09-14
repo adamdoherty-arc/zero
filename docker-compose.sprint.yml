@@ -64,6 +64,8 @@ services:
       - ZERO_CONFIG_DIR=/app/config
       - ZERO_PROJECTS_ROOT=/projects
       - ZERO_VAULT_PATH=/vault
+      - LEGION_PROJECT_ID_ZERO=26
+      - ZERO_LEGION_PROJECT_ID=26
       # ZERO_OLLAMA_TIMEOUT removed 2026-05-18 — Ollama retired 2026-04-28,
       # the timeout value was no longer read by any live code path.
       # Post 2026-05-14 Bifrost migration: every LLM/embed call exits via
