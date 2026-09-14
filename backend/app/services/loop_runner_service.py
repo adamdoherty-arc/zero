@@ -253,7 +253,13 @@ class LoopRunnerService:
             await self._registry.mark_run_completed(
                 run_id, status="failure", error=f"skill not found: {exc}"
             )
-            await self._registry.reschedule(loop["id"])
+            await self._registry.set_enabled(loop["id"], False)
+            logger.warning(
+                "loop_disabled_missing_target",
+                loop=loop.get("name"),
+                owner_project=loop.get("owner_project"),
+                target=target,
+            )
             return {"loop_id": loop["id"], "run_id": run_id, "status": "failure"}
 
         # 2. Build the prompt — SKILL.md goes in as the system message,
