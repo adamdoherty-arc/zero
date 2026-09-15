@@ -25,23 +25,24 @@ WHISPER_STT = "distil-large-v3"
 
 # ---- Kimi (cloud LLM) ----------------------------------------------------
 # Kimi K2.5/K2.6 require temperature=1 EXACTLY; bifrost_provider clamps it.
-# 2026-06-11: the paid Moonshot account was retired — Bifrost's `moonshot/`
-# provider is now a compat shim over NVIDIA NIM's FREE Kimi K2.6 serving, so
-# this string keeps working at $0. Per-project affinity: Zero's primary cloud
-# pool is Gemini Flash + Groq (see CLOUD_FAST/CLOUD_REASON below); Kimi is
+# 2026-09-15: Bifrost parked BOTH the paid Moonshot account's `moonshot/`
+# provider AND its NIM-compat-shim successor — neither resolves on the
+# gateway any more. Kimi K2.6 is now served through `hf-router`'s Moonshot AI
+# mirror. Per-project affinity: Zero's primary cloud pool is Groq (see
+# CLOUD_FAST/CLOUD_REASON below, Gemini Flash retired alongside it); Kimi is
 # ADA's lane — keep Zero's Kimi usage low-volume.
-KIMI_K2 = "moonshot/kimi-k2.6"
+KIMI_K2 = "hf-router/moonshotai/Kimi-K2.6"
 
 # ---- Zero's cloud affinity pool (2026-06-11) ------------------------------
 # Per-project affinity so the three projects don't drain each other's free
 # rate limits: Legion→NVIDIA NIM (GLM-5.1/DeepSeek), ADA→Kimi K2.6 via NIM,
-# Zero→Gemini Flash (1,500 req/day free) + Groq gpt-oss-120b (200K tok/day).
-# 2026-06-15 (Fix-116): GEMINI_API_KEY went 401 (malformed/expired), so Groq
-# is the working cloud primary until the key is restored. Gemini stays as the
-# documented fallback — flip these back to gemini-first once the key is valid
-# (gemini's 1,500 req/day free quota > groq's 1,000/day).
+# Zero→Groq gpt-oss-120b (200K tok/day) + NVIDIA NIM lightning as fallback.
+# 2026-06-15 (Fix-116): GEMINI_API_KEY went 401 (malformed/expired); 2026-09-15
+# Bifrost parked the `gemini` provider entirely (governance-level park, not a
+# key issue any more) — there is no live Gemini route left on the gateway, so
+# the fallback is NVIDIA NIM's lightning tier instead of "restore the key".
 CLOUD_FAST = "groq/openai/gpt-oss-120b"
-CLOUD_FAST_FALLBACK = "gemini/gemini-3.5-flash"
+CLOUD_FAST_FALLBACK = "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
 CLOUD_REASON = "groq/openai/gpt-oss-120b"
 
 # ---- Vision (VLM) --------------------------------------------------------
@@ -49,13 +50,16 @@ CLOUD_REASON = "groq/openai/gpt-oss-120b"
 # + Llama 4 Maverick + Llama 3.2 Vision). Direct OpenAI-compatible API at
 # integrate.api.nvidia.com — bypasses Bifrost since their vk admin rejects
 # custom provider names. Set NV_API_KEY in env to enable.
-# Fallback 1 (parked): Moonshot vision through Bifrost — Kimi account was
-# suspended for insufficient balance on 2026-05-25, all vision calls returned
-# 429 with exceeded_current_quota_error.
-# Fallback 2: FreeLLM (Gemini 3.1 Flash if router picks it -- best-effort).
+# Fallback 1: Llama 3.2 Vision through Bifrost's nvidia-nim provider.
+# Moonshot vision was parked 2026-05-25 (suspended account) and Bifrost's
+# `moonshot` provider itself was parked entirely 2026-09-15 — no Moonshot
+# vision route exists any more at any layer.
+# Fallback 2: FreeLLM (glm-4.7-flash if router picks it -- best-effort; the
+# freellmapi catalog has no dedicated vision model, same caveat as before
+# when this was pointed at Gemini, which Bifrost has since parked too).
 # Local Qwen2-VL-2B is wired but parked (vllm-vlm container) until GPU
 # headroom frees up.
 VLM_NVIDIA = "nvidia/nemotron-nano-12b-v2-vl"  # PRIMARY
-VLM_CLOUD = "moonshot/moonshot-v1-32k-vision-preview"  # parked (account suspended 2026-05-25)
-VLM_FREELLM = "gemini-3-flash-preview"  # FreeLLM router may not honor this
+VLM_CLOUD = "nvidia-nim/meta/llama-3.2-11b-vision-instruct"  # fallback 1, via Bifrost
+VLM_FREELLM = "glm-4.7-flash"  # FreeLLM router may not honor this
 VLM_LOCAL = "vllm-vlm/Qwen2-VL-2B-Instruct-AWQ"  # parked (GPU memory)

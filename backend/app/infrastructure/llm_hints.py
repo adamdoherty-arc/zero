@@ -95,14 +95,17 @@ _PRESET_OVERRIDES: Dict[HintPreset, Dict[str, str]] = {
         # Force every local-eligible hint to cloud — only embeddings stay local.
         # 2026-06-12: retired kimi/minimax lanes purged (Infra-60 affinity pool:
         # Groq for micro-tasks, Gemini Flash for summarize/reasoning).
+        # 2026-09-15: Bifrost parked the `gemini` provider entirely (no live
+        # route at any layer) — summarize/medium/reflection repointed to
+        # NVIDIA NIM's lightning tier, matching CLOUD_FAST_FALLBACK.
         "reaction": "bifrost/groq/openai/gpt-oss-120b",
         "classify": "bifrost/groq/openai/gpt-oss-120b",
         "format": "bifrost/groq/openai/gpt-oss-120b",
         "sentiment": "bifrost/groq/openai/gpt-oss-120b",
-        "summarize": "bifrost/gemini/gemini-3-flash-preview",
-        "medium": "bifrost/gemini/gemini-3-flash-preview",
+        "summarize": "bifrost/nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b",
+        "medium": "bifrost/nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b",
         "tool_lite": "bifrost/groq/openai/gpt-oss-120b",
-        "reflection": "bifrost/gemini/gemini-3-flash-preview",
+        "reflection": "bifrost/nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b",
     },
     HintPreset.MEMORY_REFLECTION: {
         # Memory + reflection workloads run local; others default.

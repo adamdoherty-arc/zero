@@ -170,7 +170,7 @@ class Settings(BaseSettings):
     huggingface_api_key: Optional[str] = None
     kimi_api_key: Optional[str] = None
     kimi_base_url: str = "http://host.docker.internal:4445/v1"  # repointed to Bifrost
-    kimi_vision_model: str = "moonshot/kimi-k2.6"  # vision routes through Bifrost
+    kimi_vision_model: str = "nvidia-nim/meta/llama-3.2-11b-vision-instruct"  # vision routes through Bifrost; moonshot provider parked 2026-09-15, this field name is legacy but the value must stay live
 
     # ----- Stage-8 VLM budget caps (carousel V2 cheap-VLM router) -----------
     vlm_daily_budget_usd: float = 1.0

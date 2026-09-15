@@ -4,7 +4,9 @@ Vision VLM service — OCR + scene description via the shared Bifrost gateway.
 Routes OpenAI-shape vision chat-completion calls to `ZERO_VLLM_CHAT_URL`
 (defaults to `http://host.docker.internal:4445/v1`, which is the Bifrost
 gateway). The model is configurable via `ZERO_VLM_MODEL` and defaults to
-`moonshot/moonshot-v1-32k` — Moonshot's vision-capable model.
+`nvidia-nim/meta/llama-3.2-11b-vision-instruct` — Bifrost parked the
+`moonshot` provider entirely on 2026-09-15, so Llama 3.2 Vision via
+nvidia-nim is the live cloud vision route.
 
 A local Qwen2-VL-2B path is wired in `shared-infra/docker-compose.vllm.yml`
 under the `vllm-vlm` service + `vllm-vlm` Bifrost provider, but it can't

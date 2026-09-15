@@ -72,6 +72,41 @@ def test_bifrost_provider_clamps_kimi_k2_temperature():
     assert payload["temperature"] == 1.0
 
 
+def test_bifrost_provider_clamps_kimi_k2_temperature_on_live_hf_router_id():
+    """2026-09-15: Bifrost parked the `moonshot` provider — the live id is
+    hf-router/moonshotai/Kimi-K2.6. The temperature clamp must still fire
+    when a caller already passes the live id directly (not just the legacy
+    moonshot/ alias covered by the test above)."""
+    from app.infrastructure.llm_providers.bifrost_provider import BifrostProvider
+
+    provider = BifrostProvider.__new__(BifrostProvider)
+
+    payload = provider._payload(
+        [{"role": "user", "content": "hi"}],
+        "hf-router/moonshotai/Kimi-K2.6",
+        temperature=0.3,
+        max_tokens=128,
+    )
+
+    assert payload["temperature"] == 1.0
+
+
+def test_bifrost_provider_translates_legacy_moonshot_alias_to_live_hf_router_id():
+    """The legacy `moonshot/`/`kimi/` prefixes must resolve to the live
+    hf-router id, not the dead moonshot provider — moonshot has no route
+    left on the gateway at all as of the 2026-09-15 provider park."""
+    from app.infrastructure.llm_providers.bifrost_provider import BifrostProvider
+
+    provider = BifrostProvider.__new__(BifrostProvider)
+
+    assert provider._resolve_model("moonshot/kimi-k2.6") == "hf-router/moonshotai/Kimi-K2.6"
+    assert provider._resolve_model("kimi/kimi-k2.6") == "hf-router/moonshotai/Kimi-K2.6"
+    assert provider._resolve_model("bifrost/moonshot/kimi-k2.6") == "hf-router/moonshotai/Kimi-K2.6"
+    assert provider._resolve_model("minimax/MiniMax-M2.7") == "hf-router/MiniMaxAI/MiniMax-M2.7"
+    assert provider._resolve_model("zai/glm-4.5-flash") == "nvidia-nim/nvidia/nemotron-3-super-120b-a12b"
+    assert provider._resolve_model("gemini/gemini-3.1-flash") == "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
+
+
 def test_bifrost_provider_disables_local_qwen_thinking_at_payload_root():
     from app.infrastructure.llm_providers.bifrost_provider import BifrostProvider
 

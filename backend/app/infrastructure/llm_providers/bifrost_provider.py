@@ -38,7 +38,39 @@ class BifrostProvider(BaseLLMProvider):
         if not model:
             return self._default_model
         if model.startswith("bifrost/"):
-            return model.split("/", 1)[1]
+            model = model.split("/", 1)[1]
+        return self._translate_legacy_alias(model)
+
+    @staticmethod
+    def _translate_legacy_alias(model: str) -> str:
+        """Translate legacy provider-alias prefixes to live Bifrost provider ids.
+
+        Bifrost parked the `moonshot`, `kimi`, `zai`, `gemini`, `minimax` and
+        several other provider keys on 2026-09-15 (governance-level park, not
+        a key/quota issue) — none resolve on the gateway any more, even
+        though a lot of call sites (skeptic_service, character_content
+        enhance-carousel, kimi_mcp, the frontend Carousel model picker) still
+        construct model strings using those bare provider names. Translating
+        centrally here, rather than at every call site, means every one of
+        those callers resolves correctly without a scattered find/replace.
+        """
+        lower = model.lower()
+        if lower.startswith("kimi/") or lower.startswith("moonshot/"):
+            bare = model.split("/", 1)[1]
+            if bare.lower().startswith("kimi-k2"):
+                return "hf-router/moonshotai/Kimi-K2.6"
+            # Any other bare moonshot/kimi model name (e.g. vision presets) —
+            # moonshot has no live route left at all, so fall back to the
+            # nearest live Kimi id rather than sending a dead provider prefix.
+            return "hf-router/moonshotai/Kimi-K2.6"
+        if lower.startswith("minimax/"):
+            return "hf-router/MiniMaxAI/MiniMax-M2.7"
+        if lower.startswith("zai/") or lower.startswith("z-ai/"):
+            # zai provider is parked; z-ai/glm-5.2 (via nvidia-nim) is the
+            # live replacement for GLM-family requests.
+            return "nvidia-nim/nvidia/nemotron-3-super-120b-a12b"
+        if lower.startswith("gemini/"):
+            return "nvidia-nim/nvidia/nemotron-3.5-lightning-30b-a3b"
         return model
 
     def _payload(
@@ -50,7 +82,7 @@ class BifrostProvider(BaseLLMProvider):
         **kwargs,
     ) -> dict:
         resolved = self._resolve_model(model)
-        if resolved.startswith("moonshot/kimi-k2"):
+        if resolved.lower().startswith("hf-router/moonshotai/kimi-k2"):
             temperature = 1.0
         payload: dict = {
             "model": resolved,

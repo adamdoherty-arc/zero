@@ -14,7 +14,13 @@ backwards-compat aliases so callers that hardcoded those names still
 resolve — they all return the same Bifrost-backed handler. The router's
 default fallback chain (see ``llm_router._DEFAULT_FALLBACKS``) and the
 persisted ``router_config.json`` were rewritten to use bifrost-prefixed
-model names ("bifrost/moonshot/kimi-k2.6", "bifrost/vllm-local/Qwen3-32B-AWQ").
+model names ("bifrost/hf-router/moonshotai/Kimi-K2.6",
+"bifrost/vllm-local/Qwen3-32B-AWQ"). 2026-09-15: Bifrost parked the
+``moonshot``/``zai``/``gemini``/``minimax`` (etc.) provider keys entirely;
+``BifrostProvider._resolve_model`` now translates the legacy
+``kimi/``/``moonshot/``/``minimax/``/``zai/``/``gemini/`` alias prefixes to
+their live gateway equivalents centrally, so the backwards-compat aliases
+below keep resolving to a real model instead of a dead provider id.
 """
 
 from functools import lru_cache

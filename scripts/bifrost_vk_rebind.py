@@ -15,7 +15,7 @@ Why this exists:
 Usage:
     python scripts/bifrost_vk_rebind.py                    # rebind all VKs
     python scripts/bifrost_vk_rebind.py --vk zero-prod     # one VK
-    python scripts/bifrost_vk_rebind.py --add-model moonshot/moonshot-v1-32k-vision-preview
+    python scripts/bifrost_vk_rebind.py --add-model nvidia-nim/meta/llama-3.2-90b-vision-instruct
 
 Env:
     BIFROST_URL  default http://localhost:4445

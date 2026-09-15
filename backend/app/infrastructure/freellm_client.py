@@ -9,7 +9,7 @@ fallback chain with per-key RPM/RPD/TPM/TPD tracking.
 
 Role in Zero's chain (post-2026-05-25, Bifrost-Chain-03):
 
-    1. Kimi via Bifrost (moonshot/kimi-k2.6) — primary cloud
+    1. Kimi via Bifrost (hf-router/moonshotai/Kimi-K2.6) — primary cloud
     2. Local Qwen via Bifrost (vllm-local/Qwen3-32B-AWQ) — primary local
     3. THIS CLIENT — emergency cross-provider free-tier fallback chain
     4. Whatever per-task fallback the LlmRouter has configured

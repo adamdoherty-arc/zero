@@ -43,10 +43,12 @@ _load_dotenv()
 
 server = Server("kimi-llm")
 
-# Bifrost routes Kimi requests under the `moonshot/` provider prefix;
-# the model name supplied by callers gets normalized below. The MCP
-# server can use Zero's virtual key (ZERO_BIFROST_API_KEY) or fall
-# back to VLLM_API_KEY / KIMI_API_KEY which all carry the same value.
+# Bifrost parked the `moonshot` provider entirely on 2026-09-15 (governance
+# park, not a key/quota issue) — Kimi K2.6 is now served through the
+# `hf-router` provider's Moonshot AI mirror. The model name supplied by
+# callers gets normalized below. The MCP server can use Zero's virtual key
+# (ZERO_BIFROST_API_KEY) or fall back to VLLM_API_KEY / KIMI_API_KEY which
+# all carry the same value.
 API_KEY = (
     os.getenv("ZERO_BIFROST_API_KEY", "")
     or os.getenv("VLLM_API_KEY", "")
@@ -59,9 +61,13 @@ BASE_URL = (
     or "http://host.docker.internal:4445/v1"
 ).rstrip("/")
 # Bifrost requires `<provider>/<model>` in the model field; older callers
-# pass bare `kimi-k2.6`. This helper makes both forms work.
+# pass bare `kimi-k2.6` or the retired `moonshot/kimi-k2.6` form. This
+# helper normalizes every form to the live hf-router id.
 def _bifrost_model(model: str) -> str:
-    return model if "/" in model else f"moonshot/{model}"
+    bare = model.split("/", 1)[-1] if "/" in model else model
+    if bare.lower().startswith("kimi-k2"):
+        return "hf-router/moonshotai/Kimi-K2.6"
+    return model if "/" in model else f"hf-router/moonshotai/{model}"
 
 # Moonshot's K2-family models reject any temperature != 1.0 with a 400.
 _FIXED_TEMP_MODELS = {
